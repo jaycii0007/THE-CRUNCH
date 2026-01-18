@@ -1,25 +1,19 @@
 {
-  "dependencies": {
-    "express": "^5.2.1",
-    "mongoose": "^9.1.4"
-  },
-  "name": "pos-system",
+  "name": "pos-backend",
   "version": "1.0.0",
-  "description": "walang description to tinatamad ako mag isip basta para sa thesis",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/jaycii0007/POS-system.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "private": true,
   "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/jaycii0007/POS-system/issues"
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
   },
-  "homepage": "https://github.com/jaycii0007/POS-system#readme"
+  "dependencies": {
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
 }
