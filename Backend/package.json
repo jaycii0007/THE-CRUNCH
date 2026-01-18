@@ -1,0 +1,25 @@
+{
+  "dependencies": {
+    "express": "^5.2.1",
+    "mongoose": "^9.1.4"
+  },
+  "name": "pos-system",
+  "version": "1.0.0",
+  "description": "walang description to tinatamad ako mag isip basta para sa thesis",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaycii0007/POS-system.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jaycii0007/POS-system/issues"
+  },
+  "homepage": "https://github.com/jaycii0007/POS-system#readme"
+}
