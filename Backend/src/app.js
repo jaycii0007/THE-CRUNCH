@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 
+require('./config/db'); // 👈 connect MySQL
+
 const app = express();
 
 app.use(cors());
