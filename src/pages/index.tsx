@@ -11,8 +11,6 @@ export default function AdminDashboard() {
   return (
     <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
       <Sidebar />
-
-      {/* Add left padding to make space for burger button */}
       <main className="flex-1 p-8 pl-24">
         <div className="bg-[#FDFAF6] rounded-3xl p-8 min-h-[calc(100vh-5rem)]">
           <div className="flex items-center justify-between mb-8">
@@ -41,8 +39,6 @@ export default function AdminDashboard() {
               <img src="src/assets/img/user1.jpg" alt="Profile" className="w-14 h-14 rounded-full object-cover" />
             </div>
           </div>
-
-          {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <Card className="bg-white rounded-2xl p-6 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 border-0">
               <div className="text-sm text-gray-500 mb-2">Total Order</div>
@@ -71,10 +67,8 @@ export default function AdminDashboard() {
               </div>
             </Card>
           </div>
-
-          {/* Chart and Right Panel */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
-            {/* Chart Section - Takes 8 columns */}
+          
             <div className="lg:col-span-8">
               <Card className="bg-white rounded-2xl p-6 h-full shadow-md hover:shadow-lg transition-shadow border-0">
                 <div className="flex items-center justify-between mb-6">
@@ -104,8 +98,6 @@ export default function AdminDashboard() {
                 <SalesChart />
               </Card>
             </div>
-
-            {/* Right Panel - Takes 4 columns */}
             <div className="lg:col-span-4">
               <Card className="bg-white rounded-2xl p-6 h-full shadow-md hover:shadow-lg transition-shadow border-0">
                 <div className="grid grid-cols-3 gap-4 text-center text-sm font-medium text-gray-600 mb-4">
@@ -113,12 +105,10 @@ export default function AdminDashboard() {
                   <div>Date</div>
                   <div>Time</div>
                 </div>
-                {/* Add your payment category content here */}
+              
               </Card>
             </div>
           </div>
-
-          {/* Orders Table */}
           <OrdersTable />
         </div>
       </main>

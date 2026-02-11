@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { NavLink } from "react-router-dom"
+import { Link, NavLink } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Menu, X } from "lucide-react"
@@ -9,9 +9,7 @@ const navigationItems = [
   { label: "Order", path: "/orders" },
   { label: "Inventory", path: "/inventory" },
   { label: "Products", path: "/products" },
-  { label: "Reports", path: "/reports" },
-  { label: "Sales", path: "/sales" },
-  { label: "Menu", path: "/menu" },
+  { label: "Menus", path: "/menu" },
 ]
 
 const additionalItems = [
@@ -25,7 +23,7 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Hamburger Menu Button - Outside main content */}
+  
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="fixed top-6 left-6 z-50 p-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 active:scale-95"
@@ -37,7 +35,7 @@ export function Sidebar() {
         )}
       </button>
 
-      {/* Blur Overlay */}
+
       {isOpen && (
         <div
           className="fixed inset-0 backdrop-blur-sm bg-black/20 z-40 transition-all duration-300"
@@ -45,7 +43,7 @@ export function Sidebar() {
         />
       )}
 
-      {/* Sidebar */}
+  
       <aside
         className={cn(
           "fixed top-0 left-0 h-full w-72 bg-white p-6 flex flex-col shadow-2xl z-50 transition-all duration-300 ease-in-out font-['Poppins',sans-serif]",
@@ -62,7 +60,7 @@ export function Sidebar() {
           Navigation
         </div>
 
-        {/* Main Navigation */}
+      
         <nav className="flex-1 space-y-1.5">
           {navigationItems.map((item) => (
             <NavLink key={item.label} to={item.path} end onClick={() => setIsOpen(false)}>
@@ -82,7 +80,7 @@ export function Sidebar() {
           ))}
         </nav>
 
-        {/* Additional Items */}
+     
         <div className="space-y-1.5 mt-6 pt-6 border-t border-gray-100">
           {additionalItems.map((item) => (
             <NavLink key={item.label} to={item.path} onClick={() => setIsOpen(false)}>
@@ -101,7 +99,7 @@ export function Sidebar() {
             </NavLink>
           ))}
 
-          {/* Logout */}
+        <Link to="/login" className="w-full">
           <Button
             variant="ghost"
             className="w-full justify-start rounded-xl text-sm text-black mt-6 transition-all duration-300 px-4 py-2.5 hover:bg-red-50 hover:text-red-600 hover:shadow-sm hover:scale-[1.02] active:scale-95"
@@ -109,6 +107,7 @@ export function Sidebar() {
           >
             Log Out
           </Button>
+          </Link>
         </div>
       </aside>
     </>

@@ -83,13 +83,11 @@ export default function InventoryPage() {
       
       <main className="flex-1 p-8 pl-24">
         <div className="bg-white rounded-3xl p-8 min-h-[calc(100vh-5rem)] shadow-lg">
-          {/* Header */}
+
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-800">Inventory</h1>
             <p className="text-sm text-gray-500 mt-1">Manage your products and stock levels</p>
           </div>
-
-          {/* Inventory Client */}
           <InventoryClient items={inventoryItems} />
         </div>
       </main>

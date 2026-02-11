@@ -42,7 +42,7 @@ export function InventoryClient({ items }: InventoryClientProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(20)
 
-  // Filter items based on search and filters
+  
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -55,14 +55,14 @@ export function InventoryClient({ items }: InventoryClientProps) {
     })
   }, [items, searchQuery, categoryFilter, stockFilter])
 
-  // Pagination calculations
+
   const totalItems = filteredItems.length
   const totalPages = Math.ceil(totalItems / rowsPerPage)
   const startIndex = (currentPage - 1) * rowsPerPage
   const endIndex = Math.min(startIndex + rowsPerPage, totalItems)
   const paginatedItems = filteredItems.slice(startIndex, endIndex)
 
-  // Reset to page 1 when filters change
+
   const handleSearchChange = (value: string) => {
     setSearchQuery(value)
     setCurrentPage(1)
@@ -111,7 +111,7 @@ export function InventoryClient({ items }: InventoryClientProps) {
 
   return (
     <>
-      {/* Search and Filters */}
+     
       <div className="flex items-center gap-4 mb-6 flex-wrap">
         <div className="relative flex-1 min-w-[250px]">
           <Input
@@ -159,7 +159,7 @@ export function InventoryClient({ items }: InventoryClientProps) {
         </Button>
       </div>
 
-      {/* Table */}
+
       <Card className="bg-white rounded-2xl overflow-hidden shadow-md border-0">
         <Table>
           <TableHeader>
@@ -230,7 +230,7 @@ export function InventoryClient({ items }: InventoryClientProps) {
           </TableBody>
         </Table>
 
-        {/* Pagination */}
+    
         <div className="flex items-center justify-between p-4 border-t border-gray-200">
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Show</span>
