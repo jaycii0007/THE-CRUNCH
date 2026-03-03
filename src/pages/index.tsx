@@ -6,8 +6,56 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sidebar } from "@/components/Sidebar"
 import { OrdersTable } from "@/components/orders-table"
 import { SalesChart } from "@/components/sales-chart"
+import { useState, useEffect } from "react"
+
+interface Order {
+  id: number
+  orderNumber: string
+  items: { name: string; price: number; quantity: number }[]
+  total: number
+  date: string
+  time: string
+  status: string
+  paymentCategory: string
+}
+
+interface Payment {
+  id: number
+  category: string
+  date: string
+  time: string
+}
 
 export default function AdminDashboard() {
+  const [orders, setOrders] = useState<Order[]>([])
+  const [paymentData, setPaymentData] = useState<Payment[]>([])
+
+  // ✅ Load data from localStorage on mount and listen for updates
+  useEffect(() => {
+    const loadData = () => {
+      const savedOrders = JSON.parse(localStorage.getItem("orders") || "[]")
+      const savedPayments = JSON.parse(localStorage.getItem("payments") || "[]")
+      setOrders(savedOrders)
+      setPaymentData(savedPayments.slice(0, 6)) // show latest 6 payments
+    }
+
+    loadData() // load on mount
+
+    // ✅ Listen for localStorage changes (when cashier submits an order)
+    window.addEventListener("storage", loadData)
+    const interval = setInterval(loadData, 3000)
+
+    return () => {
+      window.removeEventListener("storage", loadData)
+      clearInterval(interval)
+    }
+  }, [])
+
+  // Compute stats from real orders
+  const totalOrders = orders.length
+  const totalSales = orders.reduce((sum, o) => sum + o.total, 0)
+  const activeOrders = orders.filter(o => o.status === "Pending").length
+
   return (
     <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
       <Sidebar />
@@ -15,7 +63,11 @@ export default function AdminDashboard() {
         <div className="bg-[#FDFAF6] rounded-3xl p-8 min-h-[calc(100vh-5rem)]">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
-              <img src="src/assets/img/logo.jpg" alt="The Crunch Logo" className="w-12 h-12 rounded-full" />
+              <img
+                src="src/assets/img/logo.jpg"
+                alt="The Crunch Logo"
+                className="w-12 h-12 rounded-full"
+              />
               <span className="text-2xl font-semibold text-[#4A1C1C]">The Crunch</span>
             </div>
 
@@ -35,41 +87,46 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-             <div className="w-16 h-16 bg-[#8B3A3A] rounded-full flex items-center justify-center">
-              <img src="src/assets/img/user1.jpg" alt="Profile" className="w-14 h-14 rounded-full object-cover" />
+            <div className="flex items-center gap-2">
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <Card className="bg-white rounded-2xl p-6 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 border-0">
               <div className="text-sm text-gray-500 mb-2">Total Order</div>
-              <div className="text-4xl font-bold text-gray-800 mb-2">20,000</div>
+              <div className="text-4xl font-bold text-gray-800 mb-2">
+                {totalOrders.toLocaleString()}
+              </div>
               <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
                 <TrendingUp className="h-4 w-4" />
-                <span>9.10%</span>
+                <span>Live</span>
               </div>
             </Card>
 
             <Card className="bg-white rounded-2xl p-6 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 border-0">
               <div className="text-sm text-gray-500 mb-2">Total Sales</div>
-              <div className="text-4xl font-bold text-gray-800 mb-2">₱100,000</div>
+              <div className="text-4xl font-bold text-gray-800 mb-2">
+                ₱{totalSales.toLocaleString()}
+              </div>
               <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
                 <TrendingUp className="h-4 w-4" />
-                <span>11.25%</span>
+                <span>Live</span>
               </div>
             </Card>
 
             <Card className="bg-white rounded-2xl p-6 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 border-0">
               <div className="text-sm text-gray-500 mb-2">Active Order</div>
-              <div className="text-4xl font-bold text-gray-800 mb-2">100,000</div>
+              <div className="text-4xl font-bold text-gray-800 mb-2">
+                {activeOrders.toLocaleString()}
+              </div>
               <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
                 <TrendingUp className="h-4 w-4" />
-                <span>10.2%</span>
+                <span>Live</span>
               </div>
             </Card>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
-          
-            <div className="lg:col-span-8">
+
+          <div className={`grid grid-cols-1 gap-6 mb-8 ${paymentData.length > 0 ? 'lg:grid-cols-12' : ''}`}>
+            <div className={paymentData.length > 0 ? 'lg:col-span-8' : ''}>
               <Card className="bg-white rounded-2xl p-6 h-full shadow-md hover:shadow-lg transition-shadow border-0">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl font-semibold text-gray-800">Order & Sales Review</h2>
@@ -98,18 +155,40 @@ export default function AdminDashboard() {
                 <SalesChart />
               </Card>
             </div>
-            <div className="lg:col-span-4">
-              <Card className="bg-white rounded-2xl p-6 h-full shadow-md hover:shadow-lg transition-shadow border-0">
-                <div className="grid grid-cols-3 gap-4 text-center text-sm font-medium text-gray-600 mb-4">
-                  <div>Payment Category</div>
-                  <div>Date</div>
-                  <div>Time</div>
-                </div>
-              
-              </Card>
-            </div>
+            {paymentData.length > 0 && (
+              <div className="lg:col-span-4">
+                <Card className="bg-white rounded-2xl p-6 h-full shadow-md hover:shadow-lg transition-shadow border-0">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Recent Payments</h3>
+                  <div className="grid grid-cols-3 gap-4 text-center text-sm font-medium text-gray-600 mb-4">
+                    <div>Payment Category</div>
+                    <div>Date</div>
+                    <div>Time</div>
+                  </div>
+                  <div className="space-y-3">
+                    {paymentData.map((payment) => (
+                      <div
+                        key={payment.id}
+                        className="grid grid-cols-3 gap-4 text-center text-sm text-gray-700 py-2 hover:bg-gray-50 rounded-lg transition-colors"
+                      >
+                        <div className="font-medium">{payment.category}</div>
+                        <div>{payment.date}</div>
+                        <div>{payment.time}</div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            )}
+            {paymentData.length === 0 && (
+              <div className="lg:col-span-4">
+                <Card className="bg-white rounded-2xl p-6 h-full shadow-md border-0 flex items-center justify-center">
+                  <p className="text-gray-400 text-sm text-center">No payments yet.<br />Orders will appear here after cashier processes them.</p>
+                </Card>
+              </div>
+            )}
           </div>
-          <OrdersTable />
+
+          <OrdersTable orders={orders} />
         </div>
       </main>
     </div>

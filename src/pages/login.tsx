@@ -15,97 +15,35 @@ export default function Login() {
     name: "",
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setIsLoading(true);
-
-    try {
-      if (isLogin) {
-        // LOGIN - POST to /api/auth/login
-        const response = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: formData.email,
-            password: formData.password,
-          }),
-        });
-
-        // Safely parse response body: server may return empty body on error
-        const text = await response.text();
-        let data: any = {};
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch (e) {
-          console.error('Failed to parse JSON response from /api/auth/login:', text);
-          data = {};
-        }
-
-        if (!response.ok) {
-          setError(data.message || "Login failed");
-          setIsLoading(false);
-          return;
-        }
-
-        // Store auth info
-        localStorage.setItem("isAuthenticated", "true");
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("userId", data.userId);
-        localStorage.setItem("username", data.username);
-        localStorage.setItem("email", data.email);
-
-        navigate("/home");
-      } else {
-        // SIGN UP - POST to /api/auth/register
-        if (formData.password !== formData.confirmPassword) {
-          setError("Passwords don't match!");
-          setIsLoading(false);
-          return;
-        }
-
-        const response = await fetch("/api/auth/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: formData.name,
-            email: formData.email,
-            password: formData.password,
-          }),
-        });
-
-        // Safely parse response body: server may return empty body on error
-        const text = await response.text();
-        let data: any = {};
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch (e) {
-          console.error('Failed to parse JSON response from /api/auth/register:', text);
-          data = {};
-        }
-
-        if (!response.ok) {
-          setError(data.message || "Registration failed");
-          setIsLoading(false);
-          return;
-        }
-
-        // After registration, auto-login
-        alert("Account created successfully! Please log in.");
-        setFormData({
-          email: "",
-          password: "",
-          confirmPassword: "",
-          name: "",
-        });
-        setIsLogin(true);
+    
+    if (isLogin) {
+   
+      localStorage.setItem("isAuthenticated", "true");
+      navigate("/");
+    } else {
+      
+      if (formData.password !== formData.confirmPassword) {
+        alert("Passwords don't match!");
+        return;
       }
-    } catch (err) {
-      setError("Network error. Please try again.");
-      console.error(err);
-    }
+      
+     
+      localStorage.setItem("userEmail", formData.email);
+      localStorage.setItem("userName", formData.name);
+      
 
-    setIsLoading(false);
+      alert("Account created successfully! Please log in.");
+      
+      setFormData({
+        email: formData.email, 
+        password: "",
+        confirmPassword: "",
+        name: "",
+      });
+      setIsLogin(true);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,12 +58,12 @@ export default function Login() {
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8">
         <div className="flex items-center justify-center gap-6 mb-8">
           <button
-            onClick={() => setIsLogin(true)}
+            onClick={() => { setIsLogin(true); setError(""); }}
             className={`flex items-center gap-2 text-base font-medium transition-colors pb-1 ${
               isLogin
                 ? "text-gray-900 border-b-2 border-gray-900"
                 : "text-gray-400"
-            }`} >
+            }`}>
             <svg
               className="w-5 h-5"
               fill="none"
@@ -142,7 +80,7 @@ export default function Login() {
             Login
           </button>
           <button
-            onClick={() => setIsLogin(false)}
+            onClick={() => { setIsLogin(false); setError(""); }}
             className={`flex items-center gap-2 text-base font-medium transition-colors pb-1 ${
               !isLogin
                 ? "text-gray-900 border-b-2 border-gray-900"
@@ -306,7 +244,7 @@ export default function Login() {
           {isLogin ? "Don't have an account yet? " : "Already have an account? "}
           <button
             type="button"
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => { setIsLogin(!isLogin); setError(""); }}
             className="text-gray-900 font-semibold hover:underline"
           >
             {isLogin ? "Sign up" : "Log in"}
