@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShoppingBag, Truck, Award, Utensils } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function TheCrunch() {
   const [activeMenu, setActiveMenu] = useState('main');
@@ -36,7 +37,7 @@ export default function TheCrunch() {
             <a href="#about" className="text-gray-600 hover:text-gray-900 transition">About</a>
             <a href="#foods" className="text-gray-600 hover:text-gray-900 transition">Foods</a>
             <a href="#pricing" className="text-gray-600 hover:text-gray-900 transition">Pricing</a>
-            <button 
+            <motion.button 
               onClick={handleSignIn}
               className="px-6 py-2 border-2 border-orange-400 text-orange-400 rounded-full hover:bg-orange-50 transition shadow-md"
               whileHover={{ scale: 1.05 }}
@@ -232,8 +233,8 @@ export default function TheCrunch() {
               <div className="w-8 h-8 bg-orange-100 rounded-full shadow-sm"></div>
               <div className="w-8 h-8 bg-orange-400 rounded-full shadow-md"></div>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
 
       <motion.footer
