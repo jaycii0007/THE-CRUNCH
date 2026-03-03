@@ -6,6 +6,8 @@ export default function Login() {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -13,30 +15,64 @@ export default function Login() {
     name: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Hardcoded staff/admin accounts
+  const STAFF_ACCOUNTS = [
+    { email: "admin1@gmail.com", password: "12345" },
+    { email: "admin2@gmail.com", password: "12345" },
+  ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setError("");
+    setIsLoading(true);
+
     if (isLogin) {
-      localStorage.setItem("isAuthenticated", "true");
-      navigate("/dashboard");
+      // Check if staff/admin first
+      const isStaff = STAFF_ACCOUNTS.some(
+        (acc) => acc.email === formData.email && acc.password === formData.password
+      );
+
+      if (isStaff) {
+        localStorage.setItem("isAuthenticated", "true");
+        localStorage.setItem("userRole", "staff");
+        navigate("/dashboard"); // Staff/admin go to dashboard
+      } else {
+        // Check if regular customer
+        const savedEmail = localStorage.getItem("userEmail");
+        const savedPassword = localStorage.getItem("userPassword");
+
+        if (formData.email === savedEmail && formData.password === savedPassword) {
+          localStorage.setItem("isAuthenticated", "true");
+          localStorage.setItem("userRole", "customer");
+          navigate("/"); // Customers go to landing page
+        } else {
+          setError("Invalid email or password.");
+        }
+      }
     } else {
       if (formData.password !== formData.confirmPassword) {
-        alert("Passwords don't match!");
+        setError("Passwords don't match!");
+        setIsLoading(false);
         return;
       }
+
       localStorage.setItem("userEmail", formData.email);
       localStorage.setItem("userName", formData.name);
-      
+      localStorage.setItem("userPassword", formData.password);
+      localStorage.setItem("userRole", "customer"); // Sign-up users are always customers
+
       alert("Account created successfully! Please log in.");
-      
+
       setFormData({
-        email: formData.email, 
+        email: formData.email,
         password: "",
         confirmPassword: "",
         name: "",
       });
       setIsLogin(true);
     }
+
+    setIsLoading(false);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -51,7 +87,7 @@ export default function Login() {
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8">
         <div className="flex items-center justify-center gap-6 mb-8">
           <button
-            onClick={() => setIsLogin(true)}
+            onClick={() => { setIsLogin(true); setError(""); }}
             className={`flex items-center gap-2 text-base font-medium transition-colors pb-1 ${
               isLogin
                 ? "text-gray-900 border-b-2 border-gray-900"
@@ -73,7 +109,7 @@ export default function Login() {
             Login
           </button>
           <button
-            onClick={() => setIsLogin(false)}
+            onClick={() => { setIsLogin(false); setError(""); }}
             className={`flex items-center gap-2 text-base font-medium transition-colors pb-1 ${
               !isLogin
                 ? "text-gray-900 border-b-2 border-gray-900"
@@ -98,6 +134,11 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {error && (
+            <div className="p-3 bg-red-100 border border-red-400 rounded-lg text-red-600 text-sm">
+              {error}
+            </div>
+          )}
           {!isLogin && (
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
@@ -187,9 +228,10 @@ export default function Login() {
 
           <button
             type="submit"
-            className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-medium hover:bg-gray-800 transition-colors text-sm mt-6"
+            disabled={isLoading}
+            className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-medium hover:bg-gray-800 transition-colors text-sm mt-6 disabled:bg-gray-400"
           >
-            {isLogin ? "Log in" : "Sign up"}
+            {isLoading ? "Loading..." : isLogin ? "Log in" : "Sign up"}
           </button>
         </form>
 
@@ -231,7 +273,7 @@ export default function Login() {
           {isLogin ? "Don't have an account yet? " : "Already have an account? "}
           <button
             type="button"
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => { setIsLogin(!isLogin); setError(""); }}
             className="text-gray-900 font-semibold hover:underline"
           >
             {isLogin ? "Sign up" : "Log in"}

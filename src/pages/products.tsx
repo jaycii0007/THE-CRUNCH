@@ -7,7 +7,6 @@ export default function TheCrunch() {
   const [activeMenu, setActiveMenu] = useState('main');
   const [cartCount, setCartCount] = useState(0);
   const navigate = useNavigate();
-
   const isSignedIn = !!localStorage.getItem('isAuthenticated');
 
   const getCurrentDay = () => {
@@ -22,7 +21,7 @@ export default function TheCrunch() {
     if (isSignedIn) {
       localStorage.removeItem('isAuthenticated');
       localStorage.removeItem('activeAccountId');
-      window.location.reload(); // refresh so isSignedIn updates
+      window.location.reload(); 
     } else {
       navigate('/login');
     }
@@ -43,11 +42,8 @@ export default function TheCrunch() {
             <span className="text-2xl font-bold text-gray-800">The Crunch Fairview</span>
           </div>
           <nav className="flex items-center gap-8">
-            <Link to="/about" className="text-gray-600 hover:text-gray-900 transition" whileHover={{ scale: 1.05 }}>About</Link>
-            <motion.a href="#foods" className="text-gray-600 hover:text-gray-900 transition" whileHover={{ scale: 1.05 }}>Foods</motion.a>
-            <motion.a href="#pricing" className="text-gray-600 hover:text-gray-900 transition" whileHover={{ scale: 1.05 }}>Pricing</motion.a>
-
-            {/* Sign In / Sign Out button → navigates to /login */}
+            <motion.div whileHover={{ scale: 1.05 }}><Link to="/about" className="text-gray-600 hover:text-gray-900 transition">Menu</Link></motion.div>
+            <motion.a href="#about" className="text-gray-600 hover:text-gray-900 transition" whileHover={{ scale: 1.05 }}>About</motion.a>
             <motion.button
               onClick={handleAuthClick}
               className="px-6 py-2 border-2 border-orange-400 text-orange-400 rounded-full hover:bg-orange-50 transition shadow-md"
@@ -103,10 +99,10 @@ export default function TheCrunch() {
                 <h1 className="text-6xl font-bold leading-tight">
                   <span className="text-gray-800">It's The Crunch Time</span>
                   <br />
-                  <span className="text-orange-400">Built for the Bite</span>
+                  <span className="text-orange-400">Once you go crunch, you'll crave for more bunch!</span>
                 </h1>
                 <p className="text-gray-500 leading-relaxed">
-                  Our Chicken Doesn't Just Taste Good It Sounds Good.
+                  One of the Leading Boneless Fried Chicken Brands in the Philippines Serving Deliciousness at 200+ Branches Nationwide!
                 </p>
                 <motion.button
                   onClick={handleSubscribe}
@@ -253,15 +249,14 @@ export default function TheCrunch() {
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="flex items-center justify-between">
             <div className="flex gap-4">
-              <motion.a href="#" className="w-8 h-8 border border-gray-300 rounded-full flex items-center justify-center hover:bg-gray-50 transition shadow-sm" whileHover={{ scale: 1.2, rotate: 5 }}>G</motion.a>
-              <motion.a href="#" className="w-8 h-8 border border-gray-300 rounded-full flex items-center justify-center hover:bg-gray-50 transition shadow-sm" whileHover={{ scale: 1.2, rotate: 5 }}>in</motion.a>
+              <motion.a href="#" className="w-8 h-8 border border-gray-300 rounded-full flex items-center justify-center hover:bg-gray-50 transition shadow-sm" whileHover={{ scale: 1.2, rotate: 5 }}>IG</motion.a>
+              <motion.a href="#" className="w-8 h-8 border border-gray-300 rounded-full flex items-center justify-center hover:bg-gray-50 transition shadow-sm" whileHover={{ scale: 1.2, rotate: 5 }}>FB</motion.a>
             </div>
             <div className="flex gap-16 text-sm">
               <div>
                 <h5 className="font-semibold text-gray-800 mb-2">Foods</h5>
                 <ul className="space-y-1 text-gray-500">
-                  <li><motion.a href="#" className="hover:text-gray-800 transition" whileHover={{ x: 5 }}>Pricing</motion.a></li>
-                  <li><motion.a href="#" className="hover:text-gray-800 transition" whileHover={{ x: 5 }}>Menu</motion.a></li>
+                 <li><motion.a href="#" className="hover:text-gray-800 transition" whileHover={{ x: 5 }}>Menu</motion.a></li> 
                 </ul>
               </div>
               <div>

@@ -6,17 +6,55 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sidebar } from "@/components/Sidebar"
 import { OrdersTable } from "@/components/orders-table"
 import { SalesChart } from "@/components/sales-chart"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+
+interface Order {
+  id: number
+  orderNumber: string
+  items: { name: string; price: number; quantity: number }[]
+  total: number
+  date: string
+  time: string
+  status: string
+  paymentCategory: string
+}
+
+interface Payment {
+  id: number
+  category: string
+  date: string
+  time: string
+}
 
 export default function AdminDashboard() {
-  const [paymentData, setPaymentData] = useState([
-    { id: 1, category: "Cash", date: "Feb 16, 2024", time: "10:30 AM" },
-    { id: 2, category: "GCash", date: "Feb 16, 2024", time: "11:45 AM" },
-    { id: 3, category: "PayMaya", date: "Feb 16, 2024", time: "01:20 PM" },
-    { id: 4, category: "Cash", date: "Feb 16, 2024", time: "02:15 PM" },
-    { id: 5, category: "Card", date: "Feb 16, 2024", time: "03:45 PM" },
-    { id: 6, category: "GCash", date: "Feb 16, 2024", time: "04:30 PM" },
-  ])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [paymentData, setPaymentData] = useState<Payment[]>([])
+
+  // ✅ Load data from localStorage on mount and listen for updates
+  useEffect(() => {
+    const loadData = () => {
+      const savedOrders = JSON.parse(localStorage.getItem("orders") || "[]")
+      const savedPayments = JSON.parse(localStorage.getItem("payments") || "[]")
+      setOrders(savedOrders)
+      setPaymentData(savedPayments.slice(0, 6)) // show latest 6 payments
+    }
+
+    loadData() // load on mount
+
+    // ✅ Listen for localStorage changes (when cashier submits an order)
+    window.addEventListener("storage", loadData)
+    const interval = setInterval(loadData, 3000)
+
+    return () => {
+      window.removeEventListener("storage", loadData)
+      clearInterval(interval)
+    }
+  }, [])
+
+  // Compute stats from real orders
+  const totalOrders = orders.length
+  const totalSales = orders.reduce((sum, o) => sum + o.total, 0)
+  const activeOrders = orders.filter(o => o.status === "Pending").length
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
@@ -25,9 +63,9 @@ export default function AdminDashboard() {
         <div className="bg-[#FDFAF6] rounded-3xl p-8 min-h-[calc(100vh-5rem)]">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
-              <img 
-                src="src/assets/img/logo.jpg" 
-                alt="The Crunch Logo" 
+              <img
+                src="src/assets/img/logo.jpg"
+                alt="The Crunch Logo"
                 className="w-12 h-12 rounded-full"
               />
               <span className="text-2xl font-semibold text-[#4A1C1C]">The Crunch</span>
@@ -49,36 +87,40 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="w-16 h-16 bg-[#8B3A3A] rounded-full flex items-center justify-center">
-              <img src="src/assets/img/user1.jpg" alt="Profile" className="w-14 h-14 rounded-full object-cover" />
+            <div className="flex items-center gap-2">
             </div>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <Card className="bg-white rounded-2xl p-6 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 border-0">
               <div className="text-sm text-gray-500 mb-2">Total Order</div>
-              <div className="text-4xl font-bold text-gray-800 mb-2">20,000</div>
+              <div className="text-4xl font-bold text-gray-800 mb-2">
+                {totalOrders.toLocaleString()}
+              </div>
               <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
                 <TrendingUp className="h-4 w-4" />
-                <span>9.10%</span>
+                <span>Live</span>
               </div>
             </Card>
 
             <Card className="bg-white rounded-2xl p-6 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 border-0">
               <div className="text-sm text-gray-500 mb-2">Total Sales</div>
-              <div className="text-4xl font-bold text-gray-800 mb-2">₱100,000</div>
+              <div className="text-4xl font-bold text-gray-800 mb-2">
+                ₱{totalSales.toLocaleString()}
+              </div>
               <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
                 <TrendingUp className="h-4 w-4" />
-                <span>11.25%</span>
+                <span>Live</span>
               </div>
             </Card>
 
             <Card className="bg-white rounded-2xl p-6 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 border-0">
               <div className="text-sm text-gray-500 mb-2">Active Order</div>
-              <div className="text-4xl font-bold text-gray-800 mb-2">100,000</div>
+              <div className="text-4xl font-bold text-gray-800 mb-2">
+                {activeOrders.toLocaleString()}
+              </div>
               <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
                 <TrendingUp className="h-4 w-4" />
-                <span>10.2%</span>
+                <span>Live</span>
               </div>
             </Card>
           </div>
@@ -113,7 +155,6 @@ export default function AdminDashboard() {
                 <SalesChart />
               </Card>
             </div>
-
             {paymentData.length > 0 && (
               <div className="lg:col-span-4">
                 <Card className="bg-white rounded-2xl p-6 h-full shadow-md hover:shadow-lg transition-shadow border-0">
@@ -138,11 +179,18 @@ export default function AdminDashboard() {
                 </Card>
               </div>
             )}
+            {paymentData.length === 0 && (
+              <div className="lg:col-span-4">
+                <Card className="bg-white rounded-2xl p-6 h-full shadow-md border-0 flex items-center justify-center">
+                  <p className="text-gray-400 text-sm text-center">No payments yet.<br />Orders will appear here after cashier processes them.</p>
+                </Card>
+              </div>
+            )}
           </div>
 
-          <OrdersTable />
+          <OrdersTable orders={orders} />
         </div>
       </main>
     </div>
   )
-} 
+}
