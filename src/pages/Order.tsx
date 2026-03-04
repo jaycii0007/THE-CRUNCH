@@ -6,7 +6,7 @@ import { Clock, Menu as MenuIcon, X, Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
-import { api } from "../lib/api" // for backend calls
+import { api } from "../lib/api"
 
 interface OrderItem {
   quantity: number
@@ -21,10 +21,10 @@ interface OrderCard {
   items: OrderItem[]
   isPreparing: boolean
   isFinished: boolean
-  startedAt?: number // timestamp when START was clicked
+  startedAt?: number
 }
 
-const COOK_TIME_SECONDS = 10 * 60 // 10 minutes default cook time
+const COOK_TIME_SECONDS = 10 * 60
 
 const navigationItems = [
   { label: "Dashboard", path: "/" },
@@ -42,7 +42,6 @@ const additionalItems = [
   { label: "Supplier Maintenance", path: "/suppliers" },
 ]
 
-// ── Timer display component per card ──────────────────────────────
 function OrderTimer({ startedAt, orderNumber }: { startedAt: number; orderNumber: string }) {
   const [elapsed, setElapsed] = useState(0)
   const notifiedRef = useRef(false)
@@ -52,11 +51,8 @@ function OrderTimer({ startedAt, orderNumber }: { startedAt: number; orderNumber
       const secs = Math.floor((Date.now() - startedAt) / 1000)
       setElapsed(secs)
 
-      // 🔔 Notify when cook time is up (once)
       if (secs >= COOK_TIME_SECONDS && !notifiedRef.current) {
         notifiedRef.current = true
-
-        // Browser notification
         if (Notification.permission === "granted") {
           new Notification("🍗 Order Ready!", {
             body: `Order ${orderNumber} is done and ready to serve!`,
@@ -94,104 +90,21 @@ export default function Order() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [isOpen, setIsOpen] = useState(false)
   const [notifPermission, setNotifPermission] = useState(Notification.permission)
-  const [orders, setOrders] = useState<OrderCard[]>([
-    {
-      id: "1",
-      tableNumber: 5,
-      status: "dine-in",
-      items: [
-        { quantity: 2, name: "Chicken Pops" },
-        { quantity: 2, name: "French Fries" },
-        { quantity: 1, name: "Lemonade Juice" },
-      ],
-      isPreparing: false,
-      isFinished: false,
-    },
-    {
-      id: "2",
-      tableNumber: 5,
-      status: "dine-in",
-      items: [
-        { quantity: 2, name: "Chicken Pops" },
-        { quantity: 2, name: "French Fries" },
-        { quantity: 1, name: "Lemonade Juice" },
-      ],
-      isPreparing: true,
-      isFinished: false,
-    },
-    {
-      id: "3",
-      tableNumber: 5,
-      status: "take-out",
-      items: [
-        { quantity: 2, name: "Chicken Pops" },
-        { quantity: 2, name: "French Fries" },
-        { quantity: 1, name: "Lemonade Juice" },
-      ],
-      isPreparing: false,
-      isFinished: false,
-    },
-    {
-      id: "4",
-      tableNumber: 5,
-      status: "dine-in",
-      items: [
-        { quantity: 2, name: "Chicken Pops" },
-        { quantity: 2, name: "French Fries" },
-        { quantity: 1, name: "Lemonade Juice" },
-      ],
-      isPreparing: false,
-      isFinished: false,
-    },
-    {
-      id: "5",
-      tableNumber: 5,
-      status: "dine-in",
-      items: [
-        { quantity: 2, name: "Chicken Pops" },
-        { quantity: 2, name: "French Fries" },
-        { quantity: 1, name: "Lemonade Juice" },
-      ],
-      isPreparing: true,
-      isFinished: false,
-    },
-    {
-      id: "6",
-      tableNumber: 5,
-      status: "take-out",
-      items: [
-        { quantity: 2, name: "Chicken Pops" },
-        { quantity: 2, name: "French Fries" },
-        { quantity: 1, name: "Lemonade Juice" },
-      ],
-      isPreparing: false,
-      isFinished: false,
-    },
-    {
-      id: "7",
-      tableNumber: 5,
-      status: "dine-in",
-      items: [
-        { quantity: 2, name: "Chicken Pops" },
-        { quantity: 2, name: "French Fries" },
-        { quantity: 1, name: "Lemonade Juice" },
-      ],
-      isPreparing: false,
-      isFinished: false,
-    },
-    {
-      id: "8",
-      tableNumber: 5,
-      status: "take-out",
-      items: [
-        { quantity: 2, name: "Chicken Pops" },
-        { quantity: 2, name: "French Fries" },
-        { quantity: 1, name: "Lemonade Juice" },
-      ],
-      isPreparing: false,
-      isFinished: false,
-    },
-  ])
+  const [orders, setOrders] = useState<OrderCard[]>([])
+
+  // ✅ servedCount now comes from the database, not localStorage
+  const [servedCount, setServedCount] = useState(0)
+
+  // ✅ Fetch servedCount from DB
+  const fetchServedCount = async () => {
+    try {
+      const data = await api.get<any[]>('/orders')
+      const completed = data.filter((o: any) => o.status === 'Completed').length
+      setServedCount(completed)
+    } catch (err) {
+      console.error('Failed to fetch served count', err)
+    }
+  }
 
   // ✅ Load cook queue from localStorage and poll every 3 seconds
   useEffect(() => {
@@ -208,11 +121,16 @@ export default function Order() {
     }
   }, [])
 
+  // ✅ Fetch served count on mount and whenever orders change
+  useEffect(() => {
+    fetchServedCount()
+  }, [orders])
+
   // --- POS state for cashier
   const [products, setProducts] = useState<any[]>([])
   const [cart, setCart] = useState<any[]>([])
-  const [orderType, setOrderType] = useState<'dine-in'|'take-out'>('dine-in')
-  const [paymentMethod, setPaymentMethod] = useState<'cash'|'e-payment'>('cash')
+  const [orderType, setOrderType] = useState<'dine-in' | 'take-out'>('dine-in')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'e-payment'>('cash')
 
   useEffect(() => {
     api.get<any[]>('/products').then(setProducts).catch(console.error)
@@ -250,20 +168,37 @@ export default function Order() {
     if (cart.length === 0) return alert('Cart is empty')
     try {
       const items = cart.map((x) => ({ product_id: x.id, qty: x.qty, subtotal: x.subtotal }))
-      const body: any = { items, total, orderType, paymentMethod }
+      const body: any = {
+        items,
+        total,
+        order_type: orderType,
+        payment_method: paymentMethod,
+      }
       const res = await api.post('/orders', body)
       alert('Order saved!')
-      // add to localStorage queue and orders
-      const saved = JSON.parse(localStorage.getItem('orders') || '[]')
-      const newOrder = { id: res.orderId || Date.now(), status: 'Pending', items: cart, total, orderType, paymentMethod }
-      localStorage.setItem('orders', JSON.stringify([newOrder, ...saved]))
+
+      // ✅ Only cookQueue goes to localStorage (for kitchen display)
+      // ❌ Removed: localStorage.setItem('orders', ...) — orders now live in DB only
       const queue = JSON.parse(localStorage.getItem('cookQueue') || '[]')
+      const newOrder = {
+        id: res.orderId || Date.now(),
+        status: 'Pending',
+        items: cart,
+        total,
+        orderType,
+        paymentMethod,
+      }
       localStorage.setItem('cookQueue', JSON.stringify([newOrder, ...queue]))
+
       setCart([])
       setPaymentMethod('cash')
       setOrderType('dine-in')
-      // refresh inventory
+
+      // Refresh products to reflect updated stock
       api.get<any[]>('/products').then(setProducts).catch(console.error)
+
+      // Refresh served count from DB
+      fetchServedCount()
     } catch (err) {
       console.error(err)
       alert('Failed to submit order')
@@ -301,36 +236,38 @@ export default function Order() {
   const toggleStartOrder = (id: string) => {
     const updatedOrders = orders.map((order) =>
       order.id === id
-        ? { ...order, isPreparing: true, startedAt: Date.now() } // ✅ save start time
+        ? { ...order, isPreparing: true, startedAt: Date.now() }
         : order
     )
     setOrders(updatedOrders)
     localStorage.setItem("cookQueue", JSON.stringify(updatedOrders))
   }
 
-  const toggleFinishOrder = (id: string) => {
-    // updating order
-    const allOrders = JSON.parse(localStorage.getItem("orders") || "[]")
-    const updatedAllOrders = allOrders.map((o: any) =>
-      o.id === Number(id) ? { ...o, status: "Completed" } : o
-    )
-    localStorage.setItem("orders", JSON.stringify(updatedAllOrders))
+  const toggleFinishOrder = async (id: string) => {
+    try {
+      // ✅ Update order status in DB
+      await api.patch(`/orders/${id}`, { status: 'Completed' })
+    } catch (err) {
+      console.error('Failed to update order status in DB', err)
+      // Continue anyway so the kitchen queue still clears
+    }
 
-    // remove from cook queue
+    // Remove from cook queue
     const updatedQueue = orders.filter((order) => order.id !== id)
     setOrders(updatedQueue)
     localStorage.setItem("cookQueue", JSON.stringify(updatedQueue))
-  }   
+
+    // Refresh served count from DB
+    fetchServedCount()
+  }
 
   const newCount = orders.filter(o => !o.isPreparing).length
   const processCount = orders.filter(o => o.isPreparing).length
-  const servedCount = JSON.parse(localStorage.getItem("orders") || "[]").filter((o: any) => o.status === "Completed").length
 
   return (
     <div className="min-h-screen bg-white" style={{ fontFamily: 'Poppins, sans-serif' }}>
       {/* SIDEBAR */}
       <>
-        {/* Sidebar Toggle Button */}
         <button
           onClick={() => setIsOpen(!isOpen)}
           className="fixed top-6 left-6 z-50 p-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 active:scale-95"
@@ -342,7 +279,6 @@ export default function Order() {
           )}
         </button>
 
-        {/* Backdrop */}
         {isOpen && (
           <div
             className="fixed inset-0 backdrop-blur-sm bg-black/20 z-40 transition-all duration-300"
@@ -350,7 +286,6 @@ export default function Order() {
           />
         )}
 
-        {/* Sidebar */}
         <aside
           className={cn(
             "fixed top-0 left-0 h-full w-72 bg-white p-6 flex flex-col shadow-2xl z-50 transition-all duration-300 ease-in-out",
@@ -359,9 +294,7 @@ export default function Order() {
           style={{ fontFamily: 'Poppins, sans-serif' }}
         >
           <div className="flex items-center justify-center mb-10 mt-8">
-            <span className="text-2xl font-bold text-black">
-              The Crunch
-            </span>
+            <span className="text-2xl font-bold text-black">The Crunch</span>
           </div>
 
           <div className="text-xs text-gray-400 mb-4 uppercase tracking-wider font-medium px-2">
@@ -420,11 +353,11 @@ export default function Order() {
 
       {/* MAIN CONTENT */}
       <div className="p-6 pl-24">
-        {/* cashier POS panel */}
+        {/* POS Panel */}
         <div className="mb-8 bg-white rounded-2xl p-6 shadow-lg">
           <h2 className="text-lg font-semibold mb-4">Point of Sale</h2>
           <div className="flex flex-col md:flex-row gap-6">
-            {/* product list */}
+            {/* Product list */}
             <div className="flex-1">
               <h3 className="text-sm font-medium mb-2">Products</h3>
               <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto">
@@ -440,7 +373,8 @@ export default function Order() {
                 ))}
               </div>
             </div>
-            {/* cart section */}
+
+            {/* Cart */}
             <div className="flex-1">
               <h3 className="text-sm font-medium mb-2">Cart</h3>
               {cart.length === 0 ? (
@@ -497,10 +431,7 @@ export default function Order() {
                       Submit Order
                     </button>
                     <button
-                      onClick={() => {
-                        setCart([])
-                        setOrderType('dine-in')
-                      }}
+                      onClick={() => { setCart([]); setOrderType('dine-in') }}
                       className="flex-1 bg-red-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-red-700 transition"
                     >
                       Cancel Order
@@ -511,10 +442,10 @@ export default function Order() {
             </div>
           </div>
         </div>
+
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-sm font-semibold text-gray-700 tracking-wider">ORDERS</h1>
-            {/* Notif */}
             {notifPermission !== "granted" && (
               <button
                 onClick={() => Notification.requestPermission().then(p => setNotifPermission(p))}
@@ -553,6 +484,7 @@ export default function Order() {
               </div>
               <div className="bg-gray-600 rounded-xl p-6 flex flex-col items-center justify-center min-w-24">
                 <span className="text-white text-sm font-semibold mb-3">SERVED</span>
+                {/* ✅ Now reads from DB, not localStorage */}
                 <span className="text-white text-3xl font-bold">{servedCount}</span>
               </div>
             </div>
@@ -585,7 +517,6 @@ export default function Order() {
                         </span>
                       </div>
 
-                      {/* TIMER */}
                       {order.isPreparing && order.startedAt && (
                         <OrderTimer startedAt={order.startedAt} orderNumber={order.orderNumber} />
                       )}
