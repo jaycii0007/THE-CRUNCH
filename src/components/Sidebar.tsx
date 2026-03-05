@@ -10,8 +10,6 @@ const navigationItems = [
   { label: "Order", path: "/orders" },
   { label: "Inventory", path: "/inventory" },
   { label: "Products", path: "/products" },
-  { label: "Reports", path: "/reports" },
-  { label: "Sales", path: "/sales" },
   { label: "Menus", path: "/menu" },
 ]
 
@@ -19,6 +17,7 @@ const additionalItems = [
   { label: "User Accounts", path: "/users" },
   { label: "Menu Management", path: "/menu-management" },
   { label: "Supplier Maintenance", path: "/suppliers" },
+  {label: "Sales & Reports", path: "/sales-reports"}
 ]
 
 export function Sidebar() {

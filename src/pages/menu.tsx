@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, lazy } from "react"
 import { Link, NavLink, useNavigate } from "react-router-dom"
 import { Search, X, ShoppingBag, Trash2, Menu, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -55,8 +55,6 @@ const navigationItems = [
   { label: "Order", path: "/orders" },
   { label: "Inventory", path: "/inventory" },
   { label: "Products", path: "/products" },
-  { label: "Reports", path: "/reports" },
-  { label: "Sales", path: "/sales" },
   { label: "Menus", path: "/menu" },
 ]
 
@@ -64,6 +62,7 @@ const additionalItems = [
   { label: "User Accounts", path: "/users" },
   { label: "Menu Management", path: "/menu-management" },
   { label: "Supplier Maintenance", path: "/suppliers" },
+  { label: "Sales & Reports", path: "/sales-reports" }
 ]
 
 export default function MenuPage() {

@@ -80,7 +80,7 @@ const inventoryItems = [
   { id: 41, name: "Coke Mismo",           category: "Beverages",   image: cokeMismoImg,     incoming: 42, stock: 17,  price: "25₱",    unit: "piece"  },
   { id: 42, name: "Breading Mix",         category: "Ingredients", image: breadingImg,      incoming: 18, stock: 12,  price: "800₱",   unit: "box"    },
   { id: 43, name: "Honey Garlic Sauce",   category: "Sauces",      image: honeyGarlicImg,   incoming: 16, stock: 11,  price: "650₱",   unit: "bottle" },
-]
+] as const satisfies readonly any[]
 
 export default function InventoryPage() {
   return (
@@ -92,7 +92,7 @@ export default function InventoryPage() {
             <h1 className="text-3xl font-bold text-gray-800">Inventory</h1>
             <p className="text-sm text-gray-500 mt-1">Manage your products and stock levels</p>
           </div>
-          <InventoryClient items={inventoryItems} />
+          <InventoryClient items={inventoryItems as any} />
         </div>
       </main>
     </div>

@@ -42,17 +42,8 @@ export default function TheCrunch() {
             <span className="text-2xl font-bold text-gray-800">The Crunch Fairview</span>
           </div>
           <nav className="flex items-center gap-8">
-            <motion.div whileHover={{ scale: 1.05 }}><Link to="/about" className="text-gray-600 hover:text-gray-900 transition">Menu</Link></motion.div>
-            <motion.a href="#about" className="text-gray-600 hover:text-gray-900 transition" whileHover={{ scale: 1.05 }}>About</motion.a>
-            <motion.button
-              onClick={handleAuthClick}
-              className="px-6 py-2 border-2 border-orange-400 text-orange-400 rounded-full hover:bg-orange-50 transition shadow-md"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {isSignedIn ? 'Sign out' : 'Sign in'}
-            </motion.button>
-
+            <motion.div whileHover={{ scale: 1.05 }}><Link to="/usersmenu" className="text-gray-600 hover:text-gray-900 transition">Menu</Link></motion.div>
+            <motion.div whileHover={{ scale: 1.05 }}><Link to="/aboutthecrunch" className="text-gray-600 hover:text-gray-900 transition">About</Link></motion.div>
             <motion.button
               onClick={handleAddToCart}
               className="relative w-10 h-10 bg-orange-400 text-white rounded-lg flex items-center justify-center hover:bg-orange-500 transition shadow-lg"

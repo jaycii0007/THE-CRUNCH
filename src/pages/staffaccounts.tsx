@@ -73,7 +73,7 @@ const AvatarCircle = ({
 };
 
 
-export default function UserAccounts() {
+export default function StaffAccounts() {
   const navigate = useNavigate();
 
   const loadAccounts = (): Account[] => {

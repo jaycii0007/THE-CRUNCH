@@ -59,7 +59,7 @@ export default function Login() {
       localStorage.setItem("userEmail", formData.email);
       localStorage.setItem("userName", formData.name);
       localStorage.setItem("userPassword", formData.password);
-      localStorage.setItem("userRole", "customer"); // Sign-up users are always customers
+      localStorage.setItem("userRole", "customer"); 
 
       alert("Account created successfully! Please log in.");
 
