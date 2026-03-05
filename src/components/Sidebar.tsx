@@ -11,10 +11,8 @@ const navigationItems = [
   { label: "Inventory", path: "/inventory" },
   { label: "Products", path: "/products" },
   { label: "Reports", path: "/reports" },
-  { label: "Sales", path: "/sales" },
   { label: "Menus", path: "/menu" },
-  { label: "Sales", path: "/sales" },
-  { label: "Reports", path: "/reports" },
+
 ]
 
 const additionalItems = [

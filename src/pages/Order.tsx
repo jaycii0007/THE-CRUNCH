@@ -98,8 +98,8 @@ export default function Order() {
   // ✅ Fetch servedCount from DB
   const fetchServedCount = async () => {
     try {
-      const data = await api.get<any[]>('/orders')
-      const completed = data.filter((o: any) => o.status === 'Completed').length
+      const data = await api.get<unknown[]>('/orders')
+      const completed = data.filter((o: unknown) => o.status === 'Completed').length
       setServedCount(completed)
     } catch (err) {
       console.error('Failed to fetch served count', err)
@@ -123,6 +123,7 @@ export default function Order() {
 
   // ✅ Fetch served count on mount and whenever orders change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchServedCount()
   }, [orders])
 
