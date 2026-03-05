@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
+import { authApi } from "../lib/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -15,64 +16,54 @@ export default function Login() {
     name: "",
   });
 
-  // Hardcoded staff/admin accounts
-  const STAFF_ACCOUNTS = [
-    { email: "admin1@gmail.com", password: "12345" },
-    { email: "admin2@gmail.com", password: "12345" },
-  ];
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     setError("");
     setIsLoading(true);
 
     if (isLogin) {
-      // Check if staff/admin first
-      const isStaff = STAFF_ACCOUNTS.some(
-        (acc) => acc.email === formData.email && acc.password === formData.password
-      );
-
-      if (isStaff) {
+      // call backend login using shared helper
+      try {
+        const data = await authApi.login(formData.email, formData.password);
+        console.log("Login response:", data);
+        localStorage.setItem("authToken", data.token);
         localStorage.setItem("isAuthenticated", "true");
-        localStorage.setItem("userRole", "staff");
-        navigate("/dashboard"); // Staff/admin go to dashboard
-      } else {
-        // Check if regular customer
-        const savedEmail = localStorage.getItem("userEmail");
-        const savedPassword = localStorage.getItem("userPassword");
-
-        if (formData.email === savedEmail && formData.password === savedPassword) {
-          localStorage.setItem("isAuthenticated", "true");
-          localStorage.setItem("userRole", "customer");
-          navigate("/"); // Customers go to landing page
-        } else {
-          setError("Invalid email or password.");
-        }
+        localStorage.setItem("userName", data.username || data.name || "");
+        // notify other components
+        window.dispatchEvent(new Event('authChange'));
+        // go to protected dashboard
+        navigate("/dashboard");
+      } catch (err: any) {
+        console.error("Login failed:", err);
+        setError(err.message || "Invalid credentials");
+      } finally {
+        setIsLoading(false);
       }
     } else {
       if (formData.password !== formData.confirmPassword) {
-        setError("Passwords don't match!");
+        alert("Passwords don't match!");
         setIsLoading(false);
         return;
       }
 
-      localStorage.setItem("userEmail", formData.email);
-      localStorage.setItem("userName", formData.name);
-      localStorage.setItem("userPassword", formData.password);
-      localStorage.setItem("userRole", "customer"); 
-
-      alert("Account created successfully! Please log in.");
-
-      setFormData({
-        email: formData.email,
-        password: "",
-        confirmPassword: "",
-        name: "",
-      });
-      setIsLogin(true);
+      try {
+        await authApi.register(formData.name, formData.email, formData.password);
+        alert("Account created successfully! Please log in.");
+        setFormData({
+          email: formData.email,
+          password: "",
+          confirmPassword: "",
+          name: "",
+        });
+        setIsLogin(true);
+      } catch (err: any) {
+        console.error("Registration failed:", err);
+        setError(err.message || "Failed to register");
+      } finally {
+        setIsLoading(false);
+      }
     }
-
-    setIsLoading(false);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

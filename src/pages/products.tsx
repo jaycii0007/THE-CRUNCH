@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
-import { ShoppingBag, Award, Utensils } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ShoppingBag, Truck, Award, Utensils } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link, useNavigate } from 'react-router-dom';
 
 export default function TheCrunch() {
   const [activeMenu, setActiveMenu] = useState('main');
   const [cartCount, setCartCount] = useState(0);
-  const navigate = useNavigate();
-  const isSignedIn = !!localStorage.getItem('isAuthenticated');
+  const [isSignedIn, setIsSignedIn] = useState(false); // retained for styling but not used
+
+  // products fetched from backend
+  const [productList, setProductList] = useState<any[]>([]);
 
   const getCurrentDay = () => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -17,18 +19,22 @@ export default function TheCrunch() {
   const handleAddToCart = () => setCartCount(prev => prev + 1);
   const handleSubscribe = () => alert('Thank you for subscribing to The Crunch!');
 
-  const handleAuthClick = () => {
-    if (isSignedIn) {
-      localStorage.removeItem('isAuthenticated');
-      localStorage.removeItem('activeAccountId');
-      window.location.reload(); 
-    } else {
-      navigate('/login');
-    }
+  const navigate = useNavigate();
+  const handleSignIn = () => {
+    navigate('/login');
   };
 
+  // load products when component mounts
+  useEffect(() => {
+    fetch('/api/products')
+      .then((r) => r.json())
+      .then(setProductList)
+      .catch(console.error);
+  }, []);
+
+  // wrap JSX in return; the link tag stays inside fragment
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: "'Poppins', sans-serif" }}>
+    <>
       <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
       
       <motion.header
@@ -42,8 +48,18 @@ export default function TheCrunch() {
             <span className="text-2xl font-bold text-gray-800">The Crunch Fairview</span>
           </div>
           <nav className="flex items-center gap-8">
-            <motion.div whileHover={{ scale: 1.05 }}><Link to="/usersmenu" className="text-gray-600 hover:text-gray-900 transition">Menu</Link></motion.div>
-            <motion.div whileHover={{ scale: 1.05 }}><Link to="/aboutthecrunch" className="text-gray-600 hover:text-gray-900 transition">About</Link></motion.div>
+            <a href="#about" className="text-gray-600 hover:text-gray-900 transition">About</a>
+            <a href="#foods" className="text-gray-600 hover:text-gray-900 transition">Foods</a>
+            <a href="#pricing" className="text-gray-600 hover:text-gray-900 transition">Pricing</a>
+            <motion.button 
+              onClick={handleSignIn}
+              className="px-6 py-2 border-2 border-orange-400 text-orange-400 rounded-full hover:bg-orange-50 transition shadow-md"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Sign in
+            </motion.button>
+
             <motion.button
               onClick={handleAddToCart}
               className="relative w-10 h-10 bg-orange-400 text-white rounded-lg flex items-center justify-center hover:bg-orange-500 transition shadow-lg"
@@ -196,6 +212,18 @@ export default function TheCrunch() {
           <motion.div className="bg-white rounded-3xl p-8 shadow-xl" whileHover={{ boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
             <h3 className="text-3xl font-bold text-gray-800 mb-2">Menus for today</h3>
             <p className="text-gray-400 text-sm mb-8">Ultra-crispy, jagged edges that hold "crunch" for longer than a standard nugget.</p>
+            {/* display simple list from backend */}
+            {productList.length > 0 ? (
+              <ul className="space-y-2">
+                {productList.map((p) => (
+                  <li key={p.id} className="text-gray-700">
+                    {p.name} – ₱{p.price}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-500 text-sm">(no products yet)</p>
+            )}
 
             <motion.div className="rounded-2xl overflow-hidden mb-6 shadow-lg" whileHover={{ scale: 1.05 }} transition={{ duration: 0.3 }}>
               <img src="https://i.pinimg.com/736x/84/df/b5/84dfb5732aa30595aeac6d2b9b43d23f.jpg" alt="Breakfast" className="w-full h-48 object-cover" />
@@ -225,6 +253,11 @@ export default function TheCrunch() {
                   </motion.div>
                 </motion.button>
               ))}
+            </div>
+
+            <div className="flex gap-2 mt-6 justify-end">
+              <div className="w-8 h-8 bg-orange-100 rounded-full shadow-sm"></div>
+              <div className="w-8 h-8 bg-orange-400 rounded-full shadow-md"></div>
             </div>
           </motion.div>
         </motion.div>
@@ -262,6 +295,6 @@ export default function TheCrunch() {
           </div>
         </div>
       </motion.footer>
-    </div>
+    </>
   );
 }

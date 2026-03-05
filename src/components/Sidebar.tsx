@@ -1,16 +1,18 @@
 import { useState } from "react"
-import { Link, NavLink } from "react-router-dom"
+import { Link, NavLink, useNavigate } from "react-router-dom"
 import { Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 
 const navigationItems = [
-  { label: "Overview", path: "/dashboard" },
+  { label: "Dashboard", path: "/dashboard" },
   { label: "Order", path: "/orders" },
   { label: "Inventory", path: "/inventory" },
   { label: "Products", path: "/products" },
   { label: "Menus", path: "/menu" },
+  { label: "Sales", path: "/sales" },
+  { label: "Reports", path: "/reports" },
 ]
 
 const additionalItems = [
@@ -22,6 +24,7 @@ const additionalItems = [
 
 export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false)
+  const navigate = useNavigate()
 
   return (
     <>
@@ -93,80 +96,70 @@ export function Sidebar() {
               </span>
             </motion.div>
 
-            <motion.div 
-              className="text-xs text-gray-400 mb-4 uppercase tracking-wider font-medium px-2"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.15 }}
-            >
-              Navigation
-            </motion.div>
+        <div className="text-xs text-gray-400 mb-4 uppercase tracking-wider font-medium px-2">
+          Navigation
+        </div>
 
-            <nav className="flex-1 space-y-1.5">
-              {navigationItems.map((item, index) => (
-                <motion.div
-                  key={item.label}
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.05 * index }}
+      
+        <nav className="flex-1 space-y-1.5">
+          {navigationItems.map((item) => (
+            <NavLink key={item.label} to={item.path} end onClick={() => setIsOpen(false)}>
+              {({ isActive }) => (
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "w-full justify-start rounded-xl text-sm transition-all duration-300 px-4 py-2.5",
+                    "text-black hover:bg-gray-50 hover:shadow-sm hover:scale-[1.02] active:scale-95",
+                    isActive && "bg-gray-100 text-black font-semibold"
+                  )}
                 >
-                  <NavLink to={item.path} end onClick={() => setIsOpen(false)}>
-                    {({ isActive }) => (
-                      <Button
-                        variant="ghost"
-                        className={cn(
-                          "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5",
-                          "text-black hover:bg-gray-50",
-                          isActive && "bg-gray-100 text-black font-semibold"
-                        )}
-                      >
-                        {item.label}
-                      </Button>
-                    )}
-                  </NavLink>
-                </motion.div>
-              ))}
-            </nav>
+                  {item.label}
+                </Button>
+              )}
+            </NavLink>
+          ))}
+        </nav>
 
-            <div className="space-y-1.5 mt-6 pt-6 border-t border-gray-100">
-              {additionalItems.map((item, index) => (
-                <motion.div
-                  key={item.label}
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.3 + 0.05 * index }}
+     
+        <div className="space-y-1.5 mt-6 pt-6 border-t border-gray-100">
+          {additionalItems.map((item) => (
+            <NavLink key={item.label} to={item.path} onClick={() => setIsOpen(false)}>
+              {({ isActive }) => (
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "w-full justify-start rounded-xl text-sm transition-all duration-300 px-4 py-2.5",
+                    "text-black hover:bg-gray-50 hover:shadow-sm hover:scale-[1.02] active:scale-95",
+                    isActive && "bg-gray-100 text-black font-semibold"
+                  )}
                 >
-                  <NavLink to={item.path} onClick={() => setIsOpen(false)}>
-                    {({ isActive }) => (
-                      <Button
-                        variant="ghost"
-                        className={cn(
-                          "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5",
-                          "text-black hover:bg-gray-50",
-                          isActive && "bg-gray-100 text-black font-semibold"
-                        )}
-                      >
-                        {item.label}
-                      </Button>
-                    )}
-                  </NavLink>
-                </motion.div>
-              ))}
+                  {item.label}
+                </Button>
+              )}
+            </NavLink>
+          ))}
 
               <motion.div
                 initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.45 }}
               >
-                <Link to="/login" className="w-full">
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start rounded-xl text-sm text-black mt-6 transition-all duration-200 px-4 py-2.5 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => setIsOpen(false)}
-                  >
-                    Log Out
-                  </Button>
-                </Link>
+                {/* logout should clear all auth tokens and navigate programmatically */}
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start rounded-xl text-sm text-black mt-6 transition-all duration-200 px-4 py-2.5 hover:bg-red-50 hover:text-red-600"
+                  onClick={() => {
+                    // clear everything related to session
+                    localStorage.removeItem('isAuthenticated');
+                    localStorage.removeItem('authToken');
+                    localStorage.removeItem('userName');
+                    setIsOpen(false);
+                    // using navigate prop ensures App re-checks isAuth
+                    navigate('/login');
+                  }}
+                >
+                  Log Out
+                </Button>
               </motion.div>
             </div>
           </motion.aside>
