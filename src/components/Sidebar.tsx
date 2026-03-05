@@ -10,9 +10,9 @@ const navigationItems = [
   { label: "Order", path: "/orders" },
   { label: "Inventory", path: "/inventory" },
   { label: "Products", path: "/products" },
-  { label: "Menus", path: "/menu" },
-  { label: "Sales", path: "/sales" },
   { label: "Reports", path: "/reports" },
+  { label: "Menus", path: "/menu" },
+
 ]
 
 const additionalItems = [

@@ -33,48 +33,47 @@ export default function AdminDashboard() {
 
   // ✅ Load data from localStorage on mount and listen for updates
   useEffect(() => {
-    const loadData = () => {
-      const savedOrders = JSON.parse(localStorage.getItem("orders") || "[]")
-      const savedPayments = JSON.parse(localStorage.getItem("payments") || "[]")
-      setOrders(savedOrders)
-      setPaymentData(savedPayments.slice(0, 6)) // show latest 6 payments
-    }
-
-    loadData() // load on mount
-
-    // also fetch from backend once
-    api.get<any[]>('/orders').then((rows) => {
-      if (rows && rows.length) {
-        const grouped: Record<number, any> = {}
-        rows.forEach(r => {
-          if (!grouped[r.id]) {
-            grouped[r.id] = {
-              id: r.id,
-              orderNumber: String(r.id),
-              items: [],
-              total: Number(r.total) || 0,
-              date: r.date ? new Date(r.date).toLocaleDateString() : '',
-              time: r.date ? new Date(r.date).toLocaleTimeString() : '',
-              status: r.status || ''
-            }
-          }
-          if (r.productId) {
-            grouped[r.id].items.push({ name: r.productName || '', price: r.price || 0, quantity: r.quantity })
-          }
-        })
-        setOrders(Object.values(grouped))
+  const fetchFromDB = async () => {
+    try {
+      const rows = await api.get<any[]>('/orders')
+      if (!rows || !rows.length) {
+        setOrders([])
+        return
       }
-    }).catch(console.error)
-
-    // ✅ Listen for localStorage changes (when cashier submits an order)
-    window.addEventListener("storage", loadData)
-    const interval = setInterval(loadData, 3000)
-
-    return () => {
-      window.removeEventListener("storage", loadData)
-      clearInterval(interval)
+      const grouped: Record<number, any> = {}
+      rows.forEach(r => {
+        if (!grouped[r.id]) {
+          grouped[r.id] = {
+            id: r.id,
+            orderNumber: `#${r.id}`,
+            items: [],
+            total: Number(r.total) || 0,
+            date: r.date ? new Date(r.date).toLocaleDateString() : '',
+            time: r.date ? new Date(r.date).toLocaleTimeString() : '',
+            status: r.status || '',
+            paymentCategory: r.paymentMethod || ''
+          }
+        }
+        if (r.productId) {
+          grouped[r.id].items.push({ 
+            name: r.productName || '', 
+            price: r.price || 0, 
+            quantity: r.quantity 
+          })
+        }
+      })
+      setOrders(Object.values(grouped))
+    } catch (err) {
+      console.error('Failed to fetch orders:', err)
     }
-  }, [])
+  }
+
+  fetchFromDB() // fetch immediately on mount
+
+  // ✅ Poll DB every 5 seconds — no more localStorage
+  const interval = setInterval(fetchFromDB, 5000)
+  return () => clearInterval(interval)
+}, [])
 
   // Compute stats from real orders
   const totalOrders = orders.length
