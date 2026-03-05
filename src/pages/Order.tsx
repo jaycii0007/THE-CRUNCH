@@ -27,8 +27,8 @@ interface OrderCard {
 const COOK_TIME_SECONDS = 10 * 60
 
 const navigationItems = [
-  { label: "Dashboard", path: "/" },
-  { label: "Order", path: "/orders" },
+  { label: "Dashboard", path: "/dashboard" },
+  { label: "Order", path: "/orders" }, 
   { label: "Inventory", path: "/inventory" },
   { label: "Products", path: "/products" },
   { label: "Reports", path: "/reports" },
@@ -175,18 +175,19 @@ export default function Order() {
         payment_method: paymentMethod,
       }
       const res = await api.post('/orders', body)
+      console.log('Order response:', res) // 
       alert('Order saved!')
 
       // ✅ Only cookQueue goes to localStorage (for kitchen display)
       // ❌ Removed: localStorage.setItem('orders', ...) — orders now live in DB only
-      const queue = JSON.parse(localStorage.getItem('cookQueue') || '[]')
+    const queue = JSON.parse(localStorage.getItem('cookQueue') || '[]')
       const newOrder = {
-        id: res.orderId || Date.now(),
-        status: 'Pending',
-        items: cart,
-        total,
-        orderType,
-        paymentMethod,
+        id: res.orderId,  // never fallback to Date.now() — fake IDs break PATCH
+        orderNumber: `#${res.orderId}`,
+        status: orderType,  // "dine-in" or "take-out" — used by getStatusColor
+        items: cart.map(x => ({ quantity: x.qty, name: x.name })),
+        isPreparing: false,
+        isFinished: false,
       }
       localStorage.setItem('cookQueue', JSON.stringify([newOrder, ...queue]))
 
@@ -303,7 +304,7 @@ export default function Order() {
 
           <nav className="flex-1 space-y-1.5">
             {navigationItems.map((item) => (
-              <NavLink key={item.label} to={item.path} end onClick={() => setIsOpen(false)}>
+              <NavLink key={item.path} to={item.path} end onClick={() => setIsOpen(false)}>
                 {({ isActive }) => (
                   <Button
                     variant="ghost"
@@ -322,7 +323,7 @@ export default function Order() {
 
           <div className="space-y-1.5 mt-6 pt-6 border-t border-gray-100">
             {additionalItems.map((item) => (
-              <NavLink key={item.label} to={item.path} onClick={() => setIsOpen(false)}>
+              <NavLink key={item.path} to={item.path} onClick={() => setIsOpen(false)}>
                 {({ isActive }) => (
                   <Button
                     variant="ghost"
