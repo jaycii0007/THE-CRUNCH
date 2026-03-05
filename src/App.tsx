@@ -38,6 +38,7 @@ export default function App() {
       <Route path="/menu"      element={isAuth ? <Menu />           : <Navigate to="/login" />} />
       <Route path="/products"  element={isAuth ? <Products />       : <Navigate to="/login" />} />
       <Route path="/users"     element={isAuth ? <UserAccounts />   : <Navigate to="/login" />} />
+      
 
       {/* catch all */}
       <Route path="*" element={<Navigate to="/" />} />
