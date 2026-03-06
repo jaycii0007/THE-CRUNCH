@@ -49,8 +49,9 @@ export default function TheCrunch() {
             <span className="text-2xl font-bold text-gray-800">The Crunch Fairview</span>
           </div>
           <nav className="flex items-center gap-8">
-           <Link to="/aboutthecrunch" className="text-gray-600 hover:text-gray-900 transition">About</Link>
-            <Link to="/usersmenu" className="text-gray-600 hover:text-gray-900 transition">Menu</Link>
+             <Link to="/usersmenu" className="text-gray-600 hover:text-gray-900 transition">Menu</Link>
+             <Link to="/aboutthecrunch" className="text-gray-600 hover:text-gray-900 transition">About</Link>
+           
             <motion.button 
               onClick={handleSignIn}
               className="px-6 py-2 border-2 border-orange-400 text-orange-400 rounded-full hover:bg-orange-50 transition shadow-md"
