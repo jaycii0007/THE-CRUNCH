@@ -4,7 +4,12 @@ const db = require("../config/db");
 // GET all products (old backend used `products` table)
 router.get("/", async (req, res) => {
     try {
-        const [rows] = await db.query("SELECT * FROM products");
+        const [rows] = await db.query(
+            `SELECT p.*, CAST(COALESCE(m.Stock, i.Stock, p.quantity, 0) AS SIGNED) AS remainingStock
+             FROM products p
+             LEFT JOIN Menu m ON m.Product_ID = p.id
+             LEFT JOIN Inventory i ON i.Product_ID = p.id`
+        );
         res.json(rows);
     } catch (err) {
         console.error(err);

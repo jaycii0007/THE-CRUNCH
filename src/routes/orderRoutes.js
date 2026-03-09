@@ -1,5 +1,7 @@
 const router = require("express").Router();
 const db = require("../config/db");
+const inventoryRoutes = require("./inventoryRoutes");
+const deductStockForOrder = inventoryRoutes.deductStockForOrder;
 
 function normalizeOrderType(value) {
     if (!value) return "dine-in";
@@ -151,6 +153,20 @@ router.post("/", async (req, res) => {
                 }
             }
 
+            const [stockRows] = await conn.query(
+                'SELECT Stock FROM Menu WHERE Product_ID = ?',
+                [item.product_id]
+            );
+
+            const availableStock = Number(stockRows[0]?.Stock ?? 0);
+            const requiredQty = Number(item.qty) || 0;
+            if (requiredQty <= 0) {
+                throw new Error(`Invalid quantity for product_id ${item.product_id}`);
+            }
+            if (availableStock < requiredQty) {
+                throw new Error(`Insufficient stock for product_id ${item.product_id}. Remaining: ${availableStock}`);
+            }
+
             await conn.query(
                 "INSERT INTO order_item (Order_ID, Product_ID, Quantity, Subtotal) VALUES (?,?,?,?)",
                 [orderId, item.product_id, item.qty, item.subtotal]
@@ -166,6 +182,8 @@ router.post("/", async (req, res) => {
                 "UPDATE products SET quantity = GREATEST(quantity - ?, 0) WHERE id = ?",
                 [item.qty, item.product_id]
             );
+
+            await deductStockForOrder(item.product_id, item.qty, null, conn);
         }
 
         await conn.query(
