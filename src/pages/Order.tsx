@@ -110,7 +110,7 @@ export default function Order() {
   const fetchQueue = async () => {
     try {
       const data = await api.get<any[]>('/orders/queue')
-      setOrders(data || [])
+      setOrders((data || []).filter((o: any) => !o.isFinished))
     } catch (err) {
       console.error('Failed to fetch queue', err)
     }
@@ -119,8 +119,12 @@ export default function Order() {
   const fetchServedCount = async () => {
     try {
       const data = await api.get<any[]>('/orders')
-      const completed = data.filter((o: any) => o.status === 'Completed').length
-      setServedCount(completed)
+      const completedIds = new Set(
+        (data || [])
+          .filter((o: any) => o.status === 'Completed')
+          .map((o: any) => String(o.id || o.orderId))
+      )
+      setServedCount(completedIds.size)
     } catch (err) {
       console.error('Failed to fetch served count', err)
     }
@@ -129,18 +133,34 @@ export default function Order() {
   const fetchHistory = async () => {
     try {
       const data = await api.get<any[]>('/orders')
-      const finished = data
-        .filter((o: any) => o.status === 'Completed' || o.status === 'Cancelled')
-        .map((o: any) => ({
-          id: String(o.id || o.orderId),
-          orderNumber: o.orderNumber || `#${o.id}`,
-          status: o.status,
-          items: o.items || [],
-          orderType: o.order_type || o.orderType || 'dine-in',
-          paymentMethod: o.payment_method || o.paymentMethod || 'cash',
-          total: o.total || 0,
-          finishedAt: new Date(o.updatedAt || o.createdAt || Date.now()),
-        }))
+      const grouped: Record<string, HistoryEntry> = {}
+
+      ;(data || []).forEach((o: any) => {
+        if (o.status !== 'Completed' && o.status !== 'Cancelled') return
+
+        const id = String(o.id || o.orderId)
+        if (!grouped[id]) {
+          grouped[id] = {
+            id,
+            orderNumber: o.orderNumber || `#${o.id || o.orderId}`,
+            status: o.status,
+            items: [],
+            orderType: o.order_type || o.orderType || 'dine-in',
+            paymentMethod: o.payment_method || o.paymentMethod || 'cash',
+            total: Number(o.total) || 0,
+            finishedAt: new Date(o.updatedAt || o.date || o.createdAt || Date.now()),
+          }
+        }
+
+        if (o.productId || o.productName) {
+          grouped[id].items.push({
+            quantity: Number(o.quantity) || 0,
+            name: o.productName || `Product #${o.productId}`,
+          })
+        }
+      })
+
+      const finished = Object.values(grouped)
         .sort((a: HistoryEntry, b: HistoryEntry) => b.finishedAt.getTime() - a.finishedAt.getTime())
       setHistory(finished)
     } catch (err) {
@@ -191,7 +211,13 @@ export default function Order() {
   const submitOrder = async () => {
     if (cart.length === 0) return alert('Cart is empty')
     try {
-      const items = cart.map((x) => ({ product_id: x.id, qty: x.qty, subtotal: x.subtotal }))
+      const items = cart.map((x) => ({
+        product_id: x.id,
+        qty: x.qty,
+        subtotal: x.subtotal,
+        name: x.name,
+        price: x.price,
+      }))
       const body: any = { items, total, order_type: orderType, payment_method: paymentMethod }
       await api.post('/orders', body)
       alert('Order saved!')
@@ -220,6 +246,7 @@ export default function Order() {
   const toggleFinishOrder = async (id: string) => {
     try {
       await api.patch(`/orders/${id}`, { status: 'Completed' })
+      setOrders((prev) => prev.filter((o) => o.id !== id))
       fetchQueue()
       fetchServedCount()
       fetchHistory()
