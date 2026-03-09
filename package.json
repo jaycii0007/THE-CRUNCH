@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "db:setup": "node src/db/setup.js"
+    "db:setup": "node src/db/setup.js",
+    "db:reset": "node src/db/setup.js --reset"
   },
   "dependencies": {
     "@babel/parser": "^7.29.0",

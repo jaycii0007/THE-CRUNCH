@@ -4,11 +4,12 @@ const mysql = require('mysql2/promise');
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_USER = process.env.DB_USER || 'root';
 const DB_PASSWORD = process.env.DB_PASSWORD || '';
-const DB_NAME = process.env.DB_NAME || 'pos_db';
+const DB_NAME = process.env.DB_NAME || 'pos_system';
 const DB_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306;
 
 async function setup() {
   let connection;
+    const shouldReset = process.argv.includes('--reset');
   try {
     connection = await mysql.createConnection({
       host: DB_HOST,
@@ -38,6 +39,7 @@ async function setup() {
       'DROP TABLE IF EXISTS Stock_Status;',
       'DROP TABLE IF EXISTS Suppliers;',
       'DROP TABLE IF EXISTS Inventory;',
+    'DROP TABLE IF EXISTS Batches;',
       'DROP TABLE IF EXISTS Menu;',
       'DROP TABLE IF EXISTS Categories;',
       'DROP TABLE IF EXISTS Reports;',
@@ -47,8 +49,11 @@ async function setup() {
       'DROP TABLE IF EXISTS Admin;'
     ].join('\n');
 
-    await connection.query(dropStatements);
-    console.log('Existing tables dropped (if any).');
+            await connection.query(dropStatements);
+            console.log('Existing tables dropped (reset mode).');
+        } else {
+            console.log('Safe setup mode: existing tables/data kept. Use --reset to drop tables.');
+        }
 
     // Create tables
     const createStatements = `
