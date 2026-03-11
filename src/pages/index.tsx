@@ -16,6 +16,7 @@ interface Order {
   total: number
   date: string
   time: string
+  orderType: string
   status: string
   paymentCategory: string
 }
@@ -50,8 +51,9 @@ export default function AdminDashboard() {
             total: Number(r.total) || 0,
             date: r.date ? new Date(r.date).toLocaleDateString() : '',
             time: r.date ? new Date(r.date).toLocaleTimeString() : '',
+            orderType: r.orderType || r.order_type || '',
             status: r.status || '',
-            paymentCategory: r.paymentMethod || ''
+            paymentCategory: r.paymentMethod || r.payment_method || ''
           }
         }
         if (r.productId) {
@@ -78,7 +80,7 @@ export default function AdminDashboard() {
   // Compute stats from real orders
   const totalOrders = orders.length
   const totalSales = orders.reduce((sum, o) => sum + o.total, 0)
-  const activeOrders = orders.filter(o => o.status === "Pending").length
+  const activeOrders = orders.filter(o => !["Completed", "Cancelled"].includes(o.status)).length
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
