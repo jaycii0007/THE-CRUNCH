@@ -27,6 +27,16 @@ app.use('/api/products', productRoutes);
 const inventoryRoutes = require('./routes/inventoryRoutes');
 app.use('/api/inventory', inventoryRoutes);
 
+// stock manager endpoints
+const stockStatusRoutes = require('./routes/stockStatusRoutes');
+app.use('/api/stock-status', stockStatusRoutes);
+
+const suppliersRoutes = require('./routes/suppliersRoutes');
+app.use('/api/suppliers', suppliersRoutes);
+
+const reportsRoutes = require('./routes/reportsRoutes');
+app.use('/api/reports', reportsRoutes);
+
 // order endpoints (used by POS & dashboard)
 const orderRoutes = require('./routes/orderRoutes');
 app.use('/api/orders', orderRoutes);

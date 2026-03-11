@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS Inventory (
     Product_ID INT,
     Quantity INT NOT NULL,
     Stock INT,
+    Reorder_Point DECIMAL(10,2) DEFAULT 20,
+    Critical_Point DECIMAL(10,2) DEFAULT 5,
     Item_Purchased VARCHAR(150),
     Last_Update DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (Product_ID) REFERENCES Menu(Product_ID)
@@ -122,6 +124,8 @@ CREATE TABLE IF NOT EXISTS Suppliers (
     SupplierName VARCHAR(150) NOT NULL,
     Contact_Number VARCHAR(50),
     Delivery_Schedule VARCHAR(100),
+    Email VARCHAR(255),
+    Products_Supplied TEXT,
     Product_ID INT,
     FOREIGN KEY (Product_ID) REFERENCES Menu(Product_ID)
 );
