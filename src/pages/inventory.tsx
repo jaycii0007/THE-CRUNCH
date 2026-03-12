@@ -600,7 +600,8 @@ export default function Inventory() {
       const data = await apiCall("/inventory", { method: "GET" }) as InventoryItem[] | null
       if (data && Array.isArray(data)) {
         setInventoryItems(data.map((item: InventoryItem) => ({
-          id: item.id, name: item.name || "Unnamed Product", category: item.category || "Uncategorized",
+          id: Number((item as any).id ?? (item as any).product_id ?? (item as any).inventory_id ?? 0),
+          name: item.name || (item as any).product_name || "Unnamed Product", category: item.category || "Uncategorized",
           image: item.image || "/img/placeholder.jpg", incoming: 0, stock: item.stock ?? 0,
           price: item.price?.toString() || "0", unit: (item.unit as UnitType) || "piece",
           batches: (item.batches || []).map((b: Batch) => ({ ...b, receivedAt: new Date(b.receivedAt), expiresAt: b.expiresAt ? new Date(b.expiresAt) : undefined })),
@@ -615,7 +616,7 @@ export default function Inventory() {
 
   const handleBatchAdded = async (item: InventoryItem, batch: Batch) => {
     try {
-      await apiCall("/inventory/batches", { method: "POST", body: { productId: item.id, quantity: batch.quantity, unit: batch.unit, expiresAt: batch.expiresAt?.toISOString() } as Parameters<typeof apiCall>[1]["body"] })
+      await apiCall("/inventory/batches", { method: "POST", body: { productId: item.id, productName: item.name, quantity: batch.quantity, unit: batch.unit, expiresAt: batch.expiresAt?.toISOString() } as Parameters<typeof apiCall>[1]["body"] })
       setInventoryItems(prev => prev.map(i => i.id === item.id ? { ...i, batches: [...(i.batches || []), batch], stock: i.stock + batch.quantity } : i))
     } catch (error) { console.error("Failed to add batch:", error); alert("Failed to add batch to database") }
   }
@@ -655,7 +656,6 @@ export default function Inventory() {
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Management</p>
             <h1 className="text-3xl font-bold text-gray-900">Inventory</h1>
-            <p className="text-gray-500 text-sm mt-1">FIFO batch tracking — oldest stock is always used first.</p>
           </div>
 
           {/* ── Live Clock ── */}

@@ -35,13 +35,6 @@ export default function MenuPage() {
   const [savedCart, setSavedCart] = useState<CartItem[]>([])
 
   useEffect(() => {
-    const link = document.createElement('link');
-    link.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
-  }, []);
-
-  useEffect(() => {
     api.get<any[]>('/products')
       .then((data) => {
         const mapped = (data || []).map((p: any) => ({

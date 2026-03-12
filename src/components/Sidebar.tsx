@@ -9,7 +9,6 @@ const navigationItems = [
   { label: "Overview",      path: "/dashboard"    },
   { label: "Order",         path: "/orders"       },
   { label: "Inventory",     path: "/inventory"    },
-  { label: "Products",      path: "/products"     },
   { label: "Menus",         path: "/menu"         },
   { label: "Stock Manager", path: "/stockmanager" },
 ]
