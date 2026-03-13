@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { InventoryClient } from "@/components/ui/inventoryClient"
 import type { Batch, InventoryItem, UnitType } from "@/components/ui/inventoryClient"
 import { Sidebar } from "@/components/Sidebar"
-import { apiCall } from "@/lib/api"
+import { api } from "@/lib/api"
 import { motion, AnimatePresence } from "framer-motion"
 import { Package, RefreshCw, Archive } from "lucide-react"
 
@@ -49,18 +49,6 @@ const SM_TABS = [
   { key: "logs",       label: "Logs"            },
 ] as const
 type SMTabKey = typeof SM_TABS[number]["key"]
-
-// ─── localStorage helpers ─────────────────────────────────────────────────────
-
-function loadLS<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback
-  try { const raw = localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback }
-  catch { return fallback }
-}
-function saveLS<T>(key: string, value: T): void {
-  if (typeof window === "undefined") return
-  try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* silent */ }
-}
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
 
@@ -159,7 +147,7 @@ function SMStatCard({ label, value, meta, color }: { label: string; value: numbe
 // ─── Purchase Orders ──────────────────────────────────────────────────────────
 
 function PurchaseOrders() {
-  const [pos,        setPOs]        = useState<PurchaseOrder[]>(() => loadLS("sm_pos", []))
+  const [pos,        setPOs]        = useState<PurchaseOrder[]>([])
   const [showCreate, setShowCreate] = useState(false)
   const [viewPO,     setViewPO]     = useState<PurchaseOrder | null>(null)
   const [search,     setSearch]     = useState("")
@@ -168,8 +156,6 @@ function PurchaseOrders() {
   const [poBranch,   setPoBranch]   = useState<string>(BRANCHES[0])
   const [poDate,     setPoDate]     = useState("")
   const [poItems,    setPoItems]    = useState<POItem[]>([{ name: ITEMS[0], qty: "", unit: "kg", cost: "" }])
-
-  useEffect(() => { saveLS("sm_pos", pos) }, [pos])
 
   function resetForm() { setPoSupplier(SUPPLIERS[0]); setPoBranch(BRANCHES[0]); setPoDate(""); setPoItems([{ name: ITEMS[0], qty: "", unit: "kg", cost: "" }]) }
   function addPoItem() { setPoItems(p => [...p, { name: ITEMS[0], qty: "", unit: "kg", cost: "" }]) }
@@ -265,7 +251,7 @@ function PurchaseOrders() {
 // ─── Stock In ─────────────────────────────────────────────────────────────────
 
 function StockIn() {
-  const [records,   setRecords]   = useState<StockInRecord[]>(() => loadLS("sm_stockin", []))
+  const [records,   setRecords]   = useState<StockInRecord[]>([])
   const [showModal, setShowModal] = useState(false)
   const [search,    setSearch]    = useState("")
   const [siPoRef,   setSiPoRef]   = useState("")
@@ -273,8 +259,6 @@ function StockIn() {
   const [siDate,    setSiDate]    = useState("")
   const [siRecBy,   setSiRecBy]   = useState("")
   const [siItems,   setSiItems]   = useState<Array<{ name: string; qty: string; unit: string }>>([{ name: ITEMS[0], qty: "", unit: "kg" }])
-
-  useEffect(() => { saveLS("sm_stockin", records) }, [records])
 
   function resetForm() { setSiPoRef(""); setSiBranch(BRANCHES[0]); setSiDate(""); setSiRecBy(""); setSiItems([{ name: ITEMS[0], qty: "", unit: "kg" }]) }
   function submitSI() {
@@ -331,7 +315,7 @@ function StockIn() {
 // ─── Stock Transfer ───────────────────────────────────────────────────────────
 
 function StockTransfer() {
-  const [transfers, setTransfers] = useState<Transfer[]>(() => loadLS("sm_transfers", []))
+  const [transfers, setTransfers] = useState<Transfer[]>([])
   const [showModal, setShowModal] = useState(false)
   const [filter,    setFilter]    = useState("All")
   const [trFrom,    setTrFrom]    = useState<string>(BRANCHES[0])
@@ -340,8 +324,6 @@ function StockTransfer() {
   const [trQty,     setTrQty]     = useState("")
   const [trUnit,    setTrUnit]    = useState<string>(SM_UNITS[0])
   const [trDate,    setTrDate]    = useState("")
-
-  useEffect(() => { saveLS("sm_transfers", transfers) }, [transfers])
 
   function resetForm() { setTrFrom(BRANCHES[0]); setTrTo(BRANCHES[1]); setTrItem(ITEMS[0]); setTrQty(""); setTrUnit(SM_UNITS[0]); setTrDate("") }
   function submitTR() {
@@ -401,7 +383,7 @@ function StockTransfer() {
 // ─── Stock Adjustment ─────────────────────────────────────────────────────────
 
 function StockAdjustment() {
-  const [adjustments, setAdjustments] = useState<Adjustment[]>(() => loadLS("sm_adjustments", []))
+  const [adjustments, setAdjustments] = useState<Adjustment[]>([])
   const [showModal,   setShowModal]   = useState(false)
   const [filter,      setFilter]      = useState("All")
   const [adjBranch,   setAdjBranch]   = useState<string>(BRANCHES[0])
@@ -411,8 +393,6 @@ function StockAdjustment() {
   const [adjReason,   setAdjReason]   = useState<string>(REASONS[0])
   const [adjDate,     setAdjDate]     = useState("")
   const [adjBy,       setAdjBy]       = useState("")
-
-  useEffect(() => { saveLS("sm_adjustments", adjustments) }, [adjustments])
 
   function resetForm() { setAdjBranch(BRANCHES[0]); setAdjItem(ITEMS[0]); setAdjQty(""); setAdjUnit(SM_UNITS[0]); setAdjReason(REASONS[0]); setAdjDate(""); setAdjBy("") }
   function submitAdj() {
@@ -468,7 +448,7 @@ function StockAdjustment() {
 // ─── Stock Logs ───────────────────────────────────────────────────────────────
 
 function StockLogs() {
-  const [logs]   = useState<StockLog[]>(() => loadLS("sm_logs", []))
+  const [logs]   = useState<StockLog[]>([])
   const [search,  setSearch] = useState("")
   const [filter,  setFilter] = useState("All")
 
@@ -565,13 +545,11 @@ const SM_STYLES = `
   .sm-detail-key { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
   .sm-detail-val { font-size: 13px; font-weight: 600; color: #111827; margin-top: 3px; }
 
-  /* Inner SM sub-tabs */
   .sm-tabs-bar { display: flex; border-bottom: 1.5px solid #ececec; margin-bottom: 18px; }
   .sm-tab { padding: 8px 16px; font-size: 12.5px; font-weight: 600; font-family: 'Poppins', sans-serif; border: none; background: none; cursor: pointer; color: #9ca3af; border-bottom: 2px solid transparent; margin-bottom: -1.5px; transition: all 0.15s; }
   .sm-tab:hover { color: #374151; background: #f9fafb; border-radius: 6px 6px 0 0; }
   .sm-tab-active { color: #111827; border-bottom-color: #374151; }
 
-  /* Top-level page tabs — centered pill switcher */
   .page-tabs-wrap { display: flex; justify-content: center; margin-bottom: 32px; }
   .page-tabs-bar { display: inline-flex; background: #f3f4f6; border-radius: 14px; padding: 4px; gap: 2px; }
   .page-tab { position: relative; padding: 9px 28px; font-size: 13px; font-weight: 600; font-family: 'Poppins', sans-serif; border: none; background: transparent; cursor: pointer; color: #9ca3af; border-radius: 10px; transition: color 0.2s; z-index: 1; white-space: nowrap; }
@@ -597,7 +575,7 @@ export default function Inventory() {
   const loadInventory = async () => {
     try {
       setLoading(true)
-      const data = await apiCall("/inventory", { method: "GET" }) as InventoryItem[] | null
+      const data = await api.get<InventoryItem[]>("/inventory")
       if (data && Array.isArray(data)) {
         setInventoryItems(data.map((item: InventoryItem) => ({
           id: item.id, name: item.name, category: item.category || "Uncategorized",
@@ -611,25 +589,62 @@ export default function Inventory() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { loadInventory() }, [])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadInventory()
+  }, [])
 
   const handleBatchAdded = async (item: InventoryItem, batch: Batch) => {
     try {
-      await apiCall("/inventory/batches", { method: "POST", body: { productId: item.id, quantity: batch.quantity, unit: batch.unit, expiresAt: batch.expiresAt?.toISOString() } as Parameters<typeof apiCall>[1]["body"] })
-      setInventoryItems(prev => prev.map(i => i.id === item.id ? { ...i, batches: [...(i.batches || []), batch], stock: i.stock + batch.quantity } : i))
+      await api.post("/inventory/batches", {
+        productId: item.id,
+        quantity: batch.quantity,
+        unit: batch.unit,
+        expiresAt: batch.expiresAt?.toISOString(),
+      })
+      setInventoryItems(prev =>
+        prev.map(i => i.id === item.id
+          ? { ...i, batches: [...(i.batches || []), batch], stock: i.stock + batch.quantity }
+          : i
+        )
+      )
     } catch (error) { console.error("Failed to add batch:", error); alert("Failed to add batch to database") }
   }
 
   const handleBatchReturned = async (item: InventoryItem, batchId: string, returnedQty: number) => {
     try {
-      await apiCall(`/inventory/batches/${batchId}/return`, { method: "POST", body: { quantity: returnedQty, returnedAt: new Date().toISOString() } as Parameters<typeof apiCall>[1]["body"] })
-      setInventoryItems(prev => prev.map(i => i.id === item.id ? { ...i, stock: i.stock + returnedQty, batches: i.batches?.map(b => b.id === batchId ? { ...b, quantity: Math.max(0, b.quantity - returnedQty), status: (b.quantity - returnedQty <= 0 ? "returned" : "partial") as Batch["status"] } : b) || [] } : i))
+      await api.post(`/inventory/batches/${batchId}/return`, {
+        quantity: returnedQty,
+        returnedAt: new Date().toISOString(),
+      })
+      setInventoryItems(prev =>
+        prev.map(i => i.id === item.id
+          ? {
+              ...i,
+              stock: i.stock + returnedQty,
+              batches: i.batches?.map(b =>
+                b.id === batchId
+                  ? { ...b, quantity: Math.max(0, b.quantity - returnedQty), status: (b.quantity - returnedQty <= 0 ? "returned" : "partial") as Batch["status"] }
+                  : b
+              ) || [],
+            }
+          : i
+        )
+      )
     } catch (error) { console.error("Failed to return batch:", error); alert("Failed to return batch") }
   }
 
   const handleAddProduct = async (productData: Partial<InventoryItem> & { description?: string }) => {
     try {
-      await apiCall("/products", { method: "POST", body: { name: productData.name, category: productData.category, price: productData.price, unit: productData.unit, quantity: productData.stock ?? 0, description: productData.description ?? null, image: productData.image || "/img/placeholder.jpg" } as Parameters<typeof apiCall>[1]["body"] })
+      await api.post("/products", {
+        name: productData.name ?? "",
+        category: productData.category ?? "Uncategorized",
+        price: productData.price ?? "0",
+        unit: productData.unit ?? "piece",
+        quantity: productData.stock ?? 0,
+        description: productData.description ?? null,
+        image: productData.image || "/img/placeholder.jpg",
+      })
       await loadInventory()
       alert("Product added successfully!")
     } catch (error) {
@@ -648,8 +663,6 @@ export default function Inventory() {
 
       <main className="flex-1 p-8 pl-24">
 
-        {/* Page header */}
-        {/* Page header + clock */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
           className="mb-2 flex items-start justify-between">
           <div>
@@ -658,7 +671,6 @@ export default function Inventory() {
             <p className="text-gray-500 text-sm mt-1">FIFO batch tracking — oldest stock is always used first.</p>
           </div>
 
-          {/* ── Live Clock ── */}
           <div className="flex flex-col items-end select-none">
             <p className="text-base font-semibold text-gray-700 tabular-nums">
               {now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -669,7 +681,6 @@ export default function Inventory() {
           </div>
         </motion.div>
 
-        {/* ── Top-level tabs — centered pill switcher ── */}
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.3 }} className="page-tabs-wrap">
           <div className="page-tabs-bar">
             {([
@@ -694,13 +705,11 @@ export default function Inventory() {
           </div>
         </motion.div>
 
-        {/* ── Tab content ── */}
         <AnimatePresence mode="wait">
 
           {pageTab === "inventory" && (
             <motion.div key="inventory" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22 }}>
 
-              {/* Stat cards */}
               <div className="grid grid-cols-3 gap-5 mb-8">
                 {[
                   { label: "Total Products", value: inventoryItems.length, icon: <Package   className="w-5 h-5" />, color: "bg-blue-50 text-blue-600 border-blue-100"         },
@@ -718,7 +727,6 @@ export default function Inventory() {
                 ))}
               </div>
 
-              {/* Inventory table */}
               <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
                 <AnimatePresence mode="wait">
                   {loading ? (
@@ -734,7 +742,6 @@ export default function Inventory() {
                 </AnimatePresence>
               </div>
 
-              {/* Info cards */}
               <div className="grid grid-cols-3 gap-5 mt-6">
                 {[
                   { desc: "Each batch is tracked with a timestamp. When consuming products, the oldest batch is used first (FIFO).", border: "border-blue-200",    bg: "bg-blue-50",    text: "text-blue-800"    },
@@ -762,7 +769,7 @@ export default function Inventory() {
   )
 }
 
-// ─── Stock Movement Tab content ───────────────────────────────────────────────
+// ─── Stock Movement Tab ───────────────────────────────────────────────────────
 
 function StockMovementTab() {
   const [activeSmTab, setActiveSmTab] = useState<SMTabKey>("po")

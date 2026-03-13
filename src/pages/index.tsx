@@ -7,7 +7,7 @@ import { Sidebar } from "@/components/Sidebar"
 import { OrdersTable } from "@/components/orders-table"
 import { SalesChart } from "@/components/sales-chart"
 import { useState, useEffect } from "react"
-import { api } from "@/lib/api" // used for backend fetches
+import { api } from "@/lib/api"
 
 interface Order {
   id: number
@@ -27,55 +27,69 @@ interface Payment {
   time: string
 }
 
+// Matches raw row shape returned from GET /orders
+interface RawOrderRow {
+  id: number
+  total: number | string
+  date?: string
+  status?: string
+  paymentMethod?: string
+  productId?: number
+  productName?: string
+  price?: number
+  quantity?: number
+}
+
 export default function AdminDashboard() {
   const [orders, setOrders] = useState<Order[]>([])
   const [paymentData, setPaymentData] = useState<Payment[]>([])
 
-  // ✅ Load data from localStorage on mount and listen for updates
   useEffect(() => {
-  const fetchFromDB = async () => {
-    try {
-      const rows = await api.get<any[]>('/orders')
-      if (!rows || !rows.length) {
-        setOrders([])
-        return
-      }
-      const grouped: Record<number, any> = {}
-      rows.forEach(r => {
-        if (!grouped[r.id]) {
-          grouped[r.id] = {
-            id: r.id,
-            orderNumber: `#${r.id}`,
-            items: [],
-            total: Number(r.total) || 0,
-            date: r.date ? new Date(r.date).toLocaleDateString() : '',
-            time: r.date ? new Date(r.date).toLocaleTimeString() : '',
-            status: r.status || '',
-            paymentCategory: r.paymentMethod || ''
+    const fetchFromDB = async () => {
+      try {
+        const rows = await api.get<RawOrderRow[]>('/orders')
+        if (!rows || !rows.length) {
+          setOrders([])
+          return
+        }
+
+        // Group rows by order id — each row may represent one item in an order
+        const grouped: Record<number, Order> = {}
+
+        rows.forEach(r => {
+          if (!grouped[r.id]) {
+            grouped[r.id] = {
+              id: r.id,
+              orderNumber: `#${r.id}`,
+              items: [],
+              total: Number(r.total) || 0,
+              date: r.date ? new Date(r.date).toLocaleDateString() : '',
+              time: r.date ? new Date(r.date).toLocaleTimeString() : '',
+              status: r.status || '',
+              paymentCategory: r.paymentMethod || ''
+            }
           }
-        }
-        if (r.productId) {
-          grouped[r.id].items.push({ 
-            name: r.productName || '', 
-            price: r.price || 0, 
-            quantity: r.quantity 
-          })
-        }
-      })
-      setOrders(Object.values(grouped))
-    } catch (err) {
-      console.error('Failed to fetch orders:', err)
+          if (r.productId) {
+            grouped[r.id].items.push({
+              name: r.productName || '',
+              price: r.price || 0,
+              quantity: r.quantity ?? 1
+            })
+          }
+        })
+
+        setOrders(Object.values(grouped))
+      } catch (err) {
+        console.error('Failed to fetch orders:', err)
+      }
     }
-  }
 
-  fetchFromDB() // fetch immediately on mount
+    fetchFromDB()
 
-  // ✅ Poll DB every 5 seconds — no more localStorage
-  const interval = setInterval(fetchFromDB, 5000)
-  return () => clearInterval(interval)
-}, [])
+    const interval = setInterval(fetchFromDB, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
-  // Compute stats from real orders
   const totalOrders = orders.length
   const totalSales = orders.reduce((sum, o) => sum + o.total, 0)
   const activeOrders = orders.filter(o => o.status === "Pending").length
@@ -111,9 +125,9 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-            </div>
+            <div className="flex items-center gap-2" />
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <Card className="bg-white rounded-2xl p-6 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 border-0">
               <div className="text-sm text-gray-500 mb-2">Total Order</div>
@@ -179,6 +193,7 @@ export default function AdminDashboard() {
                 <SalesChart />
               </Card>
             </div>
+
             {paymentData.length > 0 && (
               <div className="lg:col-span-4">
                 <Card className="bg-white rounded-2xl p-6 h-full shadow-md hover:shadow-lg transition-shadow border-0">
@@ -203,10 +218,13 @@ export default function AdminDashboard() {
                 </Card>
               </div>
             )}
+
             {paymentData.length === 0 && (
               <div className="lg:col-span-4">
                 <Card className="bg-white rounded-2xl p-6 h-full shadow-md border-0 flex items-center justify-center">
-                  <p className="text-gray-400 text-sm text-center">No payments yet.<br />Orders will appear here after cashier processes them.</p>
+                  <p className="text-gray-400 text-sm text-center">
+                    No payments yet.<br />Orders will appear here after cashier processes them.
+                  </p>
                 </Card>
               </div>
             )}

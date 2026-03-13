@@ -35,6 +35,46 @@ interface HistoryEntry {
   finishedAt: Date
 }
 
+// Matches raw backend response shape from /orders
+interface RawOrder {
+  id?: number | string
+  orderId?: number | string
+  orderNumber?: string
+  status: "Completed" | "Cancelled" | "preparing" | "dine-in" | "take-out"
+  items?: OrderItem[]
+  order_type?: string
+  orderType?: string
+  payment_method?: string
+  paymentMethod?: string
+  total?: number
+  updatedAt?: string
+  createdAt?: string
+}
+
+// Matches raw backend response shape from /products
+interface Product {
+  id: number
+  name: string
+  price: number | string
+}
+
+// Cart item derived from Product with qty/subtotal
+interface CartItem {
+  id: number
+  name: string
+  price: number
+  qty: number
+  subtotal: number
+}
+
+// Payload sent to POST /orders
+interface OrderPayload {
+  items: { product_id: number; qty: number; subtotal: number }[]
+  total: number
+  order_type: "dine-in" | "take-out"
+  payment_method: "cash" | "e-payment"
+}
+
 const COOK_TIME_SECONDS = 10 * 60
 
 const navigationItems = [
@@ -49,7 +89,7 @@ const additionalItems = [
   { label: "User Accounts", path: "/users" },
   { label: "Menu Management", path: "/menu-management" },
   { label: "Supplier Maintenance", path: "/suppliers" },
-  { label: "Sales & Reports", path: "/sales-reports" }
+  { label: "Sales & Reports", path: "/sales-reports" },
 ]
 
 function OrderTimer({ startedAt, orderNumber }: { startedAt: number; orderNumber: string }) {
@@ -102,53 +142,53 @@ export default function Order() {
   const [servedCount, setServedCount] = useState(0)
   const [activeTab, setActiveTab] = useState<"queue" | "history">("queue")
   const [history, setHistory] = useState<HistoryEntry[]>([])
-  const [products, setProducts] = useState<any[]>([])
-  const [cart, setCart] = useState<any[]>([])
-  const [orderType, setOrderType] = useState<'dine-in' | 'take-out'>('dine-in')
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'e-payment'>('cash')
+  const [products, setProducts] = useState<Product[]>([])
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [orderType, setOrderType] = useState<"dine-in" | "take-out">("dine-in")
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "e-payment">("cash")
 
   const fetchQueue = async () => {
     try {
-      const data = await api.get<any[]>('/orders/queue')
+      const data = await api.get<OrderCard[]>("/orders/queue")
       setOrders(data || [])
     } catch (err) {
-      console.error('Failed to fetch queue', err)
+      console.error("Failed to fetch queue", err)
     }
   }
 
   const fetchServedCount = async () => {
     try {
-      const data = await api.get<any[]>('/orders')
-      const completed = data.filter((o: any) => o.status === 'Completed').length
+      const data = await api.get<RawOrder[]>("/orders")
+      const completed = data.filter((o) => o.status === "Completed").length
       setServedCount(completed)
     } catch (err) {
-      console.error('Failed to fetch served count', err)
+      console.error("Failed to fetch served count", err)
     }
   }
 
   const fetchHistory = async () => {
     try {
-      const data = await api.get<any[]>('/orders')
-      const finished = data
-        .filter((o: any) => o.status === 'Completed' || o.status === 'Cancelled')
-        .map((o: any) => ({
-          id: String(o.id || o.orderId),
-          orderNumber: o.orderNumber || `#${o.id}`,
-          status: o.status,
-          items: o.items || [],
-          orderType: o.order_type || o.orderType || 'dine-in',
-          paymentMethod: o.payment_method || o.paymentMethod || 'cash',
-          total: o.total || 0,
-          finishedAt: new Date(o.updatedAt || o.createdAt || Date.now()),
+      const data = await api.get<RawOrder[]>("/orders")
+      const finished: HistoryEntry[] = data
+        .filter((o) => o.status === "Completed" || o.status === "Cancelled")
+        .map((o) => ({
+          id: String(o.id ?? o.orderId),
+          orderNumber: o.orderNumber ?? `#${o.id}`,
+          status: o.status as "Completed" | "Cancelled",
+          items: o.items ?? [],
+          orderType: o.order_type ?? o.orderType ?? "dine-in",
+          paymentMethod: o.payment_method ?? o.paymentMethod ?? "cash",
+          total: o.total ?? 0,
+          finishedAt: new Date(o.updatedAt ?? o.createdAt ?? Date.now()),
         }))
-        .sort((a: HistoryEntry, b: HistoryEntry) => b.finishedAt.getTime() - a.finishedAt.getTime())
+        .sort((a, b) => b.finishedAt.getTime() - a.finishedAt.getTime())
       setHistory(finished)
     } catch (err) {
-      console.error('Failed to fetch history', err)
+      console.error("Failed to fetch history", err)
     }
   }
 
-  // Poll every 3 seconds — no localStorage
+  // Poll every 3 seconds
   useEffect(() => {
     fetchQueue()
     fetchServedCount()
@@ -161,20 +201,21 @@ export default function Order() {
   }, [])
 
   useEffect(() => {
-    api.get<any[]>('/products').then(setProducts).catch(console.error)
+    api.get<Product[]>("/products").then(setProducts).catch(console.error)
   }, [])
 
-  const addToCart = (prod: any) => {
+  const addToCart = (prod: Product) => {
+    const prodPrice = +prod.price
     setCart((c) => {
       const existing = c.find((x) => x.id === prod.id)
       if (existing) {
         return c.map((x) =>
           x.id === prod.id
-            ? { ...x, qty: x.qty + 1, subtotal: +(x.qty + 1) * prod.price }
+            ? { ...x, qty: x.qty + 1, subtotal: +(x.qty + 1) * prodPrice }
             : x
         )
       }
-      return [...c, { id: prod.id, name: prod.name, price: +prod.price, qty: 1, subtotal: +prod.price }]
+      return [...c, { id: prod.id, name: prod.name, price: prodPrice, qty: 1, subtotal: prodPrice }]
     })
   }
 
@@ -189,42 +230,42 @@ export default function Order() {
   const total = cart.reduce((sum, x) => sum + x.subtotal, 0)
 
   const submitOrder = async () => {
-    if (cart.length === 0) return alert('Cart is empty')
+    if (cart.length === 0) return alert("Cart is empty")
     try {
       const items = cart.map((x) => ({ product_id: x.id, qty: x.qty, subtotal: x.subtotal }))
-      const body: any = { items, total, order_type: orderType, payment_method: paymentMethod }
-      await api.post('/orders', body)
-      alert('Order saved!')
+      const body: OrderPayload = { items, total, order_type: orderType, payment_method: paymentMethod }
+      await api.post("/orders", body)
+      alert("Order saved!")
       setCart([])
-      setPaymentMethod('cash')
-      setOrderType('dine-in')
-      api.get<any[]>('/products').then(setProducts).catch(console.error)
+      setPaymentMethod("cash")
+      setOrderType("dine-in")
+      api.get<Product[]>("/products").then(setProducts).catch(console.error)
       fetchQueue()
       fetchServedCount()
       fetchHistory()
     } catch (err) {
       console.error(err)
-      alert('Failed to submit order')
+      alert("Failed to submit order")
     }
   }
 
   const toggleStartOrder = async (id: string) => {
     try {
-      await api.patch(`/orders/${id}`, { status: 'preparing', startedAt: new Date().toISOString() })
+      await api.patch(`/orders/${id}`, { status: "preparing", startedAt: new Date().toISOString() })
       fetchQueue()
     } catch (err) {
-      console.error('Failed to start order', err)
+      console.error("Failed to start order", err)
     }
   }
 
   const toggleFinishOrder = async (id: string) => {
     try {
-      await api.patch(`/orders/${id}`, { status: 'Completed' })
+      await api.patch(`/orders/${id}`, { status: "Completed" })
       fetchQueue()
       fetchServedCount()
       fetchHistory()
     } catch (err) {
-      console.error('Failed to finish order', err)
+      console.error("Failed to finish order", err)
     }
   }
 
@@ -234,22 +275,22 @@ export default function Order() {
   }, [])
 
   const formatDateTime = (date: Date) => {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
     const dayName = days[date.getDay()]
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, "0")
+    const day = String(date.getDate()).padStart(2, "0")
     const year = String(date.getFullYear()).slice(-2)
     let hours = date.getHours()
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const ampm = hours >= 12 ? 'PM' : 'AM'
+    const minutes = String(date.getMinutes()).padStart(2, "0")
+    const ampm = hours >= 12 ? "PM" : "AM"
     hours = hours % 12 || 12
     return `${dayName}, ${month}/${day}/${year} ${hours}:${minutes} ${ampm}`
   }
 
   const formatTime = (date: Date) => {
     let hours = date.getHours()
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const ampm = hours >= 12 ? 'PM' : 'AM'
+    const minutes = String(date.getMinutes()).padStart(2, "0")
+    const ampm = hours >= 12 ? "PM" : "AM"
     hours = hours % 12 || 12
     return `${hours}:${minutes} ${ampm}`
   }
@@ -264,11 +305,11 @@ export default function Order() {
 
   const getStatusLabel = (status: string) => status === "dine-in" ? "Dine In" : "Take Out"
 
-  const newCount = orders.filter(o => !o.isPreparing).length
-  const processCount = orders.filter(o => o.isPreparing).length
+  const newCount = orders.filter((o) => !o.isPreparing).length
+  const processCount = orders.filter((o) => o.isPreparing).length
 
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: 'Poppins, sans-serif' }}>
+    <div className="min-h-screen bg-white" style={{ fontFamily: "Poppins, sans-serif" }}>
 
       {/* SIDEBAR */}
       <>
@@ -291,7 +332,7 @@ export default function Order() {
             "fixed top-0 left-0 h-full w-72 bg-white p-6 flex flex-col shadow-2xl z-50 transition-all duration-300 ease-in-out",
             isOpen ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"
           )}
-          style={{ fontFamily: 'Poppins, sans-serif' }}
+          style={{ fontFamily: "Poppins, sans-serif" }}
         >
           <div className="flex items-center justify-center mb-10 mt-8">
             <span className="text-2xl font-bold text-black">The Crunch</span>
@@ -380,18 +421,26 @@ export default function Order() {
                     <span>₱{total.toFixed(2)}</span>
                   </div>
                   <div className="flex gap-2 items-center">
-                    <select value={orderType} onChange={(e) => setOrderType(e.target.value as any)} className="border px-2 py-1 text-sm rounded flex-1">
+                    <select
+                      value={orderType}
+                      onChange={(e) => setOrderType(e.target.value as "dine-in" | "take-out")}
+                      className="border px-2 py-1 text-sm rounded flex-1"
+                    >
                       <option value="dine-in">Dine-In</option>
                       <option value="take-out">Take-Out</option>
                     </select>
-                    <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as any)} className="border px-2 py-1 text-sm rounded flex-1">
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value as "cash" | "e-payment")}
+                      className="border px-2 py-1 text-sm rounded flex-1"
+                    >
                       <option value="cash">Cash</option>
                       <option value="e-payment">E-Payment</option>
                     </select>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={submitOrder} className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-green-700 transition">Submit Order</button>
-                    <button onClick={() => { setCart([]); setOrderType('dine-in') }} className="flex-1 bg-red-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-red-700 transition">Cancel Order</button>
+                    <button onClick={() => { setCart([]); setOrderType("dine-in") }} className="flex-1 bg-red-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-red-700 transition">Cancel Order</button>
                   </div>
                 </div>
               )}
@@ -435,7 +484,7 @@ export default function Order() {
         {notifPermission !== "granted" && (
           <div className="mb-4">
             <button
-              onClick={() => Notification.requestPermission().then(p => setNotifPermission(p))}
+              onClick={() => Notification.requestPermission().then((p) => setNotifPermission(p))}
               className="flex items-center gap-2 text-xs bg-yellow-50 border border-yellow-200 text-yellow-700 px-3 py-1.5 rounded-lg hover:bg-yellow-100 transition"
             >
               <Bell className="w-3 h-3" />
@@ -621,7 +670,7 @@ export default function Order() {
                           {entry.orderNumber}
                         </span>
                         <span className="text-xs text-gray-500 truncate" style={{ flex: 1 }}>
-                          {entry.items.map(i => `${i.quantity}x ${i.name}`).join(", ") || "—"}
+                          {entry.items.map((item) => `${item.quantity}x ${item.name}`).join(", ") || "—"}
                         </span>
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                           entry.orderType === "dine-in" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"

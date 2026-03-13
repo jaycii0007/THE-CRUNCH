@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Star, Flame, Crown } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const CATEGORIES = ['All', 'Chicken', 'Sides', 'Drinks', 'Combos'];
 
@@ -26,6 +26,7 @@ const badgeConfig: Record<string, { bg: string; label: string }> = {
 };
 
 export default function Products() {
+  const navigate = useNavigate();
   const [products, setProducts] = useState(STATIC_PRODUCTS);
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
@@ -58,9 +59,55 @@ export default function Products() {
           <Link to="/" style={{ fontWeight: 800, fontSize: 20, color: '#1a1a1a', textDecoration: 'none' }}>
             The <span style={{ color: '#f97316' }}>Crunch</span>
           </Link>
-          <nav style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
+          <nav style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+            <Link to="/" style={{ color: '#6b7280', fontSize: 14, textDecoration: 'none', fontWeight: 500 }}>Home</Link>
             <Link to="/usersmenu" style={{ color: '#6b7280', fontSize: 14, textDecoration: 'none', fontWeight: 500 }}>Menu</Link>
             <Link to="/aboutthecrunch" style={{ color: '#6b7280', fontSize: 14, textDecoration: 'none', fontWeight: 500 }}>About</Link>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />
+
+            {/* Log In button */}
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => navigate('/login')}
+              style={{
+                background: 'none',
+                border: '1.5px solid #d1d5db',
+                borderRadius: 10,
+                padding: '7px 20px',
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#111',
+                cursor: 'pointer',
+                fontFamily: "'Poppins', sans-serif",
+                transition: 'all 0.3s',
+              }}
+            >
+              Log In
+            </motion.button>
+
+            {/* Sign Up button */}
+            <motion.button
+              whileHover={{ scale: 1.03, backgroundColor: '#e6b800' }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => navigate('/login')}
+              style={{
+                background: '#f5c842',
+                border: 'none',
+                borderRadius: 10,
+                padding: '8px 20px',
+                fontSize: 13,
+                fontWeight: 700,
+                color: '#111',
+                cursor: 'pointer',
+                fontFamily: "'Poppins', sans-serif",
+                transition: 'background 0.2s',
+              }}
+            >
+              Sign Up
+            </motion.button>
           </nav>
         </div>
       </motion.header>
@@ -175,7 +222,6 @@ export default function Products() {
                     transition: 'box-shadow 0.25s, transform 0.25s'
                   }}
                 >
-                  {/* Image — bigger */}
                   <div style={{ position: 'relative', height: 240, overflow: 'hidden' }}>
                     <motion.img
                       src={p.img} alt={p.name}
@@ -185,7 +231,6 @@ export default function Products() {
                     />
                     <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.35))' }} />
 
-                    {/* Badge */}
                     {badge && (
                       <span style={{
                         position: 'absolute', top: 14, left: 14,
@@ -198,7 +243,6 @@ export default function Products() {
                       </span>
                     )}
 
-                    {/* Spicy icon */}
                     {p.spicy && (
                       <span style={{
                         position: 'absolute', top: 14, right: 14,
@@ -210,7 +254,6 @@ export default function Products() {
                       </span>
                     )}
 
-                    {/* Rating pill on image */}
                     <div style={{
                       position: 'absolute', bottom: 12, right: 14,
                       background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
@@ -222,7 +265,6 @@ export default function Products() {
                     </div>
                   </div>
 
-                  {/* Info */}
                   <div style={{ padding: '18px 20px 22px' }}>
                     <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>{p.name}</h3>
                     <p style={{ margin: '0 0 12px', fontSize: 13, color: '#9ca3af', lineHeight: 1.55 }}>{p.description}</p>
