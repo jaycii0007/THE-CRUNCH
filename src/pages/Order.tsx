@@ -1,12 +1,11 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Link, NavLink } from "react-router-dom"
-import { Clock, Menu as MenuIcon, X, Bell, History, ClipboardList } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Clock, Menu as MenuIcon, Bell, History, ClipboardList } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 import { api } from "../lib/api"
+import { Sidebar } from "@/components/Sidebar"
 
 interface OrderItem {
   quantity: number
@@ -77,21 +76,6 @@ interface OrderPayload {
 
 const COOK_TIME_SECONDS = 10 * 60
 
-const navigationItems = [
-  { label: "Overview", path: "/dashboard" },
-  { label: "Order", path: "/orders" },
-  { label: "Inventory", path: "/inventory" },
-  { label: "Products", path: "/products" },
-  { label: "Menus", path: "/menu" },
-]
-
-const additionalItems = [
-  { label: "User Accounts", path: "/users" },
-  { label: "Menu Management", path: "/menu-management" },
-  { label: "Supplier Maintenance", path: "/suppliers" },
-  { label: "Sales & Reports", path: "/sales-reports" },
-]
-
 function OrderTimer({ startedAt, orderNumber }: { startedAt: number; orderNumber: string }) {
   const [elapsed, setElapsed] = useState(0)
   const notifiedRef = useRef(false)
@@ -136,21 +120,16 @@ function OrderTimer({ startedAt, orderNumber }: { startedAt: number; orderNumber
 
 export default function Order() {
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [isOpen, setIsOpen] = useState(false)
   const [notifPermission, setNotifPermission] = useState(Notification.permission)
   const [orders, setOrders] = useState<OrderCard[]>([])
   const [servedCount, setServedCount] = useState(0)
   const [activeTab, setActiveTab] = useState<"queue" | "history">("queue")
   const [history, setHistory] = useState<HistoryEntry[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [cart, setCart] = useState<CartItem[]>([])
-  const [orderType, setOrderType] = useState<"dine-in" | "take-out">("dine-in")
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "e-payment">("cash")
 
   const fetchQueue = async () => {
     try {
-      const data = await api.get<OrderCard[]>("/orders/queue")
-      setOrders(data || [])
+      const data = await api.get<any[]>('/orders/queue')
+      setOrders((data || []).filter((o: any) => !o.isFinished))
     } catch (err) {
       console.error("Failed to fetch queue", err)
     }
@@ -158,9 +137,13 @@ export default function Order() {
 
   const fetchServedCount = async () => {
     try {
-      const data = await api.get<RawOrder[]>("/orders")
-      const completed = data.filter((o) => o.status === "Completed").length
-      setServedCount(completed)
+      const data = await api.get<any[]>('/orders')
+      const completedIds = new Set(
+        (data || [])
+          .filter((o: any) => o.status === 'Completed')
+          .map((o: any) => String(o.id || o.orderId))
+      )
+      setServedCount(completedIds.size)
     } catch (err) {
       console.error("Failed to fetch served count", err)
     }
@@ -168,20 +151,36 @@ export default function Order() {
 
   const fetchHistory = async () => {
     try {
-      const data = await api.get<RawOrder[]>("/orders")
-      const finished: HistoryEntry[] = data
-        .filter((o) => o.status === "Completed" || o.status === "Cancelled")
-        .map((o) => ({
-          id: String(o.id ?? o.orderId),
-          orderNumber: o.orderNumber ?? `#${o.id}`,
-          status: o.status as "Completed" | "Cancelled",
-          items: o.items ?? [],
-          orderType: o.order_type ?? o.orderType ?? "dine-in",
-          paymentMethod: o.payment_method ?? o.paymentMethod ?? "cash",
-          total: o.total ?? 0,
-          finishedAt: new Date(o.updatedAt ?? o.createdAt ?? Date.now()),
-        }))
-        .sort((a, b) => b.finishedAt.getTime() - a.finishedAt.getTime())
+      const data = await api.get<any[]>('/orders')
+      const grouped: Record<string, HistoryEntry> = {}
+
+      ;(data || []).forEach((o: any) => {
+        if (o.status !== 'Completed' && o.status !== 'Cancelled') return
+
+        const id = String(o.id || o.orderId)
+        if (!grouped[id]) {
+          grouped[id] = {
+            id,
+            orderNumber: o.orderNumber || `#${o.id || o.orderId}`,
+            status: o.status,
+            items: [],
+            orderType: o.order_type || o.orderType || 'dine-in',
+            paymentMethod: o.payment_method || o.paymentMethod || 'cash',
+            total: Number(o.total) || 0,
+            finishedAt: new Date(o.updatedAt || o.date || o.createdAt || Date.now()),
+          }
+        }
+
+        if (o.productId || o.productName) {
+          grouped[id].items.push({
+            quantity: Number(o.quantity) || 0,
+            name: o.productName || `Product #${o.productId}`,
+          })
+        }
+      })
+
+      const finished = Object.values(grouped)
+        .sort((a: HistoryEntry, b: HistoryEntry) => b.finishedAt.getTime() - a.finishedAt.getTime())
       setHistory(finished)
     } catch (err) {
       console.error("Failed to fetch history", err)
@@ -200,55 +199,6 @@ export default function Order() {
     return () => clearInterval(interval)
   }, [])
 
-  useEffect(() => {
-    api.get<Product[]>("/products").then(setProducts).catch(console.error)
-  }, [])
-
-  const addToCart = (prod: Product) => {
-    const prodPrice = +prod.price
-    setCart((c) => {
-      const existing = c.find((x) => x.id === prod.id)
-      if (existing) {
-        return c.map((x) =>
-          x.id === prod.id
-            ? { ...x, qty: x.qty + 1, subtotal: +(x.qty + 1) * prodPrice }
-            : x
-        )
-      }
-      return [...c, { id: prod.id, name: prod.name, price: prodPrice, qty: 1, subtotal: prodPrice }]
-    })
-  }
-
-  const updateQty = (id: number, qty: number) => {
-    if (qty <= 0) {
-      setCart((c) => c.filter((x) => x.id !== id))
-    } else {
-      setCart((c) => c.map((x) => x.id === id ? { ...x, qty, subtotal: qty * x.price } : x))
-    }
-  }
-
-  const total = cart.reduce((sum, x) => sum + x.subtotal, 0)
-
-  const submitOrder = async () => {
-    if (cart.length === 0) return alert("Cart is empty")
-    try {
-      const items = cart.map((x) => ({ product_id: x.id, qty: x.qty, subtotal: x.subtotal }))
-      const body: OrderPayload = { items, total, order_type: orderType, payment_method: paymentMethod }
-      await api.post("/orders", body)
-      alert("Order saved!")
-      setCart([])
-      setPaymentMethod("cash")
-      setOrderType("dine-in")
-      api.get<Product[]>("/products").then(setProducts).catch(console.error)
-      fetchQueue()
-      fetchServedCount()
-      fetchHistory()
-    } catch (err) {
-      console.error(err)
-      alert("Failed to submit order")
-    }
-  }
-
   const toggleStartOrder = async (id: string) => {
     try {
       await api.patch(`/orders/${id}`, { status: "preparing", startedAt: new Date().toISOString() })
@@ -260,7 +210,8 @@ export default function Order() {
 
   const toggleFinishOrder = async (id: string) => {
     try {
-      await api.patch(`/orders/${id}`, { status: "Completed" })
+      await api.patch(`/orders/${id}`, { status: 'Completed' })
+      setOrders((prev) => prev.filter((o) => o.id !== id))
       fetchQueue()
       fetchServedCount()
       fetchHistory()
@@ -309,144 +260,11 @@ export default function Order() {
   const processCount = orders.filter((o) => o.isPreparing).length
 
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: "Poppins, sans-serif" }}>
-
-      {/* SIDEBAR */}
-      <>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="fixed top-6 left-6 z-50 p-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 active:scale-95"
-        >
-          {isOpen ? <X className="w-6 h-6 text-black" /> : <MenuIcon className="w-6 h-6 text-black" />}
-        </button>
-
-        {isOpen && (
-          <div
-            className="fixed inset-0 backdrop-blur-sm bg-black/20 z-40 transition-all duration-300"
-            onClick={() => setIsOpen(false)}
-          />
-        )}
-
-        <aside
-          className={cn(
-            "fixed top-0 left-0 h-full w-72 bg-white p-6 flex flex-col shadow-2xl z-50 transition-all duration-300 ease-in-out",
-            isOpen ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"
-          )}
-          style={{ fontFamily: "Poppins, sans-serif" }}
-        >
-          <div className="flex items-center justify-center mb-10 mt-8">
-            <span className="text-2xl font-bold text-black">The Crunch</span>
-          </div>
-          <div className="text-xs text-gray-400 mb-4 uppercase tracking-wider font-medium px-2">Navigation</div>
-          <nav className="flex-1 space-y-1.5">
-            {navigationItems.map((item) => (
-              <NavLink key={item.path} to={item.path} end onClick={() => setIsOpen(false)}>
-                {({ isActive }) => (
-                  <Button variant="ghost" className={cn(
-                    "w-full justify-start rounded-xl text-sm transition-all duration-300 px-4 py-2.5",
-                    "text-black hover:bg-gray-50 hover:shadow-sm hover:scale-[1.02] active:scale-95",
-                    isActive && "bg-gray-100 text-black font-semibold"
-                  )}>
-                    {item.label}
-                  </Button>
-                )}
-              </NavLink>
-            ))}
-          </nav>
-          <div className="space-y-1.5 mt-6 pt-6 border-t border-gray-100">
-            {additionalItems.map((item) => (
-              <NavLink key={item.path} to={item.path} onClick={() => setIsOpen(false)}>
-                {({ isActive }) => (
-                  <Button variant="ghost" className={cn(
-                    "w-full justify-start rounded-xl text-sm transition-all duration-300 px-4 py-2.5",
-                    "text-black hover:bg-gray-50 hover:shadow-sm hover:scale-[1.02] active:scale-95",
-                    isActive && "bg-gray-100 text-black font-semibold"
-                  )}>
-                    {item.label}
-                  </Button>
-                )}
-              </NavLink>
-            ))}
-            <Link to="/login" className="w-full">
-              <Button
-                variant="ghost"
-                className="w-full justify-start rounded-xl text-sm text-black mt-6 transition-all duration-300 px-4 py-2.5 hover:bg-red-50 hover:text-red-600 hover:shadow-sm hover:scale-[1.02] active:scale-95"
-                onClick={() => setIsOpen(false)}
-              >
-                Log Out
-              </Button>
-            </Link>
-          </div>
-        </aside>
-      </>
+    <div className="min-h-screen bg-white" style={{ fontFamily: 'Poppins, sans-serif' }}>
+      <Sidebar />
 
       {/* MAIN CONTENT */}
       <div className="p-6 pl-24">
-
-        {/* POS Panel */}
-        <div className="mb-8 bg-white rounded-2xl p-6 shadow-lg">
-          <h2 className="text-lg font-semibold mb-4">Point of Sale</h2>
-          <div className="flex flex-col md:flex-row gap-6">
-            <div className="flex-1">
-              <h3 className="text-sm font-medium mb-2">Products</h3>
-              <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto">
-                {products.map((p) => (
-                  <button key={p.id} className="border rounded p-2 text-left hover:bg-gray-100" onClick={() => addToCart(p)}>
-                    <div className="text-sm font-medium">{p.name}</div>
-                    <div className="text-xs text-gray-500">₱{p.price}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex-1">
-              <h3 className="text-sm font-medium mb-2">Cart</h3>
-              {cart.length === 0 ? (
-                <p className="text-gray-500 text-xs">No items</p>
-              ) : (
-                <div className="space-y-2">
-                  {cart.map((c) => (
-                    <div key={c.id} className="flex justify-between items-center gap-2 p-2 bg-gray-50 rounded">
-                      <span className="text-sm font-medium flex-1">{c.name}</span>
-                      <input
-                        type="number" min="1" value={c.qty}
-                        onChange={(e) => updateQty(c.id, Number(e.target.value))}
-                        className="w-10 border px-1 py-1 text-xs text-center rounded"
-                      />
-                      <span className="text-sm font-medium min-w-16 text-right">₱{c.subtotal.toFixed(2)}</span>
-                      <button onClick={() => updateQty(c.id, 0)} className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600 transition">✕</button>
-                    </div>
-                  ))}
-                  <div className="flex justify-between font-bold border-t pt-2 mt-2">
-                    <span>Total</span>
-                    <span>₱{total.toFixed(2)}</span>
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    <select
-                      value={orderType}
-                      onChange={(e) => setOrderType(e.target.value as "dine-in" | "take-out")}
-                      className="border px-2 py-1 text-sm rounded flex-1"
-                    >
-                      <option value="dine-in">Dine-In</option>
-                      <option value="take-out">Take-Out</option>
-                    </select>
-                    <select
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value as "cash" | "e-payment")}
-                      className="border px-2 py-1 text-sm rounded flex-1"
-                    >
-                      <option value="cash">Cash</option>
-                      <option value="e-payment">E-Payment</option>
-                    </select>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={submitOrder} className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-green-700 transition">Submit Order</button>
-                    <button onClick={() => { setCart([]); setOrderType("dine-in") }} className="flex-1 bg-red-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-red-700 transition">Cancel Order</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
 
         {/* Stats Row */}
         <div className="flex gap-6 items-start mb-6">

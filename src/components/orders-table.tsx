@@ -12,6 +12,7 @@ interface Order {
   total: number
   date: string
   time: string
+  orderType: string
   status: string
   paymentCategory: string
 }
@@ -32,6 +33,11 @@ export function OrdersTable({ orders = [] }: OrdersTableProps) {
     status === "Completed"
       ? "bg-green-50 text-green-700 hover:bg-green-50 rounded-lg font-medium border-0"
       : "bg-yellow-50 text-yellow-700 hover:bg-yellow-50 rounded-lg font-medium border-0"
+
+  const orderTypeBadgeClass = (orderType: string) =>
+    orderType === 'take-out'
+      ? 'bg-amber-50 text-amber-700 hover:bg-amber-50 rounded-lg font-medium border-0'
+      : 'bg-rose-50 text-rose-700 hover:bg-rose-50 rounded-lg font-medium border-0'
 
   return (
     <Card className="bg-white rounded-2xl p-6 shadow-md border-0">
@@ -59,8 +65,8 @@ export function OrdersTable({ orders = [] }: OrdersTableProps) {
                 <TableCell className="font-medium text-gray-900">{order.orderNumber}</TableCell>
                 <TableCell className="text-gray-600">{order.date}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary" className={statusBadgeClass(order.status)}>
-                    {order.status}
+                  <Badge variant="secondary" className={orderTypeBadgeClass(order.orderType)}>
+                    {order.orderType || '-'}
                   </Badge>
                 </TableCell>
                 <TableCell>

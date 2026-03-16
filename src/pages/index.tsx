@@ -16,6 +16,7 @@ interface Order {
   total: number
   date: string
   time: string
+  orderType: string
   status: string
   paymentCategory: string
 }
@@ -34,6 +35,9 @@ interface RawOrderRow {
   date?: string
   status?: string
   paymentMethod?: string
+  payment_method?: string
+  orderType?: string
+  order_type?: string
   productId?: number
   productName?: string
   price?: number
@@ -53,7 +57,6 @@ export default function AdminDashboard() {
           return
         }
 
-        // Group rows by order id — each row may represent one item in an order
         const grouped: Record<number, Order> = {}
 
         rows.forEach(r => {
@@ -65,15 +68,16 @@ export default function AdminDashboard() {
               total: Number(r.total) || 0,
               date: r.date ? new Date(r.date).toLocaleDateString() : '',
               time: r.date ? new Date(r.date).toLocaleTimeString() : '',
-              status: r.status || '',
-              paymentCategory: r.paymentMethod || ''
+              orderType: r.orderType ?? r.order_type ?? '',
+              status: r.status ?? '',
+              paymentCategory: r.paymentMethod ?? r.payment_method ?? '',
             }
           }
           if (r.productId) {
             grouped[r.id].items.push({
-              name: r.productName || '',
-              price: r.price || 0,
-              quantity: r.quantity ?? 1
+              name: r.productName ?? '',
+              price: r.price ?? 0,
+              quantity: r.quantity ?? 1,
             })
           }
         })
@@ -90,9 +94,9 @@ export default function AdminDashboard() {
     return () => clearInterval(interval)
   }, [])
 
-  const totalOrders = orders.length
-  const totalSales = orders.reduce((sum, o) => sum + o.total, 0)
-  const activeOrders = orders.filter(o => o.status === "Pending").length
+  const totalOrders  = orders.length
+  const totalSales   = orders.reduce((sum, o) => sum + o.total, 0)
+  const activeOrders = orders.filter(o => !["Completed", "Cancelled"].includes(o.status)).length
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
