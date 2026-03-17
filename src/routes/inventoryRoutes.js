@@ -7,6 +7,13 @@ async function hasColumn(tableName, columnName) {
   return rows.length > 0;
 }
 
+function toMySqlDateTime(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 19).replace("T", " ");
+}
+
 // Shared helper used by order flow to deduct stock and log stock-out activity.
 async function deductStockForOrder(productId, quantityUsed, recordedBy = null, connection = db) {
   const qty = Number(quantityUsed) || 0;
@@ -181,7 +188,7 @@ router.post("/batches", async (req, res) => {
   try {
     await ensureBatchTable();
 
-    const { productId, quantity, unit, expiresAt } = req.body;
+    const { productId, productName, quantity, unit, expiresAt } = req.body;
     const id = randomUUID();
     const receivedAt = new Date();
     const qty = Number(quantity) || 0;
@@ -200,8 +207,17 @@ router.post("/batches", async (req, res) => {
           "INSERT INTO Menu (Product_ID, Product_Name, Price, Stock) VALUES (?,?,?,?)",
           [productId, p.name, p.price || 0, p.quantity || 0]
         );
+      } else {
+        // Fallback: keep batch flow working even when product mapping is incomplete.
+        const safeName = String(productName || `Product ${productId}`);
+        await db.query(
+          "INSERT INTO Menu (Product_ID, Product_Name, Price, Stock) VALUES (?,?,?,?)",
+          [productId, safeName, 0, 0]
+        );
       }
     }
+
+    const formattedExpiresAt = toMySqlDateTime(expiresAt);
 
     await db.query("INSERT INTO Batches SET ?", {
       id,
@@ -209,7 +225,7 @@ router.post("/batches", async (req, res) => {
       quantity: qty,
       unit,
       receivedAt,
-      expiresAt: expiresAt || null,
+      expiresAt: formattedExpiresAt,
       status: "active",
     });
 
@@ -226,7 +242,7 @@ router.post("/batches", async (req, res) => {
     await db.query("UPDATE Menu SET Stock = COALESCE(Stock, 0) + ? WHERE Product_ID = ?", [qty, productId]);
     await db.query("UPDATE products SET quantity = COALESCE(quantity, 0) + ? WHERE id = ?", [qty, productId]);
 
-    res.status(201).json({ id, productId, quantity: qty, unit, receivedAt, expiresAt, status: "active" });
+    res.status(201).json({ id, productId, quantity: qty, unit, receivedAt, expiresAt: formattedExpiresAt, status: "active" });
   } catch (err) {
     console.error("Error adding batch:", err);
     res.status(500).json({ message: "DB error", error: err.message });
