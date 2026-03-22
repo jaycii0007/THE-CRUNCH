@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useMemo } from "react"
 import { Search, TrendingUp, Calendar, TrendingDown } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -5,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sidebar } from "@/components/Sidebar"
 import { OrdersTable } from "@/components/orders-table"
-import { useState, useEffect, useMemo } from "react"
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend
@@ -312,8 +312,8 @@ function PeakHoursHeatmap({ cells }: HeatmapProps) {
           <div key={d} className="text-center text-[10px] text-gray-400 pb-1">{d}</div>
         ))}
         {ALL_HOUR_SLOTS.map((hour) => (
-          <>
-            <div key={`lbl-${hour}`} className="text-right text-[10px] text-gray-400 pr-1 flex items-center justify-end leading-tight">{hour}</div>
+          <React.Fragment key={`hour-${hour}`}>
+            <div className="text-right text-[10px] text-gray-400 pr-1 flex items-center justify-end leading-tight">{hour}</div>
             {DAYS_OF_WEEK.map((day) => {
               const cell = cells.find((c) => c.day === day && c.hour === hour)
               const count = cell?.count ?? -1
@@ -332,7 +332,7 @@ function PeakHoursHeatmap({ cells }: HeatmapProps) {
                 />
               )
             })}
-          </>
+          </React.Fragment>
         ))}
       </div>
       <div className="flex items-center gap-2 mt-3">

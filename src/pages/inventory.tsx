@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { InventoryClient } from "@/components/ui/inventoryClient"
 import type { Batch, InventoryItem, UnitType } from "@/components/ui/inventoryClient"
 import { Sidebar } from "@/components/Sidebar"
-import { apiCall } from "@/lib/api"
+import { api, apiCall } from "@/lib/api"
 import { motion, AnimatePresence } from "framer-motion"
 import { Package, RefreshCw, Archive } from "lucide-react"
 
@@ -32,6 +32,21 @@ interface StockInRecord { id: string; poRef: string; branch: string; date: strin
 interface Transfer      { id: string; from: string; to: string; item: string; qty: string; unit: string; date: string; status: TRStatus; approvedBy: string }
 interface Adjustment    { id: string; branch: string; item: string; qty: number; unit: string; reason: string; date: string; by: string }
 interface StockLog      { id: string; date: string; type: LogType; item: string; qty: string; branch: string; by: string; ref: string }
+interface ApiInventoryRow {
+  id?: number
+  product_id?: number
+  inventory_id?: number
+  name?: string
+  product_name?: string
+  category?: string
+  image?: string
+  stock?: number
+  price?: number | string
+  unit?: UnitType | string
+  batches?: Batch[]
+  promo?: string
+  isRawMaterial?: number | boolean
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -594,48 +609,95 @@ export default function Inventory() {
     { id: 5, name: "Egg",            category: "Ingredients", image: "/img/placeholder.jpg", incoming: 30,  stock: 120, price: "₱8",   unit: "piece"  as UnitType, batches: [{ id: "batch-7", productId: 5, quantity: 60, unit: "piece"  as UnitType, receivedAt: new Date(Date.now() - 86400000),     status: "active" }], totalUsedToday: 0 },
   ])
 
-  const loadInventory = async () => {
+  const loadInventory = async (showLoader = true) => {
     try {
-      setLoading(true)
-      const data = await apiCall("/inventory", { method: "GET" }) as InventoryItem[] | null
+      if (showLoader) setLoading(true)
+      const data = await apiCall("/inventory", { method: "GET" }) as ApiInventoryRow[] | null
       if (data && Array.isArray(data)) {
-        setInventoryItems(data.map((item: InventoryItem) => ({
-          id: Number((item as any).id ?? (item as any).product_id ?? (item as any).inventory_id ?? 0),
-          name: item.name || (item as any).product_name || "Unnamed Product", category: item.category || "Uncategorized",
-          image: item.image || "/img/placeholder.jpg", incoming: 0, stock: item.stock ?? 0,
+        const inventoryRows = data.filter((item) => {
+          const promo = String(item?.promo ?? "").toUpperCase().trim()
+          const category = String(item?.category ?? "").toLowerCase().trim()
+          const isInventoryCategory =
+            promo === "SUPPLIES" ||
+            promo === "MENU FOOD" ||
+            category.includes("suppl") ||
+            category.includes("menu food")
+          return isInventoryCategory
+        })
+
+        const groupedByName = new Map<string, ApiInventoryRow[]>()
+        for (const item of inventoryRows) {
+          const key = String(item?.product_name ?? item?.name ?? "").trim().toLowerCase()
+          const group = groupedByName.get(key) ?? []
+          group.push(item)
+          groupedByName.set(key, group)
+        }
+
+        const normalizedRows = Array.from(groupedByName.values()).map((group) => {
+          return group.reduce((latest, current) => {
+            const latestId = Number(latest?.product_id ?? latest?.id ?? latest?.inventory_id ?? 0)
+            const currentId = Number(current?.product_id ?? current?.id ?? current?.inventory_id ?? 0)
+            return currentId > latestId ? current : latest
+          })
+        })
+
+        setInventoryItems(normalizedRows.map((item) => ({
+          id: Number(item.id ?? item.product_id ?? item.inventory_id ?? 0),
+          name: item.name || item.product_name || "Unnamed Product", category: item.category || "Uncategorized",
+          image: item.image || "/img/placeholder.jpg", incoming: 0, stock: (item as any).dailyWithdrawn ?? 0,
           price: item.price?.toString() || "0", unit: (item.unit as UnitType) || "piece",
           batches: (item.batches || []).map((b: Batch) => ({ ...b, receivedAt: new Date(b.receivedAt), expiresAt: b.expiresAt ? new Date(b.expiresAt) : undefined })),
           totalUsedToday: 0,
         })))
       }
     } catch (error) { console.error("Failed to load inventory:", error) }
-    finally { setLoading(false) }
+    finally { if (showLoader) setLoading(false) }
   }
 
   useEffect(() => { loadInventory() }, [])
 
-  const handleBatchAdded = async (item: InventoryItem, batch: Batch) => {
-    try {
-      await apiCall("/inventory/batches", { method: "POST", body: { productId: item.id, productName: item.name, quantity: batch.quantity, unit: batch.unit, expiresAt: batch.expiresAt?.toISOString() } as Parameters<typeof apiCall>[1]["body"] })
-      setInventoryItems(prev => prev.map(i => i.id === item.id ? { ...i, batches: [...(i.batches || []), batch], stock: i.stock + batch.quantity } : i))
-    } catch (error) { console.error("Failed to add batch:", error); alert("Failed to add batch to database") }
-  }
-
-  const handleBatchReturned = async (item: InventoryItem, batchId: string, returnedQty: number) => {
-    try {
-      await apiCall(`/inventory/batches/${batchId}/return`, { method: "POST", body: { quantity: returnedQty, returnedAt: new Date().toISOString() } as Parameters<typeof apiCall>[1]["body"] })
-      setInventoryItems(prev => prev.map(i => i.id === item.id ? { ...i, stock: i.stock + returnedQty, batches: i.batches?.map(b => b.id === batchId ? { ...b, quantity: Math.max(0, b.quantity - returnedQty), status: (b.quantity - returnedQty <= 0 ? "returned" : "partial") as Batch["status"] } : b) || [] } : i))
-    } catch (error) { console.error("Failed to return batch:", error); alert("Failed to return batch") }
-  }
-
   const handleAddProduct = async (productData: Partial<InventoryItem> & { description?: string }) => {
     try {
-      await apiCall("/products", { method: "POST", body: { name: productData.name, category: productData.category, price: productData.price, unit: productData.unit, quantity: productData.stock ?? 0, description: productData.description ?? null, image: productData.image || "/img/placeholder.jpg" } as Parameters<typeof apiCall>[1]["body"] })
-      await loadInventory()
+      const created = await api.post<{ id?: number }>("/products", {
+        name: productData.name,
+        category: productData.category,
+        price: productData.price,
+        unit: productData.unit,
+        quantity: productData.stock ?? 0,
+        description: productData.description ?? null,
+        image: productData.image || "/img/placeholder.jpg",
+      })
+
+      // Optimistic insert for instant table feedback; follow with silent sync.
+      const optimisticItem: InventoryItem = {
+        id: Number(created?.id ?? Date.now()),
+        name: String(productData.name ?? "Unnamed Product"),
+        category: String(productData.category ?? "Uncategorized"),
+        image: String(productData.image ?? "/img/placeholder.jpg"),
+        incoming: 0,
+        stock: Number(productData.stock ?? 0),
+        price: String(productData.price ?? "0"),
+        unit: (productData.unit as UnitType) || "piece",
+        batches: [],
+        totalUsedToday: 0,
+      }
+      setInventoryItems(prev => [optimisticItem, ...prev])
+      void loadInventory(false)
       alert("Product added successfully!")
     } catch (error) {
       console.error("Failed to add product:", error)
       alert(`Failed to add product: ${error instanceof Error ? error.message : "Unknown error"}`)
+    }
+  }
+
+  const handleDeleteProduct = async (productId: number) => {
+    try {
+      await apiCall(`/products/${productId}`, { method: "DELETE" })
+      setInventoryItems(prev => prev.filter(item => item.id !== productId))
+      alert("Product deleted successfully!")
+    } catch (error) {
+      console.error("Failed to delete product:", error)
+      alert(`Failed to delete product: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -714,6 +776,7 @@ export default function Inventory() {
                       <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{stat.label}</p>
                     </div>
+                  
                   </motion.div>
                 ))}
               </div>
@@ -728,7 +791,7 @@ export default function Inventory() {
                     </motion.div>
                   ) : (
                     <motion.div key="content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-                      <InventoryClient items={inventoryItems} onBatchAdded={handleBatchAdded} onBatchReturned={handleBatchReturned} onAddProduct={handleAddProduct} />
+                      <InventoryClient items={inventoryItems} onAddProduct={handleAddProduct} onDeleteProduct={handleDeleteProduct} />
                     </motion.div>
                   )}
                 </AnimatePresence>

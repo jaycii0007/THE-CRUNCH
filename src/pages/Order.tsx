@@ -157,8 +157,8 @@ export default function Order() {
       const id = String(r.id ?? r.orderId ?? "")
       if (!id) return
 
-      const rawStatus = r.status ?? ""
-      const isPreparing = rawStatus === "preparing"
+      const rawStatus = String(r.status ?? "").toLowerCase()
+      const isPreparing = rawStatus === "preparing" || rawStatus === "in progress"
       const isReady     = rawStatus === "ready"
       const orderStatus = (r.order_type ?? r.orderType ?? "dine-in") as "dine-in" | "take-out"
 
@@ -225,14 +225,12 @@ export default function Order() {
   const fetchAll = async () => {
     try {
       const [queueRows, allRows] = await Promise.all([
-        api.get<RawOrder[]>("/orders/queue"),
+        api.get<OrderCard[]>("/orders/queue"),
         api.get<RawOrder[]>("/orders"),
       ])
 
-      // Queue: exclude finished
-      const activeOrders = parseOrders(
-        (queueRows ?? []).filter((o) => !o.status || o.status !== "Completed")
-      )
+      // /orders/queue already returns structured OrderCard objects — use directly
+      const activeOrders = (queueRows ?? []).filter((o) => !o.isFinished)
       setOrders(activeOrders)
 
       // Served count
@@ -507,58 +505,63 @@ export default function Order() {
                           <div className="flex gap-2 flex-col">
                             <div className="flex gap-2">
                               {/* START */}
-                              <motion.button
-                                onClick={() => handleStart(order.id)}
-                                disabled={order.isPreparing || order.isReady}
-                                whileTap={{ scale: order.isPreparing || order.isReady ? 1 : 0.95 }}
+                              <button
+                                onClick={() => {
+                                  if (!order.isPreparing && !order.isReady) {
+                                    handleStart(order.id)
+                                  }
+                                }}
                                 className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all duration-200 ${
                                   order.isPreparing || order.isReady
                                     ? "bg-white text-gray-400 shadow-md opacity-50 cursor-not-allowed"
-                                    : "bg-white text-gray-900 shadow-md hover:shadow-lg hover:scale-105"
+                                    : "bg-white text-gray-900 shadow-md hover:shadow-lg cursor-pointer"
                                 }`}
                               >
                                 START
-                              </motion.button>
+                              </button>
 
                               {/* READY / FINISH */}
                               {!order.isReady ? (
-                                <motion.button
-                                  onClick={() => handleReady(order.id)}
-                                  disabled={!order.isPreparing}
-                                  whileTap={{ scale: order.isPreparing ? 0.95 : 1 }}
+                                <button
+                                  onClick={() => {
+                                    if (order.isPreparing) {
+                                      handleReady(order.id)
+                                    }
+                                  }}
                                   className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all duration-200 ${
                                     order.isPreparing
-                                      ? "bg-yellow-400 text-gray-900 hover:bg-yellow-500 hover:shadow-lg"
+                                      ? "bg-yellow-400 text-gray-900 hover:bg-yellow-500 hover:shadow-lg cursor-pointer"
                                       : "bg-yellow-400 text-gray-900 opacity-50 cursor-not-allowed"
                                   }`}
                                 >
                                   READY
-                                </motion.button>
+                                </button>
                               ) : (
-                                <motion.button
+                                <button
                                   onClick={() => handleFinish(order.id)}
-                                  whileTap={{ scale: 0.95 }}
-                                  className="flex-1 py-2 px-3 rounded-lg font-bold text-xs bg-green-600 text-white hover:bg-green-700 hover:shadow-lg transition-all duration-200"
+                                  className="flex-1 py-2 px-3 rounded-lg font-bold text-xs bg-green-600 text-white hover:bg-green-700 hover:shadow-lg transition-all duration-200 cursor-pointer"
                                 >
                                   SERVED
-                                </motion.button>
+                                </button>
                               )}
                             </div>
 
                             {/* CANCEL */}
-                            <motion.button
-                              onClick={() => handleCancel(order.id)}
-                              disabled={cancellingId === order.id || order.isReady}
-                              whileTap={{ scale: 0.95 }}
+                            <button
+                              onClick={() => {
+                                if (cancellingId !== order.id && !order.isReady) {
+                                  handleCancel(order.id)
+                                }
+                              }}
                               className={`w-full py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 ${
                                 cancellingId === order.id || order.isReady
                                   ? "bg-red-50 text-red-300 cursor-not-allowed opacity-50"
-                                  : "bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700"
+                                  : "bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 cursor-pointer"
                               }`}
                             >
                               <XCircle className="w-3 h-3" />
                               {cancellingId === order.id ? "Cancelling..." : "CANCEL"}
-                            </motion.button>
+                            </button>
                           </div>
                         </motion.div>
                       ))}
