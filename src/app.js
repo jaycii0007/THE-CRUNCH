@@ -27,6 +27,9 @@ app.use('/api/products', productRoutes);
 const inventoryRoutes = require('./routes/inventoryRoutes');
 app.use('/api/inventory', inventoryRoutes);
 
+const batchesRoutes = require('./routes/batches');
+app.use('/api/batches', batchesRoutes);
+
 // stock manager endpoints
 const stockStatusRoutes = require('./routes/stockStatusRoutes');
 app.use('/api/stock-status', stockStatusRoutes);

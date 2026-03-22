@@ -35,7 +35,12 @@ router.post("/", async (req, res) => {
         );
 
         const newId = result.insertId;
-        const promoTag = raw_material ? "RAW_MATERIAL" : null;
+        const normalizedCategory = String(category || "").toLowerCase().trim();
+        const promoTag = raw_material
+            ? "RAW_MATERIAL"
+            : normalizedCategory.includes("suppl")
+                ? "SUPPLIES"
+                : "FINISHED_GOODS";
 
         // also insert into Menu so that inventory batches can reference this product
         // we explicitly set Product_ID to keep both tables aligned. If the
@@ -49,6 +54,44 @@ router.post("/", async (req, res) => {
         res.status(201).json({ message: "Product added", id: newId });
     } catch (err) {
         console.error(err);
+        res.status(500).json({ message: 'DB error', error: err.message });
+    }
+});
+
+// DELETE product
+router.delete("/:id", async (req, res) => {
+    try {
+        const productId = Number(req.params.id);
+        if (!Number.isFinite(productId) || productId <= 0) {
+            return res.status(400).json({ message: "Invalid product ID" });
+        }
+
+        // Temporarily disable foreign key checks to allow cascading deletes
+        await db.query("SET FOREIGN_KEY_CHECKS=0");
+
+        try {
+            // Delete batches associated with this product
+            await db.query("DELETE FROM Batches WHERE product_id = ?", [productId]);
+
+            // Delete inventory entries
+            await db.query("DELETE FROM Inventory WHERE Product_ID = ?", [productId]);
+
+            // Delete stock status entries
+            await db.query("DELETE FROM Stock_Status WHERE Product_ID = ?", [productId]);
+
+            // Delete menu entries
+            await db.query("DELETE FROM Menu WHERE Product_ID = ?", [productId]);
+
+            // Delete from products table
+            await db.query("DELETE FROM products WHERE id = ?", [productId]);
+
+            res.json({ message: "Product deleted successfully" });
+        } finally {
+            // Re-enable foreign key checks
+            await db.query("SET FOREIGN_KEY_CHECKS=1");
+        }
+    } catch (err) {
+        console.error("DELETE /products/:id error:", err);
         res.status(500).json({ message: 'DB error', error: err.message });
     }
 });
