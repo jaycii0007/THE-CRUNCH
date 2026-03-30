@@ -22,6 +22,8 @@ const testRoutes = require('./routes/testRoutes');
 app.use('/api/test', testRoutes);
 const productRoutes = require('./routes/productRoutes');
 app.use('/api/products', productRoutes);
+const purchaseOrdersRouter = require("./routes/purchaseOrders");
+app.use("/api/purchase-orders", purchaseOrdersRouter);
 
 // inventory and batch endpoints (new)
 const inventoryRoutes = require('./routes/inventoryRoutes');
@@ -60,5 +62,7 @@ app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   res.status(500).json({ message: 'Internal Server Error', error: err && err.message ? err.message : 'Unknown error' });
 });
+
+
 
 module.exports = app;

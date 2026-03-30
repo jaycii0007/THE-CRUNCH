@@ -38,6 +38,9 @@ async function setup() {
 
     // Drop tables if they exist (order chosen to satisfy foreign keys)
         const dropStatements = [
+            'DROP TABLE IF EXISTS purchase_order_items;',
+            'DROP TABLE IF EXISTS purchase_orders;',
+            'DROP TABLE IF EXISTS po_counter;',
       'DROP TABLE IF EXISTS Order_Tracking;',
       'DROP TABLE IF EXISTS Kitchen;',
       'DROP TABLE IF EXISTS Receipt;',
@@ -215,6 +218,39 @@ CREATE TABLE IF NOT EXISTS Reports (
     Total_Sales DECIMAL(15,2),
     Total_Transaction INT,
     GeneratedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS po_counter (
+    id INT PRIMARY KEY DEFAULT 1,
+    value INT NOT NULL DEFAULT 0,
+    CHECK (id = 1)
+);
+
+INSERT IGNORE INTO po_counter (id, value) VALUES (1, 0);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    po_id VARCHAR(12) NOT NULL PRIMARY KEY,
+    supplier VARCHAR(255) NOT NULL,
+    contact VARCHAR(100) DEFAULT '',
+    order_date DATE NOT NULL,
+    delivery_date DATE NOT NULL,
+    status ENUM('Draft','Ordered','Received','Cancelled') NOT NULL DEFAULT 'Draft',
+    notes TEXT DEFAULT NULL,
+    received_by VARCHAR(255) DEFAULT NULL,
+    received_date DATE DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+    item_id INT PRIMARY KEY AUTO_INCREMENT,
+    po_id VARCHAR(12) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    category VARCHAR(100) DEFAULT '',
+    unit VARCHAR(50) DEFAULT '',
+    quantity DECIMAL(10,2) NOT NULL DEFAULT 0,
+    unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+    FOREIGN KEY (po_id) REFERENCES purchase_orders(po_id) ON DELETE CASCADE
 );
 `;
 

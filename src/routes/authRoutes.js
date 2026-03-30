@@ -1,98 +1,126 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const db = require("../config/db");
 
-const db = require('../config/db');
+const JWT_SECRET = process.env.JWT_SECRET || "secretkey"; // ⚠️ use .env in production
 
-// REGISTER - Save to Admin table
-router.post('/register', async (req, res) => {
-    try {
-        // the frontend sends `name` field, older code used `username`
-        const { name, username, password, email } = req.body;
-        const userName = name || username; // tolerate either
+// ─────────────────────────────────────────────
+// REGISTER - saves to unified users table
+// ─────────────────────────────────────────────
+router.post("/register", async (req, res) => {
+  try {
+    const { name, username, password, email, role } = req.body;
+    const userName = name || username;
 
-        // check missing fields
-        if (!userName || !password || !email) {
-            return res.status(400).json({ message: "Name, email, and password required" });
-        }
-
-        // check if email already exists
-        const [existing] = await db.query(
-            'SELECT Admin_ID FROM Admin WHERE Email = ?',
-            [email]
-        );
-        if (existing.length > 0) {
-            return res.status(400).json({ message: "Email already registered" });
-        }
-
-        // hash password
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        // save user to Admin table
-        const [result] = await db.query(
-            'INSERT INTO Admin (UserName, Email, Password) VALUES (?, ?, ?)',
-            [userName, email, hashedPassword]
-        );
-
-        res.status(201).json({
-            message: "User registered successfully",
-            userId: result.insertId
-        });
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Server error", error: error.message });
+    if (!userName || !password || !email) {
+      return res.status(400).json({
+        message: "Name, email, and password required",
+      });
     }
+
+    // Validate role — default to 'customer' if not provided
+    const allowedRoles = [
+      "administrator",
+      "cashier",
+      "cook",
+      "inventory_manager",
+      "customer",
+    ];
+    const userRole = allowedRoles.includes(role) ? role : "customer";
+
+    // Check if email or username already exists
+    const [existing] = await db.query(
+      "SELECT id FROM users WHERE email = ? OR username = ?",
+      [email, userName],
+    );
+    if (existing.length > 0) {
+      return res.status(400).json({
+        message: "Email or username already registered",
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insert into unified users table
+    const [result] = await db.query(
+      `INSERT INTO users (username, email, password_hash, role) 
+       VALUES (?, ?, ?, ?)`,
+      [userName, email, hashedPassword, userRole],
+    );
+
+    res.status(201).json({
+      message: "User registered successfully",
+      userId: result.insertId,
+      role: userRole,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
 });
 
-// LOGIN - Validate against Admin table
-router.post('/login', async (req, res) => {
-    try {
-        const { username, password } = req.body;
+// ─────────────────────────────────────────────
+// LOGIN - checks unified users table
+// ─────────────────────────────────────────────
+router.post("/login", async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    const loginIdentifier = (email || username || "").trim();
 
-        // check missing fields
-        if (!username || !password) {
-            return res.status(400).json({ message: "Username and password required" });
-        }
-
-        // query Admin table by email (username field in frontend = email)
-        const [rows] = await db.query(
-            'SELECT Admin_ID, UserName, Email, Password FROM Admin WHERE Email = ?',
-            [username]
-        );
-
-        if (rows.length === 0) {
-            return res.status(400).json({ message: "Invalid credentials" });
-        }
-
-        const user = rows[0];
-
-        // validate password
-        const validPassword = await bcrypt.compare(password, user.Password);
-        if (!validPassword) {
-            return res.status(400).json({ message: "Invalid credentials" });
-        }
-
-        // create JWT token
-        const token = jwt.sign(
-            { userId: user.Admin_ID, username: user.UserName, email: user.Email },
-            "secretkey",
-            { expiresIn: "1h" }
-        );
-
-        res.json({
-            message: "Login successful",
-            token: token,
-            userId: user.Admin_ID,
-            username: user.UserName,
-            email: user.Email
-        });
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Server error", error: error.message });
+    if (!loginIdentifier || !password) {
+      return res.status(400).json({
+        message: "Email or username and password required",
+      });
     }
+
+    // ✅ Single query — checks all roles at once
+    const [rows] = await db.query(
+      `SELECT id, username, email, password_hash, role 
+       FROM users 
+       WHERE email = ? OR username = ?`,
+      [loginIdentifier, loginIdentifier],
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const user = rows[0];
+
+    // Validate password against password_hash
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // ✅ Include role in JWT payload
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role, // ✅ role is now in the token
+      },
+      JWT_SECRET,
+      { expiresIn: "1h" },
+    );
+
+    // ✅ Return role to frontend
+    res.json({
+      message: "Login successful",
+      token: token,
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role, // ✅ frontend uses this for routing
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
 });
 
 module.exports = router;

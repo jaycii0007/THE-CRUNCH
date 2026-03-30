@@ -8,6 +8,20 @@ async function hasColumn(tableName, columnName) {
   return rows.length > 0;
 }
 
+async function ensureInventoryAlertColumns() {
+  if (!(await hasColumn("Inventory", "Reorder_Point"))) {
+    await db.query(
+      "ALTER TABLE Inventory ADD COLUMN Reorder_Point DECIMAL(10,2) DEFAULT 20",
+    );
+  }
+
+  if (!(await hasColumn("Inventory", "Critical_Point"))) {
+    await db.query(
+      "ALTER TABLE Inventory ADD COLUMN Critical_Point DECIMAL(10,2) DEFAULT 5",
+    );
+  }
+}
+
 function toMySqlDateTime(value) {
   if (!value) return null;
   const d = new Date(value);
@@ -79,6 +93,7 @@ async function ensureBatchTable() {
 router.get("/", async (req, res) => {
   try {
     await ensureBatchTable();
+    await ensureInventoryAlertColumns();
 
     // Ensure inventory rows exist for all menu products.
     await db.query(
@@ -170,7 +185,7 @@ router.put("/:inventory_id", async (req, res) => {
       return res.status(400).json({ message: "Invalid inventory_id" });
     }
 
-    const { stock, daily_withdrawn, returned, wasted } = req.body;
+    const { stock, daily_withdrawn, returned, wasted, reorderPoint, criticalPoint } = req.body;
     const fields = [];
     const values = [];
 
@@ -191,6 +206,53 @@ router.put("/:inventory_id", async (req, res) => {
     if (wasted !== undefined) {
       fields.push("Wasted = ?");
       values.push(Number(wasted));
+    }
+
+    if (reorderPoint !== undefined || criticalPoint !== undefined) {
+      await ensureInventoryAlertColumns();
+
+      const [existingRows] = await db.query(
+        `SELECT
+           COALESCE(Reorder_Point, 20) AS reorderPoint,
+           COALESCE(Critical_Point, 5) AS criticalPoint
+         FROM Inventory
+         WHERE Inventory_ID = ?`,
+        [inventoryId],
+      );
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ message: "Inventory record not found" });
+      }
+
+      const nextReorderPoint =
+        reorderPoint !== undefined
+          ? Number(reorderPoint)
+          : Number(existingRows[0].reorderPoint);
+      const nextCriticalPoint =
+        criticalPoint !== undefined
+          ? Number(criticalPoint)
+          : Number(existingRows[0].criticalPoint);
+
+      if (!Number.isFinite(nextReorderPoint) || nextReorderPoint < 0) {
+        return res.status(400).json({ message: "Invalid reorderPoint value" });
+      }
+      if (!Number.isFinite(nextCriticalPoint) || nextCriticalPoint < 0) {
+        return res.status(400).json({ message: "Invalid criticalPoint value" });
+      }
+      if (nextCriticalPoint > nextReorderPoint) {
+        return res.status(400).json({
+          message: "Critical threshold cannot be greater than warning threshold",
+        });
+      }
+
+      if (reorderPoint !== undefined) {
+        fields.push("Reorder_Point = ?");
+        values.push(nextReorderPoint);
+      }
+      if (criticalPoint !== undefined) {
+        fields.push("Critical_Point = ?");
+        values.push(nextCriticalPoint);
+      }
     }
 
     if (fields.length === 0) {
