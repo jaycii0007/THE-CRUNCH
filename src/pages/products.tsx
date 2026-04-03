@@ -420,7 +420,7 @@ export default function Products() {
     localStorage.removeItem('userRole')
     localStorage.removeItem('userId')
     window.dispatchEvent(new Event('authChange'))
-    navigate('/login')
+    navigate('/products')
   }
 
   const [products, setProducts]               = useState<Product[]>(STATIC_PRODUCTS)
