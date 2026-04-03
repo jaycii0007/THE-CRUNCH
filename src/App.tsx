@@ -116,10 +116,7 @@ export default function App() {
 
       {/* ── Customer landing page ──────────────────────────────── */}
       {/* Guests get redirected to /login, logged-in users see page */}
-      <Route
-        path="/products"
-        element={protect(<Products />, ["administrator", "customer"])}
-      />
+      <Route path="/products" element={<Products />} />
 
       {/* ── Customer menu ──────────────────────────────────────── */}
       <Route
@@ -130,7 +127,10 @@ export default function App() {
       {/* ── Administrator only ─────────────────────────────────── */}
       <Route
         path="/dashboard"
-        element={protect(<AdminDashboard />, ["administrator", "inventory_manager"])}
+        element={protect(<AdminDashboard />, [
+          "administrator",
+          "inventory_manager",
+        ])}
       />
       <Route
         path="/sales-reports"
@@ -152,7 +152,10 @@ export default function App() {
       />
       <Route
         path="/stockmanager"
-        element={protect(<StockManager />, ["administrator", "inventory_manager"])}
+        element={protect(<StockManager />, [
+          "administrator",
+          "inventory_manager",
+        ])}
       />
 
       {/* ── Administrator + Cashier + Cook ────────────────────── */}
