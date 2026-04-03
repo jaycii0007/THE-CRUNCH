@@ -6,7 +6,9 @@ const deductStockForOrder = inventoryRoutes.deductStockForOrder;
 function normalizeOrderType(value) {
   if (!value) return "dine-in";
   const v = String(value).toLowerCase();
-  return v === "take-out" ? "take-out" : "dine-in";
+  if (v === "take-out") return "take-out";
+  if (v === "delivery") return "delivery";
+  return "dine-in";
 }
 
 function isPreparingStatus(value) {
