@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Search, ShoppingBag, Trash2, Check, X, ChevronRight, Minus, Plus, UtensilsCrossed } from "lucide-react";
 import { api } from "../lib/api";
+import { Sidebar } from "@/components/Sidebar";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ function isMenuFood(item: MenuItem): boolean {
   return item.category.toUpperCase().includes("MENU FOOD");
 }
 
-export function mapProducts(data: Record<string, unknown>[]): MenuItem[] {
+function mapProducts(data: Record<string, unknown>[]): MenuItem[] {
   const dedupedMap = new Map<string, Record<string, unknown>>();
   for (const p of data ?? []) {
     if (p.isRawMaterial) continue;
@@ -162,7 +163,7 @@ function CartRow({ item, onRemove, onQty }: CartRowProps) {
       style={{ animation: "slideIn 0.18s cubic-bezier(.34,1.56,.64,1)" }}
     >
       <div
-        className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center"
+        className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center"
         style={{ background: cardColor(item.id) }}
       >
         <UtensilsCrossed className="w-4 h-4 text-amber-800 opacity-50" />
@@ -323,6 +324,8 @@ function SuccessModal({ show, onClose, orderNumber, savedCart, paidAmount }: Suc
 
 export default function CashierView() {
   const [products, setProducts] = useState<MenuItem[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(false);
+  const [productsError, setProductsError] = useState<string>("");
   const [selectedCat, setSelectedCat] = useState<string>("ALL");
   const [search, setSearch] = useState<string>("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -336,11 +339,20 @@ export default function CashierView() {
   const [isPlacingOrder, setIsPlacingOrder] = useState<boolean>(false);
 
   // Fetch inventory on mount
-  // useEffect(() => {
-  //   api.get<Record<string, unknown>[]>("/inventory")
-  //     .then((data) => setProducts(mapProducts(data ?? [])))
-  //     .catch(console.error);
-  // }, []);
+  useEffect(() => {
+    setIsLoadingProducts(true);
+    api.get<Record<string, unknown>[]>("/inventory")
+      .then((data) => {
+        setProducts(mapProducts(data ?? []));
+        setProductsError("");
+      })
+      .catch(() => {
+        setProductsError("Failed to load menu items.");
+      })
+      .finally(() => {
+        setIsLoadingProducts(false);
+      });
+  }, []);
 
   // ── Derived ──
   const categories: string[] = [
@@ -457,6 +469,8 @@ export default function CashierView() {
 
   return (
     <>
+      <Sidebar />
+
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; }
@@ -501,7 +515,7 @@ export default function CashierView() {
       <div className="cashier-root flex h-screen bg-gray-50 overflow-hidden">
 
         {/* ── Main panel ── */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden pl-20">
 
           {/* Header */}
           <div className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
@@ -552,7 +566,19 @@ export default function CashierView() {
               className="grid gap-3"
               style={{ gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))" }}
             >
-              {filtered.map((item, idx) => (
+              {isLoadingProducts && (
+                <p className="col-span-full text-center text-sm text-gray-400 py-16">
+                  Loading menu items...
+                </p>
+              )}
+
+              {!isLoadingProducts && productsError && (
+                <p className="col-span-full text-center text-sm text-red-400 py-16">
+                  {productsError}
+                </p>
+              )}
+
+              {!isLoadingProducts && !productsError && filtered.map((item, idx) => (
                 <div
                   key={item.id}
                   style={{ animation: `slideIn 0.2s ${idx * 0.03}s both` }}
@@ -565,7 +591,7 @@ export default function CashierView() {
                 </div>
               ))}
 
-              {filtered.length === 0 && (
+              {!isLoadingProducts && !productsError && filtered.length === 0 && (
                 <p className="col-span-full text-center text-sm text-gray-400 py-16">
                   No items found.
                 </p>

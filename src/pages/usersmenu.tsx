@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 
 /* ─────────────────────────────────────────────
@@ -407,6 +408,7 @@ function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleF
 }
 
 export default function Delicacy() {
+  const navigate = useNavigate()
   const [activeCategory, setActiveCategory] = useState("Chicken")
   const [activeMeal,     setActiveMeal]     = useState("Lunch")
   const [favorites,      setFavorites]      = useState<number[]>([])
@@ -502,7 +504,7 @@ export default function Delicacy() {
       <motion.div
         initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.65, ease: EASE }}
-        style={{ position: "sticky", top: 0, zIndex: 100, background: "rgba(14,12,10,0.94)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(240,237,232,0.07)", padding: "14px 40px", display: "flex", justifyContent: "flex-end", alignItems: "center" }}
+        style={{ position: "sticky", top: 0, zIndex: 100, background: "rgba(14,12,10,0.94)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(240,237,232,0.07)", padding: "14px 40px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}
       >
         <motion.button
           whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.9 }} transition={SP}
@@ -520,6 +522,20 @@ export default function Delicacy() {
               </motion.span>
             )}
           </AnimatePresence>
+        </motion.button>
+        <motion.button
+          whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.9 }} transition={SP}
+          onClick={() => {
+            localStorage.removeItem("isAuthenticated");
+            localStorage.removeItem("authToken");
+            localStorage.removeItem("userName");
+            localStorage.removeItem("userRole");
+            localStorage.removeItem("userId");
+            navigate("/aboutthecrunch");
+          }}
+          style={{ background: "rgba(240,237,232,0.06)", color: "#f0ede8", border: "1px solid rgba(240,237,232,0.12)", borderRadius: 12, padding: "10px 18px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, letterSpacing: "0.02em" }}
+        >
+          Log Out
         </motion.button>
       </motion.div>
 

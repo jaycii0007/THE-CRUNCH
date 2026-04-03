@@ -151,6 +151,16 @@ export default function AboutTheCrunch() {
           <div style={{ width: 1, height: 16, background: 'rgba(240,237,232,0.12)', margin: '0 8px' }} />
 
           <motion.button
+            whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+            onClick={() => navigate('/login')}
+            style={{ background: 'none', border: '1px solid rgba(240,237,232,0.18)', borderRadius: 9, padding: '8px 18px', fontSize: 13, fontWeight: 600, color: '#f0ede8', cursor: 'pointer', fontFamily: PP, letterSpacing: '0.02em', transition: 'background 0.2s', marginRight: 6 }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(240,237,232,0.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+          >
+            Login
+          </motion.button>
+
+          <motion.button
             whileHover={{ scale: 1.03, backgroundColor: '#e6b800' }} whileTap={{ scale: 0.97 }}
             onClick={() => navigate('/usersmenu')}
             style={{ background: '#f5c842', border: 'none', borderRadius: 9, padding: '9px 22px', fontSize: 13, fontWeight: 700, color: '#111', cursor: 'pointer', fontFamily: PP, letterSpacing: '0.02em', transition: 'background 0.2s' }}

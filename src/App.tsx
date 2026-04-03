@@ -1,18 +1,25 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import React from "react";
-import { NotificationProvider } from "@/lib/NotificationContext"; // ← add this
+
+// ── Admin pages
 import AdminDashboard from "./pages/index";
-import Order from "./pages/Order";
-import Inventory from "./pages/inventory";
-import Login from "./pages/login";
-import Menu from "./pages/menu";
-import Products from "./pages/products";
-import StaffAccounts from "./pages/staffaccounts";
 import SalesReports from "./pages/sales-reports";
-import AboutTheCrunch from "./pages/aboutthecrunch";
-import UsersMenu from "./pages/usersmenu";
+import Inventory from "./pages/inventory";
+import Menu from "./pages/menu";
+import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
+import Products from "./pages/products";
+
+// ── Cashier pages
+import Order from "./pages/Order";
+
+// ── Shared / Auth
+import Login from "./pages/login";
+import AboutTheCrunch from "./pages/aboutthecrunch";
+
+// ── Customer pages
+import UsersMenu from "./pages/usersmenu";
 
 type Role =
   | "administrator"
@@ -40,17 +47,31 @@ function ProtectedRoute({
 }
 
 function Unauthorized() {
+  const role = localStorage.getItem("userRole");
+
+  // Redirect to their home instead of blank page
+  const roleHomeMap: Record<string, string> = {
+    administrator: "/dashboard",
+    cashier: "/menu",
+    cook: "/cook/orders",
+    inventory_manager: "/inventory",
+    customer: "/usersmenu",
+  };
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+    <div
+      style={{ fontFamily: "'Poppins', sans-serif" }}
+      className="min-h-screen flex flex-col items-center justify-center gap-4"
+    >
       <h1 className="text-4xl font-bold text-red-500">403</h1>
       <p className="text-gray-600">
         You don't have permission to view this page.
       </p>
       <button
-        onClick={() => window.history.back()}
+        onClick={() => (window.location.href = roleHomeMap[role || ""] || "/")}
         className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-black"
       >
-        Go Back
+        Go to my dashboard
       </button>
     </div>
   );
@@ -60,7 +81,6 @@ export default function App() {
   const [isAuth, setIsAuth] = useState<boolean>(
     () => localStorage.getItem("isAuthenticated") === "true",
   );
-
   const [userRole, setUserRole] = useState<Role>(
     () => localStorage.getItem("userRole") as Role,
   );
@@ -78,10 +98,7 @@ export default function App() {
     };
   }, []);
 
-  const protect = (
-    element: React.ReactElement,
-    allowedRoles: Role[],
-  ) => (
+  const protect = (element: React.ReactElement, allowedRoles: Role[]) => (
     <ProtectedRoute
       element={element}
       allowedRoles={allowedRoles}
@@ -91,56 +108,75 @@ export default function App() {
   );
 
   return (
-    <NotificationProvider>  {/* ← wrap here */}
-      <Routes>
-        {/* ── Public ───────────────────────────── */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/aboutthecrunch" element={<AboutTheCrunch />} />
-        <Route path="/usersmenu" element={<UsersMenu />} />
-        <Route path="/" element={<Products />} />
+    <Routes>
+      {/* ── Public (Customer) ──────────────────────────────────── */}
+      <Route path="/" element={<AboutTheCrunch />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/aboutthecrunch" element={<AboutTheCrunch />} />
+      <Route path="/usersmenu" element={<UsersMenu />} />
 
-        {/* ── Administrator only ───────────────── */}
-        <Route
-          path="/dashboard"
-          element={protect(<AdminDashboard />, ["administrator"])}
-        />
-        <Route path="/menu" element={protect(<Menu />, ["administrator"])} />
-        <Route
-          path="/products"
-          element={protect(<Products />, ["administrator"])}
-        />
-        <Route
-          path="/users"
-          element={protect(<StaffAccounts />, ["administrator"])}
-        />
-        <Route
-          path="/sales-reports"
-          element={protect(<SalesReports />, ["administrator"])}
-        />
+      {/* ── Administrator only ─────────────────────────────────── */}
+      {/* Dashboard, Sales, Inventory, Menu, Users, Reports        */}
+      <Route
+        path="/dashboard"
+        element={protect(<AdminDashboard />, [
+          "administrator",
+          "inventory_manager",
+        ])}
+      />
 
-        {/* ── Admin + Cashier + Cook ───────────── */}
-        <Route
-          path="/orders"
-          element={protect(<Order />, ["administrator", "cashier", "cook"])}
-        />
+      <Route
+        path="/sales-reports"
+        element={protect(<SalesReports />, ["administrator"])}
+      />
 
-        {/* ── Admin + Inventory Manager ────────── */}
-        <Route
-          path="/inventory"
-          element={protect(<Inventory />, ["administrator", "inventory_manager"])}
-        />
-        <Route
-          path="/stockmanager"
-          element={protect(<StockManager />, [
-            "administrator",
-            "inventory_manager",
-          ])}
-        />
+      <Route
+        path="/menu"
+        element={protect(<Menu />, ["administrator", "cashier"])}
+      />
 
-        {/* ── Fallbacks ────────────────────────── */}
-        <Route path="/unauthorized" element={<Unauthorized />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </NotificationProvider>
+      <Route
+        path="/products"
+        element={protect(<Products />, ["administrator"])}
+      />
+
+      <Route
+        path="/users"
+        element={protect(<StaffAccounts />, ["administrator"])}
+      />
+
+      {/* ── Administrator + Inventory Manager ─────────────────── */}
+      {/* Inventory dashboard, stock manager, low stock alerts     */}
+      <Route
+        path="/inventory"
+        element={protect(<Inventory />, ["administrator", "inventory_manager"])}
+      />
+
+      <Route
+        path="/stockmanager"
+        element={protect(<StockManager />, [
+          "administrator",
+          "inventory_manager",
+        ])}
+      />
+
+      {/* ── Administrator + Cashier ────────────────────────────── */}
+      {/* Orders, payments, receipts, transaction history          */}
+      <Route
+        path="/orders"
+        element={protect(<Order />, ["administrator", "cashier", "cook"])}
+      />
+
+      {/* ── Cook only ──────────────────────────────────────────── */}
+      {/* Order queue, order status updates, notifications         */}
+      <Route
+        path="/cook/orders"
+        element={protect(<Order />, ["administrator", "cook"])}
+      />
+
+      {/* ── Fallbacks ──────────────────────────────────────────── */}
+      <Route path="/unauthorized" element={<Unauthorized />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

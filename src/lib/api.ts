@@ -35,8 +35,12 @@ function resolveApiBaseUrl(): string {
 
 const API_BASE_URL = resolveApiBaseUrl();
 
-interface FetchOptions extends RequestInit {
+// Body types accepted by apiCall
+type ApiBody = object | FormData | URLSearchParams | string;
+
+interface FetchOptions extends Omit<RequestInit, "body"> {
   skipAuth?: boolean;
+  body?: ApiBody;
 }
 
 // Shape of a failed API error response body
@@ -50,9 +54,6 @@ interface ApiError extends Error {
   status: number;
   data: ApiErrorData | string | null;
 }
-
-// Body types accepted by apiCall
-type ApiBody = object | FormData | URLSearchParams | string;
 
 // Return type for authApi.login
 interface LoginResponse {
@@ -202,7 +203,7 @@ export const staffApi = {
   }) =>
     apiCall<{ message: string; userId: number; role: string }>(
       "/users/staff/create",
-      { method: "POST", body: JSON.stringify(data) },
+      { method: "POST", body: data },
     ),
 
   delete: (id: number) =>
