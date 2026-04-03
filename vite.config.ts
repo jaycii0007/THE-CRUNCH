@@ -18,8 +18,9 @@ export default defineConfig(({ mode }: { mode: string }) => {
 
     server: {
       port: 5173,
-      host: "localhost",
+      host: "0.0.0.0",
       strictPort: false,
+      allowedHosts: true,
       proxy: {
         "/api": {
           target: apiTarget,
@@ -28,7 +29,7 @@ export default defineConfig(({ mode }: { mode: string }) => {
           rewrite: (path) => path.replace(/^\/api/, "/api"),
           ws: true,
           headers: {
-            "ngrok-skip-browser-warning": "true",  // ← ADDED
+            "ngrok-skip-browser-warning": "true", // ← ADDED
           },
         },
       },
@@ -48,7 +49,7 @@ export default defineConfig(({ mode }: { mode: string }) => {
           changeOrigin: true,
           secure: false,
           headers: {
-            "ngrok-skip-browser-warning": "true",  // ← ADDED
+            "ngrok-skip-browser-warning": "true", // ← ADDED
           },
         },
       },
