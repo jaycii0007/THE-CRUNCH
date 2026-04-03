@@ -5,25 +5,26 @@ import {
   useEffect,
   useCallback,
 } from "react";
-import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
-import { X, CheckCircle2, AlertTriangle, Info, XCircle } from "lucide-react";
+import { createPortal } from "react-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  X,
+  CheckCircle2,
+  AlertTriangle,
+  Info,
+  XCircle,
+} from "lucide-react";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+/* ================= TYPES ================= */
 
-export type NotificationType = "error" | "warning" | "info" | "success";
+type NotificationType = "error" | "warning" | "info" | "success";
 
-export interface Notification {
+interface Notification {
   id: string;
   label: string;
   type: NotificationType;
-  /**
-   * Auto-dismiss after this many ms.
-   * Pass 0 for persistent (must be manually dismissed).
-   * Defaults to 4000.
-   */
   duration?: number;
-  onClick?: () => void;
 }
 
 interface NotificationContextValue {
@@ -33,233 +34,264 @@ interface NotificationContextValue {
   clearAll: () => void;
 }
 
-// ── Visual config ─────────────────────────────────────────────────────────────
-
-interface TypeConfig {
-  icon: ReactNode;
-  accent: string;
-  bg: string;
-  text: string;
-  bar: string;
+interface ConfirmOptions {
+  title?: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
 }
 
-const TYPE_CONFIG: Record<NotificationType, TypeConfig> = {
+interface ConfirmState extends ConfirmOptions {
+  resolve: (value: boolean) => void;
+}
+
+/* ================= CONTEXT ================= */
+
+const NotificationContext =
+  createContext<NotificationContextValue | null>(null);
+
+const ConfirmContext = createContext<{
+  confirm: (opts: ConfirmOptions) => Promise<boolean>;
+} | null>(null);
+
+/* ================= CONFIG ================= */
+
+const TYPE_CONFIG = {
   success: {
-    icon: <CheckCircle2 size={15} />,
-    accent: "#16a34a",
-    bg: "#f0fdf4",
-    text: "#14532d",
-    bar: "#4ade80",
+    icon: <CheckCircle2 size={16} />,
+    color: "#16a34a",
   },
   error: {
-    icon: <XCircle size={15} />,
-    accent: "#dc2626",
-    bg: "#fef2f2",
-    text: "#7f1d1d",
-    bar: "#f87171",
+    icon: <XCircle size={16} />,
+    color: "#dc2626",
   },
   warning: {
-    icon: <AlertTriangle size={15} />,
-    accent: "#d97706",
-    bg: "#fffbeb",
-    text: "#78350f",
-    bar: "#fbbf24",
+    icon: <AlertTriangle size={16} />,
+    color: "#d97706",
   },
   info: {
-    icon: <Info size={15} />,
-    accent: "#2563eb",
-    bg: "#eff6ff",
-    text: "#1e3a8a",
-    bar: "#60a5fa",
+    icon: <Info size={16} />,
+    color: "#2563eb",
   },
 };
 
-// ── Context ───────────────────────────────────────────────────────────────────
+/* ================= TOAST ================= */
 
-const NotificationContext = createContext<NotificationContextValue | null>(null);
-
-// ── Single toast item ─────────────────────────────────────────────────────────
-
-interface ToastItemProps {
+function ToastItem({
+  notification,
+  onRemove,
+}: {
   notification: Notification;
   onRemove: (id: string) => void;
-}
-
-function ToastItem({ notification, onRemove }: ToastItemProps) {
-  const { id, label, type, duration = 4000, onClick } = notification;
+}) {
+  const { id, label, type, duration = 4000 } = notification;
   const cfg = TYPE_CONFIG[type];
 
-  const [mounted, setMounted] = useState(false);
-  const [exiting, setExiting] = useState(false);
-
-  const dismiss = useCallback(() => {
-    setExiting(true);
-    setTimeout(() => onRemove(id), 300);
-  }, [id, onRemove]);
-
-  // Trigger enter animation on next frame
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  // Auto-dismiss timer
-  useEffect(() => {
-    if (duration === 0) return;
-    const timer = setTimeout(dismiss, duration);
+    const timer = setTimeout(() => onRemove(id), duration);
     return () => clearTimeout(timer);
-  }, [duration, dismiss]);
-
-  const isVisible = mounted && !exiting;
+  }, [id, duration, onRemove]);
 
   return (
-    <div
-      role="alert"
-      aria-live="polite"
-      onClick={onClick}
+    <motion.div
+      initial={{ opacity: 0, x: 80, scale: 0.95 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 80, scale: 0.95 }}
+      transition={{ type: "spring", stiffness: 300, damping: 25 }}
       style={{
-        fontFamily: "'Poppins', sans-serif",
-        background: cfg.bg,
-        border: `1px solid ${cfg.accent}25`,
-        borderLeft: `3px solid ${cfg.accent}`,
-        borderRadius: "0 12px 12px 0",
-        overflow: "hidden",
-        minWidth: 280,
-        maxWidth: 360,
-        boxShadow: "0 4px 24px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05)",
-        cursor: onClick ? "pointer" : "default",
-        marginBottom: 8,
-        transform: isVisible
-          ? "translateX(0) scale(1)"
-          : "translateX(110%) scale(0.96)",
-        opacity: isVisible ? 1 : 0,
-        transition: exiting
-          ? "transform 0.28s cubic-bezier(0.4,0,1,1), opacity 0.28s ease"
-          : "transform 0.38s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s ease",
-        willChange: "transform, opacity",
+        background: "#fff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        minWidth: 260,
+        boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+        borderLeft: `4px solid ${cfg.color}`,
       }}
     >
-      {/* Progress bar */}
-      {duration > 0 && (
-        <div
-          style={{
-            height: 2,
-            background: cfg.bar,
-            transformOrigin: "left",
-            animation: `notif-shrink ${duration}ms linear forwards`,
-          }}
-        />
-      )}
+      <span style={{ color: cfg.color }}>{cfg.icon}</span>
 
-      {/* Body */}
-      <div
+      <span style={{ flex: 1, fontSize: 13, color: "#334155" }}>
+        {label}
+      </span>
+
+      <button
+        onClick={() => onRemove(id)}
         style={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 10,
-          padding: "11px 13px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          opacity: 0.5,
         }}
       >
-        {/* Icon */}
-        <span style={{ color: cfg.accent, flexShrink: 0, marginTop: 1 }}>
-          {cfg.icon}
-        </span>
-
-        {/* Message */}
-        <p
-          style={{
-            flex: 1,
-            margin: 0,
-            fontSize: 13,
-            fontWeight: 500,
-            color: cfg.text,
-            lineHeight: 1.5,
-          }}
-        >
-          {label}
-        </p>
-
-        {/* Dismiss */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            dismiss();
-          }}
-          aria-label="Dismiss notification"
-          style={{
-            flexShrink: 0,
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            color: cfg.accent,
-            opacity: 0.45,
-            padding: 2,
-            borderRadius: 4,
-            display: "flex",
-            alignItems: "center",
-            transition: "opacity 0.15s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.45")}
-        >
-          <X size={13} strokeWidth={2.5} />
-        </button>
-      </div>
-    </div>
+        <X size={14} />
+      </button>
+    </motion.div>
   );
 }
-
-// ── Toast container (portaled) ────────────────────────────────────────────────
 
 function ToastContainer() {
   const { notifications, removeNotification } = useNotifications();
 
   return createPortal(
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500&display=swap');
-        @keyframes notif-shrink {
-          from { transform: scaleX(1); }
-          to   { transform: scaleX(0); }
-        }
-      `}</style>
-      <div
-        aria-label="Notifications"
-        style={{
-          position: "fixed",
-          top: 24,
-          right: 24,
-          zIndex: 9999,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-end",
-          pointerEvents: "none",
-        }}
-      >
+    <div
+      style={{
+        position: "fixed",
+        top: 24,
+        right: 24,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        zIndex: 9999,
+      }}
+    >
+      <AnimatePresence>
         {notifications.map((n) => (
-          <div key={n.id} style={{ pointerEvents: "all" }}>
-            <ToastItem notification={n} onRemove={removeNotification} />
-          </div>
+          <ToastItem
+            key={n.id}
+            notification={n}
+            onRemove={removeNotification}
+          />
         ))}
-      </div>
-    </>,
+      </AnimatePresence>
+    </div>,
     document.body
   );
 }
 
-// ── Provider ──────────────────────────────────────────────────────────────────
+/* ================= CONFIRM MODAL ================= */
 
-export function NotificationProvider({ children }: { children: ReactNode }) {
+function ConfirmDialog({
+  state,
+  onResponse,
+}: {
+  state: ConfirmState;
+  onResponse: (v: boolean) => void;
+}) {
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(15,23,42,0.30)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10000,
+          padding: 20,
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onResponse(false);
+        }}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 16, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.98 }}
+          transition={{
+            duration: 0.22,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+          style={{
+            width: "100%",
+            maxWidth: 480,
+            background: "#f8fafc",
+            borderRadius: 20,
+            padding: 24,
+            border: "1px solid #e2e8f0",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 700,
+              color: "#0f172a",
+              marginBottom: 16,
+            }}
+          >
+            {state.title ?? "Confirm Action"}
+          </h2>
+
+          <div
+            style={{
+              fontSize: 14,
+              color: "#475569",
+              lineHeight: 1.6,
+              marginBottom: 24,
+            }}
+          >
+            {state.message}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 12,
+            }}
+          >
+            <button
+              onClick={() => onResponse(false)}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 12,
+                border: "1px solid #cbd5f5",
+                background: "#f1f5f9",
+                color: "#64748b",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {state.cancelLabel ?? "Cancel"}
+            </button>
+
+            <button
+              onClick={() => onResponse(true)}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 12,
+                border: "none",
+                background: state.danger ? "#dc2626" : "#0f172a",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              {state.confirmLabel ?? "Confirm"}
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body
+  );
+}
+
+/* ================= PROVIDER ================= */
+
+export function NotificationProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [confirmState, setConfirmState] =
+    useState<ConfirmState | null>(null);
 
   const addNotification = useCallback((n: Notification) => {
-    setNotifications((prev) => {
-      // Replace in-place if same id already exists — prevents duplicates
-      const exists = prev.some((x) => x.id === n.id);
-      return exists
-        ? prev.map((x) => (x.id === n.id ? n : x))
-        : [...prev, n];
-    });
+    setNotifications((prev) => [...prev, n]);
   }, []);
 
   const removeNotification = useCallback((id: string) => {
@@ -268,23 +300,53 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   const clearAll = useCallback(() => setNotifications([]), []);
 
+  const confirm = useCallback((opts: ConfirmOptions) => {
+    return new Promise<boolean>((resolve) => {
+      setConfirmState({ ...opts, resolve });
+    });
+  }, []);
+
+  const handleConfirmResponse = (value: boolean) => {
+    confirmState?.resolve(value);
+    setConfirmState(null);
+  };
+
   return (
     <NotificationContext.Provider
       value={{ notifications, addNotification, removeNotification, clearAll }}
     >
-      {children}
-      {/* Toast UI is rendered here via portal — no extra component needed */}
-      <ToastContainer />
+      <ConfirmContext.Provider value={{ confirm }}>
+        {children}
+        <ToastContainer />
+        {confirmState && (
+          <ConfirmDialog
+            state={confirmState}
+            onResponse={handleConfirmResponse}
+          />
+        )}
+      </ConfirmContext.Provider>
     </NotificationContext.Provider>
   );
 }
 
-// ── Hook ──────────────────────────────────────────────────────────────────────
+/* ================= HOOKS ================= */
 
 export function useNotifications(): NotificationContextValue {
   const ctx = useContext(NotificationContext);
-  if (!ctx) {
-    throw new Error("useNotifications must be used inside <NotificationProvider>");
-  }
+  if (!ctx)
+    throw new Error(
+      "useNotifications must be used inside NotificationProvider"
+    );
   return ctx;
+}
+
+export function useConfirm(): (
+  opts: ConfirmOptions
+) => Promise<boolean> {
+  const ctx = useContext(ConfirmContext);
+  if (!ctx)
+    throw new Error(
+      "useConfirm must be used inside NotificationProvider"
+    );
+  return ctx.confirm;
 }

@@ -3,9 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "@/components/Sidebar";
 import { staffApi } from "../lib/api";
 import type { StaffMember } from "../lib/api";
-import { useNotifications } from "../lib/NotificationContext";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
+import { useNotifications, useConfirm } from "../lib/NotificationContext";
 
 type Role = "administrator" | "cashier" | "cook" | "inventory_manager";
 interface FormState {
@@ -14,8 +12,6 @@ interface FormState {
   password: string;
   role: Role;
 }
-
-// ── Constants ─────────────────────────────────────────────────────────────────
 
 const ROLES: Role[] = ["administrator", "cashier", "cook", "inventory_manager"];
 
@@ -41,8 +37,6 @@ const DEFAULT_FORM: FormState = {
   role: "cashier",
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function getAvatarColor(name: string): [string, string] {
   let h = 0;
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) % AVATAR_PALETTE.length;
@@ -50,27 +44,20 @@ function getAvatarColor(name: string): [string, string] {
 }
 
 function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (typeof err === "object" && err !== null && "message" in err) {
     const maybeMessage = (err as { message?: unknown }).message;
-    if (typeof maybeMessage === "string" && maybeMessage.trim())
-      return maybeMessage;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
   }
   return fallback;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
 export default function StaffAccounts() {
   const { addNotification } = useNotifications();
+  const confirm = useConfirm();
   const [employees, setEmployees] = useState<StaffMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showModal, setShowModal] = useState<boolean>(false);
@@ -130,8 +117,22 @@ export default function StaffAccounts() {
     setError("");
   };
 
-  const handleRemove = async (id: number): Promise<void> => {
-    if (!confirm("Delete this account?")) return;
+  const handleRemove = async (id: number, name: string): Promise<void> => {
+    const ok = await confirm({
+      title: "Delete staff account?",
+      message: (
+        <>
+          This will permanently remove{" "}
+          <strong style={{ color: "#2d3748", fontWeight: 600 }}>{name}</strong>'s
+          account. This action cannot be undone.
+        </>
+      ),
+      confirmLabel: "Delete account",
+      cancelLabel: "Cancel",
+      danger: true,
+    });
+    if (!ok) return;
+
     try {
       await staffApi.delete(id);
       setEmployees((prev) => prev.filter((e) => e.id !== id));
@@ -153,13 +154,11 @@ export default function StaffAccounts() {
       <Sidebar />
 
       <div style={{ padding: "32px 36px 32px 88px" }}>
-        {/* Poppins font */}
         <link
           href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
 
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -171,24 +170,10 @@ export default function StaffAccounts() {
           }}
         >
           <div>
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: 800,
-                color: "#1a202c",
-                lineHeight: 1.2,
-              }}
-            >
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#1a202c", lineHeight: 1.2 }}>
               Staff Accounts
             </div>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 400,
-                color: "#a0aec0",
-                marginTop: 3,
-              }}
-            >
+            <div style={{ fontSize: 12, fontWeight: 400, color: "#a0aec0", marginTop: 3 }}>
               Manage employee access and roles
             </div>
           </div>
@@ -214,7 +199,6 @@ export default function StaffAccounts() {
           </button>
         </div>
 
-        {/* Stats */}
         <div
           style={{
             display: "flex",
@@ -233,32 +217,16 @@ export default function StaffAccounts() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22, delay: i * 0.04 }}
             >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: "#a0aec0",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.07em",
-                }}
-              >
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#a0aec0", textTransform: "uppercase", letterSpacing: "0.07em" }}>
                 {s.label}
               </div>
-              <div
-                style={{
-                  fontSize: 22,
-                  fontWeight: 500,
-                  color: "#2d3748",
-                  lineHeight: 1,
-                }}
-              >
+              <div style={{ fontSize: 22, fontWeight: 500, color: "#2d3748", lineHeight: 1 }}>
                 {s.value}
               </div>
             </motion.div>
           ))}
         </div>
 
-        {/* Table */}
         <div
           style={{
             background: "#fff",
@@ -267,58 +235,38 @@ export default function StaffAccounts() {
             overflow: "hidden",
           }}
         >
-          <table
-            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}
-          >
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr>
-                {["#", "Employee", "Role", "Email", "ID", "Status", ""].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: "12px 18px",
-                        textAlign: "left",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: "#a0aec0",
-                        letterSpacing: "0.07em",
-                        textTransform: "uppercase",
-                        borderBottom: "1px solid #e2e8f0",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ),
-                )}
+                {["#", "Employee", "Role", "Email", "ID", "Status", ""].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      padding: "12px 18px",
+                      textAlign: "left",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "#a0aec0",
+                      letterSpacing: "0.07em",
+                      textTransform: "uppercase",
+                      borderBottom: "1px solid #e2e8f0",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    style={{
-                      textAlign: "center",
-                      padding: "64px 20px",
-                      fontSize: 13,
-                      color: "#94a3b8",
-                    }}
-                  >
+                  <td colSpan={7} style={{ textAlign: "center", padding: "64px 20px", fontSize: 13, color: "#94a3b8" }}>
                     Loading staff accounts...
                   </td>
                 </tr>
               ) : employees.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    style={{
-                      textAlign: "center",
-                      padding: "64px 20px",
-                      fontSize: 13,
-                      color: "#cbd5e0",
-                    }}
-                  >
+                  <td colSpan={7} style={{ textAlign: "center", padding: "64px 20px", fontSize: 13, color: "#cbd5e0" }}>
                     No employees yet. Add one above.
                   </td>
                 </tr>
@@ -326,9 +274,7 @@ export default function StaffAccounts() {
                 <AnimatePresence initial={false}>
                   {employees.map((emp, i) => {
                     const [avBg, avFg] = getAvatarColor(emp.username);
-                    const role = ROLES.includes(emp.role as Role)
-                      ? (emp.role as Role)
-                      : null;
+                    const role = ROLES.includes(emp.role as Role) ? (emp.role as Role) : null;
                     return (
                       <motion.tr
                         key={emp.id}
@@ -338,30 +284,11 @@ export default function StaffAccounts() {
                         transition={{ duration: 0.15 }}
                         style={{ borderBottom: "1px solid #f0f4f8" }}
                       >
-                        <td
-                          style={{
-                            padding: "13px 18px",
-                            verticalAlign: "middle",
-                            fontSize: 12,
-                            color: "#cbd5e0",
-                            width: 32,
-                          }}
-                        >
+                        <td style={{ padding: "13px 18px", verticalAlign: "middle", fontSize: 12, color: "#cbd5e0", width: 32 }}>
                           {i + 1}
                         </td>
-                        <td
-                          style={{
-                            padding: "13px 18px",
-                            verticalAlign: "middle",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                            }}
-                          >
+                        <td style={{ padding: "13px 18px", verticalAlign: "middle" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <div
                               style={{
                                 width: 32,
@@ -379,23 +306,12 @@ export default function StaffAccounts() {
                             >
                               {getInitials(emp.username)}
                             </div>
-                            <span
-                              style={{
-                                fontWeight: 600,
-                                color: "#2d3748",
-                                fontSize: 13,
-                              }}
-                            >
+                            <span style={{ fontWeight: 600, color: "#2d3748", fontSize: 13 }}>
                               {emp.username}
                             </span>
                           </div>
                         </td>
-                        <td
-                          style={{
-                            padding: "13px 18px",
-                            verticalAlign: "middle",
-                          }}
-                        >
+                        <td style={{ padding: "13px 18px", verticalAlign: "middle" }}>
                           <span
                             style={{
                               display: "inline-block",
@@ -411,61 +327,19 @@ export default function StaffAccounts() {
                             {role ? ROLE_LABEL[role] : emp.role}
                           </span>
                         </td>
-                        <td
-                          style={{
-                            padding: "13px 18px",
-                            verticalAlign: "middle",
-                            fontSize: 12,
-                            color: "#a0aec0",
-                          }}
-                        >
+                        <td style={{ padding: "13px 18px", verticalAlign: "middle", fontSize: 12, color: "#a0aec0" }}>
                           {emp.email}
                         </td>
-                        <td
-                          style={{
-                            padding: "13px 18px",
-                            verticalAlign: "middle",
-                            fontSize: 11,
-                            color: "#cbd5e0",
-                            fontFamily: "monospace",
-                          }}
-                        >
+                        <td style={{ padding: "13px 18px", verticalAlign: "middle", fontSize: 11, color: "#cbd5e0", fontFamily: "monospace" }}>
                           {emp.id}
                         </td>
-                        <td
-                          style={{
-                            padding: "13px 18px",
-                            verticalAlign: "middle",
-                          }}
-                        >
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              fontSize: 12,
-                              fontWeight: 500,
-                              color: "#276749",
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: 7,
-                                height: 7,
-                                borderRadius: "50%",
-                                flexShrink: 0,
-                                background: "#38a169",
-                              }}
-                            />
+                        <td style={{ padding: "13px 18px", verticalAlign: "middle" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 500, color: "#276749" }}>
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: "#38a169" }} />
                             Active
                           </span>
                         </td>
-                        <td
-                          style={{
-                            padding: "13px 18px",
-                            verticalAlign: "middle",
-                          }}
-                        >
+                        <td style={{ padding: "13px 18px", verticalAlign: "middle" }}>
                           <button
                             style={{
                               background: "none",
@@ -478,7 +352,7 @@ export default function StaffAccounts() {
                               color: "#fc8181",
                               cursor: "pointer",
                             }}
-                            onClick={() => void handleRemove(emp.id)}
+                            onClick={() => void handleRemove(emp.id, emp.username)}
                           >
                             Remove
                           </button>
@@ -492,7 +366,6 @@ export default function StaffAccounts() {
           </table>
         </div>
 
-        {/* Modal */}
         <AnimatePresence>
           {showModal && (
             <motion.div
@@ -511,9 +384,7 @@ export default function StaffAccounts() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) closeModal();
-              }}
+              onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
             >
               <motion.div
                 style={{
@@ -530,171 +401,66 @@ export default function StaffAccounts() {
                 exit={{ opacity: 0, scale: 0.97, y: 8 }}
                 transition={{ duration: 0.18 }}
               >
-                <div
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 700,
-                    color: "#1a202c",
-                    marginBottom: 20,
-                  }}
-                >
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#1a202c", marginBottom: 20 }}>
                   Add Employee
                 </div>
 
                 <div style={{ marginBottom: 13 }}>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "#718096",
-                      marginBottom: 5,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#718096", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                     Full Name
                   </label>
                   <input
-                    style={{
-                      width: "100%",
-                      padding: "9px 12px",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 8,
-                      fontSize: 13,
-                      fontFamily: "'Poppins', sans-serif",
-                      background: "#f8f9fa",
-                      color: "#2d3748",
-                      outline: "none",
-                    }}
+                    style={{ width: "100%", padding: "9px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, fontFamily: "'Poppins', sans-serif", background: "#f8f9fa", color: "#2d3748", outline: "none" }}
                     type="text"
                     value={form.name}
                     placeholder="e.g. Maria Santos"
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, name: e.target.value }))
-                    }
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   />
                 </div>
 
                 <div style={{ marginBottom: 13 }}>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "#718096",
-                      marginBottom: 5,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#718096", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                     Email
                   </label>
                   <input
-                    style={{
-                      width: "100%",
-                      padding: "9px 12px",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 8,
-                      fontSize: 13,
-                      fontFamily: "'Poppins', sans-serif",
-                      background: "#f8f9fa",
-                      color: "#2d3748",
-                      outline: "none",
-                    }}
+                    style={{ width: "100%", padding: "9px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, fontFamily: "'Poppins', sans-serif", background: "#f8f9fa", color: "#2d3748", outline: "none" }}
                     type="email"
                     value={form.email}
                     placeholder="e.g. maria@thecrunch.com"
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, email: e.target.value }))
-                    }
+                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                   />
                 </div>
 
                 <div style={{ marginBottom: 13 }}>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "#718096",
-                      marginBottom: 5,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#718096", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                     Password
                   </label>
                   <input
-                    style={{
-                      width: "100%",
-                      padding: "9px 12px",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 8,
-                      fontSize: 13,
-                      fontFamily: "'Poppins', sans-serif",
-                      background: "#f8f9fa",
-                      color: "#2d3748",
-                      outline: "none",
-                    }}
+                    style={{ width: "100%", padding: "9px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, fontFamily: "'Poppins', sans-serif", background: "#f8f9fa", color: "#2d3748", outline: "none" }}
                     type="password"
                     value={form.password}
-                    placeholder="Password" 
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, password: e.target.value }))
-                    }
+                    placeholder="Password"
+                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                   />
                 </div>
 
                 <div style={{ marginBottom: 13 }}>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "#718096",
-                      marginBottom: 5,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#718096", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                     Role
                   </label>
                   <select
-                    style={{
-                      width: "100%",
-                      padding: "9px 12px",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 8,
-                      fontSize: 13,
-                      fontFamily: "'Poppins', sans-serif",
-                      background: "#f8f9fa",
-                      color: "#2d3748",
-                      outline: "none",
-                    }}
+                    style={{ width: "100%", padding: "9px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, fontFamily: "'Poppins', sans-serif", background: "#f8f9fa", color: "#2d3748", outline: "none" }}
                     value={form.role}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, role: e.target.value as Role }))
-                    }
+                    onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as Role }))}
                   >
                     {ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {ROLE_LABEL[r]}
-                      </option>
+                      <option key={r} value={r}>{ROLE_LABEL[r]}</option>
                     ))}
                   </select>
                 </div>
 
                 {error && (
-                  <p
-                    style={{
-                      fontSize: 11,
-                      color: "#e53e3e",
-                      margin: "4px 0 6px",
-                    }}
-                  >
-                    {error}
-                  </p>
+                  <p style={{ fontSize: 11, color: "#e53e3e", margin: "4px 0 6px" }}>{error}</p>
                 )}
 
                 <div style={{ display: "flex", gap: 8, marginTop: 20 }}>

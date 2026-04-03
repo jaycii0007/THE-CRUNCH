@@ -1,15 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Search, TrendingUp, Calendar, TrendingDown } from "lucide-react";
+import { Search, TrendingUp, TrendingDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Sidebar } from "@/components/Sidebar";
 import { OrdersTable } from "@/components/orders-table";
 import {
@@ -27,6 +20,7 @@ import {
   Pie,
 } from "recharts";
 import { api } from "@/lib/api";
+
 interface OrderItem {
   name: string;
   price: number;
@@ -60,10 +54,7 @@ interface RawOrderRow {
   quantity?: number;
 }
 
-interface PeriodOption {
-  label: string;
-  value: string;
-}
+type SalesReportPeriod = "daily" | "weekly" | "monthly" | "yearly";
 
 interface HeatmapCell {
   day: string;
@@ -147,67 +138,74 @@ const ORDER_TYPE_COLORS = [
   "#EEC8C8",
 ];
 
-function generatePeriodOptions(): PeriodOption[] {
-  const currentYear = new Date().getFullYear();
-  const options: PeriodOption[] = [
-    { label: "This Month", value: "month_current" },
-    { label: "Last 3 Months", value: "months_3" },
-    { label: "Last 6 Months", value: "months_6" },
-    { label: "Last 9 Months", value: "months_9" },
-    { label: `Year ${currentYear}`, value: `year_${currentYear}` },
-  ];
-  for (let y = currentYear - 1; y >= currentYear - 5; y--) {
-    options.push({ label: `Year ${y}`, value: `year_${y}` });
-  }
-  return options;
-}
+const PERIOD_LABELS: { label: string; value: SalesReportPeriod }[] = [
+  { label: "Daily", value: "daily" },
+  { label: "Weekly", value: "weekly" },
+  { label: "Monthly", value: "monthly" },
+  { label: "Yearly", value: "yearly" },
+];
 
-function filterOrdersByPeriod(orders: Order[], period: string): Order[] {
+function filterOrdersByReportPeriod(
+  orders: Order[],
+  period: SalesReportPeriod,
+): Order[] {
   const now = new Date();
   return orders.filter((o) => {
     if (!o.date) return false;
-    const orderDate = new Date(o.date);
-    if (period === "month_current") {
+    const d = new Date(o.date);
+    if (period === "daily") {
+      return d.toDateString() === now.toDateString();
+    }
+    if (period === "weekly") {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(now.getDate() - 7);
+      return d >= weekAgo;
+    }
+    if (period === "monthly") {
       return (
-        orderDate.getMonth() === now.getMonth() &&
-        orderDate.getFullYear() === now.getFullYear()
+        d.getMonth() === now.getMonth() &&
+        d.getFullYear() === now.getFullYear()
       );
     }
-    if (period.startsWith("months_")) {
-      const months = parseInt(period.split("_")[1], 10);
-      const cutoff = new Date(now);
-      cutoff.setMonth(cutoff.getMonth() - months);
-      return orderDate >= cutoff;
-    }
-    if (period.startsWith("year_")) {
-      const year = parseInt(period.split("_")[1], 10);
-      return orderDate.getFullYear() === year;
+    if (period === "yearly") {
+      return d.getFullYear() === now.getFullYear();
     }
     return true;
   });
 }
 
-function filterOrdersByPeriodOffset(
+function filterOrdersByPreviousPeriod(
   orders: Order[],
-  period: string,
-  offsetWeeks: number,
+  period: SalesReportPeriod,
 ): Order[] {
   const now = new Date();
-  now.setDate(now.getDate() - offsetWeeks * 7);
-  return filterOrdersByPeriod(
-    orders.map((o) => ({
-      ...o,
-      date: shiftDateString(o.date, -offsetWeeks * 7),
-    })),
-    period,
-  ).map((o) => ({ ...o, date: shiftDateString(o.date, offsetWeeks * 7) }));
-}
-
-function shiftDateString(dateStr: string, days: number): string {
-  if (!dateStr) return dateStr;
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
+  return orders.filter((o) => {
+    if (!o.date) return false;
+    const d = new Date(o.date);
+    if (period === "daily") {
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      return d.toDateString() === yesterday.toDateString();
+    }
+    if (period === "weekly") {
+      const twoWeeksAgo = new Date(now);
+      twoWeeksAgo.setDate(now.getDate() - 14);
+      const oneWeekAgo = new Date(now);
+      oneWeekAgo.setDate(now.getDate() - 7);
+      return d >= twoWeeksAgo && d < oneWeekAgo;
+    }
+    if (period === "monthly") {
+      const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      return (
+        d.getMonth() === prevMonth.getMonth() &&
+        d.getFullYear() === prevMonth.getFullYear()
+      );
+    }
+    if (period === "yearly") {
+      return d.getFullYear() === now.getFullYear() - 1;
+    }
+    return false;
+  });
 }
 
 function computeTopItems(orders: Order[]): TopItem[] {
@@ -297,63 +295,60 @@ function computeHeatmap(orders: Order[]): HeatmapCell[] {
   return cells;
 }
 
-function computeWeeklySales(
-  thisWeekOrders: Order[],
-  lastWeekOrders: Order[],
+function computeChartData(
+  currentOrders: Order[],
+  previousOrders: Order[],
+  period: SalesReportPeriod,
+  salesView: "sales" | "orders",
 ): WeeklySalesPoint[] {
-  const thisMap: Record<string, number> = {};
-  const lastMap: Record<string, number> = {};
+  const getValue = (orders: Order[], key: string) => {
+    const filtered = orders.filter((o) => {
+      const d = new Date(o.date);
+      if (period === "daily") return d.getHours().toString() === key;
+      if (period === "weekly") return DAYS_OF_WEEK[d.getDay()] === key;
+      if (period === "monthly") return d.getDate().toString() === key;
+      if (period === "yearly") return d.getMonth().toString() === key;
+      return false;
+    });
+    return salesView === "sales"
+      ? filtered.reduce((s, o) => s + o.total, 0)
+      : filtered.length;
+  };
 
-  for (const o of thisWeekOrders) {
-    const day = DAYS_OF_WEEK[new Date(o.date).getDay()];
-    thisMap[day] = (thisMap[day] ?? 0) + o.total;
-  }
-  for (const o of lastWeekOrders) {
-    const day = DAYS_OF_WEEK[new Date(o.date).getDay()];
-    lastMap[day] = (lastMap[day] ?? 0) + o.total;
+  if (period === "daily") {
+    const hours = ["9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21"];
+    return hours.map((h) => ({
+      day: `${parseInt(h) > 12 ? parseInt(h) - 12 : h}${parseInt(h) >= 12 ? "pm" : "am"}`,
+      thisWeek: getValue(currentOrders, h),
+      lastWeek: getValue(previousOrders, h),
+    }));
   }
 
-  return DAYS_OF_WEEK.map((day) => ({
-    day,
-    thisWeek: thisMap[day] ?? 0,
-    lastWeek: lastMap[day] ?? 0,
+  if (period === "weekly") {
+    return DAYS_OF_WEEK.map((day) => ({
+      day,
+      thisWeek: getValue(currentOrders, day),
+      lastWeek: getValue(previousOrders, day),
+    }));
+  }
+
+  if (period === "monthly") {
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => ({
+      day: String(i + 1),
+      thisWeek: getValue(currentOrders, String(i + 1)),
+      lastWeek: getValue(previousOrders, String(i + 1)),
+    }));
+  }
+
+  // yearly
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return monthNames.map((m, i) => ({
+    day: m,
+    thisWeek: getValue(currentOrders, String(i)),
+    lastWeek: getValue(previousOrders, String(i)),
   }));
-}
-
-function pickInitialPeriod(orders: Order[]): string {
-  if (orders.length === 0) return "month_current";
-
-  const now = new Date();
-  const hasCurrentMonthData = orders.some((order) => {
-    if (!order.date) return false;
-    const date = new Date(order.date);
-    return (
-      date.getMonth() === now.getMonth() &&
-      date.getFullYear() === now.getFullYear()
-    );
-  });
-
-  if (hasCurrentMonthData) return "month_current";
-
-  const latestOrder = orders.reduce<Date | null>((latest, order) => {
-    if (!order.date) return latest;
-    const date = new Date(order.date);
-    if (Number.isNaN(date.getTime())) return latest;
-    if (!latest || date > latest) return date;
-    return latest;
-  }, null);
-
-  if (!latestOrder) return "month_current";
-
-  const monthDiff =
-    (now.getFullYear() - latestOrder.getFullYear()) * 12 +
-    (now.getMonth() - latestOrder.getMonth());
-
-  if (monthDiff <= 2) return "months_3";
-  if (monthDiff <= 5) return "months_6";
-  if (monthDiff <= 8) return "months_9";
-
-  return `year_${latestOrder.getFullYear()}`;
 }
 
 interface KpiCardProps {
@@ -507,18 +502,24 @@ function TopItemsChart({ items }: TopItemsProps) {
     </div>
   );
 }
+
 export default function AdminDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>("");
+  const [selectedPeriod, setSelectedPeriod] = useState<SalesReportPeriod>("monthly");
   const [salesView, setSalesView] = useState<"sales" | "orders">("sales");
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [ordersError, setOrdersError] = useState<string | null>(null);
 
-  const periodOptions = useMemo(() => generatePeriodOptions(), []);
   const filteredOrders = useMemo(
-    () => filterOrdersByPeriod(orders, selectedPeriod),
+    () => filterOrdersByReportPeriod(orders, selectedPeriod),
     [orders, selectedPeriod],
   );
+
+  const previousOrders = useMemo(
+    () => filterOrdersByPreviousPeriod(orders, selectedPeriod),
+    [orders, selectedPeriod],
+  );
+
   const totalOrders = filteredOrders.length;
   const totalSales = filteredOrders.reduce((sum, o) => sum + o.total, 0);
   const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
@@ -540,51 +541,17 @@ export default function AdminDashboard() {
       ? ((cancelledOrders / totalOrders) * 100).toFixed(1)
       : "0.0";
 
-  const topItems = useMemo(
-    () => computeTopItems(filteredOrders),
-    [filteredOrders],
-  );
-  const orderTypes = useMemo(
-    () => computeOrderTypes(filteredOrders),
-    [filteredOrders],
-  );
-  const paymentBreakdown = useMemo(
-    () => computePaymentBreakdown(filteredOrders),
-    [filteredOrders],
-  );
-  const heatmapCells = useMemo(
-    () => computeHeatmap(filteredOrders),
-    [filteredOrders],
+  const topItems = useMemo(() => computeTopItems(filteredOrders), [filteredOrders]);
+  const orderTypes = useMemo(() => computeOrderTypes(filteredOrders), [filteredOrders]);
+  const paymentBreakdown = useMemo(() => computePaymentBreakdown(filteredOrders), [filteredOrders]);
+  const heatmapCells = useMemo(() => computeHeatmap(filteredOrders), [filteredOrders]);
+
+  const chartData = useMemo(
+    () => computeChartData(filteredOrders, previousOrders, selectedPeriod, salesView),
+    [filteredOrders, previousOrders, selectedPeriod, salesView],
   );
 
-  const lastWeekOrders = useMemo(
-    () => filterOrdersByPeriodOffset(orders, selectedPeriod, 1),
-    [orders, selectedPeriod],
-  );
-  const weeklySalesData = useMemo(
-    () => computeWeeklySales(filteredOrders, lastWeekOrders),
-    [filteredOrders, lastWeekOrders],
-  );
-
-  const weeklyChartData = useMemo(
-    () =>
-      weeklySalesData.map((p) => ({
-        day: p.day,
-        thisWeek:
-          salesView === "sales"
-            ? p.thisWeek
-            : filteredOrders.filter(
-                (o) => DAYS_OF_WEEK[new Date(o.date).getDay()] === p.day,
-              ).length,
-        lastWeek:
-          salesView === "sales"
-            ? p.lastWeek
-            : lastWeekOrders.filter(
-                (o) => DAYS_OF_WEEK[new Date(o.date).getDay()] === p.day,
-              ).length,
-      })),
-    [weeklySalesData, salesView, filteredOrders, lastWeekOrders],
-  );
+  const periodLabel = PERIOD_LABELS.find((p) => p.value === selectedPeriod)?.label ?? "";
 
   const yAxisFormatter = (v: number) =>
     salesView === "sales"
@@ -599,7 +566,6 @@ export default function AdminDashboard() {
         const rows = await api.get<RawOrderRow[]>("/orders");
         if (!rows?.length) {
           setOrders([]);
-          setSelectedPeriod((current) => current || "month_current");
           return;
         }
 
@@ -627,11 +593,7 @@ export default function AdminDashboard() {
           }
         });
 
-        const normalizedOrders = Object.values(grouped);
-        setOrders(normalizedOrders);
-        setSelectedPeriod(
-          (current) => current || pickInitialPeriod(normalizedOrders),
-        );
+        setOrders(Object.values(grouped));
       } catch (err) {
         console.error("Failed to fetch orders:", err);
         setOrdersError(
@@ -653,6 +615,7 @@ export default function AdminDashboard() {
       <Sidebar />
       <main className="flex-1 p-8 pl-24">
         <div className="bg-[#FDFAF6] rounded-3xl p-8 min-h-[calc(100vh-5rem)]">
+          {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
               <img
@@ -681,23 +644,30 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-[#4A1C1C]" />
-              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-                <SelectTrigger className="w-44 border-2 border-[#4A1C1C]/20 rounded-xl bg-white shadow-sm hover:shadow-md transition-shadow text-[#4A1C1C] font-medium">
-                  <SelectValue placeholder="Select period" />
-                </SelectTrigger>
-                <SelectContent>
-                  {periodOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Sales Report Period Tabs */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">
+                Sales Report
+              </span>
+              <div className="flex gap-0 bg-[#F0EBE6] rounded-xl p-1">
+                {PERIOD_LABELS.map(({ label, value }) => (
+                  <button
+                    key={value}
+                    onClick={() => setSelectedPeriod(value)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      selectedPeriod === value
+                        ? "bg-[#7C2D2D] text-white shadow-md font-semibold"
+                        : "bg-transparent text-[#9B8E8E] hover:text-[#4A1C1C]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
+          {/* Error Banner */}
           {ordersError && (
             <Card className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6 shadow-sm">
               <p className="text-sm font-semibold text-red-700">
@@ -707,21 +677,18 @@ export default function AdminDashboard() {
             </Card>
           )}
 
-          {!ordersError &&
-            !isLoadingOrders &&
-            orders.length > 0 &&
-            filteredOrders.length === 0 && (
-              <Card className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 shadow-sm">
-                <p className="text-sm font-semibold text-amber-800">
-                  No orders match the selected period
-                </p>
-                <p className="text-xs text-amber-700 mt-1">
-                  The dashboard has order data in the backend, but none for this
-                  filter. Change the period to view recent sales.
-                </p>
-              </Card>
-            )}
+          {!ordersError && !isLoadingOrders && orders.length > 0 && filteredOrders.length === 0 && (
+            <Card className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 shadow-sm">
+              <p className="text-sm font-semibold text-amber-800">
+                No orders match the selected period
+              </p>
+              <p className="text-xs text-amber-700 mt-1">
+                Try selecting a different period to view sales data.
+              </p>
+            </Card>
+          )}
 
+          {/* KPI Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
             <KpiCard
               label="Total Orders"
@@ -731,9 +698,7 @@ export default function AdminDashboard() {
             />
             <KpiCard
               label="Total Sales"
-              value={
-                isLoadingOrders ? "..." : `₱${totalSales.toLocaleString()}`
-              }
+              value={isLoadingOrders ? "..." : `₱${totalSales.toLocaleString()}`}
               trend="Live"
               up={null}
             />
@@ -762,45 +727,51 @@ export default function AdminDashboard() {
               up={isLoadingOrders ? null : parseFloat(cancellationRate) <= 5}
             />
           </div>
+
+          {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
             <div className="lg:col-span-8">
               <Card className="bg-white rounded-2xl p-6 shadow-md border-0">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-gray-800">
-                    Order & Sales Review
-                  </h2>
-                  <div className="flex gap-2">
-                    <Select
-                      value={salesView}
-                      onValueChange={(v) =>
-                        setSalesView(v as "sales" | "orders")
-                      }
-                    >
-                      <SelectTrigger className="w-28 border-gray-200 rounded-xl bg-white shadow-sm text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="sales">Sales</SelectItem>
-                        <SelectItem value="orders">Orders</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-800">
+                      Order & Sales Review
+                    </h2>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {periodLabel} — compared to previous {periodLabel.toLowerCase()}
+                    </p>
+                  </div>
+                  <div className="flex gap-0 bg-[#F0EBE6] rounded-xl p-1">
+                    {(["sales", "orders"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setSalesView(v)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all duration-200 ${
+                          salesView === v
+                            ? "bg-[#7C2D2D] text-white shadow-sm"
+                            : "bg-transparent text-[#9B8E8E]"
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
                 <div className="flex gap-4 mb-3 text-xs">
                   <span className="flex items-center gap-1.5">
                     <span className="w-3 h-2 rounded-sm inline-block bg-[#7C2D2D]" />
-                    <span className="text-gray-500">This period</span>
+                    <span className="text-gray-500">This {periodLabel.toLowerCase()}</span>
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-3 h-2 rounded-sm inline-block bg-gray-300" />
-                    <span className="text-gray-500">Previous period</span>
+                    <span className="text-gray-500">Previous {periodLabel.toLowerCase()}</span>
                   </span>
                 </div>
 
                 <ResponsiveContainer width="100%" height={220}>
                   <LineChart
-                    data={weeklyChartData}
+                    data={chartData}
                     margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#F0EBE6" />
@@ -830,7 +801,7 @@ export default function AdminDashboard() {
                       stroke="#7C2D2D"
                       strokeWidth={2.5}
                       dot={{ r: 4, fill: "#7C2D2D" }}
-                      name="This period"
+                      name={`This ${periodLabel.toLowerCase()}`}
                     />
                     <Line
                       type="monotone"
@@ -839,7 +810,7 @@ export default function AdminDashboard() {
                       strokeWidth={1.5}
                       strokeDasharray="4 3"
                       dot={{ r: 3, fill: "#C8B8B8" }}
-                      name="Previous period"
+                      name={`Previous ${periodLabel.toLowerCase()}`}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -870,18 +841,13 @@ export default function AdminDashboard() {
                               key={entry.category}
                               fill={
                                 PAYMENT_COLORS[entry.category] ??
-                                ORDER_TYPE_COLORS[
-                                  index % ORDER_TYPE_COLORS.length
-                                ]
+                                ORDER_TYPE_COLORS[index % ORDER_TYPE_COLORS.length]
                               }
                             />
                           ))}
                         </Pie>
                         <Tooltip
-                          formatter={(value: number, name: string) => [
-                            value,
-                            name,
-                          ]}
+                          formatter={(value: number, name: string) => [value, name]}
                           contentStyle={{
                             borderRadius: 12,
                             border: "none",
@@ -902,18 +868,12 @@ export default function AdminDashboard() {
                               style={{
                                 backgroundColor:
                                   PAYMENT_COLORS[entry.category] ??
-                                  ORDER_TYPE_COLORS[
-                                    index % ORDER_TYPE_COLORS.length
-                                  ],
+                                  ORDER_TYPE_COLORS[index % ORDER_TYPE_COLORS.length],
                               }}
                             />
-                            <span className="text-gray-600">
-                              {entry.category}
-                            </span>
+                            <span className="text-gray-600">{entry.category}</span>
                           </div>
-                          <span className="font-medium text-gray-800">
-                            {entry.pct}%
-                          </span>
+                          <span className="font-medium text-gray-800">{entry.pct}%</span>
                         </div>
                       ))}
                     </div>
@@ -926,6 +886,8 @@ export default function AdminDashboard() {
               </Card>
             </div>
           </div>
+
+          {/* Bottom Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             <Card className="bg-white rounded-2xl p-6 shadow-md border-0">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">
@@ -985,9 +947,7 @@ export default function AdminDashboard() {
                       {orderTypes.map((entry, index) => (
                         <Cell
                           key={entry.type}
-                          fill={
-                            ORDER_TYPE_COLORS[index % ORDER_TYPE_COLORS.length]
-                          }
+                          fill={ORDER_TYPE_COLORS[index % ORDER_TYPE_COLORS.length]}
                         />
                       ))}
                     </Bar>
@@ -1000,6 +960,7 @@ export default function AdminDashboard() {
               )}
             </Card>
           </div>
+
           <OrdersTable orders={filteredOrders} />
         </div>
       </main>
