@@ -21,7 +21,7 @@ function useNow() {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PageTab  = "inventory" | "movement"
+type PageTab  = "inventory" | "management" | "movement"
 type POStatus = "Pending" | "Received" | "Cancelled"
 type TRStatus = "Pending" | "Completed" | "Cancelled"
 type LogType  = "Stock In" | "Transfer" | "Adjustment"
@@ -32,6 +32,7 @@ interface StockInRecord { id: string; poRef: string; branch: string; date: strin
 interface Transfer      { id: string; from: string; to: string; item: string; qty: string; unit: string; date: string; status: TRStatus; approvedBy: string }
 interface Adjustment    { id: string; branch: string; item: string; qty: number; unit: string; reason: string; date: string; by: string }
 interface StockLog      { id: string; date: string; type: LogType; item: string; qty: string; branch: string; by: string; ref: string }
+
 interface ApiInventoryRow {
   id?: number
   product_id?: number
@@ -41,11 +42,13 @@ interface ApiInventoryRow {
   category?: string
   image?: string
   stock?: number
+  quantity?: number
   price?: number | string
   unit?: UnitType | string
   batches?: Batch[]
   promo?: string
   isRawMaterial?: number | boolean
+  description?: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -122,7 +125,6 @@ function SMModal({ title, onClose, children, footer }: { title: string; onClose:
         style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.1)", animation: "slideUp 0.22s cubic-bezier(.4,0,.2,1)" }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex justify-between items-center px-[22px] py-[17px] border-b border-gray-50">
           <span className="font-bold text-[14px] text-gray-900">{title}</span>
           <button
@@ -132,20 +134,15 @@ function SMModal({ title, onClose, children, footer }: { title: string; onClose:
             ×
           </button>
         </div>
-
-        {/* Body */}
         <div className="px-[22px] py-5 max-h-[58vh] overflow-y-auto">
           {children}
         </div>
-
-        {/* Footer */}
         {footer && (
           <div className="flex justify-end gap-2 px-[22px] py-3 border-t border-gray-50 bg-gray-50">
             {footer}
           </div>
         )}
       </div>
-
       <style>{`
         @keyframes fadeIn  { from { opacity:0 } to { opacity:1 } }
         @keyframes slideUp { from { opacity:0; transform:translateY(12px) scale(0.97) } to { opacity:1; transform:translateY(0) scale(1) } }
@@ -228,7 +225,7 @@ function DataTable({ cols, rows, emptyHint }: { cols: string[]; rows: React.Reac
   )
 }
 
-function StatCard({ label, value, meta, color }: { label: string; value: number; meta?: string; color: "blue" | "green" | "yellow" | "red" }) {
+function StatCard({ label, value, meta, color }: { label: string; value: number | string; meta?: string; color: "blue" | "green" | "yellow" | "red" }) {
   const colorMap = {
     green:  { border: "#16a34a", text: "#16a34a" },
     yellow: { border: "#ca8a04", text: "#ca8a04" },
@@ -252,9 +249,9 @@ function StatCard({ label, value, meta, color }: { label: string; value: number;
   )
 }
 
-const ghostBtnClass  = "bg-gray-100 text-gray-700 border-none cursor-pointer font-[Poppins,sans-serif] font-semibold text-[11.5px] rounded-[7px] px-[11px] py-1 hover:opacity-80 transition-opacity"
-const okBtnClass     = "bg-green-50 text-green-700 border-none cursor-pointer font-[Poppins,sans-serif] font-semibold text-[11.5px] rounded-[7px] px-[11px] py-1 hover:opacity-80 transition-opacity"
-const dangerBtnClass = "bg-red-50 text-red-600 border-none cursor-pointer font-[Poppins,sans-serif] font-semibold text-[11.5px] rounded-[7px] px-[11px] py-1 hover:opacity-80 transition-opacity"
+const ghostBtnClass   = "bg-gray-100 text-gray-700 border-none cursor-pointer font-[Poppins,sans-serif] font-semibold text-[11.5px] rounded-[7px] px-[11px] py-1 hover:opacity-80 transition-opacity"
+const okBtnClass      = "bg-green-50 text-green-700 border-none cursor-pointer font-[Poppins,sans-serif] font-semibold text-[11.5px] rounded-[7px] px-[11px] py-1 hover:opacity-80 transition-opacity"
+const dangerBtnClass  = "bg-red-50 text-red-600 border-none cursor-pointer font-[Poppins,sans-serif] font-semibold text-[11.5px] rounded-[7px] px-[11px] py-1 hover:opacity-80 transition-opacity"
 const primaryBtnClass = "bg-white text-gray-700 border border-gray-200 cursor-pointer font-[Poppins,sans-serif] font-semibold text-[12.5px] rounded-[9px] px-[18px] py-2 hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 transition-all"
 
 // ─── Purchase Orders ──────────────────────────────────────────────────────────
@@ -362,7 +359,6 @@ function PurchaseOrders() {
           <FormSelect label="Supplier" opts={SUPPLIERS} value={poSupplier} onChange={e => setPoSupplier(e.target.value)} />
           <FormSelect label="Branch"   opts={BRANCHES}  value={poBranch}   onChange={e => setPoBranch(e.target.value)} />
           <FormInput  label="Expected Date" type="date" value={poDate} onChange={e => setPoDate(e.target.value)} />
-
           <label className="block text-[11px] font-bold text-gray-500 mb-[6px] uppercase tracking-[0.5px]">Order Items</label>
           {poItems.map((item, i) => (
             <div key={i} className="grid gap-[6px] mb-[7px] items-end" style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr auto" }}>
@@ -374,20 +370,15 @@ function PurchaseOrders() {
                 {SM_UNITS.map(u => <option key={u}>{u}</option>)}
               </select>
               <input  className={inputClass} placeholder="Cost" type="number" value={item.cost} onChange={e => updatePoItem(i, "cost", e.target.value)} />
-              <button
-                onClick={() => removePoItem(i)}
-                className="bg-red-50 text-red-600 border-none rounded-[7px] px-[9px] py-[6px] cursor-pointer text-[13px] font-bold hover:opacity-75 transition-opacity"
-              >×</button>
+              <button onClick={() => removePoItem(i)} className="bg-red-50 text-red-600 border-none rounded-[7px] px-[9px] py-[6px] cursor-pointer text-[13px] font-bold hover:opacity-75 transition-opacity">×</button>
             </div>
           ))}
-
           <button
             onClick={addPoItem}
             className="w-full mt-0.5 border-[1.5px] border-dashed border-gray-300 text-gray-400 bg-transparent rounded-lg py-[7px] text-[12px] font-semibold cursor-pointer hover:border-gray-400 hover:text-gray-600 transition-colors font-[Poppins,sans-serif]"
           >
             + Add another item
           </button>
-
           <div className="mt-3 px-[13px] py-[10px] bg-gray-50 rounded-[9px] flex justify-between items-center">
             <span className="text-[12px] text-gray-500 font-semibold">Total Amount</span>
             <span className="font-extrabold text-green-700 text-[15px]">₱{total.toLocaleString()}</span>
@@ -409,7 +400,6 @@ function PurchaseOrders() {
               </div>
             ))}
           </div>
-
           <label className="block text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-[0.5px]">Items Ordered</label>
           {viewPO.items.map((it, i) => (
             <div key={i} className="flex justify-between py-[9px] border-b border-gray-50 text-[13px] last:border-b-0">
@@ -505,7 +495,6 @@ function StockIn() {
           <FormSelect label="Branch"                   opts={BRANCHES}            value={siBranch} onChange={e => setSiBranch(e.target.value)} />
           <FormInput  label="Date Received" type="date" value={siDate} onChange={e => setSiDate(e.target.value)} />
           <FormInput  label="Received By" placeholder="Staff name" value={siRecBy} onChange={e => setSiRecBy(e.target.value)} />
-
           <label className="block text-[11px] font-bold text-gray-500 mb-[6px] uppercase tracking-[0.5px]">Items Received</label>
           {siItems.map((item, i) => (
             <div key={i} className="grid gap-[6px] mb-[7px] items-end" style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
@@ -518,7 +507,6 @@ function StockIn() {
               </select>
             </div>
           ))}
-
           <button
             onClick={() => setSiItems(p => [...p, { name: ITEMS[0], qty: "", unit: "kg" }])}
             className="w-full mt-0.5 border-[1.5px] border-dashed border-gray-300 text-gray-400 bg-transparent rounded-lg py-[7px] text-[12px] font-semibold cursor-pointer hover:border-gray-400 hover:text-gray-600 transition-colors font-[Poppins,sans-serif]"
@@ -810,7 +798,6 @@ function StockMovementTab() {
         <p className="text-gray-500 text-sm mt-1">Purchase orders, deliveries, transfers, adjustments, and audit logs.</p>
       </div>
 
-      {/* Sub-tabs */}
       <div className="flex border-b-[1.5px] border-gray-100 mb-[18px]">
         {SM_TABS.map(tab => (
           <button
@@ -841,19 +828,438 @@ function StockMovementTab() {
   )
 }
 
+// ─── Inventory Management Tab ─────────────────────────────────────────────────
+
+interface MgmtProduct {
+  id: number
+  name: string
+  category: string
+  price: string
+  unit: string
+  stock: number
+  description?: string
+  image?: string
+}
+
+const UNIT_OPTIONS = ["piece", "kg", "g", "liter", "ml", "bottle", "box", "bag", "pack", "dozen"] as const
+
+function InventoryManagementTab() {
+  const [products,    setProducts]    = useState<MgmtProduct[]>([])
+  const [loading,     setLoading]     = useState(true)
+  const [saving,      setSaving]      = useState(false)
+  const [search,      setSearch]      = useState("")
+  const [showAdd,     setShowAdd]     = useState(false)
+  const [editProduct, setEditProduct] = useState<MgmtProduct | null>(null)
+  const [deleteId,    setDeleteId]    = useState<number | null>(null)
+
+  // ── Add form state
+  const [fName,  setFName]  = useState("")
+  const [fCat,   setFCat]   = useState("")
+  const [fPrice, setFPrice] = useState("")
+  const [fUnit,  setFUnit]  = useState<string>(UNIT_OPTIONS[0])
+  const [fStock, setFStock] = useState("")
+  const [fDesc,  setFDesc]  = useState("")
+
+  // ── Edit form state
+  const [eName,  setEName]  = useState("")
+  const [eCat,   setECat]   = useState("")
+  const [ePrice, setEPrice] = useState("")
+  const [eUnit,  setEUnit]  = useState<string>(UNIT_OPTIONS[0])
+  const [eStock, setEStock] = useState("")
+  const [eDesc,  setEDesc]  = useState("")
+
+  const loadProducts = async () => {
+    try {
+      setLoading(true)
+      const data = await apiCall("/inventory", { method: "GET" }) as ApiInventoryRow[] | null
+      if (data && Array.isArray(data)) {
+        const rows = data.filter(item => {
+          const promo    = String(item?.promo    ?? "").toUpperCase().trim()
+          const category = String(item?.category ?? "").toLowerCase().trim()
+          return promo === "SUPPLIES" || promo === "MENU FOOD" || category.includes("suppl") || category.includes("menu food")
+        })
+
+        const groupedByName = new Map<string, ApiInventoryRow[]>()
+        for (const item of rows) {
+          const key = String(item?.product_name ?? item?.name ?? "").trim().toLowerCase()
+          const group = groupedByName.get(key) ?? []
+          group.push(item)
+          groupedByName.set(key, group)
+        }
+
+        const normalized = Array.from(groupedByName.values()).map(group =>
+          group.reduce((latest, current) => {
+            const latestId  = Number(latest?.product_id  ?? latest?.id  ?? latest?.inventory_id  ?? 0)
+            const currentId = Number(current?.product_id ?? current?.id ?? current?.inventory_id ?? 0)
+            return currentId > latestId ? current : latest
+          })
+        )
+
+        setProducts(normalized.map(item => ({
+          id:          Number(item.id ?? item.product_id ?? item.inventory_id ?? 0),
+          name:        item.name || item.product_name || "Unnamed Product",
+          category:    item.category || "Uncategorized",
+          price:       String(item.price ?? "0"),
+          unit:        String(item.unit  ?? "piece"),
+          stock:       Number((item as any).quantity ?? (item as any).stock ?? 0),
+          description: String((item as any).description ?? ""),
+          image:       item.image || "/img/placeholder.jpg",
+        })))
+      }
+    } catch (error) {
+      console.error("Failed to load products:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void loadProducts() }, [])
+
+  function resetAddForm() { setFName(""); setFCat(""); setFPrice(""); setFUnit(UNIT_OPTIONS[0]); setFStock(""); setFDesc("") }
+
+  function openEdit(p: MgmtProduct) {
+    setEditProduct(p)
+    setEName(p.name); setECat(p.category); setEPrice(p.price)
+    setEUnit(p.unit); setEStock(String(p.stock)); setEDesc(p.description ?? "")
+  }
+
+  async function handleAdd() {
+    if (!fName.trim() || !fCat.trim() || !fPrice.trim()) return alert("Please fill Name, Category, and Price.")
+    try {
+      setSaving(true)
+      await api.post("/products", {
+        name:        fName.trim(),
+        category:    fCat.trim(),
+        price:       parseFloat(fPrice),
+        unit:        fUnit,
+        quantity:    parseFloat(fStock) || 0,
+        description: fDesc.trim() || null,
+        image:       "/img/placeholder.jpg",
+      })
+      await loadProducts()
+      setShowAdd(false)
+      resetAddForm()
+    } catch (error) {
+      console.error("Failed to add product:", error)
+      alert(`Failed to add product: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleEdit() {
+    if (!editProduct) return
+    if (!eName.trim() || !eCat.trim() || !ePrice.trim()) return alert("Please fill Name, Category, and Price.")
+    try {
+      setSaving(true)
+      await apiCall(`/products/${editProduct.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name:        eName.trim(),
+          category:    eCat.trim(),
+          price:       parseFloat(ePrice),
+          unit:        eUnit,
+          quantity:    parseFloat(eStock) || 0,
+          description: eDesc.trim() || null,
+        }),
+      })
+      await loadProducts()
+      setEditProduct(null)
+    } catch (error) {
+      console.error("Failed to update product:", error)
+      alert(`Failed to update: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(id: number) {
+    try {
+      setSaving(true)
+      await apiCall(`/products/${id}`, { method: "DELETE" })
+      await loadProducts()
+      setDeleteId(null)
+    } catch (error) {
+      console.error("Failed to delete product:", error)
+      alert(`Failed to delete: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleStockUpdate(id: number, delta: number) {
+    const product = products.find(p => p.id === id)
+    if (!product) return
+    const newStock = Math.max(0, product.stock + delta)
+    try {
+      await apiCall(`/products/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ quantity: newStock }),
+      })
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, stock: newStock } : p))
+    } catch (error) {
+      console.error("Failed to update stock:", error)
+      alert(`Failed to update stock: ${error instanceof Error ? error.message : "Unknown error"}`)
+    }
+  }
+
+  const filtered = products.filter(p => {
+    const s = search.toLowerCase()
+    return p.name.toLowerCase().includes(s) || p.category.toLowerCase().includes(s)
+  })
+
+  const totalValue = products.reduce((sum, p) => {
+    const price = parseFloat(String(p.price).replace(/[^0-9.]/g, "")) || 0
+    return sum + price * p.stock
+  }, 0)
+
+  const lowStock = products.filter(p => p.stock > 0 && p.stock <= 10).length
+  const outOfStock = products.filter(p => p.stock === 0).length
+
+  return (
+    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
+      <div className="mb-6">
+        <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Management</p>
+        <h2 className="text-xl font-bold text-gray-900">Inventory Management</h2>
+        <p className="text-gray-500 text-sm mt-1">Add, edit, delete products and adjust stock levels directly.</p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-3 mb-6">
+        <StatCard label="Total Products" value={products.length}                        meta="In system"   color="blue"   />
+        <StatCard label="Total Value"    value={`₱${totalValue.toLocaleString()}`}      meta="Stock value" color="green"  />
+        <StatCard label="Low Stock"      value={lowStock}                               meta="≤ 10 units"  color="yellow" />
+        <StatCard label="Out of Stock"   value={outOfStock}                             meta="Zero stock"  color="red"    />
+      </div>
+
+      <SectionHeader
+        title="Product List"
+        sub="All inventory items from your backend"
+        cta={
+          <div className="flex gap-2">
+            <button
+              className={primaryBtnClass}
+              onClick={() => void loadProducts()}
+              disabled={loading}
+            >
+              {loading ? "Refreshing…" : "↻ Refresh"}
+            </button>
+            <button className={primaryBtnClass} onClick={() => setShowAdd(true)}>
+              + Add Product
+            </button>
+          </div>
+        }
+      />
+
+      {/* Search */}
+      <div className="mb-[14px]">
+        <input
+          className="w-full px-3 py-2 border-[1.5px] border-gray-200 rounded-[9px] text-[12.5px] font-[Poppins,sans-serif] text-gray-700 outline-none bg-white transition-all focus:border-gray-400 box-border"
+          placeholder="Search by name or category…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-4">
+          <motion.div
+            className="w-10 h-10 rounded-full border-4 border-gray-200 border-t-blue-500"
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 0.9, ease: "linear" }}
+          />
+          <p className="text-gray-400 text-sm">Loading products…</p>
+        </div>
+      ) : (
+        <DataTable
+          cols={["Product", "Category", "Price", "Unit", "Stock", "Actions"]}
+          emptyHint="No products found. Try refreshing or add a new product."
+          rows={filtered.map(p => {
+            const stockColor = p.stock === 0
+              ? "text-red-600 font-bold"
+              : p.stock <= 10
+              ? "text-yellow-600 font-bold"
+              : "text-gray-900 font-semibold"
+
+            return (
+              <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors last:border-b-0">
+                {/* Product */}
+                <td className="px-[14px] py-[11px]">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {p.image && p.image !== "/img/placeholder.jpg" ? (
+                        <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-gray-400 text-[10px] font-bold">{p.name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-[12.5px] font-semibold text-gray-900">{p.name}</div>
+                      {p.description && (
+                        <div className="text-[11px] text-gray-400 max-w-[180px] truncate">{p.description}</div>
+                      )}
+                    </div>
+                  </div>
+                </td>
+
+                {/* Category */}
+                <td className="px-[14px] py-[11px]">
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">
+                    {p.category}
+                  </span>
+                </td>
+
+                {/* Price */}
+                <td className="px-[14px] py-[11px] text-[12.5px] font-bold text-green-700">
+                  ₱{parseFloat(String(p.price).replace(/[^0-9.]/g, "")).toLocaleString()}
+                </td>
+
+                {/* Unit */}
+                <td className="px-[14px] py-[11px] text-[12.5px] text-gray-500">{p.unit}</td>
+
+                {/* Stock with inline ± controls */}
+                <td className="px-[14px] py-[11px]">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => void handleStockUpdate(p.id, -1)}
+                      className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 text-[14px] font-bold flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors border-none cursor-pointer leading-none"
+                    >−</button>
+                    <span className={`min-w-[36px] text-center text-[12.5px] ${stockColor}`}>{p.stock}</span>
+                    <button
+                      onClick={() => void handleStockUpdate(p.id, 1)}
+                      className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 text-[14px] font-bold flex items-center justify-center hover:bg-green-50 hover:text-green-600 transition-colors border-none cursor-pointer leading-none"
+                    >+</button>
+                    {p.stock === 0 && (
+                      <span className="text-[10px] font-semibold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">Out</span>
+                    )}
+                    {p.stock > 0 && p.stock <= 10 && (
+                      <span className="text-[10px] font-semibold text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded-full">Low</span>
+                    )}
+                  </div>
+                </td>
+
+                {/* Actions */}
+                <td className="px-[14px] py-[11px]">
+                  <div className="flex gap-[5px]">
+                    <button className={ghostBtnClass}   onClick={() => openEdit(p)}>Edit</button>
+                    <button className={dangerBtnClass}  onClick={() => setDeleteId(p.id)}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        />
+      )}
+
+      {/* ── Add Product Modal */}
+      {showAdd && (
+        <SMModal
+          title="Add New Product"
+          onClose={() => { setShowAdd(false); resetAddForm() }}
+          footer={
+            <>
+              <button className={ghostBtnClass}   onClick={() => { setShowAdd(false); resetAddForm() }} disabled={saving}>Discard</button>
+              <button className={primaryBtnClass} onClick={() => void handleAdd()} disabled={saving}>
+                {saving ? "Saving…" : "Add Product"}
+              </button>
+            </>
+          }
+        >
+          <FormInput  label="Product Name *"  placeholder="e.g. Chicken Breast"    value={fName}  onChange={e => setFName(e.target.value)} />
+          <FormInput  label="Category *"      placeholder="e.g. Ingredients"       value={fCat}   onChange={e => setFCat(e.target.value)} />
+          <div className="grid grid-cols-2 gap-[10px]">
+            <FormInput label="Price (₱) *" type="number" placeholder="0.00"        value={fPrice} onChange={e => setFPrice(e.target.value)} />
+            <FormGroup label="Unit">
+              <select className={inputClass} value={fUnit} onChange={e => setFUnit(e.target.value)}>
+                {UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+              </select>
+            </FormGroup>
+          </div>
+          <FormInput  label="Initial Stock"   type="number" placeholder="0"        value={fStock} onChange={e => setFStock(e.target.value)} />
+          <FormGroup label="Description (optional)">
+            <textarea
+              className={`${inputClass} resize-none`}
+              rows={2}
+              placeholder="Brief description…"
+              value={fDesc}
+              onChange={e => setFDesc(e.target.value)}
+            />
+          </FormGroup>
+        </SMModal>
+      )}
+
+      {/* ── Edit Product Modal */}
+      {editProduct && (
+        <SMModal
+          title={`Edit — ${editProduct.name}`}
+          onClose={() => setEditProduct(null)}
+          footer={
+            <>
+              <button className={ghostBtnClass}   onClick={() => setEditProduct(null)} disabled={saving}>Discard</button>
+              <button className={primaryBtnClass} onClick={() => void handleEdit()} disabled={saving}>
+                {saving ? "Saving…" : "Save Changes"}
+              </button>
+            </>
+          }
+        >
+          <FormInput  label="Product Name *"  placeholder="e.g. Chicken Breast"    value={eName}  onChange={e => setEName(e.target.value)} />
+          <FormInput  label="Category *"      placeholder="e.g. Ingredients"       value={eCat}   onChange={e => setECat(e.target.value)} />
+          <div className="grid grid-cols-2 gap-[10px]">
+            <FormInput label="Price (₱) *" type="number" placeholder="0.00"        value={ePrice} onChange={e => setEPrice(e.target.value)} />
+            <FormGroup label="Unit">
+              <select className={inputClass} value={eUnit} onChange={e => setEUnit(e.target.value)}>
+                {UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+              </select>
+            </FormGroup>
+          </div>
+          <FormInput  label="Stock Qty"       type="number" placeholder="0"        value={eStock} onChange={e => setEStock(e.target.value)} />
+          <FormGroup label="Description (optional)">
+            <textarea
+              className={`${inputClass} resize-none`}
+              rows={2}
+              placeholder="Brief description…"
+              value={eDesc}
+              onChange={e => setEDesc(e.target.value)}
+            />
+          </FormGroup>
+        </SMModal>
+      )}
+
+      {/* ── Delete Confirmation Modal */}
+      {deleteId !== null && (
+        <SMModal
+          title="Delete Product"
+          onClose={() => setDeleteId(null)}
+          footer={
+            <>
+              <button className={ghostBtnClass}   onClick={() => setDeleteId(null)}              disabled={saving}>Cancel</button>
+              <button className={dangerBtnClass}  onClick={() => void handleDelete(deleteId!)}   disabled={saving}>
+                {saving ? "Deleting…" : "Yes, Delete"}
+              </button>
+            </>
+          }
+        >
+          <p className="text-[13px] text-gray-600 leading-relaxed">
+            Are you sure you want to delete{" "}
+            <span className="font-bold text-gray-900">
+              {products.find(p => p.id === deleteId)?.name ?? "this product"}
+            </span>
+            ? This action cannot be undone.
+          </p>
+        </SMModal>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Inventory() {
   const now              = useNow()
   const [pageTab,        setPageTab]        = useState<PageTab>("inventory")
   const [loading,        setLoading]        = useState(true)
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([
-    { id: 1, name: "Chicken Breast", category: "Main",        image: "/img/placeholder.jpg", incoming: 50,  stock: 120, price: "₱250", unit: "kg"     as UnitType, batches: [{ id: "batch-1", productId: 1, quantity: 30, unit: "kg"     as UnitType, receivedAt: new Date(Date.now() - 2 * 86400000), status: "active" }, { id: "batch-2", productId: 1, quantity: 25, unit: "kg"     as UnitType, receivedAt: new Date(Date.now() - 86400000), status: "active" }], totalUsedToday: 0 },
-    { id: 2, name: "Rice",           category: "Ingredients", image: "/img/placeholder.jpg", incoming: 100, stock: 500, price: "₱40",  unit: "kg"     as UnitType, batches: [{ id: "batch-3", productId: 2, quantity: 50, unit: "kg"     as UnitType, receivedAt: new Date(),                              status: "active" }], totalUsedToday: 0 },
-    { id: 3, name: "Coke 2L",        category: "Beverages",   image: "/img/placeholder.jpg", incoming: 20,  stock: 45,  price: "₱85",  unit: "bottle" as UnitType, batches: [{ id: "batch-4", productId: 3, quantity: 12, unit: "bottle" as UnitType, receivedAt: new Date(Date.now() - 3 * 86400000), status: "active" }, { id: "batch-5", productId: 3, quantity: 15, unit: "bottle" as UnitType, receivedAt: new Date(),                              status: "active" }], totalUsedToday: 0 },
-    { id: 4, name: "Cooking Oil",    category: "Ingredients", image: "/img/placeholder.jpg", incoming: 15,  stock: 80,  price: "₱180", unit: "bottle" as UnitType, batches: [{ id: "batch-6", productId: 4, quantity: 8,  unit: "bottle" as UnitType, receivedAt: new Date(Date.now() - 5 * 86400000), status: "active" }], totalUsedToday: 0 },
-    { id: 5, name: "Egg",            category: "Ingredients", image: "/img/placeholder.jpg", incoming: 30,  stock: 120, price: "₱8",   unit: "piece"  as UnitType, batches: [{ id: "batch-7", productId: 5, quantity: 60, unit: "piece"  as UnitType, receivedAt: new Date(Date.now() - 86400000),     status: "active" }], totalUsedToday: 0 },
-  ])
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
 
   const loadInventory = async (showLoader = true) => {
     try {
@@ -978,15 +1384,16 @@ export default function Inventory() {
           </div>
         </motion.div>
 
-        {/* Top-level tabs — centered pill switcher */}
+        {/* Top-level tabs — 3 pills */}
         <motion.div
           initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.3 }}
           className="flex justify-center mb-8"
         >
           <div className="inline-flex bg-gray-100 rounded-[14px] p-1 gap-0.5">
             {([
-              { key: "inventory" as PageTab, label: "Inventory"      },
-              { key: "movement"  as PageTab, label: "Stock Movement" },
+              { key: "inventory"   as PageTab, label: "Inventory"           },
+              { key: "management"  as PageTab, label: "Manage Products"     },
+              { key: "movement"    as PageTab, label: "Stock Movement"      },
             ]).map(tab => (
               <button
                 key={tab.key}
@@ -1011,10 +1418,10 @@ export default function Inventory() {
 
         <AnimatePresence mode="wait">
 
+          {/* ── Inventory tab (unchanged) */}
           {pageTab === "inventory" && (
             <motion.div key="inventory" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22 }}>
 
-              {/* Stat cards */}
               <div className="grid grid-cols-3 gap-5 mb-8">
                 {[
                   { label: "Total Products", value: inventoryItems.length, icon: <Package   className="w-5 h-5" />, colorCls: "bg-blue-50 text-blue-600 border-blue-100"         },
@@ -1056,7 +1463,6 @@ export default function Inventory() {
                 </AnimatePresence>
               </div>
 
-              {/* Info cards */}
               <div className="grid grid-cols-3 gap-5 mt-6">
                 {[
                   { desc: "Each batch is tracked with a timestamp. When consuming products, the oldest batch is used first (FIFO).", borderCls: "border-blue-200",    bgCls: "bg-blue-50",    textCls: "text-blue-800"    },
@@ -1075,6 +1481,14 @@ export default function Inventory() {
             </motion.div>
           )}
 
+          {/* ── Inventory Management tab */}
+          {pageTab === "management" && (
+            <motion.div key="management" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22 }}>
+              <InventoryManagementTab />
+            </motion.div>
+          )}
+
+          {/* ── Stock Movement tab */}
           {pageTab === "movement" && (
             <motion.div key="movement" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22 }}>
               <StockMovementTab />
