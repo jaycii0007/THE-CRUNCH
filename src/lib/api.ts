@@ -1,4 +1,5 @@
 // API configuration and utility functions
+// - Resolves API base URL from environment variable with safe defaults
 const RAW_API_URL = (import.meta as { env?: { VITE_API_URL?: string } }).env
   ?.VITE_API_URL;
 
