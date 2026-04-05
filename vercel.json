@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://crunch-backend-e5ir.onrender.com/api/:path*"
+    }
+  ]
+}
