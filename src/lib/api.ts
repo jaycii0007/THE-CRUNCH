@@ -10,6 +10,11 @@ function isLocalHostname(hostname: string): boolean {
 }
 
 function resolveApiBaseUrl(): string {
+  if (typeof window !== "undefined" && !isLocalHostname(window.location.hostname)) {
+    // In hosted environments (Vercel/production), always use same-origin rewrites.
+    return "/api";
+  }
+
   if (!RAW_API_URL) return "/api";
 
   const trimmed = RAW_API_URL.replace(/\/+$/, "");
