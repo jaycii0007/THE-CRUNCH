@@ -60,6 +60,7 @@ async function setup() {
       "DROP TABLE IF EXISTS Batches;",
       "DROP TABLE IF EXISTS Menu;",
       "DROP TABLE IF EXISTS Categories;",
+      "DROP TABLE IF EXISTS supplier_history;",
       "DROP TABLE IF EXISTS Reports;",
       "DROP TABLE IF EXISTS Customers;",
       "DROP TABLE IF EXISTS Cook;",
@@ -116,6 +117,15 @@ CREATE TABLE IF NOT EXISTS Menu (
     Stock INT DEFAULT 0,
     FOREIGN KEY (Category_ID) REFERENCES Categories(Category_ID)
 );
+
+  CREATE TABLE IF NOT EXISTS products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    quantity INT DEFAULT 0,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
 
 CREATE TABLE IF NOT EXISTS Inventory (
     Inventory_ID INT AUTO_INCREMENT PRIMARY KEY,
@@ -230,6 +240,16 @@ CREATE TABLE IF NOT EXISTS Reports (
     GeneratedAt DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS supplier_history (
+  history_id INT AUTO_INCREMENT PRIMARY KEY,
+  supplier_id INT NOT NULL DEFAULT 0,
+  supplier_name VARCHAR(255) NOT NULL,
+  action VARCHAR(100) NOT NULL,
+  details TEXT,
+  performed_by VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS po_counter (
     id INT PRIMARY KEY DEFAULT 1,
     value INT NOT NULL DEFAULT 0,
@@ -266,6 +286,82 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
 
     await connection.query(createStatements);
     console.log("Tables created.");
+
+    // Keep DB triggers aligned with actual Suppliers/products and Batches schemas.
+    await connection.query(`DROP TRIGGER IF EXISTS trg_batch_received`);
+    await connection.query(`DROP TRIGGER IF EXISTS trg_batch_status_change`);
+
+    const [batchColumns] = await connection.query(`SHOW COLUMNS FROM Batches`);
+    const batchFieldSet = new Set(
+      batchColumns.map((c) => String(c.Field).toLowerCase()),
+    );
+
+    const batchProductCol = batchFieldSet.has("product_id")
+      ? "product_id"
+      : "productId";
+    const batchExpiryCol = batchFieldSet.has("expiry_date")
+      ? "expiry_date"
+      : "expiresAt";
+    const batchIdCol = batchFieldSet.has("batch_id") ? "batch_id" : "id";
+    const batchRemainingCol = batchFieldSet.has("remaining_qty")
+      ? "remaining_qty"
+      : "quantity";
+    const hasStatusColumn = batchFieldSet.has("status");
+
+    await connection.query(`
+CREATE TRIGGER trg_batch_received
+AFTER INSERT ON Batches
+FOR EACH ROW
+BEGIN
+  INSERT INTO supplier_history (supplier_id, supplier_name, action, details, performed_by)
+  SELECT
+    COALESCE(s.Supplier_ID, 0),
+    COALESCE(s.SupplierName, 'Unknown Supplier'),
+    'Batch Received',
+    CONCAT(
+      'Product: ', COALESCE(p.name, CONCAT('ID ', NEW.${batchProductCol})),
+      ' | Qty: ', NEW.quantity, ' ', NEW.unit,
+      IF(NEW.${batchExpiryCol} IS NOT NULL, CONCAT(' | Expires: ', DATE_FORMAT(NEW.${batchExpiryCol}, '%b %d, %Y')), '')
+    ),
+    NULL
+  FROM products p
+  LEFT JOIN Suppliers s ON s.Product_ID = p.id
+  WHERE p.id = NEW.${batchProductCol}
+  LIMIT 1;
+END
+`);
+
+    if (hasStatusColumn) {
+      await connection.query(`
+CREATE TRIGGER trg_batch_status_change
+AFTER UPDATE ON Batches
+FOR EACH ROW
+BEGIN
+  IF OLD.status != NEW.status THEN
+    INSERT INTO supplier_history (supplier_id, supplier_name, action, details, performed_by)
+    SELECT
+      COALESCE(s.Supplier_ID, 0),
+      COALESCE(s.SupplierName, 'Unknown Supplier'),
+      CASE NEW.status
+        WHEN 'withdrawn' THEN 'Stock Withdrawn'
+        WHEN 'returned' THEN 'Stock Returned'
+        WHEN 'expired' THEN 'Batch Expired'
+        ELSE CONCAT('Status Changed to ', NEW.status)
+      END,
+      CONCAT(
+        'Product: ', COALESCE(p.name, CONCAT('ID ', NEW.${batchProductCol})),
+        ' | Batch #', NEW.${batchIdCol},
+        ' | Remaining: ', NEW.${batchRemainingCol}, ' ', NEW.unit
+      ),
+      NULL
+    FROM products p
+    LEFT JOIN Suppliers s ON s.Product_ID = p.id
+    WHERE p.id = NEW.${batchProductCol}
+    LIMIT 1;
+  END IF;
+END
+`);
+    }
 
     // Ensure Inventory has stock movement summary columns.
     await ensureColumn(

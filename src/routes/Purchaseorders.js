@@ -1,46 +1,3 @@
-/**
- * purchaseOrders.js
- * ─────────────────────────────────────────────────────────────────────────────
- * Express router for Purchase Orders.
- *
- * Tables created/used:
- *   purchase_orders        — one row per PO header
- *   purchase_order_items   — line items (child of purchase_orders)
- *
- * Frontend contract (matches StockManager.tsx PurchaseOrder / POItem types):
- *
- *   PurchaseOrder {
- *     id           string   "PO-0001"
- *     supplier     string
- *     contact      string
- *     date         string   "YYYY-MM-DD"   (order date)
- *     deliveryDate string   "YYYY-MM-DD"
- *     status       "Draft" | "Ordered" | "Received" | "Cancelled"
- *     items        POItem[]
- *     notes        string
- *     receivedBy?  string
- *     receivedDate? string  "YYYY-MM-DD"
- *   }
- *
- *   POItem {
- *     id        number
- *     name      string
- *     category  string
- *     unit      string
- *     quantity  number
- *     unitCost  number
- *   }
- *
- * Routes:
- *   GET    /api/purchase-orders              → list all POs
- *   GET    /api/purchase-orders/:id          → single PO with items
- *   POST   /api/purchase-orders              → create Draft PO
- *   PATCH  /api/purchase-orders/:id/status   → update status only
- *   PATCH  /api/purchase-orders/:id/receive  → mark Received + receivedBy
- *   DELETE /api/purchase-orders/:id          → soft-delete (Cancelled)
- * ─────────────────────────────────────────────────────────────────────────────
- */
-
 "use strict";
 
 const express = require("express");
@@ -54,12 +11,10 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Zero-pad a counter into "PO-XXXX" format */
 function formatPOId(counter) {
   return `PO-${String(counter).padStart(4, "0")}`;
 }
 
-/** Format a JS Date or date-string to "YYYY-MM-DD" */
 function toDateString(value) {
   if (!value) return null;
   const d = new Date(value);
@@ -67,11 +22,32 @@ function toDateString(value) {
   return d.toISOString().split("T")[0];
 }
 
+// ─── supplier history logger ──────────────────────────────────────────────────
+
+async function logSupplierHistory(
+  { supplier_name, action, details, performed_by = null },
+  connOrDb = db,
+) {
+  try {
+    await connOrDb.query(
+      `INSERT INTO supplier_history (supplier_id, supplier_name, action, details, performed_by)
+       VALUES (0, ?, ?, ?, ?)`,
+      [
+        supplier_name || "Unknown Supplier",
+        action,
+        details || null,
+        performed_by,
+      ],
+    );
+  } catch (err) {
+    // Non-fatal — log but don't crash the request
+    console.error("Failed to log supplier history:", err.message);
+  }
+}
+
 // ─── table bootstrap ─────────────────────────────────────────────────────────
 
 async function ensureTables() {
-  // PO counter table — keeps the auto-incrementing PO number separate so it
-  // survives deletes without leaving gaps in a confusing way.
   await db.query(`
     CREATE TABLE IF NOT EXISTS po_counter (
       id    INT PRIMARY KEY DEFAULT 1,
@@ -114,7 +90,6 @@ async function ensureTables() {
     )
   `);
 
-  // Runtime migration: add expected_expiry_date if missing (existing DBs).
   {
     const [cols] = await db.query(`SHOW COLUMNS FROM purchase_order_items`);
     const fieldSet = new Set(cols.map((c) => c.Field));
@@ -126,12 +101,8 @@ async function ensureTables() {
   }
 }
 
-// ─── shape helpers ───────────────────────────────────────────────────────────
+// ─── shape helpers ────────────────────────────────────────────────────────────
 
-/**
- * Convert a raw DB purchase_orders row + its items rows into the frontend
- * PurchaseOrder shape.
- */
 function shapePO(row, items = []) {
   return {
     id: row.po_id,
@@ -169,7 +140,6 @@ router.get("/", async (_req, res) => {
 
     const poIds = orders.map((o) => o.po_id);
 
-    // Fetch all items for these POs in one query.
     const [allItems] = await db.query(
       `SELECT * FROM purchase_order_items WHERE po_id IN (?)`,
       [poIds],
@@ -255,7 +225,6 @@ router.post("/", async (req, res) => {
     conn = await db.getConnection();
     await conn.beginTransaction();
 
-    // Atomically increment counter and retrieve new value.
     await conn.query(`UPDATE po_counter SET value = value + 1 WHERE id = 1`);
     const [[{ value: counter }]] = await conn.query(
       `SELECT value FROM po_counter WHERE id = 1`,
@@ -278,7 +247,6 @@ router.post("/", async (req, res) => {
       ],
     );
 
-    // Insert line items.
     for (const item of items) {
       if (!item.name || !item.name.trim()) continue;
       await conn.query(
@@ -300,7 +268,14 @@ router.post("/", async (req, res) => {
 
     await conn.commit();
 
-    // Return full PO shape.
+    // ── Log PO Created ──────────────────────────────────────────────────────
+    await logSupplierHistory({
+      supplier_name: supplier.trim(),
+      action: "Purchase Order Created",
+      details: `PO: ${poId} | ${items.length} item(s) | Delivery: ${delivDate}${notes.trim() ? ` | Notes: ${notes.trim()}` : ""}`,
+      performed_by: null,
+    });
+
     const [[created]] = await conn.query(
       `SELECT * FROM purchase_orders WHERE po_id = ?`,
       [poId],
@@ -350,7 +325,6 @@ router.patch("/:id/status", async (req, res) => {
       return res.status(404).json({ error: "Purchase order not found" });
     }
 
-    // Guard: cannot un-cancel or un-receive.
     if (existing.status === "Cancelled" && status !== "Cancelled") {
       await conn.rollback();
       return res
@@ -364,6 +338,20 @@ router.patch("/:id/status", async (req, res) => {
     ]);
 
     await conn.commit();
+
+    // ── Log status change ───────────────────────────────────────────────────
+    const actionMap = {
+      Ordered: "Purchase Order Sent to Supplier",
+      Cancelled: "Purchase Order Cancelled",
+    };
+    if (actionMap[status]) {
+      await logSupplierHistory({
+        supplier_name: existing.supplier,
+        action: actionMap[status],
+        details: `PO: ${poId} | Previous status: ${existing.status}`,
+        performed_by: null,
+      });
+    }
 
     const [[updated]] = await conn.query(
       `SELECT * FROM purchase_orders WHERE po_id = ?`,
@@ -385,10 +373,6 @@ router.patch("/:id/status", async (req, res) => {
 });
 
 // ─── PATCH /api/purchase-orders/:id/receive ──────────────────────────────────
-//
-// Marks the PO as Received, stamps receivedBy + receivedDate.
-// Optionally creates a batch in the `batches` table for each line item that
-// maps to a known product (matched by name, case-insensitive).
 
 router.patch("/:id/receive", async (req, res) => {
   const poId = req.params.id;
@@ -431,7 +415,6 @@ router.patch("/:id/receive", async (req, res) => {
         .json({ error: "Cannot receive a Cancelled order" });
     }
 
-    // Mark as received.
     await conn.query(
       `UPDATE purchase_orders
        SET status = 'Received', received_by = ?, received_date = ?
@@ -439,13 +422,13 @@ router.patch("/:id/receive", async (req, res) => {
       [receivedBy, recDate, poId],
     );
 
-    // Fetch line items.
     const [items] = await conn.query(
       `SELECT * FROM purchase_order_items WHERE po_id = ?`,
       [poId],
     );
 
-    // For each line item, resolve a product and create a batch.
+    const receivedItemNames = [];
+
     for (const item of items) {
       const qty = toNumber(item.quantity);
       if (qty <= 0) continue;
@@ -477,8 +460,6 @@ router.patch("/:id/receive", async (req, res) => {
         if (matchedMenu) {
           productId = matchedMenu.product_id;
 
-          // batches.product_id points at products.id, so sync a products row
-          // if this item currently only exists in Menu.
           await conn.query(
             `INSERT INTO products (id, name, price, quantity, description)
              VALUES (?, ?, ?, ?, ?)
@@ -517,7 +498,6 @@ router.patch("/:id/receive", async (req, res) => {
         [productId],
       );
 
-      // Insert a new batch (FIFO).
       const [batchResult] = await conn.query(
         `INSERT INTO batches
            (product_id, quantity, remaining_qty, unit, received_date, expiry_date, notes)
@@ -533,7 +513,6 @@ router.patch("/:id/receive", async (req, res) => {
         ],
       );
 
-      // Update Inventory stock.
       await conn.query(
         `UPDATE Inventory
          SET Stock = COALESCE(Stock, 0) + ?,
@@ -543,7 +522,6 @@ router.patch("/:id/receive", async (req, res) => {
         [qty, qty, productId],
       );
 
-      // Keep Menu + products in sync.
       await conn.query(
         `UPDATE Menu SET Stock = COALESCE(Stock, 0) + ? WHERE Product_ID = ?`,
         [qty, productId],
@@ -554,12 +532,22 @@ router.patch("/:id/receive", async (req, res) => {
         [qty, productId],
       );
 
+      receivedItemNames.push(`${item.name} x${qty} ${unit}`);
+
       console.log(
         `[PO Receive] ${poId}: Created batch #${batchResult.insertId} for product ${productId} (${item.name}) - ${qty} ${unit}, expiry: ${itemExpiryDate || "none"}`,
       );
     }
 
     await conn.commit();
+
+    // ── Log PO Received with correct supplier name ──────────────────────────
+    await logSupplierHistory({
+      supplier_name: existing.supplier, // ← directly from PO, always correct
+      action: "Batch Received",
+      details: `PO: ${poId} | Received by: ${receivedBy} | Items: ${receivedItemNames.join(", ") || "none"}`,
+      performed_by: receivedBy,
+    });
 
     const [[updated]] = await conn.query(
       `SELECT * FROM purchase_orders WHERE po_id = ?`,
@@ -581,7 +569,6 @@ router.patch("/:id/receive", async (req, res) => {
 });
 
 // ─── DELETE /api/purchase-orders/:id ─────────────────────────────────────────
-// Soft-delete: sets status to Cancelled (preserves audit trail).
 
 router.delete("/:id", async (req, res) => {
   const poId = req.params.id;
@@ -590,7 +577,7 @@ router.delete("/:id", async (req, res) => {
     await ensureTables();
 
     const [[existing]] = await db.query(
-      `SELECT status FROM purchase_orders WHERE po_id = ?`,
+      `SELECT * FROM purchase_orders WHERE po_id = ?`,
       [poId],
     );
 
@@ -605,6 +592,14 @@ router.delete("/:id", async (req, res) => {
       `UPDATE purchase_orders SET status = 'Cancelled' WHERE po_id = ?`,
       [poId],
     );
+
+    // ── Log cancellation ────────────────────────────────────────────────────
+    await logSupplierHistory({
+      supplier_name: existing.supplier,
+      action: "Purchase Order Cancelled",
+      details: `PO: ${poId} | Was: ${existing.status}`,
+      performed_by: null,
+    });
 
     res.json({ success: true, id: poId, status: "Cancelled" });
   } catch (err) {
