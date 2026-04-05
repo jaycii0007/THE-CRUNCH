@@ -115,6 +115,29 @@ interface RawMaterialForm {
   description: string;
 }
 
+interface ReportLineItem {
+  product_id: number;
+  product_name: string;
+  category: string;
+  unit: string;
+  received: number;
+  withdrawn: number;
+  returned: number;
+  wasted: number;
+  remaining: number;
+  consumptionRate: number;
+}
+
+interface ReportData {
+  period: string;
+  generatedAt: string;
+  items: ReportLineItem[];
+  totalReceived: number;
+  totalWithdrawn: number;
+  totalReturned: number;
+  totalWasted: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,6 +261,12 @@ const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  reports: {
+    getWeekly: (startDate: string) =>
+      apiFetch<ReportData>(`/reports/weekly?start=${startDate}`),
+    getMonthly: (year: number, month: number) =>
+      apiFetch<ReportData>(`/reports/monthly?year=${year}&month=${month}`),
+  },
   po: {
     getAll: () => apiFetch<PurchaseOrder[]>("/purchase-orders"),
     create: (body: Omit<PurchaseOrder, "id">) =>
@@ -496,6 +525,24 @@ const getCategoryStyle = (cat: string) => {
   if (c.includes("sauce")) return "bg-rose-50 text-rose-500 border-rose-100";
   return "bg-slate-50 text-slate-500 border-slate-100";
 };
+
+function normalizeReportData(data: ReportData): ReportData {
+  // If API returns duplicate line items, keep the newer/last occurrence.
+  const deduped = new Map<number, ReportLineItem>();
+  for (const item of data.items) {
+    deduped.set(item.product_id, item);
+  }
+
+  const items = Array.from(deduped.values());
+  return {
+    ...data,
+    items,
+    totalReceived: items.reduce((s, i) => s + toNumber(i.received), 0),
+    totalWithdrawn: items.reduce((s, i) => s + toNumber(i.withdrawn), 0),
+    totalReturned: items.reduce((s, i) => s + toNumber(i.returned), 0),
+    totalWasted: items.reduce((s, i) => s + toNumber(i.wasted), 0),
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Expiry Badge — small reusable chip
@@ -2330,6 +2377,20 @@ export default function StockManager() {
     | null
     | undefined
   >(undefined);
+  const [reportPeriod, setReportPeriod] = useState<"weekly" | "monthly">(
+    "weekly",
+  );
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [selectedWeekStart, setSelectedWeekStart] = useState(
+    () => new Date().toISOString().split("T")[0],
+  );
+  const [selectedMonth, setSelectedMonth] = useState(
+    () => new Date().getMonth() + 1,
+  );
+  const [selectedYear, setSelectedYear] = useState(() =>
+    new Date().getFullYear(),
+  );
 
   const showToast = useCallback(
     (message: string, type: "success" | "error") => setToast({ message, type }),
@@ -2348,6 +2409,24 @@ export default function StockManager() {
   const handleClosePOModal = useCallback(() => {
     setPrefillPOProduct(undefined);
   }, []);
+
+  const fetchReport = useCallback(async () => {
+    setReportLoading(true);
+    try {
+      const data =
+        reportPeriod === "weekly"
+          ? await api.reports.getWeekly(selectedWeekStart)
+          : await api.reports.getMonthly(selectedYear, selectedMonth);
+      setReportData(normalizeReportData(data));
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to load report.",
+        "error",
+      );
+    } finally {
+      setReportLoading(false);
+    }
+  }, [reportPeriod, selectedWeekStart, selectedMonth, selectedYear, showToast]);
 
   const handleDashboardDeleteProduct = useCallback(
     async (product: Product) => {
@@ -2485,6 +2564,10 @@ export default function StockManager() {
       if (adjProductId === null) setAdjProductId(products[0].product_id);
     }
   }, [products, wdProductId, adjProductId]);
+
+  useEffect(() => {
+    setReportData(null);
+  }, [reportPeriod]);
 
   const lowStock = products.filter(
     (p) => !isMenuFoodProduct(p) && getStockStatus(p) === "low",
@@ -3462,6 +3545,324 @@ export default function StockManager() {
                           </Btn>
                         </div>
                       </SectionCard>
+                    </motion.div>
+
+                    {/* ── Stock Movement Report ── */}
+                    <motion.div variants={itemVariants}>
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            Stock Movement Report
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Summarizes received, withdrawn, wasted, and returned
+                            per item
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+                            {(["weekly", "monthly"] as const).map((p) => (
+                              <button
+                                key={p}
+                                onClick={() => setReportPeriod(p)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                                  reportPeriod === p
+                                    ? "bg-white text-slate-800 shadow-sm"
+                                    : "text-slate-400 hover:text-slate-600"
+                                }`}
+                              >
+                                {p}
+                              </button>
+                            ))}
+                          </div>
+                          {reportPeriod === "weekly" ? (
+                            <input
+                              type="date"
+                              value={selectedWeekStart}
+                              onChange={(e) =>
+                                setSelectedWeekStart(e.target.value)
+                              }
+                              className={inputCls + " !w-40"}
+                            />
+                          ) : (
+                            <div className="flex gap-2">
+                              <select
+                                value={selectedMonth}
+                                onChange={(e) =>
+                                  setSelectedMonth(Number(e.target.value))
+                                }
+                                className={inputCls + " !w-32"}
+                              >
+                                {Array.from({ length: 12 }, (_, i) => (
+                                  <option key={i + 1} value={i + 1}>
+                                    {new Date(2000, i).toLocaleString(
+                                      "default",
+                                      { month: "long" },
+                                    )}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="number"
+                                value={selectedYear}
+                                onChange={(e) =>
+                                  setSelectedYear(Number(e.target.value))
+                                }
+                                className={inputCls + " !w-24"}
+                                min={2020}
+                                max={2099}
+                              />
+                            </div>
+                          )}
+                          <button
+                            onClick={fetchReport}
+                            disabled={reportLoading}
+                            className="px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:bg-slate-700 transition-colors disabled:opacity-60"
+                          >
+                            {reportLoading
+                              ? "Generating..."
+                              : "Generate Report"}
+                          </button>
+                          {reportData && (
+                            <button
+                              onClick={() => {
+                                const headers = [
+                                  "Product",
+                                  "Category",
+                                  "Unit",
+                                  "Received",
+                                  "Withdrawn",
+                                  "Returned",
+                                  "Wasted",
+                                  "Remaining",
+                                ];
+                                const rows = reportData.items.map((i) =>
+                                  [
+                                    i.product_name,
+                                    i.category,
+                                    i.unit,
+                                    i.received,
+                                    i.withdrawn,
+                                    i.returned,
+                                    i.wasted,
+                                    i.remaining,
+                                  ].join(","),
+                                );
+                                const csv = [headers.join(","), ...rows].join(
+                                  "\n",
+                                );
+                                const blob = new Blob([csv], {
+                                  type: "text/csv",
+                                });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement("a");
+                                a.href = url;
+                                a.download = `stock-report-${reportData.period}.csv`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                              }}
+                              className="px-4 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-emerald-700 transition-colors"
+                            >
+                              Export CSV
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+
+                    <motion.div variants={itemVariants}>
+                      {!reportData && !reportLoading && (
+                        <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center shadow-sm">
+                          <div className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3">
+                            <svg
+                              className="w-5 h-5 text-slate-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 17v-2m3 2v-4m3 4v-6M4 20h16a2 2 0 002-2V6a2 2 0 00-2-2H4a2 2 0 00-2 2v12a2 2 0 002 2z"
+                              />
+                            </svg>
+                          </div>
+                          <p className="text-sm text-slate-400">
+                            Select a period and click{" "}
+                            <span className="font-semibold text-slate-600">
+                              Generate Report
+                            </span>{" "}
+                            to view stock movement.
+                          </p>
+                        </div>
+                      )}
+                      {reportLoading && (
+                        <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center shadow-sm animate-pulse">
+                          <p className="text-sm text-slate-400">
+                            Building your report...
+                          </p>
+                        </div>
+                      )}
+                      {reportData && !reportLoading && (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-4 gap-4">
+                            {[
+                              {
+                                label: "Total Received",
+                                value: reportData.totalReceived.toFixed(1),
+                                accent: "border-t-emerald-400",
+                                text: "text-emerald-600",
+                              },
+                              {
+                                label: "Total Withdrawn",
+                                value: reportData.totalWithdrawn.toFixed(1),
+                                accent: "border-t-indigo-400",
+                                text: "text-indigo-600",
+                              },
+                              {
+                                label: "Total Returned",
+                                value: reportData.totalReturned.toFixed(1),
+                                accent: "border-t-amber-400",
+                                text: "text-amber-600",
+                              },
+                              {
+                                label: "Total Wasted",
+                                value: reportData.totalWasted.toFixed(2),
+                                accent: "border-t-rose-400",
+                                text: "text-rose-500",
+                              },
+                            ].map((k) => (
+                              <div
+                                key={k.label}
+                                className={`bg-white rounded-2xl p-5 shadow-sm border border-slate-100 border-t-4 ${k.accent}`}
+                              >
+                                <p className="text-xs text-slate-400 font-medium">
+                                  {k.label}
+                                </p>
+                                <p
+                                  className={`text-3xl font-bold mt-1 leading-none ${k.text}`}
+                                >
+                                  {k.value}
+                                </p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                  {reportData.period}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                          <SectionCard
+                            title={`Stock Movement — ${reportData.period}`}
+                            subtitle={`Generated ${new Date(reportData.generatedAt).toLocaleString()} · ${reportData.items.length} items`}
+                          >
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-slate-100">
+                                  {[
+                                    "Item",
+                                    "Category",
+                                    "Received",
+                                    "Withdrawn",
+                                    "Returned",
+                                    "Wasted",
+                                    "Remaining",
+                                    "Efficiency",
+                                  ].map((h) => (
+                                    <th
+                                      key={h}
+                                      className={`py-3 px-4 text-[11px] font-semibold text-slate-400 uppercase tracking-wider ${
+                                        ["Item", "Category"].includes(h)
+                                          ? "text-left"
+                                          : "text-right"
+                                      }`}
+                                    >
+                                      {h}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {reportData.items.map((item, i) => {
+                                  const efficiency =
+                                    item.withdrawn > 0
+                                      ? Math.round(
+                                          ((item.withdrawn - item.wasted) /
+                                            item.withdrawn) *
+                                            100,
+                                        )
+                                      : 100;
+                                  const effColor =
+                                    efficiency >= 90
+                                      ? "text-emerald-600 bg-emerald-50"
+                                      : efficiency >= 70
+                                        ? "text-amber-600 bg-amber-50"
+                                        : "text-rose-500 bg-rose-50";
+                                  return (
+                                    <tr
+                                      key={item.product_id}
+                                      style={{
+                                        opacity: 0,
+                                        animation:
+                                          "fadeInRow 0.28s ease forwards",
+                                        animationDelay: `${i * 0.04}s`,
+                                      }}
+                                      className="border-b border-slate-50 hover:bg-slate-50/70 transition-colors"
+                                    >
+                                      <td className="py-3.5 px-4 font-medium text-slate-800">
+                                        {item.product_name}
+                                      </td>
+                                      <td className="py-3.5 px-4">
+                                        <span
+                                          className={`text-[11px] font-medium px-2 py-0.5 rounded-md border ${getCategoryStyle(item.category)}`}
+                                        >
+                                          {item.category}
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-4 text-right text-emerald-600 font-semibold">
+                                        {item.received}{" "}
+                                        <span className="text-slate-400 font-normal text-xs">
+                                          {item.unit}
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-4 text-right text-indigo-500 font-semibold">
+                                        {item.withdrawn}{" "}
+                                        <span className="text-slate-400 font-normal text-xs">
+                                          {item.unit}
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-4 text-right text-amber-500 font-semibold">
+                                        {item.returned}{" "}
+                                        <span className="text-slate-400 font-normal text-xs">
+                                          {item.unit}
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-4 text-right text-rose-500 font-semibold">
+                                        {item.wasted}{" "}
+                                        <span className="text-slate-400 font-normal text-xs">
+                                          {item.unit}
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-4 text-right text-slate-700 font-semibold">
+                                        {item.remaining}{" "}
+                                        <span className="text-slate-400 font-normal text-xs">
+                                          {item.unit}
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-4 text-right">
+                                        <span
+                                          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${effColor}`}
+                                        >
+                                          {efficiency}%
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </SectionCard>
+                        </div>
+                      )}
                     </motion.div>
                   </motion.div>
                 </motion.div>
