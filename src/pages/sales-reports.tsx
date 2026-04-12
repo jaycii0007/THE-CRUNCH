@@ -77,6 +77,7 @@ interface RawOrderRow {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ORDER_PAGE_SIZE = 10;
+const LOG_PAGE_SIZE = 10;
 const ITEM_H = 36;
 const MONTHS = [
   "January",
@@ -1675,6 +1676,11 @@ export default function SalesReports() {
   const [period, setPeriod] = useState<Period>("Today");
   const [logs, setLogs] = useState<SaleLog[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [currentPageLogs, setCurrentPageLogs] = useState(1);
+
+  useEffect(() => {
+    setCurrentPageLogs(1);
+  }, [search, filterStatus]);
 
   useEffect(() => {
     const fetchSalesData = async () => {
@@ -1779,8 +1785,18 @@ export default function SalesReports() {
     return matchStatus && matchSearch;
   });
 
-  const grouped = groupByDate(filteredLogs);
-  const dates = Object.keys(grouped);
+  const sortedLogs = [...filteredLogs].sort(
+    (a, b) => b._dateObj.getTime() - a._dateObj.getTime(),
+  );
+  const totalPagesLogs = Math.max(1, Math.ceil(sortedLogs.length / LOG_PAGE_SIZE));
+  const paginatedLogs = sortedLogs.slice(
+    (currentPageLogs - 1) * LOG_PAGE_SIZE,
+    currentPageLogs * LOG_PAGE_SIZE,
+  );
+  const paginatedGrouped = groupByDate(paginatedLogs);
+  const paginatedDates = Object.keys(paginatedGrouped).sort(
+    (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+  );
 
   const TAB_STYLES = (key: TabKey) =>
     `text-xs font-semibold px-4 py-2 rounded-full border transition-colors cursor-pointer ${
@@ -1988,14 +2004,14 @@ export default function SalesReports() {
 
               {/* Rows grouped by date */}
               <AnimatePresence>
-                {dates.length === 0 ? (
+                {paginatedDates.length === 0 ? (
                   <EmptyState
                     key="empty"
-                    message="Orders placed from the cashier view will appear here automatically."
+                    message="No transactions found."
                   />
                 ) : (
-                  dates.map((date) => {
-                    const entries = grouped[date];
+                  paginatedDates.map((date) => {
+                    const entries = paginatedGrouped[date];
                     const dayRevenue = entries
                       .filter(
                         (l) =>
@@ -2039,19 +2055,86 @@ export default function SalesReports() {
                   })
                 )}
               </AnimatePresence>
-            </motion.div>
 
-            <p
-              style={{
-                color: "#cbd5e1",
-                fontSize: 11,
-                textAlign: "center",
-                marginTop: 20,
-                fontWeight: 500,
-              }}
-            >
-              {filteredLogs.length} of {logs.length} line items
-            </p>
+              {sortedLogs.length > LOG_PAGE_SIZE && (
+                <div style={{
+                  padding: "16px 20px",
+                  borderTop: "1px solid #f1f5f9",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>
+                    Showing {(currentPageLogs - 1) * LOG_PAGE_SIZE + 1}–{Math.min(currentPageLogs * LOG_PAGE_SIZE, sortedLogs.length)} of {sortedLogs.length} logs
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      onClick={() => setCurrentPageLogs((p) => Math.max(1, p - 1))}
+                      disabled={currentPageLogs === 1}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        border: "1px solid #e2e8f0",
+                        background: "#fff",
+                        cursor: currentPageLogs === 1 ? "not-allowed" : "pointer",
+                        opacity: currentPageLogs === 1 ? 0.5 : 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <ChevronLeft style={{ width: 16, height: 16, color: "#64748b" }} />
+                    </button>
+
+                    {Array.from({ length: Math.min(5, totalPagesLogs) }, (_, i) => {
+                      const page = Math.max(1, Math.min(totalPagesLogs - 4, currentPageLogs - 2)) + i;
+                      return (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPageLogs(page)}
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 8,
+                            border: currentPageLogs === page ? "1px solid #4A1C1C" : "1px solid #e2e8f0",
+                            background: currentPageLogs === page ? "#4A1C1C" : "#fff",
+                            color: currentPageLogs === page ? "#fff" : "#64748b",
+                            fontSize: 13,
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {page}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      onClick={() => setCurrentPageLogs((p) => Math.min(totalPagesLogs, p + 1))}
+                      disabled={currentPageLogs === totalPagesLogs}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        border: "1px solid #e2e8f0",
+                        background: "#fff",
+                        cursor: currentPageLogs === totalPagesLogs ? "not-allowed" : "pointer",
+                        opacity: currentPageLogs === totalPagesLogs ? 0.5 : 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <ChevronRight style={{ width: 16, height: 16, color: "#64748b" }} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
           </>
         )}
 
