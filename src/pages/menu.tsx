@@ -16,7 +16,14 @@ if (typeof document !== "undefined" && !document.getElementById("poppins-font"))
 
 const FONT = "'Poppins', sans-serif";
 
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+
+const VAT_RATE = 0.12;            // 12% VAT inclusive in price
+const DISCOUNT_RATE = 0.20;       // 20% discount for PWD / Senior Citizen (RA 9994 / RA 7432)
+
 // ─── TYPES ────────────────────────────────────────────────────────────────────
+
+type CustomerType = "regular" | "pwd" | "senior";
 
 interface MenuItem {
   id: number;
@@ -42,6 +49,10 @@ interface OrderPayload {
   total: number;
   order_type: "dine-in" | "take-out" | "delivery";
   payment_method: "cash" | "e-payment";
+  customer_type: CustomerType;
+  discount_amount: number;
+  vat_amount: number;
+  vat_exempt_amount: number;
 }
 
 interface OrderResponse {
@@ -66,6 +77,46 @@ const getNow = () => {
   const time = now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true });
   return { date, time };
 };
+
+/**
+ * Computes pricing breakdown based on customer type.
+ *
+ * For Regular:
+ *   - VAT-inclusive gross = cart total
+ *   - VAT = gross × (VAT_RATE / (1 + VAT_RATE))
+ *   - Net (VAT-exclusive) = gross − VAT
+ *   - Discount = 0
+ *   - Amount Due = gross
+ *
+ * For PWD / Senior Citizen (RA 9994 / RA 7432):
+ *   - VAT-exclusive base = gross / (1 + VAT_RATE)   ← remove VAT first
+ *   - Discount = VAT-exclusive base × DISCOUNT_RATE
+ *   - Amount Due = VAT-exclusive base − Discount     ← VAT-exempt, no VAT added back
+ *   - VAT = 0 (exempt)
+ */
+function computePricing(gross: number, customerType: CustomerType) {
+  if (customerType === "regular") {
+    const vatAmount = gross * (VAT_RATE / (1 + VAT_RATE));
+    return {
+      gross,
+      vatExemptAmount: 0,
+      vatAmount: vatAmount,
+      discountAmount: 0,
+      amountDue: gross,
+    };
+  }
+  // PWD / Senior
+  const vatExemptBase = gross / (1 + VAT_RATE);   // strip out VAT
+  const discountAmount = vatExemptBase * DISCOUNT_RATE;
+  const amountDue = vatExemptBase - discountAmount;
+  return {
+    gross,
+    vatExemptAmount: vatExemptBase,
+    vatAmount: 0,
+    discountAmount,
+    amountDue,
+  };
+}
 
 function mapProducts(data: Record<string, unknown>[]): MenuItem[] {
   const dedupedMap = new Map<string, Record<string, unknown>>();
@@ -199,7 +250,7 @@ function CartRow({ item, onRemove, onQty }: CartRowProps) {
         <UtensilsCrossed className="w-3.5 h-3.5" style={{ color: "#9ca3af" }} />
       </div>
 
-      {/* Name + unit price — fixed width so it never gets squeezed */}
+      {/* Name + unit price */}
       <div style={{ width: 72, minWidth: 72 }}>
         <p className="text-xs font-semibold truncate" style={{ color: "#111827" }}>
           {item.name}
@@ -231,7 +282,7 @@ function CartRow({ item, onRemove, onQty }: CartRowProps) {
         </button>
       </div>
 
-      {/* Subtotal — fixed width, right-aligned */}
+      {/* Subtotal */}
       <span
         className="text-xs font-bold text-right shrink-0"
         style={{ color: "#111827", width: 56 }}
@@ -260,6 +311,9 @@ interface SuccessModalProps {
   paidAmount: number;
   orderType: string;
   paymentMethod: string;
+  customerType: CustomerType;
+  discountAmount: number;
+  vatAmount: number;
 }
 
 function SuccessModal({
@@ -270,8 +324,17 @@ function SuccessModal({
   paidAmount,
   orderType,
   paymentMethod,
+  customerType,
+  discountAmount,
+  vatAmount,
 }: SuccessModalProps) {
   const { date, time } = getNow();
+
+  const customerLabel: Record<CustomerType, string> = {
+    regular: "Regular",
+    pwd: "PWD",
+    senior: "Senior Citizen",
+  };
 
   return (
     <AnimatePresence>
@@ -368,12 +431,12 @@ function SuccessModal({
 
               <div style={{ borderTop: "1px solid #f3f4f6" }} />
 
-              {/* Order type + payment badges */}
+              {/* Badges: order type, payment, customer type */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
-                className="px-6 pt-4 pb-2 flex gap-2"
+                className="px-6 pt-4 pb-2 flex flex-wrap gap-2"
               >
                 <span
                   className="text-[11px] font-semibold px-3 py-1 rounded-full capitalize"
@@ -387,6 +450,14 @@ function SuccessModal({
                 >
                   {paymentMethod}
                 </span>
+                {customerType !== "regular" && (
+                  <span
+                    className="text-[11px] font-semibold px-3 py-1 rounded-full"
+                    style={{ background: "#eff6ff", color: "#3b82f6" }}
+                  >
+                    {customerLabel[customerType]}
+                  </span>
+                )}
               </motion.div>
 
               {/* Items list */}
@@ -420,15 +491,49 @@ function SuccessModal({
                 ))}
               </motion.div>
 
-              {/* Total */}
-              <div
-                className="mx-6 mb-4 px-4 py-3 rounded-2xl flex items-center justify-between"
-                style={{ background: "#f9fafb", border: "1px solid #f3f4f6" }}
-              >
-                <span className="text-sm font-semibold" style={{ color: "#6b7280" }}>Total Paid</span>
-                <span className="text-lg font-bold" style={{ color: "#111827" }}>
-                  ₱{formatPrice(paidAmount)}
-                </span>
+              {/* Pricing breakdown */}
+              <div className="mx-6 mb-4 rounded-2xl overflow-hidden" style={{ border: "1px solid #f3f4f6" }}>
+                {customerType !== "regular" && (
+                  <>
+                    <div
+                      className="px-4 py-2.5 flex items-center justify-between"
+                      style={{ borderBottom: "1px dashed #f3f4f6" }}
+                    >
+                      <span className="text-xs" style={{ color: "#9ca3af" }}>VAT (12%)</span>
+                      <span className="text-xs font-medium" style={{ color: "#9ca3af" }}>
+                        ₱{formatPrice(vatAmount)} exempt
+                      </span>
+                    </div>
+                    <div
+                      className="px-4 py-2.5 flex items-center justify-between"
+                      style={{ borderBottom: "1px dashed #f3f4f6" }}
+                    >
+                      <span className="text-xs" style={{ color: "#9ca3af" }}>
+                        Discount (20% {customerLabel[customerType]})
+                      </span>
+                      <span className="text-xs font-medium" style={{ color: "#22c55e" }}>
+                        −₱{formatPrice(discountAmount)}
+                      </span>
+                    </div>
+                  </>
+                )}
+                {customerType === "regular" && (
+                  <div
+                    className="px-4 py-2.5 flex items-center justify-between"
+                    style={{ borderBottom: "1px dashed #f3f4f6" }}
+                  >
+                    <span className="text-xs" style={{ color: "#9ca3af" }}>VAT (12% incl.)</span>
+                    <span className="text-xs font-medium" style={{ color: "#9ca3af" }}>
+                      ₱{formatPrice(vatAmount)}
+                    </span>
+                  </div>
+                )}
+                <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#f9fafb" }}>
+                  <span className="text-sm font-semibold" style={{ color: "#6b7280" }}>Total Paid</span>
+                  <span className="text-lg font-bold" style={{ color: "#111827" }}>
+                    ₱{formatPrice(paidAmount)}
+                  </span>
+                </div>
               </div>
 
               {/* Actions */}
@@ -469,11 +574,13 @@ export default function CashierView() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderType, setOrderType] = useState<"dine-in" | "take-out" | "delivery">("dine-in");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "e-payment">("cash");
+  const [customerType, setCustomerType] = useState<CustomerType>("regular");
   const [showSuccess, setShowSuccess] = useState(false);
   const [savedCart, setSavedCart] = useState<CartItem[]>([]);
   const [savedOrderType, setSavedOrderType] = useState("dine-in");
   const [savedPaymentMethod, setSavedPaymentMethod] = useState("cash");
-  const [paidAmount, setPaidAmount] = useState(0);
+  const [savedCustomerType, setSavedCustomerType] = useState<CustomerType>("regular");
+  const [savedPricing, setSavedPricing] = useState({ amountDue: 0, discountAmount: 0, vatAmount: 0 });
   const [orderNumber, setOrderNumber] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
@@ -499,7 +606,10 @@ export default function CashierView() {
   );
 
   const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
-  const totalPrice = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const grossTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+
+  // Live pricing breakdown (re-computed on every render, no state needed)
+  const pricing = computePricing(grossTotal, customerType);
 
   // ── Cart actions ────────────────────────────────────────────────────────────
   const addToCart = useCallback((item: MenuItem) => {
@@ -539,7 +649,9 @@ export default function CashierView() {
     if (cart.length === 0 || isPlacingOrder) return;
     setIsPlacingOrder(true);
 
-    const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+    const { gross, vatExemptAmount, vatAmount, discountAmount, amountDue } =
+      computePricing(grossTotal, customerType);
+
     const payload: OrderPayload = {
       items: cart.map((i) => ({
         product_id: i.id,
@@ -548,9 +660,13 @@ export default function CashierView() {
         name: i.name,
         price: i.price,
       })),
-      total,
+      total: amountDue,
       order_type: orderType,
       payment_method: paymentMethod,
+      customer_type: customerType,
+      discount_amount: discountAmount,
+      vat_amount: vatAmount,
+      vat_exempt_amount: vatExemptAmount,
     };
 
     try {
@@ -559,7 +675,8 @@ export default function CashierView() {
       setSavedCart([...cart]);
       setSavedOrderType(orderType);
       setSavedPaymentMethod(paymentMethod);
-      setPaidAmount(total);
+      setSavedCustomerType(customerType);
+      setSavedPricing({ amountDue, discountAmount, vatAmount });
       setOrderNumber(num);
       setShowSuccess(true);
       // Optimistically deduct stock for non-menu-food items
@@ -584,6 +701,14 @@ export default function CashierView() {
     setSavedCart([]);
     setOrderType("dine-in");
     setPaymentMethod("cash");
+    setCustomerType("regular");
+  };
+
+  const selectStyle = {
+    border: "1px solid #f0f0f0",
+    background: "#fafafa",
+    color: "#374151",
+    fontFamily: FONT,
   };
 
   return (
@@ -786,26 +911,80 @@ export default function CashierView() {
                 className="px-6 pb-6 pt-4"
                 style={{ borderTop: "1px solid #f5f5f5" }}
               >
-                {/* Total */}
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-semibold" style={{ color: "#9ca3af" }}>Total</span>
-                  <span className="text-xl font-bold" style={{ color: "#111827", fontFamily: FONT }}>
-                    ₱{formatPrice(totalPrice)}
-                  </span>
+                {/* Pricing breakdown */}
+                <div className="mb-4 space-y-1.5">
+                  {/* Gross total */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs" style={{ color: "#9ca3af" }}>Subtotal</span>
+                    <span className="text-xs font-medium" style={{ color: "#6b7280" }}>
+                      ₱{formatPrice(grossTotal)}
+                    </span>
+                  </div>
+
+                  {/* VAT line */}
+                  {customerType === "regular" ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs" style={{ color: "#9ca3af" }}>VAT (12% incl.)</span>
+                      <span className="text-xs font-medium" style={{ color: "#6b7280" }}>
+                        ₱{formatPrice(pricing.vatAmount)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs" style={{ color: "#9ca3af" }}>VAT exempt</span>
+                      <span className="text-xs font-medium" style={{ color: "#6b7280" }}>
+                        −₱{formatPrice(grossTotal - pricing.vatExemptAmount)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Discount line — only for PWD / Senior */}
+                  <AnimatePresence>
+                    {customerType !== "regular" && (
+                      <motion.div
+                        key="discount-line"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18 }}
+                        className="flex items-center justify-between overflow-hidden"
+                      >
+                        <span className="text-xs font-medium" style={{ color: "#22c55e" }}>
+                          20% discount
+                        </span>
+                        <span className="text-xs font-semibold" style={{ color: "#22c55e" }}>
+                          −₱{formatPrice(pricing.discountAmount)}
+                        </span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Divider */}
+                  <div style={{ borderTop: "1px dashed #f0f0f0", marginTop: 4 }} />
+
+                  {/* Amount due */}
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="text-xs font-semibold" style={{ color: "#9ca3af" }}>Total</span>
+                    <motion.span
+                      key={pricing.amountDue}
+                      initial={{ scale: 0.95, opacity: 0.6 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ duration: 0.15 }}
+                      className="text-xl font-bold"
+                      style={{ color: "#111827", fontFamily: FONT }}
+                    >
+                      ₱{formatPrice(pricing.amountDue)}
+                    </motion.span>
+                  </div>
                 </div>
 
-                {/* Order type + payment method selects */}
-                <div className="grid grid-cols-2 gap-2 mb-3">
+                {/* Three selects: order type, payment, customer type */}
+                <div className="grid grid-cols-2 gap-2 mb-2">
                   <select
                     value={orderType}
                     onChange={(e) => setOrderType(e.target.value as "dine-in" | "take-out" | "delivery")}
                     className="rounded-xl px-3 py-2 text-xs focus:outline-none"
-                    style={{
-                      border: "1px solid #f0f0f0",
-                      background: "#fafafa",
-                      color: "#374151",
-                      fontFamily: FONT,
-                    }}
+                    style={selectStyle}
                   >
                     <option value="dine-in">Dine in</option>
                     <option value="take-out">Take out</option>
@@ -815,15 +994,28 @@ export default function CashierView() {
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value as "cash" | "e-payment")}
                     className="rounded-xl px-3 py-2 text-xs focus:outline-none"
-                    style={{
-                      border: "1px solid #f0f0f0",
-                      background: "#fafafa",
-                      color: "#374151",
-                      fontFamily: FONT,
-                    }}
+                    style={selectStyle}
                   >
                     <option value="cash">Cash</option>
                     <option value="e-payment">E-Payment</option>
+                  </select>
+                </div>
+
+                {/* Customer type — full width row */}
+                <div className="mb-3">
+                  <select
+                    value={customerType}
+                    onChange={(e) => setCustomerType(e.target.value as CustomerType)}
+                    className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none"
+                    style={{
+                      ...selectStyle,
+                      color: customerType === "regular" ? "#374151" : "#3b82f6",
+                      fontWeight: customerType === "regular" ? 400 : 600,
+                    }}
+                  >
+                    <option value="regular">Regular customer</option>
+                    <option value="pwd">PWD (20% discount, VAT exempt)</option>
+                    <option value="senior">Senior Citizen (20% discount, VAT exempt)</option>
                   </select>
                 </div>
 
@@ -854,7 +1046,7 @@ export default function CashierView() {
                       Processing…
                     </>
                   ) : (
-                    `Pay ₱${formatPrice(totalPrice)}`
+                    `Pay ₱${formatPrice(pricing.amountDue)}`
                   )}
                 </motion.button>
               </motion.div>
@@ -868,9 +1060,12 @@ export default function CashierView() {
         onClose={handleCloseModal}
         orderNumber={orderNumber}
         savedCart={savedCart}
-        paidAmount={paidAmount}
+        paidAmount={savedPricing.amountDue}
         orderType={savedOrderType}
         paymentMethod={savedPaymentMethod}
+        customerType={savedCustomerType}
+        discountAmount={savedPricing.discountAmount}
+        vatAmount={savedPricing.vatAmount}
       />
     </>
   );
