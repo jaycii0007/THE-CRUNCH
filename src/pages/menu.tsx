@@ -1,16 +1,30 @@
 import { useState, useCallback, useEffect } from "react";
-import { Search, Minus, Plus, Trash2, UtensilsCrossed, Check, Clock, Calendar, Hash } from "lucide-react";
+import {
+  Search,
+  Minus,
+  Plus,
+  Trash2,
+  UtensilsCrossed,
+  Check,
+  Clock,
+  Calendar,
+  Hash,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
 
 // ─── FONT INJECTION ───────────────────────────────────────────────────────────
 
-if (typeof document !== "undefined" && !document.getElementById("poppins-font")) {
+if (
+  typeof document !== "undefined" &&
+  !document.getElementById("poppins-font")
+) {
   const link = document.createElement("link");
   link.id = "poppins-font";
   link.rel = "stylesheet";
-  link.href = "https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap";
+  link.href =
+    "https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap";
   document.head.appendChild(link);
 }
 
@@ -18,8 +32,8 @@ const FONT = "'Poppins', sans-serif";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
-const VAT_RATE = 0.12;            // 12% VAT inclusive in price
-const DISCOUNT_RATE = 0.20;       // 20% discount for PWD / Senior Citizen (RA 9994 / RA 7432)
+const VAT_RATE = 0.12; // 12% VAT inclusive in price
+const DISCOUNT_RATE = 0.2; // 20% discount for PWD / Senior Citizen (RA 9994 / RA 7432)
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +67,7 @@ interface OrderPayload {
   discount_amount: number;
   vat_amount: number;
   vat_exempt_amount: number;
+  cashierId: number | null;
 }
 
 interface OrderResponse {
@@ -73,8 +88,16 @@ const formatPrice = (n: number): string => {
 
 const getNow = () => {
   const now = new Date();
-  const date = now.toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
-  const time = now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const date = now.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const time = now.toLocaleTimeString("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
   return { date, time };
 };
 
@@ -106,7 +129,7 @@ function computePricing(gross: number, customerType: CustomerType) {
     };
   }
   // PWD / Senior
-  const vatExemptBase = gross / (1 + VAT_RATE);   // strip out VAT
+  const vatExemptBase = gross / (1 + VAT_RATE); // strip out VAT
   const discountAmount = vatExemptBase * DISCOUNT_RATE;
   const amountDue = vatExemptBase - discountAmount;
   return {
@@ -122,11 +145,14 @@ function mapProducts(data: Record<string, unknown>[]): MenuItem[] {
   const dedupedMap = new Map<string, Record<string, unknown>>();
   for (const p of data ?? []) {
     if (p.isRawMaterial) continue;
-    const key = String(p.product_name ?? p.name ?? "").trim().toLowerCase();
+    const key = String(p.product_name ?? p.name ?? "")
+      .trim()
+      .toLowerCase();
     const existing = dedupedMap.get(key);
     if (
       !existing ||
-      Number(p.product_id ?? p.id ?? 0) > Number(existing.product_id ?? existing.id ?? 0)
+      Number(p.product_id ?? p.id ?? 0) >
+        Number(existing.product_id ?? existing.id ?? 0)
     ) {
       dedupedMap.set(key, p);
     }
@@ -155,7 +181,9 @@ function ProductCard({ item, onAdd, inCart }: ProductCardProps) {
   return (
     <motion.button
       layout
-      onClick={() => { if (!isOut) onAdd(item); }}
+      onClick={() => {
+        if (!isOut) onAdd(item);
+      }}
       disabled={isOut}
       whileHover={!isOut ? { y: -2 } : {}}
       whileTap={!isOut ? { scale: 0.97 } : {}}
@@ -167,7 +195,9 @@ function ProductCard({ item, onAdd, inCart }: ProductCardProps) {
         border: `1.5px solid ${inCart ? "#111827" : "#efefef"}`,
         opacity: isOut ? 0.4 : 1,
         cursor: isOut ? "not-allowed" : "pointer",
-        boxShadow: inCart ? "0 0 0 3px rgba(17,24,39,0.08)" : "0 1px 3px rgba(0,0,0,0.05)",
+        boxShadow: inCart
+          ? "0 0 0 3px rgba(17,24,39,0.08)"
+          : "0 1px 3px rgba(0,0,0,0.05)",
         fontFamily: FONT,
       }}
     >
@@ -252,10 +282,16 @@ function CartRow({ item, onRemove, onQty }: CartRowProps) {
 
       {/* Name + unit price */}
       <div style={{ width: 72, minWidth: 72 }}>
-        <p className="text-xs font-semibold truncate" style={{ color: "#111827" }}>
+        <p
+          className="text-xs font-semibold truncate"
+          style={{ color: "#111827" }}
+        >
           {item.name}
         </p>
-        <p className="text-[11px] mt-0.5 font-medium truncate" style={{ color: "#9ca3af" }}>
+        <p
+          className="text-[11px] mt-0.5 font-medium truncate"
+          style={{ color: "#9ca3af" }}
+        >
           ₱{formatPrice(item.price)}
         </p>
       </div>
@@ -271,7 +307,10 @@ function CartRow({ item, onRemove, onQty }: CartRowProps) {
         >
           <Minus className="w-3 h-3" style={{ color: "#6b7280" }} />
         </button>
-        <span className="w-5 text-center text-xs font-bold" style={{ color: "#111827" }}>
+        <span
+          className="w-5 text-center text-xs font-bold"
+          style={{ color: "#111827" }}
+        >
           {item.quantity}
         </span>
         <button
@@ -368,11 +407,20 @@ function SuccessModal({
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  transition={{ type: "spring", stiffness: 460, damping: 24, delay: 0.08 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 460,
+                    damping: 24,
+                    delay: 0.08,
+                  }}
                   className="w-16 h-16 rounded-full flex items-center justify-center mb-6"
                   style={{ background: "#f3f4f6", border: "2px solid #e5e7eb" }}
                 >
-                  <Check className="w-7 h-7" style={{ color: "#6ee7b7" }} strokeWidth={2.5} />
+                  <Check
+                    className="w-7 h-7"
+                    style={{ color: "#6ee7b7" }}
+                    strokeWidth={2.5}
+                  />
                 </motion.div>
 
                 <motion.div
@@ -380,10 +428,16 @@ function SuccessModal({
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.18 }}
                 >
-                  <p className="text-base font-bold mb-3" style={{ color: "#111827" }}>
+                  <p
+                    className="text-base font-bold mb-3"
+                    style={{ color: "#111827" }}
+                  >
                     Your order has been placed
                   </p>
-                  <p className="text-sm font-normal leading-relaxed" style={{ color: "#9ca3af" }}>
+                  <p
+                    className="text-sm font-normal leading-relaxed"
+                    style={{ color: "#9ca3af" }}
+                  >
                     Good job! Your order {orderNumber},
                     <br />
                     we'll start preparing your delicious meal right away!
@@ -409,20 +463,40 @@ function SuccessModal({
                 className="grid grid-cols-3"
               >
                 {[
-                  { icon: <Hash className="w-3 h-3" />, label: "Order ID", value: orderNumber },
-                  { icon: <Calendar className="w-3 h-3" />, label: "Date", value: date },
-                  { icon: <Clock className="w-3 h-3" />, label: "Time", value: time },
+                  {
+                    icon: <Hash className="w-3 h-3" />,
+                    label: "Order ID",
+                    value: orderNumber,
+                  },
+                  {
+                    icon: <Calendar className="w-3 h-3" />,
+                    label: "Date",
+                    value: date,
+                  },
+                  {
+                    icon: <Clock className="w-3 h-3" />,
+                    label: "Time",
+                    value: time,
+                  },
                 ].map(({ icon, label, value }, i) => (
                   <div
                     key={label}
                     className="flex flex-col items-center py-4 px-2 text-center"
-                    style={{ borderRight: i < 2 ? "1px solid #f3f4f6" : "none" }}
+                    style={{
+                      borderRight: i < 2 ? "1px solid #f3f4f6" : "none",
+                    }}
                   >
                     <span style={{ color: "#d1d5db" }}>{icon}</span>
-                    <p className="text-[10px] font-semibold mt-1 uppercase tracking-wide" style={{ color: "#9ca3af" }}>
+                    <p
+                      className="text-[10px] font-semibold mt-1 uppercase tracking-wide"
+                      style={{ color: "#9ca3af" }}
+                    >
                       {label}
                     </p>
-                    <p className="text-[11px] font-semibold mt-0.5 leading-tight" style={{ color: "#374151" }}>
+                    <p
+                      className="text-[11px] font-semibold mt-0.5 leading-tight"
+                      style={{ color: "#374151" }}
+                    >
                       {value}
                     </p>
                   </div>
@@ -474,7 +548,10 @@ function SuccessModal({
                     style={{ borderBottom: "1px dashed #f3f4f6" }}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs font-medium truncate" style={{ color: "#6b7280" }}>
+                      <span
+                        className="text-xs font-medium truncate"
+                        style={{ color: "#6b7280" }}
+                      >
                         {item.name}
                       </span>
                       <span
@@ -484,7 +561,10 @@ function SuccessModal({
                         ×{item.quantity}
                       </span>
                     </div>
-                    <span className="text-xs font-semibold ml-2 shrink-0" style={{ color: "#374151" }}>
+                    <span
+                      className="text-xs font-semibold ml-2 shrink-0"
+                      style={{ color: "#374151" }}
+                    >
                       ₱{formatPrice(item.price * item.quantity)}
                     </span>
                   </div>
@@ -492,15 +572,23 @@ function SuccessModal({
               </motion.div>
 
               {/* Pricing breakdown */}
-              <div className="mx-6 mb-4 rounded-2xl overflow-hidden" style={{ border: "1px solid #f3f4f6" }}>
+              <div
+                className="mx-6 mb-4 rounded-2xl overflow-hidden"
+                style={{ border: "1px solid #f3f4f6" }}
+              >
                 {customerType !== "regular" && (
                   <>
                     <div
                       className="px-4 py-2.5 flex items-center justify-between"
                       style={{ borderBottom: "1px dashed #f3f4f6" }}
                     >
-                      <span className="text-xs" style={{ color: "#9ca3af" }}>VAT (12%)</span>
-                      <span className="text-xs font-medium" style={{ color: "#9ca3af" }}>
+                      <span className="text-xs" style={{ color: "#9ca3af" }}>
+                        VAT (12%)
+                      </span>
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: "#9ca3af" }}
+                      >
                         ₱{formatPrice(vatAmount)} exempt
                       </span>
                     </div>
@@ -511,7 +599,10 @@ function SuccessModal({
                       <span className="text-xs" style={{ color: "#9ca3af" }}>
                         Discount (20% {customerLabel[customerType]})
                       </span>
-                      <span className="text-xs font-medium" style={{ color: "#22c55e" }}>
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: "#22c55e" }}
+                      >
                         −₱{formatPrice(discountAmount)}
                       </span>
                     </div>
@@ -522,15 +613,31 @@ function SuccessModal({
                     className="px-4 py-2.5 flex items-center justify-between"
                     style={{ borderBottom: "1px dashed #f3f4f6" }}
                   >
-                    <span className="text-xs" style={{ color: "#9ca3af" }}>VAT (12% incl.)</span>
-                    <span className="text-xs font-medium" style={{ color: "#9ca3af" }}>
+                    <span className="text-xs" style={{ color: "#9ca3af" }}>
+                      VAT (12% incl.)
+                    </span>
+                    <span
+                      className="text-xs font-medium"
+                      style={{ color: "#9ca3af" }}
+                    >
                       ₱{formatPrice(vatAmount)}
                     </span>
                   </div>
                 )}
-                <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#f9fafb" }}>
-                  <span className="text-sm font-semibold" style={{ color: "#6b7280" }}>Total Paid</span>
-                  <span className="text-lg font-bold" style={{ color: "#111827" }}>
+                <div
+                  className="px-4 py-3 flex items-center justify-between"
+                  style={{ background: "#f9fafb" }}
+                >
+                  <span
+                    className="text-sm font-semibold"
+                    style={{ color: "#6b7280" }}
+                  >
+                    Total Paid
+                  </span>
+                  <span
+                    className="text-lg font-bold"
+                    style={{ color: "#111827" }}
+                  >
                     ₱{formatPrice(paidAmount)}
                   </span>
                 </div>
@@ -572,15 +679,24 @@ export default function CashierView() {
   const [selectedCat, setSelectedCat] = useState("ALL");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [orderType, setOrderType] = useState<"dine-in" | "take-out" | "delivery">("dine-in");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "e-payment">("cash");
+  const [orderType, setOrderType] = useState<
+    "dine-in" | "take-out" | "delivery"
+  >("dine-in");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "e-payment">(
+    "cash",
+  );
   const [customerType, setCustomerType] = useState<CustomerType>("regular");
   const [showSuccess, setShowSuccess] = useState(false);
   const [savedCart, setSavedCart] = useState<CartItem[]>([]);
   const [savedOrderType, setSavedOrderType] = useState("dine-in");
   const [savedPaymentMethod, setSavedPaymentMethod] = useState("cash");
-  const [savedCustomerType, setSavedCustomerType] = useState<CustomerType>("regular");
-  const [savedPricing, setSavedPricing] = useState({ amountDue: 0, discountAmount: 0, vatAmount: 0 });
+  const [savedCustomerType, setSavedCustomerType] =
+    useState<CustomerType>("regular");
+  const [savedPricing, setSavedPricing] = useState({
+    amountDue: 0,
+    discountAmount: 0,
+    vatAmount: 0,
+  });
   const [orderNumber, setOrderNumber] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
@@ -597,7 +713,10 @@ export default function CashierView() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const categories = ["ALL", ...Array.from(new Set(products.map((p) => p.category)))];
+  const categories = [
+    "ALL",
+    ...Array.from(new Set(products.map((p) => p.category))),
+  ];
 
   const filtered = products.filter(
     (p) =>
@@ -619,7 +738,9 @@ export default function CashierView() {
       if (existing) {
         const next = existing.quantity + 1;
         if (next > item.remainingStock && !isMenuFood(item)) return prev;
-        return prev.map((c) => (c.id === item.id ? { ...c, quantity: next } : c));
+        return prev.map((c) =>
+          c.id === item.id ? { ...c, quantity: next } : c,
+        );
       }
       return [...prev, { ...item, quantity: 1 }];
     });
@@ -651,6 +772,7 @@ export default function CashierView() {
 
     const { gross, vatExemptAmount, vatAmount, discountAmount, amountDue } =
       computePricing(grossTotal, customerType);
+    const cashierId = localStorage.getItem("userId");
 
     const payload: OrderPayload = {
       items: cart.map((i) => ({
@@ -667,11 +789,14 @@ export default function CashierView() {
       discount_amount: discountAmount,
       vat_amount: vatAmount,
       vat_exempt_amount: vatExemptAmount,
+      cashierId: cashierId ? Number(cashierId) : null,
     };
 
     try {
       const response = await api.post<OrderResponse>("/orders", payload);
-      const num = response?.orderNumber ?? `#${Math.floor(10000 + Math.random() * 90000)}`;
+      const num =
+        response?.orderNumber ??
+        `#${Math.floor(10000 + Math.random() * 90000)}`;
       setSavedCart([...cart]);
       setSavedOrderType(orderType);
       setSavedPaymentMethod(paymentMethod);
@@ -684,7 +809,10 @@ export default function CashierView() {
         prev.map((p) => {
           const ordered = cart.find((c) => c.id === p.id);
           if (!ordered || isMenuFood(p)) return p;
-          return { ...p, remainingStock: Math.max(0, p.remainingStock - ordered.quantity) };
+          return {
+            ...p,
+            remainingStock: Math.max(0, p.remainingStock - ordered.quantity),
+          };
         }),
       );
     } catch (err) {
@@ -721,7 +849,6 @@ export default function CashierView() {
       >
         {/* ── Left: Menu ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-
           {/* Header */}
           <div
             className="px-8 py-5 flex items-center gap-4"
@@ -782,7 +909,11 @@ export default function CashierView() {
               <div className="flex items-center justify-center h-full">
                 <motion.div
                   animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 0.8,
+                    ease: "linear",
+                  }}
                   className="w-6 h-6 rounded-full border-2"
                   style={{ borderColor: "#e5e7eb", borderTopColor: "#9ca3af" }}
                 />
@@ -790,14 +921,21 @@ export default function CashierView() {
             )}
             {!isLoadingProducts && productsError && (
               <div className="flex items-center justify-center h-full">
-                <p className="text-sm" style={{ color: "#ef4444", fontFamily: FONT }}>{productsError}</p>
+                <p
+                  className="text-sm"
+                  style={{ color: "#ef4444", fontFamily: FONT }}
+                >
+                  {productsError}
+                </p>
               </div>
             )}
             {!isLoadingProducts && !productsError && (
               <motion.div
                 layout
                 className="grid gap-3"
-                style={{ gridTemplateColumns: "repeat(auto-fill, minmax(138px, 1fr))" }}
+                style={{
+                  gridTemplateColumns: "repeat(auto-fill, minmax(138px, 1fr))",
+                }}
               >
                 <AnimatePresence>
                   {filtered.map((item, idx) => (
@@ -818,8 +956,14 @@ export default function CashierView() {
                 </AnimatePresence>
                 {filtered.length === 0 && (
                   <div className="col-span-full flex flex-col items-center justify-center py-24">
-                    <UtensilsCrossed className="w-8 h-8 mb-3" style={{ color: "#e5e7eb" }} />
-                    <p className="text-sm" style={{ color: "#d1d5db", fontFamily: FONT }}>
+                    <UtensilsCrossed
+                      className="w-8 h-8 mb-3"
+                      style={{ color: "#e5e7eb" }}
+                    />
+                    <p
+                      className="text-sm"
+                      style={{ color: "#d1d5db", fontFamily: FONT }}
+                    >
                       No items found
                     </p>
                   </div>
@@ -845,11 +989,19 @@ export default function CashierView() {
             style={{ borderBottom: "1px solid #f5f5f5" }}
           >
             <div>
-              <h2 className="text-sm font-bold" style={{ color: "#111827", fontFamily: FONT }}>
+              <h2
+                className="text-sm font-bold"
+                style={{ color: "#111827", fontFamily: FONT }}
+              >
                 Order
               </h2>
-              <p className="text-xs font-medium mt-0.5" style={{ color: "#9ca3af" }}>
-                {totalQty === 0 ? "No items yet" : `${totalQty} item${totalQty > 1 ? "s" : ""}`}
+              <p
+                className="text-xs font-medium mt-0.5"
+                style={{ color: "#9ca3af" }}
+              >
+                {totalQty === 0
+                  ? "No items yet"
+                  : `${totalQty} item${totalQty > 1 ? "s" : ""}`}
               </p>
             </div>
             <AnimatePresence>
@@ -881,9 +1033,15 @@ export default function CashierView() {
                     className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
                     style={{ background: "#f3f4f6" }}
                   >
-                    <UtensilsCrossed className="w-5 h-5" style={{ color: "#e5e7eb" }} />
+                    <UtensilsCrossed
+                      className="w-5 h-5"
+                      style={{ color: "#e5e7eb" }}
+                    />
                   </div>
-                  <p className="text-xs font-medium" style={{ color: "#d1d5db", fontFamily: FONT }}>
+                  <p
+                    className="text-xs font-medium"
+                    style={{ color: "#d1d5db", fontFamily: FONT }}
+                  >
                     Add items to start
                   </p>
                 </motion.div>
@@ -915,8 +1073,13 @@ export default function CashierView() {
                 <div className="mb-4 space-y-1.5">
                   {/* Gross total */}
                   <div className="flex items-center justify-between">
-                    <span className="text-xs" style={{ color: "#9ca3af" }}>Subtotal</span>
-                    <span className="text-xs font-medium" style={{ color: "#6b7280" }}>
+                    <span className="text-xs" style={{ color: "#9ca3af" }}>
+                      Subtotal
+                    </span>
+                    <span
+                      className="text-xs font-medium"
+                      style={{ color: "#6b7280" }}
+                    >
                       ₱{formatPrice(grossTotal)}
                     </span>
                   </div>
@@ -924,15 +1087,25 @@ export default function CashierView() {
                   {/* VAT line */}
                   {customerType === "regular" ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "#9ca3af" }}>VAT (12% incl.)</span>
-                      <span className="text-xs font-medium" style={{ color: "#6b7280" }}>
+                      <span className="text-xs" style={{ color: "#9ca3af" }}>
+                        VAT (12% incl.)
+                      </span>
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: "#6b7280" }}
+                      >
                         ₱{formatPrice(pricing.vatAmount)}
                       </span>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "#9ca3af" }}>VAT exempt</span>
-                      <span className="text-xs font-medium" style={{ color: "#6b7280" }}>
+                      <span className="text-xs" style={{ color: "#9ca3af" }}>
+                        VAT exempt
+                      </span>
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: "#6b7280" }}
+                      >
                         −₱{formatPrice(grossTotal - pricing.vatExemptAmount)}
                       </span>
                     </div>
@@ -949,10 +1122,16 @@ export default function CashierView() {
                         transition={{ duration: 0.18 }}
                         className="flex items-center justify-between overflow-hidden"
                       >
-                        <span className="text-xs font-medium" style={{ color: "#22c55e" }}>
+                        <span
+                          className="text-xs font-medium"
+                          style={{ color: "#22c55e" }}
+                        >
                           20% discount
                         </span>
-                        <span className="text-xs font-semibold" style={{ color: "#22c55e" }}>
+                        <span
+                          className="text-xs font-semibold"
+                          style={{ color: "#22c55e" }}
+                        >
                           −₱{formatPrice(pricing.discountAmount)}
                         </span>
                       </motion.div>
@@ -960,11 +1139,18 @@ export default function CashierView() {
                   </AnimatePresence>
 
                   {/* Divider */}
-                  <div style={{ borderTop: "1px dashed #f0f0f0", marginTop: 4 }} />
+                  <div
+                    style={{ borderTop: "1px dashed #f0f0f0", marginTop: 4 }}
+                  />
 
                   {/* Amount due */}
                   <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-xs font-semibold" style={{ color: "#9ca3af" }}>Total</span>
+                    <span
+                      className="text-xs font-semibold"
+                      style={{ color: "#9ca3af" }}
+                    >
+                      Total
+                    </span>
                     <motion.span
                       key={pricing.amountDue}
                       initial={{ scale: 0.95, opacity: 0.6 }}
@@ -982,7 +1168,11 @@ export default function CashierView() {
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <select
                     value={orderType}
-                    onChange={(e) => setOrderType(e.target.value as "dine-in" | "take-out" | "delivery")}
+                    onChange={(e) =>
+                      setOrderType(
+                        e.target.value as "dine-in" | "take-out" | "delivery",
+                      )
+                    }
                     className="rounded-xl px-3 py-2 text-xs focus:outline-none"
                     style={selectStyle}
                   >
@@ -992,7 +1182,9 @@ export default function CashierView() {
                   </select>
                   <select
                     value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value as "cash" | "e-payment")}
+                    onChange={(e) =>
+                      setPaymentMethod(e.target.value as "cash" | "e-payment")
+                    }
                     className="rounded-xl px-3 py-2 text-xs focus:outline-none"
                     style={selectStyle}
                   >
@@ -1005,7 +1197,9 @@ export default function CashierView() {
                 <div className="mb-3">
                   <select
                     value={customerType}
-                    onChange={(e) => setCustomerType(e.target.value as CustomerType)}
+                    onChange={(e) =>
+                      setCustomerType(e.target.value as CustomerType)
+                    }
                     className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none"
                     style={{
                       ...selectStyle,
@@ -1015,13 +1209,17 @@ export default function CashierView() {
                   >
                     <option value="regular">Regular customer</option>
                     <option value="pwd">PWD (20% discount, VAT exempt)</option>
-                    <option value="senior">Senior Citizen (20% discount, VAT exempt)</option>
+                    <option value="senior">
+                      Senior Citizen (20% discount, VAT exempt)
+                    </option>
                   </select>
                 </div>
 
                 {/* Pay button */}
                 <motion.button
-                  onClick={() => { void handlePayment(); }}
+                  onClick={() => {
+                    void handlePayment();
+                  }}
                   disabled={isPlacingOrder || cart.length === 0}
                   whileHover={{ opacity: 0.88 }}
                   whileTap={{ scale: 0.98 }}
@@ -1039,9 +1237,16 @@ export default function CashierView() {
                     <>
                       <motion.div
                         animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 0.7, ease: "linear" }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 0.7,
+                          ease: "linear",
+                        }}
                         className="w-4 h-4 rounded-full border-2"
-                        style={{ borderColor: "rgba(255,255,255,0.3)", borderTopColor: "#fff" }}
+                        style={{
+                          borderColor: "rgba(255,255,255,0.3)",
+                          borderTopColor: "#fff",
+                        }}
                       />
                       Processing…
                     </>

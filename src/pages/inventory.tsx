@@ -2510,8 +2510,8 @@ export default function Inventory() {
             image: item.image || "/img/placeholder.jpg",
             incoming: 0,
             stock: Number(
-              (item as any).quantity ??
-                (item as any).stock ??
+              (item as any).stock ??
+                (item as any).quantityity ??
                 (item as any).dailyWithdrawn ??
                 0,
             ),
