@@ -9,34 +9,28 @@ import {
   Clock,
   Calendar,
   Hash,
+  ChevronDown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
 
-// ─── FONT INJECTION ───────────────────────────────────────────────────────────
-
-if (
-  typeof document !== "undefined" &&
-  !document.getElementById("poppins-font")
-) {
+// ─── FONT ─────────────────────────────────────────────────────────────────────
+if (typeof document !== "undefined" && !document.getElementById("poppins-font")) {
   const link = document.createElement("link");
   link.id = "poppins-font";
   link.rel = "stylesheet";
   link.href =
-    "https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap";
+    "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap";
   document.head.appendChild(link);
 }
-
 const FONT = "'Poppins', sans-serif";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-
-const VAT_RATE = 0.12; // 12% VAT inclusive in price
-const DISCOUNT_RATE = 0.2; // 20% discount for PWD / Senior Citizen (RA 9994 / RA 7432)
+const VAT_RATE = 0.12;
+const DISCOUNT_RATE = 0.2;
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
-
 type CustomerType = "regular" | "pwd" | "senior";
 
 interface MenuItem {
@@ -50,6 +44,13 @@ interface MenuItem {
 
 interface CartItem extends MenuItem {
   quantity: number;
+}
+
+interface TableItem {
+  id: number;
+  number: number;
+  status: "available" | "occupied";
+  seats?: number;
 }
 
 interface OrderPayload {
@@ -68,6 +69,7 @@ interface OrderPayload {
   vat_amount: number;
   vat_exempt_amount: number;
   cashierId: number | null;
+  table_id: number | null;
 }
 
 interface OrderResponse {
@@ -75,69 +77,44 @@ interface OrderResponse {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-
-const isMenuFood = (item: MenuItem): boolean =>
+const isMenuFood = (item: MenuItem) =>
   item.category.toUpperCase().includes("MENU FOOD");
 
 const formatPrice = (n: number): string => {
-  const fixed = n.toFixed(2);
-  const [int, dec] = fixed.split(".");
-  const intFormatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return dec === "00" ? intFormatted : `${intFormatted}.${dec}`;
+  const [int, dec] = n.toFixed(2).split(".");
+  const formatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return dec === "00" ? formatted : `${formatted}.${dec}`;
 };
 
 const getNow = () => {
   const now = new Date();
-  const date = now.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const time = now.toLocaleTimeString("en-PH", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-  return { date, time };
+  return {
+    date: now.toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+    time: now.toLocaleTimeString("en-PH", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }),
+  };
 };
 
-/**
- * Computes pricing breakdown based on customer type.
- *
- * For Regular:
- *   - VAT-inclusive gross = cart total
- *   - VAT = gross × (VAT_RATE / (1 + VAT_RATE))
- *   - Net (VAT-exclusive) = gross − VAT
- *   - Discount = 0
- *   - Amount Due = gross
- *
- * For PWD / Senior Citizen (RA 9994 / RA 7432):
- *   - VAT-exclusive base = gross / (1 + VAT_RATE)   ← remove VAT first
- *   - Discount = VAT-exclusive base × DISCOUNT_RATE
- *   - Amount Due = VAT-exclusive base − Discount     ← VAT-exempt, no VAT added back
- *   - VAT = 0 (exempt)
- */
 function computePricing(gross: number, customerType: CustomerType) {
   if (customerType === "regular") {
     const vatAmount = gross * (VAT_RATE / (1 + VAT_RATE));
-    return {
-      gross,
-      vatExemptAmount: 0,
-      vatAmount: vatAmount,
-      discountAmount: 0,
-      amountDue: gross,
-    };
+    return { gross, vatExemptAmount: 0, vatAmount, discountAmount: 0, amountDue: gross };
   }
-  // PWD / Senior
-  const vatExemptBase = gross / (1 + VAT_RATE); // strip out VAT
+  const vatExemptBase = gross / (1 + VAT_RATE);
   const discountAmount = vatExemptBase * DISCOUNT_RATE;
-  const amountDue = vatExemptBase - discountAmount;
   return {
     gross,
     vatExemptAmount: vatExemptBase,
     vatAmount: 0,
     discountAmount,
-    amountDue,
+    amountDue: vatExemptBase - discountAmount,
   };
 }
 
@@ -145,9 +122,7 @@ function mapProducts(data: Record<string, unknown>[]): MenuItem[] {
   const dedupedMap = new Map<string, Record<string, unknown>>();
   for (const p of data ?? []) {
     if (p.isRawMaterial) continue;
-    const key = String(p.product_name ?? p.name ?? "")
-      .trim()
-      .toLowerCase();
+    const key = String(p.product_name ?? p.name ?? "").trim().toLowerCase();
     const existing = dedupedMap.get(key);
     if (
       !existing ||
@@ -167,67 +142,88 @@ function mapProducts(data: Record<string, unknown>[]): MenuItem[] {
   }));
 }
 
-// ─── PRODUCT CARD ─────────────────────────────────────────────────────────────
+function mapTables(data: Record<string, unknown>[]): TableItem[] {
+  return (data ?? []).map((t) => ({
+    id: Number(t.id ?? t.table_id),
+    number: Number(t.number ?? t.table_number ?? t.id),
+    status: (t.status as "available" | "occupied") ?? "available",
+    seats: t.seats ? Number(t.seats) : undefined,
+  }));
+}
 
-interface ProductCardProps {
+// ─── PRODUCT CARD ─────────────────────────────────────────────────────────────
+function ProductCard({
+  item,
+  onAdd,
+  inCart,
+}: {
   item: MenuItem;
   onAdd: (item: MenuItem) => void;
   inCart: boolean;
-}
-
-function ProductCard({ item, onAdd, inCart }: ProductCardProps) {
+}) {
   const isOut = item.remainingStock <= 0 && !isMenuFood(item);
 
   return (
     <motion.button
       layout
-      onClick={() => {
-        if (!isOut) onAdd(item);
-      }}
+      onClick={() => { if (!isOut) onAdd(item); }}
       disabled={isOut}
-      whileHover={!isOut ? { y: -2 } : {}}
-      whileTap={!isOut ? { scale: 0.97 } : {}}
-      transition={{ type: "spring", stiffness: 400, damping: 25 }}
-      className="relative w-full text-left overflow-hidden focus:outline-none"
+      whileHover={!isOut ? { y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.07)" } : {}}
+      whileTap={!isOut ? { scale: 0.96 } : {}}
+      transition={{ type: "spring", stiffness: 400, damping: 28 }}
       style={{
+        position: "relative",
+        width: "100%",
+        textAlign: "left",
+        overflow: "hidden",
         borderRadius: 14,
-        background: "#ffffff",
-        border: `1.5px solid ${inCart ? "#111827" : "#efefef"}`,
+        background: "#fff",
+        border: `1px solid ${inCart ? "#111" : "#efefef"}`,
         opacity: isOut ? 0.4 : 1,
         cursor: isOut ? "not-allowed" : "pointer",
-        boxShadow: inCart
-          ? "0 0 0 3px rgba(17,24,39,0.08)"
-          : "0 1px 3px rgba(0,0,0,0.05)",
         fontFamily: FONT,
+        padding: 0,
+        boxShadow: "none",
       }}
     >
       <div
-        className="w-full aspect-square flex items-center justify-center"
-        style={{ background: "#f9f9f9" }}
+        style={{
+          width: "100%",
+          aspectRatio: "1",
+          background: "#f7f7f7",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
       >
-        <UtensilsCrossed
-          className="w-7 h-7"
-          style={{ color: isOut ? "#e5e7eb" : "#d1d5db" }}
-        />
+        <UtensilsCrossed style={{ width: 22, height: 22, color: "#ddd" }} />
       </div>
 
-      <div className="p-3 pt-2.5">
+      <div style={{ padding: "9px 10px 10px" }}>
         <p
-          className="text-xs font-medium leading-snug line-clamp-2 mb-2"
-          style={{ color: "#111827" }}
+          style={{
+            fontSize: 11,
+            fontWeight: 500,
+            color: "#222",
+            lineHeight: 1.35,
+            marginBottom: 7,
+          }}
         >
           {item.name}
         </p>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold" style={{ color: "#111827" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#111" }}>
             ₱{formatPrice(item.price)}
           </span>
           {!isMenuFood(item) && (
             <span
-              className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
               style={{
-                background: isOut ? "#fef2f2" : "#f3f4f6",
-                color: isOut ? "#ef4444" : "#6b7280",
+                fontSize: 10,
+                fontWeight: 500,
+                padding: "2px 6px",
+                borderRadius: 5,
+                background: isOut ? "#fff0f0" : "#f5f5f5",
+                color: isOut ? "#f87171" : "#bbb",
               }}
             >
               {isOut ? "Out" : item.remainingStock}
@@ -242,10 +238,21 @@ function ProductCard({ item, onAdd, inCart }: ProductCardProps) {
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.5 }}
-            className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
-            style={{ background: "#111827" }}
+            transition={{ type: "spring", stiffness: 500, damping: 28 }}
+            style={{
+              position: "absolute",
+              top: 8,
+              right: 8,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: "#111",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            <Check className="w-3 h-3 text-white" strokeWidth={2.5} />
+            <Check style={{ width: 9, height: 9, color: "#fff" }} strokeWidth={3} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -254,107 +261,308 @@ function ProductCard({ item, onAdd, inCart }: ProductCardProps) {
 }
 
 // ─── CART ROW ─────────────────────────────────────────────────────────────────
-
-interface CartRowProps {
+function CartRow({
+  item,
+  onRemove,
+  onQty,
+}: {
   item: CartItem;
   onRemove: (id: number) => void;
   onQty: (id: number, delta: number) => void;
-}
-
-function CartRow({ item, onRemove, onQty }: CartRowProps) {
+}) {
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, x: 16 }}
+      initial={{ opacity: 0, x: 12 }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 16 }}
+      exit={{ opacity: 0, x: 12 }}
       transition={{ type: "spring", stiffness: 350, damping: 28 }}
-      className="flex items-center gap-2 py-3"
-      style={{ borderBottom: "1px solid #f5f5f5", fontFamily: FONT }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "11px 0",
+        borderBottom: "1px solid #f5f5f5",
+        fontFamily: FONT,
+      }}
     >
-      {/* Icon */}
       <div
-        className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
-        style={{ background: "#f3f4f6" }}
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 9,
+          background: "#f7f7f7",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
       >
-        <UtensilsCrossed className="w-3.5 h-3.5" style={{ color: "#9ca3af" }} />
+        <UtensilsCrossed style={{ width: 13, height: 13, color: "#ddd" }} />
       </div>
 
-      {/* Name + unit price */}
-      <div style={{ width: 72, minWidth: 72 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <p
-          className="text-xs font-semibold truncate"
-          style={{ color: "#111827" }}
+          style={{
+            fontSize: 11,
+            fontWeight: 500,
+            color: "#222",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
           {item.name}
         </p>
-        <p
-          className="text-[11px] mt-0.5 font-medium truncate"
-          style={{ color: "#9ca3af" }}
-        >
+        <p style={{ fontSize: 10, color: "#bbb", marginTop: 1 }}>
           ₱{formatPrice(item.price)}
         </p>
       </div>
 
-      {/* Qty controls */}
-      <div
-        className="flex items-center gap-1 rounded-xl p-0.5 shrink-0"
-        style={{ background: "#f3f4f6" }}
-      >
-        <button
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <motion.button
+          whileTap={{ scale: 0.85 }}
           onClick={() => onQty(item.id, -1)}
-          className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-white"
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 7,
+            border: "1px solid #eee",
+            background: "#fff",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
-          <Minus className="w-3 h-3" style={{ color: "#6b7280" }} />
-        </button>
+          <Minus style={{ width: 10, height: 10, color: "#666" }} />
+        </motion.button>
         <span
-          className="w-5 text-center text-xs font-bold"
-          style={{ color: "#111827" }}
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "#111",
+            minWidth: 16,
+            textAlign: "center",
+          }}
         >
           {item.quantity}
         </span>
-        <button
+        <motion.button
+          whileTap={{ scale: 0.85 }}
           onClick={() => onQty(item.id, 1)}
-          className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-white"
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 7,
+            border: "1px solid #eee",
+            background: "#fff",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
-          <Plus className="w-3 h-3" style={{ color: "#6b7280" }} />
-        </button>
+          <Plus style={{ width: 10, height: 10, color: "#666" }} />
+        </motion.button>
       </div>
 
-      {/* Subtotal */}
       <span
-        className="text-xs font-bold text-right shrink-0"
-        style={{ color: "#111827", width: 56 }}
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: "#111",
+          minWidth: 40,
+          textAlign: "right",
+        }}
       >
         ₱{formatPrice(item.price * item.quantity)}
       </span>
 
-      {/* Remove */}
-      <button
+      <motion.button
+        whileTap={{ scale: 0.85 }}
         onClick={() => onRemove(item.id)}
-        className="w-6 h-6 flex items-center justify-center rounded-lg transition-colors hover:bg-gray-100 shrink-0"
+        style={{
+          width: 22,
+          height: 22,
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 6,
+        }}
       >
-        <Trash2 className="w-3 h-3" style={{ color: "#d1d5db" }} />
-      </button>
+        <Trash2 style={{ width: 12, height: 12, color: "#ccc" }} />
+      </motion.button>
     </motion.div>
   );
 }
 
-// ─── SUCCESS MODAL ────────────────────────────────────────────────────────────
-
-interface SuccessModalProps {
-  show: boolean;
-  onClose: () => void;
-  orderNumber: string;
-  savedCart: CartItem[];
-  paidAmount: number;
-  orderType: string;
-  paymentMethod: string;
-  customerType: CustomerType;
-  discountAmount: number;
-  vatAmount: number;
+// ─── TABLE PICKER ─────────────────────────────────────────────────────────────
+function TablePicker({
+  tables,
+  selectedTable,
+  onSelect,
+  isLoading,
+}: {
+  tables: TableItem[];
+  selectedTable: number | null;
+  onSelect: (id: number | null) => void;
+  isLoading: boolean;
+}) {
+  return (
+    <div
+      style={{
+        background: "#fafafa",
+        border: "1px solid #f0f0f0",
+        borderRadius: 12,
+        padding: "10px 12px",
+        marginBottom: 10,
+        fontFamily: FONT,
+      }}
+    >
+      <p
+        style={{
+          fontSize: 9,
+          fontWeight: 600,
+          color: "#bbb",
+          textTransform: "uppercase",
+          letterSpacing: "0.07em",
+          marginBottom: 8,
+        }}
+      >
+        Table
+      </p>
+      {isLoading ? (
+        <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: "50%",
+              border: "2px solid #eee",
+              borderTopColor: "#999",
+            }}
+          />
+        </div>
+      ) : tables.length === 0 ? (
+        <p style={{ fontSize: 11, color: "#ccc" }}>No tables available</p>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(42px, 1fr))",
+            gap: 5,
+          }}
+        >
+          {tables.map((t) => {
+            const isOccupied = t.status === "occupied";
+            const isSelected = selectedTable === t.id;
+            return (
+              <motion.button
+                key={t.id}
+                whileTap={!isOccupied ? { scale: 0.9 } : {}}
+                onClick={() => !isOccupied && onSelect(isSelected ? null : t.id)}
+                disabled={isOccupied}
+                style={{
+                  padding: "6px 4px",
+                  borderRadius: 8,
+                  border: `1px solid ${isSelected ? "#111" : isOccupied ? "#fecaca" : "#eee"}`,
+                  background: isSelected ? "#111" : isOccupied ? "#fff5f5" : "#fff",
+                  cursor: isOccupied ? "not-allowed" : "pointer",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 1,
+                  fontFamily: FONT,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: isSelected ? "#fff" : isOccupied ? "#f87171" : "#333",
+                  }}
+                >
+                  T{t.number}
+                </span>
+                <span
+                  style={{
+                    fontSize: 9,
+                    color: isSelected
+                      ? "rgba(255,255,255,0.55)"
+                      : isOccupied
+                      ? "#fca5a5"
+                      : "#bbb",
+                  }}
+                >
+                  {isOccupied ? "busy" : "free"}
+                </span>
+              </motion.button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
+// ─── CUSTOM SELECT ────────────────────────────────────────────────────────────
+function CustomSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div style={{ position: "relative" }}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%",
+          padding: "7px 24px 7px 10px",
+          fontSize: 11,
+          fontFamily: FONT,
+          border: "1px solid #efefef",
+          borderRadius: 9,
+          background: "#fafafa",
+          color: "#444",
+          outline: "none",
+          appearance: "none",
+          cursor: "pointer",
+        }}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        style={{
+          position: "absolute",
+          right: 8,
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: 10,
+          height: 10,
+          color: "#bbb",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
+  );
+}
+
+// ─── SUCCESS MODAL ────────────────────────────────────────────────────────────
 function SuccessModal({
   show,
   onClose,
@@ -366,9 +574,19 @@ function SuccessModal({
   customerType,
   discountAmount,
   vatAmount,
-}: SuccessModalProps) {
+}: {
+  show: boolean;
+  onClose: () => void;
+  orderNumber: string;
+  savedCart: CartItem[];
+  paidAmount: number;
+  orderType: string;
+  paymentMethod: string;
+  customerType: CustomerType;
+  discountAmount: number;
+  vatAmount: number;
+}) {
   const { date, time } = getNow();
-
   const customerLabel: Record<CustomerType, string> = {
     regular: "Regular",
     pwd: "PWD",
@@ -379,285 +597,333 @@ function SuccessModal({
     <AnimatePresence>
       {show && (
         <>
+          {/* Blurred white backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50"
-            style={{ background: "rgba(0,0,0,0.3)" }}
             onClick={onClose}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 50,
+              backdropFilter: "blur(2px)",
+              WebkitBackdropFilter: "blur(1px)",
+              background: "rgba(144, 142, 142, 0.6)",
+            }}
           />
 
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 50,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 16,
+              pointerEvents: "none",
+            }}
+          >
             <motion.div
-              initial={{ opacity: 0, scale: 0.94, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.94, y: 20 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
               transition={{ type: "spring", stiffness: 360, damping: 30 }}
-              className="bg-white w-full max-w-sm pointer-events-auto overflow-hidden"
               style={{
-                borderRadius: 24,
-                boxShadow: "0 20px 60px rgba(0,0,0,0.12)",
+                background: "#ffffff",
+                width: "100%",
+                maxWidth: 320,
+                borderRadius: 20,
+                overflow: "hidden",
+                border: "1px solid #ebebeb",
+                pointerEvents: "auto",
                 fontFamily: FONT,
               }}
             >
-              {/* Top: icon + heading */}
-              <div className="flex flex-col items-center pt-10 pb-6 px-8 text-center">
+              {/* Top */}
+              <div
+                style={{
+                  padding: "28px 22px 18px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  textAlign: "center",
+                }}
+              >
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 460,
-                    damping: 24,
-                    delay: 0.08,
+                  transition={{ type: "spring", stiffness: 460, damping: 24, delay: 0.08 }}
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: "50%",
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 14,
                   }}
-                  className="w-16 h-16 rounded-full flex items-center justify-center mb-6"
-                  style={{ background: "#f3f4f6", border: "2px solid #e5e7eb" }}
                 >
-                  <Check
-                    className="w-7 h-7"
-                    style={{ color: "#6ee7b7" }}
-                    strokeWidth={2.5}
-                  />
+                  <Check style={{ width: 20, height: 20, color: "#22c55e" }} strokeWidth={2.5} />
                 </motion.div>
 
                 <motion.div
-                  initial={{ opacity: 0, y: 8 }}
+                  initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.18 }}
+                  transition={{ delay: 0.16 }}
                 >
-                  <p
-                    className="text-base font-bold mb-3"
-                    style={{ color: "#111827" }}
-                  >
+                  <p style={{ fontSize: 14, fontWeight: 600, color: "#111", marginBottom: 5 }}>
                     Your order has been placed
                   </p>
-                  <p
-                    className="text-sm font-normal leading-relaxed"
-                    style={{ color: "#9ca3af" }}
-                  >
+                  <p style={{ fontSize: 11, color: "#aaa", lineHeight: 1.65, fontWeight: 400 }}>
                     Good job! Your order {orderNumber},
                     <br />
-                    we'll start preparing your delicious meal right away!
+                    we'll start preparing your meal right away!
                   </p>
                 </motion.div>
 
                 <motion.div
                   initial={{ scaleX: 0 }}
                   animate={{ scaleX: 1 }}
-                  transition={{ delay: 0.3, duration: 0.4, ease: "easeOut" }}
-                  className="mt-5 h-0.5 w-10 rounded-full"
-                  style={{ background: "#6ee7b7", transformOrigin: "center" }}
+                  transition={{ delay: 0.28, duration: 0.35, ease: "easeOut" }}
+                  style={{
+                    width: 24,
+                    height: 2,
+                    background: "#6ee7b7",
+                    borderRadius: 2,
+                    marginTop: 14,
+                    transformOrigin: "center",
+                  }}
                 />
               </div>
 
-              <div style={{ borderTop: "1px solid #f3f4f6" }} />
+              <div style={{ borderTop: "1px solid #f5f5f5" }} />
 
-              {/* Info: ID, Date, Time */}
+              {/* Meta */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.26 }}
-                className="grid grid-cols-3"
+                transition={{ delay: 0.22 }}
+                style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}
               >
                 {[
-                  {
-                    icon: <Hash className="w-3 h-3" />,
-                    label: "Order ID",
-                    value: orderNumber,
-                  },
-                  {
-                    icon: <Calendar className="w-3 h-3" />,
-                    label: "Date",
-                    value: date,
-                  },
-                  {
-                    icon: <Clock className="w-3 h-3" />,
-                    label: "Time",
-                    value: time,
-                  },
+                  { icon: <Hash style={{ width: 11, height: 11 }} />, label: "Order ID", value: orderNumber },
+                  { icon: <Calendar style={{ width: 11, height: 11 }} />, label: "Date", value: date },
+                  { icon: <Clock style={{ width: 11, height: 11 }} />, label: "Time", value: time },
                 ].map(({ icon, label, value }, i) => (
                   <div
                     key={label}
-                    className="flex flex-col items-center py-4 px-2 text-center"
                     style={{
-                      borderRight: i < 2 ? "1px solid #f3f4f6" : "none",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      padding: "12px 6px",
+                      borderRight: i < 2 ? "1px solid #f5f5f5" : "none",
+                      textAlign: "center",
                     }}
                   >
-                    <span style={{ color: "#d1d5db" }}>{icon}</span>
+                    <span style={{ color: "#ddd", marginBottom: 3 }}>{icon}</span>
                     <p
-                      className="text-[10px] font-semibold mt-1 uppercase tracking-wide"
-                      style={{ color: "#9ca3af" }}
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 600,
+                        color: "#bbb",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        marginBottom: 2,
+                      }}
                     >
                       {label}
                     </p>
-                    <p
-                      className="text-[11px] font-semibold mt-0.5 leading-tight"
-                      style={{ color: "#374151" }}
-                    >
+                    <p style={{ fontSize: 11, fontWeight: 500, color: "#374151", lineHeight: 1.3 }}>
                       {value}
                     </p>
                   </div>
                 ))}
               </motion.div>
 
-              <div style={{ borderTop: "1px solid #f3f4f6" }} />
+              <div style={{ borderTop: "1px solid #f5f5f5" }} />
 
-              {/* Badges: order type, payment, customer type */}
+              {/* Badges */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.28 }}
+                style={{ padding: "10px 16px 4px", display: "flex", gap: 5, flexWrap: "wrap" }}
+              >
+                {[
+                  orderType,
+                  paymentMethod,
+                  ...(customerType !== "regular" ? [customerLabel[customerType]] : []),
+                ].map((badge) => (
+                  <span
+                    key={badge}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      padding: "3px 10px",
+                      borderRadius: 20,
+                      background: "#f5f5f5",
+                      color: "#777",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {badge}
+                  </span>
+                ))}
+              </motion.div>
+
+              {/* Items */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
-                className="px-6 pt-4 pb-2 flex flex-wrap gap-2"
-              >
-                <span
-                  className="text-[11px] font-semibold px-3 py-1 rounded-full capitalize"
-                  style={{ background: "#f3f4f6", color: "#6b7280" }}
-                >
-                  {orderType}
-                </span>
-                <span
-                  className="text-[11px] font-semibold px-3 py-1 rounded-full capitalize"
-                  style={{ background: "#f3f4f6", color: "#6b7280" }}
-                >
-                  {paymentMethod}
-                </span>
-                {customerType !== "regular" && (
-                  <span
-                    className="text-[11px] font-semibold px-3 py-1 rounded-full"
-                    style={{ background: "#eff6ff", color: "#3b82f6" }}
-                  >
-                    {customerLabel[customerType]}
-                  </span>
-                )}
-              </motion.div>
-
-              {/* Items list */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.33 }}
-                className="px-6 pb-3 max-h-36 overflow-y-auto"
+                style={{ padding: "4px 16px 10px", maxHeight: 120, overflowY: "auto" }}
               >
                 {savedCart.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between py-2"
-                    style={{ borderBottom: "1px dashed #f3f4f6" }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "6px 0",
+                      borderBottom: "1px dashed #f5f5f5",
+                    }}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: "#777" }}>{item.name}</span>
                       <span
-                        className="text-xs font-medium truncate"
-                        style={{ color: "#6b7280" }}
-                      >
-                        {item.name}
-                      </span>
-                      <span
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0"
-                        style={{ background: "#f3f4f6", color: "#9ca3af" }}
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 500,
+                          background: "#f5f5f5",
+                          color: "#aaa",
+                          padding: "1px 5px",
+                          borderRadius: 4,
+                          marginLeft: 5,
+                        }}
                       >
                         ×{item.quantity}
                       </span>
                     </div>
-                    <span
-                      className="text-xs font-semibold ml-2 shrink-0"
-                      style={{ color: "#374151" }}
-                    >
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "#374151" }}>
                       ₱{formatPrice(item.price * item.quantity)}
                     </span>
                   </div>
                 ))}
               </motion.div>
 
-              {/* Pricing breakdown */}
+              {/* Pricing */}
               <div
-                className="mx-6 mb-4 rounded-2xl overflow-hidden"
-                style={{ border: "1px solid #f3f4f6" }}
+                style={{
+                  margin: "0 16px 14px",
+                  border: "1px solid #f5f5f5",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                }}
               >
-                {customerType !== "regular" && (
+                {customerType !== "regular" ? (
                   <>
                     <div
-                      className="px-4 py-2.5 flex items-center justify-between"
-                      style={{ borderBottom: "1px dashed #f3f4f6" }}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "8px 14px",
+                        borderBottom: "1px dashed #f5f5f5",
+                      }}
                     >
-                      <span className="text-xs" style={{ color: "#9ca3af" }}>
-                        VAT (12%)
-                      </span>
-                      <span
-                        className="text-xs font-medium"
-                        style={{ color: "#9ca3af" }}
-                      >
+                      <span style={{ fontSize: 11, color: "#bbb" }}>VAT exempt</span>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: "#bbb" }}>
                         ₱{formatPrice(vatAmount)} exempt
                       </span>
                     </div>
                     <div
-                      className="px-4 py-2.5 flex items-center justify-between"
-                      style={{ borderBottom: "1px dashed #f3f4f6" }}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "8px 14px",
+                        borderBottom: "1px dashed #f5f5f5",
+                      }}
                     >
-                      <span className="text-xs" style={{ color: "#9ca3af" }}>
+                      <span style={{ fontSize: 11, color: "#bbb" }}>
                         Discount (20% {customerLabel[customerType]})
                       </span>
-                      <span
-                        className="text-xs font-medium"
-                        style={{ color: "#22c55e" }}
-                      >
+                      <span style={{ fontSize: 11, fontWeight: 500, color: "#22c55e" }}>
                         −₱{formatPrice(discountAmount)}
                       </span>
                     </div>
                   </>
-                )}
-                {customerType === "regular" && (
+                ) : (
                   <div
-                    className="px-4 py-2.5 flex items-center justify-between"
-                    style={{ borderBottom: "1px dashed #f3f4f6" }}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "8px 14px",
+                      borderBottom: "1px dashed #f5f5f5",
+                    }}
                   >
-                    <span className="text-xs" style={{ color: "#9ca3af" }}>
-                      VAT (12% incl.)
-                    </span>
-                    <span
-                      className="text-xs font-medium"
-                      style={{ color: "#9ca3af" }}
-                    >
+                    <span style={{ fontSize: 11, color: "#bbb" }}>VAT (12% incl.)</span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "#bbb" }}>
                       ₱{formatPrice(vatAmount)}
                     </span>
                   </div>
                 )}
                 <div
-                  className="px-4 py-3 flex items-center justify-between"
-                  style={{ background: "#f9fafb" }}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "10px 14px",
+                    background: "#f9f9f9",
+                  }}
                 >
-                  <span
-                    className="text-sm font-semibold"
-                    style={{ color: "#6b7280" }}
-                  >
-                    Total Paid
-                  </span>
-                  <span
-                    className="text-lg font-bold"
-                    style={{ color: "#111827" }}
-                  >
+                  <span style={{ fontSize: 12, fontWeight: 500, color: "#777" }}>Total Paid</span>
+                  <span style={{ fontSize: 18, fontWeight: 600, color: "#111" }}>
                     ₱{formatPrice(paidAmount)}
                   </span>
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="px-6 pb-7 space-y-2">
+              <div
+                style={{ padding: "0 16px 20px", display: "flex", flexDirection: "column", gap: 6 }}
+              >
                 <motion.button
                   whileHover={{ opacity: 0.88 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={onClose}
-                  className="w-full py-3.5 rounded-2xl text-sm font-semibold"
-                  style={{ background: "#111827", color: "#fff" }}
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    background: "#111",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    fontFamily: FONT,
+                    cursor: "pointer",
+                  }}
                 >
                   New Order
                 </motion.button>
                 <button
                   onClick={onClose}
-                  className="w-full py-2.5 rounded-2xl text-sm font-medium transition-colors hover:bg-gray-50"
-                  style={{ color: "#9ca3af" }}
+                  style={{
+                    width: "100%",
+                    padding: "9px",
+                    background: "transparent",
+                    color: "#bbb",
+                    border: "none",
+                    fontSize: 12,
+                    fontFamily: FONT,
+                    cursor: "pointer",
+                  }}
                 >
                   Close
                 </button>
@@ -671,7 +937,6 @@ function SuccessModal({
 }
 
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
-
 export default function CashierView() {
   const [products, setProducts] = useState<MenuItem[]>([]);
   const [isLoadingProducts, setIsLoading] = useState(false);
@@ -679,58 +944,62 @@ export default function CashierView() {
   const [selectedCat, setSelectedCat] = useState("ALL");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [orderType, setOrderType] = useState<
-    "dine-in" | "take-out" | "delivery"
-  >("dine-in");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "e-payment">(
-    "cash",
-  );
+  const [orderType, setOrderType] = useState<"dine-in" | "take-out" | "delivery">("dine-in");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "e-payment">("cash");
   const [customerType, setCustomerType] = useState<CustomerType>("regular");
+
+  const [tables, setTables] = useState<TableItem[]>([]);
+  const [isLoadingTables, setIsLoadingTables] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<number | null>(null);
+
   const [showSuccess, setShowSuccess] = useState(false);
   const [savedCart, setSavedCart] = useState<CartItem[]>([]);
   const [savedOrderType, setSavedOrderType] = useState("dine-in");
   const [savedPaymentMethod, setSavedPaymentMethod] = useState("cash");
-  const [savedCustomerType, setSavedCustomerType] =
-    useState<CustomerType>("regular");
-  const [savedPricing, setSavedPricing] = useState({
-    amountDue: 0,
-    discountAmount: 0,
-    vatAmount: 0,
-  });
+  const [savedCustomerType, setSavedCustomerType] = useState<CustomerType>("regular");
+  const [savedPricing, setSavedPricing] = useState({ amountDue: 0, discountAmount: 0, vatAmount: 0 });
   const [orderNumber, setOrderNumber] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
-  // ── Fetch menu from /inventory ──────────────────────────────────────────────
   useEffect(() => {
     setIsLoading(true);
     api
       .get<Record<string, unknown>[]>("/inventory")
-      .then((data) => {
-        setProducts(mapProducts(data ?? []));
-        setProductsError("");
-      })
+      .then((data) => { setProducts(mapProducts(data ?? [])); setProductsError(""); })
       .catch(() => setProductsError("Failed to load menu items."))
       .finally(() => setIsLoading(false));
   }, []);
 
-  const categories = [
-    "ALL",
-    ...Array.from(new Set(products.map((p) => p.category))),
+  useEffect(() => {
+    if (orderType !== "dine-in") { setSelectedTable(null); return; }
+    setIsLoadingTables(true);
+    api
+      .get<Record<string, unknown>[]>("/tables")
+      .then((data) => setTables(mapTables(data ?? [])))
+      .catch(() => setTables([]))
+      .finally(() => setIsLoadingTables(false));
+  }, [orderType]);
+
+  const TABS = [
+    { key: "ALL", label: "All items", match: [] as string[] },
+    { key: "WHOLE_HALF", label: "Whole & Half Chicken", match: ["WHOLE & HALF CHICKEN", "WHOLE AND HALF CHICKEN", "CHICKEN"] },
+    { key: "RICE_MEALS", label: "Rice Meals", match: ["RICE MEALS", "RICE MEAL", "MENU FOOD"] },
+    { key: "SIDES", label: "Sides", match: ["SIDES", "SIDE DISH", "SIDE DISHES", "SUPPLIES"] },
+    { key: "FRUIT_SODA", label: "Fruit Soda", match: ["FRUIT SODA", "FRUIT SODAS", "DRINKS", "BEVERAGES"] },
   ];
 
-  const filtered = products.filter(
-    (p) =>
-      (selectedCat === "ALL" || p.category === selectedCat) &&
-      p.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = products.filter((p) => {
+    const catUpper = p.category.toUpperCase();
+    const tabMatch =
+      selectedCat === "ALL" ||
+      (TABS.find((t) => t.key === selectedCat)?.match ?? []).some((m) => catUpper.includes(m));
+    return tabMatch && p.name.toLowerCase().includes(search.toLowerCase());
+  });
 
   const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
   const grossTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-
-  // Live pricing breakdown (re-computed on every render, no state needed)
   const pricing = computePricing(grossTotal, customerType);
 
-  // ── Cart actions ────────────────────────────────────────────────────────────
   const addToCart = useCallback((item: MenuItem) => {
     if (item.remainingStock <= 0 && !isMenuFood(item)) return;
     setCart((prev) => {
@@ -738,16 +1007,13 @@ export default function CashierView() {
       if (existing) {
         const next = existing.quantity + 1;
         if (next > item.remainingStock && !isMenuFood(item)) return prev;
-        return prev.map((c) =>
-          c.id === item.id ? { ...c, quantity: next } : c,
-        );
+        return prev.map((c) => c.id === item.id ? { ...c, quantity: next } : c);
       }
       return [...prev, { ...item, quantity: 1 }];
     });
   }, []);
 
-  const removeFromCart = (id: number) =>
-    setCart((prev) => prev.filter((c) => c.id !== id));
+  const removeFromCart = (id: number) => setCart((prev) => prev.filter((c) => c.id !== id));
 
   const updateQty = (id: number, delta: number) => {
     const product = products.find((p) => p.id === id);
@@ -761,19 +1027,16 @@ export default function CashierView() {
           if (next > stock && !menuFood) return c;
           return { ...c, quantity: next };
         })
-        .filter((c) => c.quantity > 0),
+        .filter((c) => c.quantity > 0)
     );
   };
 
-  // ── Submit order to /orders ─────────────────────────────────────────────────
   const handlePayment = async () => {
     if (cart.length === 0 || isPlacingOrder) return;
     setIsPlacingOrder(true);
-
     const { gross, vatExemptAmount, vatAmount, discountAmount, amountDue } =
       computePricing(grossTotal, customerType);
     const cashierId = localStorage.getItem("userId");
-
     const payload: OrderPayload = {
       items: cart.map((i) => ({
         product_id: i.id,
@@ -790,13 +1053,11 @@ export default function CashierView() {
       vat_amount: vatAmount,
       vat_exempt_amount: vatExemptAmount,
       cashierId: cashierId ? Number(cashierId) : null,
+      table_id: orderType === "dine-in" ? selectedTable : null,
     };
-
     try {
       const response = await api.post<OrderResponse>("/orders", payload);
-      const num =
-        response?.orderNumber ??
-        `#${Math.floor(10000 + Math.random() * 90000)}`;
+      const num = response?.orderNumber ?? `#${Math.floor(10000 + Math.random() * 90000)}`;
       setSavedCart([...cart]);
       setSavedOrderType(orderType);
       setSavedPaymentMethod(paymentMethod);
@@ -804,17 +1065,18 @@ export default function CashierView() {
       setSavedPricing({ amountDue, discountAmount, vatAmount });
       setOrderNumber(num);
       setShowSuccess(true);
-      // Optimistically deduct stock for non-menu-food items
       setProducts((prev) =>
         prev.map((p) => {
           const ordered = cart.find((c) => c.id === p.id);
           if (!ordered || isMenuFood(p)) return p;
-          return {
-            ...p,
-            remainingStock: Math.max(0, p.remainingStock - ordered.quantity),
-          };
-        }),
+          return { ...p, remainingStock: Math.max(0, p.remainingStock - ordered.quantity) };
+        })
       );
+      if (selectedTable !== null) {
+        setTables((prev) =>
+          prev.map((t) => t.id === selectedTable ? { ...t, status: "occupied" } : t)
+        );
+      }
     } catch (err) {
       console.error("Order failed:", err);
       alert("Failed to submit order. Please try again.");
@@ -830,118 +1092,153 @@ export default function CashierView() {
     setOrderType("dine-in");
     setPaymentMethod("cash");
     setCustomerType("regular");
-  };
-
-  const selectStyle = {
-    border: "1px solid #f0f0f0",
-    background: "#fafafa",
-    color: "#374151",
-    fontFamily: FONT,
+    setSelectedTable(null);
   };
 
   return (
     <>
+      {/* Sidebar unchanged */}
       <Sidebar />
 
+      {/* Hide scrollbars globally for this view */}
+      <style>{`
+        * { scrollbar-width: none; }
+        *::-webkit-scrollbar { display: none; }
+      `}</style>
+
       <div
-        className="flex h-screen overflow-hidden"
-        style={{ fontFamily: FONT, background: "#fafafa", paddingLeft: 80 }}
+        style={{
+          display: "flex",
+          height: "100vh",
+          overflow: "hidden",
+          fontFamily: FONT,
+          background: "#fff",
+          paddingLeft: 80,
+        }}
       >
-        {/* ── Left: Menu ── */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* ── LEFT: Menu ── */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+
           {/* Header */}
           <div
-            className="px-8 py-5 flex items-center gap-4"
-            style={{ background: "#fff", borderBottom: "1px solid #f0f0f0" }}
+            style={{
+              padding: "20px 24px 16px",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "space-between",
+              background: "#fff",
+              borderBottom: "1px solid #f0f0f0",
+              flexShrink: 0,
+            }}
           >
-            <div className="flex-1">
-              <h1 className="text-base font-bold" style={{ color: "#111827" }}>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 500, color: "#bbb", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>
+                Cashier
+              </p>
+              <h1 style={{ fontSize: 22, fontWeight: 600, color: "#111", letterSpacing: "-0.3px" }}>
                 Menu
               </h1>
             </div>
-            <div className="relative">
-              <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
-                style={{ color: "#d1d5db" }}
-              />
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "#f7f7f7",
+                border: "1px solid #efefef",
+                borderRadius: 10,
+                padding: "7px 12px",
+                width: 200,
+              }}
+            >
+              <Search style={{ width: 13, height: 13, color: "#bbb", flexShrink: 0 }} />
               <input
                 type="text"
-                placeholder="Search…"
+                placeholder="Search menu…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 pr-4 py-2 text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-gray-200"
                 style={{
-                  background: "#f7f7f7",
-                  border: "1px solid #efefef",
-                  color: "#374151",
-                  width: 200,
+                  border: "none",
+                  background: "transparent",
+                  outline: "none",
+                  fontSize: 12,
                   fontFamily: FONT,
+                  color: "#333",
+                  width: "100%",
                 }}
               />
             </div>
           </div>
 
-          {/* Category tabs */}
+          {/* Tabs */}
           <div
-            className="px-8 py-3 flex items-center gap-1 overflow-x-auto"
-            style={{ background: "#fff", borderBottom: "1px solid #f5f5f5" }}
+            style={{
+              display: "flex",
+              gap: 4,
+              padding: "10px 24px",
+              borderBottom: "1px solid #f0f0f0",
+              flexShrink: 0,
+              overflow: "hidden",
+            }}
           >
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCat(cat)}
-                className="px-3 py-1.5 text-xs rounded-lg whitespace-nowrap focus:outline-none transition-all"
+            {TABS.map((tab) => (
+              <motion.button
+                key={tab.key}
+                onClick={() => setSelectedCat(tab.key)}
+                whileTap={{ scale: 0.95 }}
                 style={{
-                  color: selectedCat === cat ? "#111827" : "#9ca3af",
-                  background: selectedCat === cat ? "#f3f4f6" : "transparent",
-                  fontWeight: selectedCat === cat ? 600 : 400,
+                  padding: "5px 13px",
+                  fontSize: 11,
                   fontFamily: FONT,
+                  borderRadius: 8,
+                  border: "1px solid transparent",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  fontWeight: selectedCat === tab.key ? 500 : 400,
+                  color: selectedCat === tab.key ? "#fff" : "#aaa",
+                  background: selectedCat === tab.key ? "#111" : "transparent",
+                  transition: "all 0.15s",
                 }}
               >
-                {cat === "ALL" ? "All" : cat}
-              </button>
+                {tab.label}
+              </motion.button>
             ))}
           </div>
 
           {/* Product grid */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px 20px" }}>
             {isLoadingProducts && (
-              <div className="flex items-center justify-center h-full">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
                 <motion.div
                   animate={{ rotate: 360 }}
-                  transition={{
-                    repeat: Infinity,
-                    duration: 0.8,
-                    ease: "linear",
-                  }}
-                  className="w-6 h-6 rounded-full border-2"
-                  style={{ borderColor: "#e5e7eb", borderTopColor: "#9ca3af" }}
+                  transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                  style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid #eee", borderTopColor: "#555" }}
                 />
               </div>
             )}
+
             {!isLoadingProducts && productsError && (
-              <div className="flex items-center justify-center h-full">
-                <p
-                  className="text-sm"
-                  style={{ color: "#ef4444", fontFamily: FONT }}
-                >
-                  {productsError}
-                </p>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                <p style={{ fontSize: 13, color: "#f87171", fontFamily: FONT }}>{productsError}</p>
               </div>
             )}
+
             {!isLoadingProducts && !productsError && (
               <motion.div
                 layout
-                className="grid gap-3"
                 style={{
-                  gridTemplateColumns: "repeat(auto-fill, minmax(138px, 1fr))",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(128px, 1fr))",
+                  gap: 10,
+                  alignContent: "start",
                 }}
               >
                 <AnimatePresence>
                   {filtered.map((item, idx) => (
                     <motion.div
                       key={item.id}
-                      initial={{ opacity: 0, y: 10 }}
+                      initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
                       transition={{ delay: idx * 0.02, duration: 0.18 }}
@@ -954,18 +1251,21 @@ export default function CashierView() {
                     </motion.div>
                   ))}
                 </AnimatePresence>
+
                 {filtered.length === 0 && (
-                  <div className="col-span-full flex flex-col items-center justify-center py-24">
-                    <UtensilsCrossed
-                      className="w-8 h-8 mb-3"
-                      style={{ color: "#e5e7eb" }}
-                    />
-                    <p
-                      className="text-sm"
-                      style={{ color: "#d1d5db", fontFamily: FONT }}
-                    >
-                      No items found
-                    </p>
+                  <div
+                    style={{
+                      gridColumn: "1 / -1",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "80px 0",
+                      gap: 8,
+                    }}
+                  >
+                    <UtensilsCrossed style={{ width: 28, height: 28, color: "#ddd" }} />
+                    <p style={{ fontSize: 12, color: "#ccc", fontFamily: FONT }}>No items found</p>
                   </div>
                 )}
               </motion.div>
@@ -973,35 +1273,34 @@ export default function CashierView() {
           </div>
         </div>
 
-        {/* ── Right: Cart ── */}
+        {/* ── RIGHT: Cart ── */}
         <div
-          className="flex flex-col"
           style={{
-            width: 300,
+            width: 268,
             flexShrink: 0,
-            background: "#fff",
             borderLeft: "1px solid #f0f0f0",
+            display: "flex",
+            flexDirection: "column",
+            background: "#fff",
           }}
         >
           {/* Cart header */}
           <div
-            className="px-6 pt-6 pb-4 flex items-center justify-between"
-            style={{ borderBottom: "1px solid #f5f5f5" }}
+            style={{
+              padding: "20px 18px 14px",
+              borderBottom: "1px solid #f5f5f5",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexShrink: 0,
+            }}
           >
             <div>
-              <h2
-                className="text-sm font-bold"
-                style={{ color: "#111827", fontFamily: FONT }}
-              >
-                Order
+              <h2 style={{ fontSize: 13, fontWeight: 600, color: "#111", fontFamily: FONT }}>
+                Current Order
               </h2>
-              <p
-                className="text-xs font-medium mt-0.5"
-                style={{ color: "#9ca3af" }}
-              >
-                {totalQty === 0
-                  ? "No items yet"
-                  : `${totalQty} item${totalQty > 1 ? "s" : ""}`}
+              <p style={{ fontSize: 11, color: "#bbb", marginTop: 1, fontFamily: FONT }}>
+                {totalQty === 0 ? "No items yet" : `${totalQty} item${totalQty > 1 ? "s" : ""}`}
               </p>
             </div>
             <AnimatePresence>
@@ -1011,8 +1310,15 @@ export default function CashierView() {
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0, opacity: 0 }}
                   transition={{ type: "spring", stiffness: 500, damping: 28 }}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: "#111827", color: "#fff" }}
+                  style={{
+                    background: "#111",
+                    color: "#fff",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    borderRadius: 20,
+                    padding: "2px 8px",
+                    fontFamily: FONT,
+                  }}
                 >
                   {totalQty}
                 </motion.span>
@@ -1021,38 +1327,28 @@ export default function CashierView() {
           </div>
 
           {/* Cart items */}
-          <div className="flex-1 overflow-y-auto px-6">
+          <div style={{ flex: 1, overflowY: "auto", padding: "0 18px" }}>
             <AnimatePresence>
               {cart.length === 0 ? (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="flex flex-col items-center justify-center h-full pb-10 text-center"
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    paddingBottom: 40,
+                  }}
                 >
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
-                    style={{ background: "#f3f4f6" }}
-                  >
-                    <UtensilsCrossed
-                      className="w-5 h-5"
-                      style={{ color: "#e5e7eb" }}
-                    />
-                  </div>
-                  <p
-                    className="text-xs font-medium"
-                    style={{ color: "#d1d5db", fontFamily: FONT }}
-                  >
-                    Add items to start
-                  </p>
+                  <UtensilsCrossed style={{ width: 28, height: 28, color: "#ddd" }} />
+                  <p style={{ fontSize: 12, color: "#ccc", fontFamily: FONT }}>Add items to start</p>
                 </motion.div>
               ) : (
                 cart.map((item) => (
-                  <CartRow
-                    key={item.id}
-                    item={item}
-                    onRemove={removeFromCart}
-                    onQty={updateQty}
-                  />
+                  <CartRow key={item.id} item={item} onRemove={removeFromCart} onQty={updateQty} />
                 ))
               )}
             </AnimatePresence>
@@ -1062,189 +1358,155 @@ export default function CashierView() {
           <AnimatePresence>
             {cart.length > 0 && (
               <motion.div
-                initial={{ opacity: 0, y: 12 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 12 }}
+                exit={{ opacity: 0, y: 10 }}
                 transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                className="px-6 pb-6 pt-4"
-                style={{ borderTop: "1px solid #f5f5f5" }}
+                style={{ padding: "14px 18px 18px", borderTop: "1px solid #f5f5f5", flexShrink: 0 }}
               >
-                {/* Pricing breakdown */}
-                <div className="mb-4 space-y-1.5">
-                  {/* Gross total */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs" style={{ color: "#9ca3af" }}>
-                      Subtotal
-                    </span>
-                    <span
-                      className="text-xs font-medium"
-                      style={{ color: "#6b7280" }}
-                    >
-                      ₱{formatPrice(grossTotal)}
-                    </span>
+                {/* Pricing */}
+                <div
+                  style={{
+                    background: "#fafafa",
+                    border: "1px solid #f0f0f0",
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    marginBottom: 10,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px dashed #f0f0f0" }}>
+                    <span style={{ fontSize: 11, color: "#bbb" }}>Subtotal</span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "#999" }}>₱{formatPrice(grossTotal)}</span>
                   </div>
 
-                  {/* VAT line */}
                   {customerType === "regular" ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "#9ca3af" }}>
-                        VAT (12% incl.)
-                      </span>
-                      <span
-                        className="text-xs font-medium"
-                        style={{ color: "#6b7280" }}
-                      >
-                        ₱{formatPrice(pricing.vatAmount)}
-                      </span>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px dashed #f0f0f0" }}>
+                      <span style={{ fontSize: 11, color: "#bbb" }}>VAT (12% incl.)</span>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: "#999" }}>₱{formatPrice(pricing.vatAmount)}</span>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "#9ca3af" }}>
-                        VAT exempt
-                      </span>
-                      <span
-                        className="text-xs font-medium"
-                        style={{ color: "#6b7280" }}
-                      >
-                        −₱{formatPrice(grossTotal - pricing.vatExemptAmount)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Discount line — only for PWD / Senior */}
-                  <AnimatePresence>
-                    {customerType !== "regular" && (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px dashed #f0f0f0" }}>
+                        <span style={{ fontSize: 11, color: "#bbb" }}>VAT exempt</span>
+                        <span style={{ fontSize: 11, fontWeight: 500, color: "#999" }}>−₱{formatPrice(grossTotal - pricing.vatExemptAmount)}</span>
+                      </div>
                       <motion.div
-                        key="discount-line"
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
                         transition={{ duration: 0.18 }}
-                        className="flex items-center justify-between overflow-hidden"
+                        style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px dashed #f0f0f0", overflow: "hidden" }}
                       >
-                        <span
-                          className="text-xs font-medium"
-                          style={{ color: "#22c55e" }}
-                        >
-                          20% discount
-                        </span>
-                        <span
-                          className="text-xs font-semibold"
-                          style={{ color: "#22c55e" }}
-                        >
-                          −₱{formatPrice(pricing.discountAmount)}
-                        </span>
+                        <span style={{ fontSize: 11, color: "#22c55e", fontWeight: 500 }}>20% discount</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#22c55e" }}>−₱{formatPrice(pricing.discountAmount)}</span>
                       </motion.div>
-                    )}
-                  </AnimatePresence>
+                    </>
+                  )}
 
-                  {/* Divider */}
-                  <div
-                    style={{ borderTop: "1px dashed #f0f0f0", marginTop: 4 }}
-                  />
-
-                  {/* Amount due */}
-                  <div className="flex items-center justify-between pt-0.5">
-                    <span
-                      className="text-xs font-semibold"
-                      style={{ color: "#9ca3af" }}
-                    >
-                      Total
-                    </span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f5f5f5" }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: "#777" }}>Total</span>
                     <motion.span
                       key={pricing.amountDue}
                       initial={{ scale: 0.95, opacity: 0.6 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ duration: 0.15 }}
-                      className="text-xl font-bold"
-                      style={{ color: "#111827", fontFamily: FONT }}
+                      style={{ fontSize: 19, fontWeight: 600, color: "#111", fontFamily: FONT }}
                     >
                       ₱{formatPrice(pricing.amountDue)}
                     </motion.span>
                   </div>
                 </div>
 
-                {/* Three selects: order type, payment, customer type */}
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                  <select
+                {/* Order type + payment */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+                  <CustomSelect
                     value={orderType}
-                    onChange={(e) =>
-                      setOrderType(
-                        e.target.value as "dine-in" | "take-out" | "delivery",
-                      )
-                    }
-                    className="rounded-xl px-3 py-2 text-xs focus:outline-none"
-                    style={selectStyle}
-                  >
-                    <option value="dine-in">Dine in</option>
-                    <option value="take-out">Take out</option>
-                    <option value="delivery">Delivery</option>
-                  </select>
-                  <select
+                    onChange={(v) => setOrderType(v as typeof orderType)}
+                    options={[
+                      { value: "dine-in", label: "Dine in" },
+                      { value: "take-out", label: "Take out" },
+                      { value: "delivery", label: "Delivery" },
+                    ]}
+                  />
+                  <CustomSelect
                     value={paymentMethod}
-                    onChange={(e) =>
-                      setPaymentMethod(e.target.value as "cash" | "e-payment")
-                    }
-                    className="rounded-xl px-3 py-2 text-xs focus:outline-none"
-                    style={selectStyle}
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="e-payment">E-Payment</option>
-                  </select>
+                    onChange={(v) => setPaymentMethod(v as typeof paymentMethod)}
+                    options={[
+                      { value: "cash", label: "Cash" },
+                      { value: "e-payment", label: "E-Payment" },
+                    ]}
+                  />
                 </div>
 
-                {/* Customer type — full width row */}
-                <div className="mb-3">
-                  <select
+                <div style={{ marginBottom: 8 }}>
+                  <CustomSelect
                     value={customerType}
-                    onChange={(e) =>
-                      setCustomerType(e.target.value as CustomerType)
-                    }
-                    className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none"
-                    style={{
-                      ...selectStyle,
-                      color: customerType === "regular" ? "#374151" : "#3b82f6",
-                      fontWeight: customerType === "regular" ? 400 : 600,
-                    }}
-                  >
-                    <option value="regular">Regular customer</option>
-                    <option value="pwd">PWD (20% discount, VAT exempt)</option>
-                    <option value="senior">
-                      Senior Citizen (20% discount, VAT exempt)
-                    </option>
-                  </select>
+                    onChange={(v) => setCustomerType(v as CustomerType)}
+                    options={[
+                      { value: "regular", label: "Regular customer" },
+                      { value: "pwd", label: "PWD (20% off, VAT exempt)" },
+                      { value: "senior", label: "Senior Citizen (20% off, VAT exempt)" },
+                    ]}
+                  />
                 </div>
+
+                {/* Table picker */}
+                <AnimatePresence>
+                  {orderType === "dine-in" && (
+                    <motion.div
+                      key="table-picker"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ overflow: "hidden" }}
+                    >
+                      <TablePicker
+                        tables={tables}
+                        selectedTable={selectedTable}
+                        onSelect={setSelectedTable}
+                        isLoading={isLoadingTables}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Pay button */}
                 <motion.button
-                  onClick={() => {
-                    void handlePayment();
-                  }}
+                  onClick={() => { void handlePayment(); }}
                   disabled={isPlacingOrder || cart.length === 0}
                   whileHover={{ opacity: 0.88 }}
                   whileTap={{ scale: 0.98 }}
                   transition={{ duration: 0.12 }}
-                  className="w-full py-3.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2"
                   style={{
-                    background: "#111827",
+                    width: "100%",
+                    padding: "13px",
+                    background: "#16a34a",
                     color: "#fff",
-                    opacity: isPlacingOrder ? 0.5 : 1,
-                    cursor: isPlacingOrder ? "not-allowed" : "pointer",
+                    border: "none",
+                    borderRadius: 12,
+                    fontSize: 13,
+                    fontWeight: 500,
                     fontFamily: FONT,
+                    cursor: isPlacingOrder ? "not-allowed" : "pointer",
+                    opacity: isPlacingOrder ? 0.5 : 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    letterSpacing: "0.01em",
                   }}
                 >
                   {isPlacingOrder ? (
                     <>
                       <motion.div
                         animate={{ rotate: 360 }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: 0.7,
-                          ease: "linear",
-                        }}
-                        className="w-4 h-4 rounded-full border-2"
+                        transition={{ repeat: Infinity, duration: 0.7, ease: "linear" }}
                         style={{
-                          borderColor: "rgba(255,255,255,0.3)",
+                          width: 14,
+                          height: 14,
+                          borderRadius: "50%",
+                          border: "2px solid rgba(255,255,255,0.3)",
                           borderTopColor: "#fff",
                         }}
                       />

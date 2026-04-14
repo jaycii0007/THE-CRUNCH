@@ -1,13 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import {
-  Clock,
-  Menu as MenuIcon,
-  Bell,
-  ClipboardList,
-  XCircle,
-} from "lucide-react";
+import { Clock, Bell, ClipboardList, XCircle, CheckCircle2, ChefHat, Utensils, Play, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
@@ -35,8 +29,7 @@ const COOK_TIME_SECONDS = 10 * 60;
 function playAlertSound() {
   try {
     const ctx = new AudioContext();
-    const times = [0, 0.25, 0.5];
-    times.forEach((offset) => {
+    [0, 0.25, 0.5].forEach((offset) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -44,25 +37,16 @@ function playAlertSound() {
       osc.frequency.value = 880;
       osc.type = "sine";
       gain.gain.setValueAtTime(0.4, ctx.currentTime + offset);
-      gain.gain.exponentialRampToValueAtTime(
-        0.001,
-        ctx.currentTime + offset + 0.2,
-      );
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.2);
       osc.start(ctx.currentTime + offset);
       osc.stop(ctx.currentTime + offset + 0.2);
     });
-  } catch {
-    // AudioContext not available (e.g. SSR), silently ignore
-  }
+  } catch {}
 }
 
-function OrderTimer({
-  startedAt,
-  orderNumber,
-}: {
-  startedAt: number;
-  orderNumber: string;
-}) {
+// ── Timer ─────────────────────────────────────────────────────────────────────
+
+function OrderTimer({ startedAt, orderNumber }: { startedAt: number; orderNumber: string }) {
   const [elapsed, setElapsed] = useState(0);
   const notifiedRef = useRef(false);
   const soundRef = useRef(false);
@@ -71,21 +55,14 @@ function OrderTimer({
     const interval = setInterval(() => {
       const secs = Math.floor((Date.now() - startedAt) / 1000);
       setElapsed(secs);
-
       if (secs >= COOK_TIME_SECONDS) {
         if (!notifiedRef.current) {
           notifiedRef.current = true;
           if (Notification.permission === "granted") {
-            new Notification("🍗 Order Ready!", {
-              body: `Order ${orderNumber} is done and ready to serve!`,
-              icon: "/favicon.ico",
-            });
+            new Notification("Order Ready!", { body: `Order ${orderNumber} is done and ready to serve!`, icon: "/favicon.ico" });
           }
         }
-        if (!soundRef.current) {
-          soundRef.current = true;
-          playAlertSound();
-        }
+        if (!soundRef.current) { soundRef.current = true; playAlertSound(); }
       }
     }, 1000);
     return () => clearInterval(interval);
@@ -93,32 +70,76 @@ function OrderTimer({
 
   const remaining = COOK_TIME_SECONDS - elapsed;
   const isOverdue = remaining <= 0;
-  const displaySeconds = isOverdue ? Math.abs(remaining) : remaining;
-  const mins = Math.floor(displaySeconds / 60);
-  const secs = displaySeconds % 60;
+  const display = isOverdue ? Math.abs(remaining) : remaining;
+  const mins = Math.floor(display / 60);
+  const secs = display % 60;
   const timeStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  const progress = Math.min(elapsed / COOK_TIME_SECONDS, 1);
+
+  const color = isOverdue ? "#ef4444" : elapsed > COOK_TIME_SECONDS * 0.75 ? "#f59e0b" : "#10b981";
+  const bg    = isOverdue ? "#fef2f2"  : elapsed > COOK_TIME_SECONDS * 0.75 ? "#fffbeb"  : "#f0fdf4";
 
   return (
-    <div
-      className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold mb-3 ${
-        isOverdue
-          ? "bg-red-100 text-red-600 animate-pulse"
-          : elapsed > COOK_TIME_SECONDS * 0.75
-            ? "bg-yellow-100 text-yellow-700"
-            : "bg-green-100 text-green-700"
-      }`}
-    >
-      <Clock className="w-3 h-3" />
-      {isOverdue ? `OVERDUE +${timeStr}` : timeStr}
+    <div style={{ marginBottom: "12px" }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+        padding: "6px 12px", borderRadius: "8px", marginBottom: "6px",
+        background: bg, color,
+        fontSize: "11px", fontWeight: 700, letterSpacing: "0.02em",
+      }}>
+        {isOverdue ? <AlertCircle size={12} /> : <Clock size={12} />}
+        {isOverdue ? `OVERDUE +${timeStr}` : timeStr}
+      </div>
+      <div style={{ height: "3px", background: "#f1f5f9", borderRadius: "99px", overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${progress * 100}%`, background: color, borderRadius: "99px", transition: "width 1s linear" }} />
+      </div>
     </div>
   );
 }
 
+// ── Status badge ──────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; color: string; bg: string }> = {
+    "dine-in":  { label: "Dine In",  color: "#be123c", bg: "#fff1f2" },
+    "take-out": { label: "Take Out", color: "#b45309", bg: "#fffbeb" },
+    "delivery": { label: "Delivery", color: "#0369a1", bg: "#f0f9ff" },
+  };
+  const s = map[status] ?? { label: status, color: "#6b7280", bg: "#f9fafb" };
+  return (
+    <span style={{
+      fontSize: "10px", fontWeight: 600, padding: "3px 10px", borderRadius: "99px",
+      color: s.color, background: s.bg, letterSpacing: "0.02em",
+    }}>
+      {s.label}
+    </span>
+  );
+}
+
+// ── Stat card ─────────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
+  return (
+    <div style={{
+      background: "#fff", borderRadius: "16px", padding: "20px 24px",
+      border: "1px solid #f1f5f9", minWidth: "90px", textAlign: "center",
+      boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+    }}>
+      <div style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", color: "#94a3b8", marginBottom: "8px", textTransform: "uppercase" }}>
+        {label}
+      </div>
+      <div style={{ fontSize: "28px", fontWeight: 700, color: accent ?? "#1e293b", lineHeight: 1 }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
 export default function Order() {
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [notifPermission, setNotifPermission] = useState(
-    Notification.permission,
-  );
+  const [notifPermission, setNotifPermission] = useState(Notification.permission);
   const [orders, setOrders] = useState<OrderCard[]>([]);
   const [servedCount, setServedCount] = useState(0);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -129,14 +150,9 @@ export default function Order() {
         api.get<OrderCard[]>("/orders/queue"),
         api.get<{ id?: number | string; orderId?: number | string; status: string }[]>("/orders"),
       ]);
-
-      const activeOrders = (queueRows ?? []).filter((o) => !o.isFinished);
-      setOrders(activeOrders);
-
+      setOrders((queueRows ?? []).filter((o) => !o.isFinished));
       const completedIds = new Set(
-        (allRows ?? [])
-          .filter((o) => o.status === "Completed")
-          .map((o) => String(o.id ?? o.orderId)),
+        (allRows ?? []).filter((o) => o.status === "Completed").map((o) => String(o.id ?? o.orderId))
       );
       setServedCount(completedIds.size);
     } catch (err) {
@@ -144,307 +160,275 @@ export default function Order() {
     }
   };
 
-  useEffect(() => {
-    fetchAll();
-    const interval = setInterval(fetchAll, 3000);
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => { fetchAll(); const i = setInterval(fetchAll, 3000); return () => clearInterval(i); }, []);
+  useEffect(() => { const t = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
-  // Clock
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const handleStart = async (id: string) => {
-    try {
-      await api.patch(`/orders/${id}`, {
-        status: "preparing",
-        startedAt: new Date().toISOString(),
-      });
-      fetchAll();
-    } catch (err) {
-      console.error("Failed to start order:", err);
-    }
-  };
-
-  const handleReady = async (id: string) => {
-    try {
-      await api.patch(`/orders/${id}`, { status: "ready" });
-      fetchAll();
-    } catch (err) {
-      console.error("Failed to mark order ready:", err);
-    }
-  };
-
-  const handleFinish = async (id: string) => {
-    try {
-      await api.patch(`/orders/${id}`, { status: "Completed" });
-      fetchAll();
-    } catch (err) {
-      console.error("Failed to finish order:", err);
-    }
-  };
-
+  const handleStart  = async (id: string) => { try { await api.patch(`/orders/${id}`, { status: "preparing", startedAt: new Date().toISOString() }); fetchAll(); } catch {} };
+  const handleReady  = async (id: string) => { try { await api.patch(`/orders/${id}`, { status: "ready" }); fetchAll(); } catch {} };
+  const handleFinish = async (id: string) => { try { await api.patch(`/orders/${id}`, { status: "Completed" }); fetchAll(); } catch {} };
   const handleCancel = async (id: string) => {
     setCancellingId(id);
-    try {
-      await api.patch(`/orders/${id}`, { status: "Cancelled" });
-      fetchAll();
-    } catch (err) {
-      console.error("Failed to cancel order:", err);
-    } finally {
-      setCancellingId(null);
-    }
+    try { await api.patch(`/orders/${id}`, { status: "Cancelled" }); fetchAll(); } catch {} finally { setCancellingId(null); }
   };
 
-  const formatDateTime = (date: Date) => {
-    const days = [
-      "Sunday", "Monday", "Tuesday", "Wednesday",
-      "Thursday", "Friday", "Saturday",
-    ];
-    const dayName = days[date.getDay()];
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const year = String(date.getFullYear()).slice(-2);
-    let hours = date.getHours();
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    hours = hours % 12 || 12;
-    return `${dayName}, ${month}/${day}/${year} ${hours}:${minutes} ${ampm}`;
+  const formatTime = (date: Date) => {
+    let h = date.getHours();
+    const m = String(date.getMinutes()).padStart(2, "0");
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12 || 12;
+    return `${h}:${m} ${ampm}`;
   };
 
-  const getStatusColor = (status: string) => {
-    if (status === "dine-in") return "bg-red-600 text-white";
-    if (status === "take-out") return "bg-amber-600 text-white";
-    return "bg-blue-600 text-white";
+  const formatDate = (date: Date) => {
+    const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`;
   };
 
-  const getStatusLabel = (status: string) => {
-    if (status === "dine-in") return "Dine In";
-    if (status === "take-out") return "Take Out";
-    return "Delivery";
-  };
-
-  const newCount = orders.filter((o) => !o.isPreparing && !o.isReady).length;
+  const newCount     = orders.filter((o) => !o.isPreparing && !o.isReady).length;
   const processCount = orders.filter((o) => o.isPreparing && !o.isReady).length;
-  const readyCount = orders.filter((o) => o.isReady).length;
+  const readyCount   = orders.filter((o) => o.isReady).length;
 
   return (
-    <div
-      className="min-h-screen bg-white"
-      style={{ fontFamily: "Poppins, sans-serif" }}
-    >
+    <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "Poppins, sans-serif" }}>
       <Sidebar />
 
-      <div className="p-6 pl-24">
-        {/* Stats Row */}
-        <div className="flex gap-6 items-start mb-6">
-          <div className="bg-white rounded-2xl p-6 flex-1 max-w-sm shadow-lg">
-            <div className="flex justify-between items-center mb-3">
-              <MenuIcon className="w-5 h-5 text-gray-900" />
-              <span className="text-xs font-semibold text-gray-500">
-                COOK VIEW
+      <div style={{ paddingLeft: "96px" }}>
+        {/* ── Top bar ── */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "24px 32px 0", gap: "16px", flexWrap: "wrap",
+        }}>
+          {/* Brand + clock */}
+          <div style={{
+            background: "#fff", borderRadius: "16px", padding: "16px 24px",
+            border: "1px solid #f1f5f9", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            display: "flex", alignItems: "center", gap: "24px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <ChefHat size={16} color="#7c3aed" />
+              <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", color: "#7c3aed", textTransform: "uppercase" }}>
+                Cook View
               </span>
             </div>
-            <p className="text-xs text-gray-600 flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {formatDateTime(currentTime)}
-            </p>
+            <div style={{ width: "1px", height: "28px", background: "#f1f5f9" }} />
+            <div>
+              <div style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", lineHeight: 1.1 }}>
+                {formatTime(currentTime)}
+              </div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
+                {formatDate(currentTime)}
+              </div>
+            </div>
           </div>
 
-          <div className="flex gap-4 flex-1">
-            <div className="bg-red-700 rounded-xl p-6 flex flex-col items-center justify-center min-w-24">
-              <span className="text-white text-sm font-semibold mb-3">NEW</span>
-              <span className="text-white text-3xl font-bold">{newCount}</span>
-            </div>
-            <div className="bg-green-600 rounded-xl p-6 flex flex-col items-center justify-center min-w-24">
-              <span className="text-white text-sm font-semibold mb-3">READY</span>
-              <span className="text-white text-3xl font-bold">{readyCount}</span>
-            </div>
-            <div className="bg-yellow-400 rounded-xl p-6 flex flex-col items-center justify-center min-w-24">
-              <span className="text-gray-900 text-sm font-semibold mb-3">PROCESS</span>
-              <span className="text-gray-900 text-3xl font-bold">{processCount}</span>
-            </div>
-            <div className="bg-gray-600 rounded-xl p-6 flex flex-col items-center justify-center min-w-24">
-              <span className="text-white text-sm font-semibold mb-3">SERVED</span>
-              <span className="text-white text-3xl font-bold">{servedCount}</span>
-            </div>
+          {/* Stats */}
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            <StatCard label="New"     value={newCount}     accent="#0f172a" />
+            <StatCard label="Process" value={processCount} accent="#d97706" />
+            <StatCard label="Ready"   value={readyCount}   accent="#059669" />
+            <StatCard label="Served"  value={servedCount}  accent="#94a3b8" />
           </div>
         </div>
 
-        {/* Notification banner */}
+        {/* ── Notification banner ── */}
         {notifPermission !== "granted" && (
-          <div className="mb-4">
+          <div style={{ padding: "12px 32px 0" }}>
             <button
-              onClick={() =>
-                Notification.requestPermission().then((p) =>
-                  setNotifPermission(p),
-                )
-              }
-              className="flex items-center gap-2 text-xs bg-yellow-50 border border-yellow-200 text-yellow-700 px-3 py-1.5 rounded-lg hover:bg-yellow-100 transition"
+              onClick={() => Notification.requestPermission().then(setNotifPermission)}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                fontSize: "12px", background: "#fffbeb", border: "1px solid #fde68a",
+                color: "#92400e", padding: "8px 14px", borderRadius: "10px", cursor: "pointer",
+              }}
             >
-              <Bell className="w-3 h-3" />
+              <Bell size={12} />
               Enable notifications for order alerts
             </button>
           </div>
         )}
 
-        {/* Queue Header */}
-        <div className="flex items-center gap-2 mb-4">
-          <ClipboardList className="w-4 h-4 text-gray-700" />
-          <span className="text-sm font-semibold text-gray-700">Order Queue</span>
-          {orders.length > 0 && (
-            <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
-              {orders.length}
-            </span>
-          )}
-        </div>
+        {/* ── Queue section ── */}
+        <div style={{ padding: "24px 32px 32px" }}>
+          {/* Queue header */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+            <ClipboardList size={15} color="#94a3b8" />
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#475569" }}>Order Queue</span>
+            {orders.length > 0 && (
+              <span style={{
+                background: "#f1f5f9", color: "#64748b", fontSize: "11px",
+                fontWeight: 700, padding: "2px 8px", borderRadius: "99px",
+              }}>
+                {orders.length}
+              </span>
+            )}
+          </div>
 
-        {/* Order Queue */}
-        <div className="bg-gray-100 rounded-3xl p-4 shadow-sm">
-          {orders.length === 0 ? (
-            <div className="flex items-center justify-center py-20">
-              <p className="text-gray-400 text-sm">
-                No pending orders. Orders from the cashier will appear here.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <AnimatePresence mode="popLayout">
-                {orders.map((order) => (
-                  <motion.div
-                    key={order.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.8, y: 20 }}
-                    animate={{
-                      opacity: 1,
-                      scale: 1,
-                      y: 0,
-                      transition: {
-                        type: "spring",
-                        stiffness: 300,
-                        damping: 25,
-                      },
-                    }}
-                    exit={{
-                      opacity: 0,
-                      scale: 0.8,
-                      y: -20,
-                      transition: { duration: 0.3 },
-                    }}
-                    whileHover={{
-                      scale: 1.02,
-                      boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)",
-                    }}
-                    className={`bg-white rounded-2xl p-5 shadow-md border-2 transition-colors ${
-                      order.isReady
-                        ? "border-green-400"
-                        : order.isPreparing
-                          ? "border-yellow-300"
-                          : "border-transparent"
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {order.orderNumber}
-                      </p>
-                      <span
-                        className={`${getStatusColor(order.status)} text-xs font-bold px-3 py-1 rounded-full`}
-                      >
-                        {getStatusLabel(order.status)}
-                      </span>
-                    </div>
+          {/* Queue container */}
+          <div style={{
+            background: "#fff", borderRadius: "24px", padding: "20px",
+            border: "1px solid #f1f5f9", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            minHeight: "200px",
+          }}>
+            {orders.length === 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 0", gap: "12px" }}>
+                <Utensils size={32} color="#e2e8f0" />
+                <p style={{ fontSize: "13px", color: "#cbd5e1" }}>No pending orders. Orders from the cashier will appear here.</p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "16px" }}>
+                <AnimatePresence mode="popLayout">
+                  {orders.map((order) => {
+                    const isNew      = !order.isPreparing && !order.isReady;
+                    const isPreparing = order.isPreparing && !order.isReady;
+                    const isReady    = order.isReady;
 
-                    {/* Timer */}
-                    {order.isPreparing && order.startedAt && (
-                      <OrderTimer
-                        startedAt={order.startedAt}
-                        orderNumber={order.orderNumber}
-                      />
-                    )}
+                    // Card accent color based on state
+                    const borderColor = isReady ? "#86efac" : isPreparing ? "#fcd34d" : "#e2e8f0";
+                    const topAccent   = isReady ? "#059669" : isPreparing ? "#d97706" : "#c7d2fe";
 
-                    {order.isReady && (
-                      <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold mb-3 bg-green-100 text-green-700">
-                        Ready to serve
-                      </div>
-                    )}
-
-                    {/* Items */}
-                    <div className="space-y-2 mb-6 border-b border-gray-200 pb-4">
-                      {order.items.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="flex justify-between text-sm text-gray-700"
-                        >
-                          <span className="font-semibold">{item.quantity}x</span>
-                          <span className="text-gray-600">{item.name}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 flex-col">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            if (!order.isPreparing && !order.isReady) {
-                              handleStart(order.id);
-                            }
-                          }}
-                          className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all duration-200 ${
-                            order.isPreparing || order.isReady
-                              ? "bg-white text-gray-400 shadow-md opacity-50 cursor-not-allowed"
-                              : "bg-white text-gray-900 shadow-md hover:shadow-lg cursor-pointer"
-                          }`}
-                        >
-                          START
-                        </button>
-                        {!order.isReady ? (
-                          <button
-                            onClick={() => {
-                              if (order.isPreparing) {
-                                handleReady(order.id);
-                              }
-                            }}
-                            className={`flex-1 py-2 px-3 rounded-lg font-bold text-xs transition-all duration-200 ${
-                              order.isPreparing
-                                ? "bg-yellow-400 text-gray-900 hover:bg-yellow-500 hover:shadow-lg cursor-pointer"
-                                : "bg-yellow-400 text-gray-900 opacity-50 cursor-not-allowed"
-                            }`}
-                          >
-                            READY
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleFinish(order.id)}
-                            className="flex-1 py-2 px-3 rounded-lg font-bold text-xs bg-green-600 text-white hover:bg-green-700 hover:shadow-lg transition-all duration-200 cursor-pointer"
-                          >
-                            SERVED
-                          </button>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => {
-                          if (cancellingId !== order.id && !order.isReady) {
-                            handleCancel(order.id);
-                          }
+                    return (
+                      <motion.div
+                        key={order.id}
+                        layout
+                        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 300, damping: 28 } }}
+                        exit={{ opacity: 0, scale: 0.85, y: -16, transition: { duration: 0.28, ease: "easeInOut" } }}
+                        whileHover={{ y: -2, transition: { duration: 0.15 } }}
+                        style={{
+                          background: "#fff", borderRadius: "18px",
+                          border: `1.5px solid ${borderColor}`,
+                          overflow: "hidden", display: "flex", flexDirection: "column",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
                         }}
-                        className={`w-full py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 ${
-                          cancellingId === order.id || order.isReady
-                            ? "bg-red-50 text-red-300 cursor-not-allowed opacity-50"
-                            : "bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 cursor-pointer"
-                        }`}
                       >
-                        <XCircle className="w-3 h-3" />
-                        {cancellingId === order.id ? "Cancelling..." : "CANCEL"}
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
+                        {/* Top accent strip */}
+                        <div style={{ height: "3px", background: topAccent }} />
+
+                        <div style={{ padding: "16px", flex: 1, display: "flex", flexDirection: "column" }}>
+                          {/* Header */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                            <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 500 }}>
+                              {order.orderNumber}
+                            </span>
+                            <StatusBadge status={order.status} />
+                          </div>
+
+                          {/* Timer / Ready badge */}
+                          {isPreparing && order.startedAt && (
+                            <OrderTimer startedAt={order.startedAt} orderNumber={order.orderNumber} />
+                          )}
+                          {isReady && (
+                            <div style={{
+                              display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                              padding: "6px 12px", borderRadius: "8px", marginBottom: "12px",
+                              background: "#f0fdf4", color: "#059669", fontSize: "11px", fontWeight: 600,
+                            }}>
+                              <CheckCircle2 size={12} />
+                              Ready to serve
+                            </div>
+                          )}
+
+                          {/* Items */}
+                          <div style={{ flex: 1, marginBottom: "14px", paddingBottom: "14px", borderBottom: "1px solid #f8fafc" }}>
+                            {order.items.map((item, idx) => (
+                              <div key={idx} style={{
+                                display: "flex", justifyContent: "space-between",
+                                alignItems: "baseline", marginBottom: "5px",
+                              }}>
+                                <span style={{ fontSize: "12px", fontWeight: 700, color: "#334155", minWidth: "24px" }}>
+                                  {item.quantity}×
+                                </span>
+                                <span style={{ fontSize: "12px", color: "#64748b", textAlign: "right", flex: 1, paddingLeft: "8px" }}>
+                                  {item.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Actions */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              {/* START */}
+                              <button
+                                onClick={() => { if (isNew) handleStart(order.id); }}
+                                disabled={!isNew}
+                                style={{
+                                  flex: 1, padding: "8px", borderRadius: "10px",
+                                  fontSize: "11px", fontWeight: 600, cursor: isNew ? "pointer" : "not-allowed",
+                                  border: "1.5px solid",
+                                  borderColor: isNew ? "#e2e8f0" : "#f1f5f9",
+                                  background: isNew ? "#fff" : "#fafafa",
+                                  color: isNew ? "#334155" : "#cbd5e1",
+                                  display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
+                                  transition: "all 0.15s",
+                                }}
+                              >
+                                <Play size={10} />
+                                Start
+                              </button>
+
+                              {/* READY / SERVED */}
+                              {!isReady ? (
+                                <button
+                                  onClick={() => { if (isPreparing) handleReady(order.id); }}
+                                  disabled={!isPreparing}
+                                  style={{
+                                    flex: 1, padding: "8px", borderRadius: "10px",
+                                    fontSize: "11px", fontWeight: 600, cursor: isPreparing ? "pointer" : "not-allowed",
+                                    border: "1.5px solid",
+                                    borderColor: isPreparing ? "#fcd34d" : "#f1f5f9",
+                                    background: isPreparing ? "#fffbeb" : "#fafafa",
+                                    color: isPreparing ? "#92400e" : "#cbd5e1",
+                                    transition: "all 0.15s",
+                                  }}
+                                >
+                                  Ready
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleFinish(order.id)}
+                                  style={{
+                                    flex: 1, padding: "8px", borderRadius: "10px",
+                                    fontSize: "11px", fontWeight: 600, cursor: "pointer",
+                                    border: "1.5px solid #86efac",
+                                    background: "#f0fdf4", color: "#065f46",
+                                    transition: "all 0.15s",
+                                  }}
+                                >
+                                  Served
+                                </button>
+                              )}
+                            </div>
+
+                            {/* CANCEL */}
+                            <button
+                              onClick={() => { if (cancellingId !== order.id && !isReady) handleCancel(order.id); }}
+                              disabled={cancellingId === order.id || isReady}
+                              style={{
+                                width: "100%", padding: "7px", borderRadius: "10px",
+                                fontSize: "11px", fontWeight: 600,
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: "5px",
+                                cursor: (cancellingId === order.id || isReady) ? "not-allowed" : "pointer",
+                                border: "1.5px solid",
+                                borderColor: (cancellingId === order.id || isReady) ? "#f1f5f9" : "#fecaca",
+                                background: (cancellingId === order.id || isReady) ? "#fafafa" : "#fff5f5",
+                                color: (cancellingId === order.id || isReady) ? "#cbd5e1" : "#dc2626",
+                                transition: "all 0.15s",
+                              }}
+                            >
+                              <XCircle size={11} />
+                              {cancellingId === order.id ? "Cancelling…" : "Cancel"}
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

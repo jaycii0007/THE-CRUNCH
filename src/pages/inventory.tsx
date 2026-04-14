@@ -1772,6 +1772,9 @@ function StockMovementTab() {
 
 interface MgmtProduct {
   id: number;
+  // Store all possible raw IDs so we can try the right one on update
+  rawProductId?: number;
+  rawInventoryId?: number;
   name: string;
   category: string;
   price: string;
@@ -1789,10 +1792,30 @@ const UNIT_OPTIONS = [
   "ml",
   "bottle",
   "box",
-  "bag",
-  "pack",
-  "dozen",
 ] as const;
+
+// ─── Helper: try PUT on multiple endpoints, return on first success ───────────
+async function tryPut(
+  endpoints: string[],
+  payload: object,
+): Promise<void> {
+  let lastErr: unknown;
+  for (const ep of endpoints) {
+    try {
+      await apiCall(ep, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      return; // success — stop trying
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Only keep trying on 404; any other error should bubble up immediately
+      if (!msg.includes("404") && !msg.includes("HTTP 404")) throw err;
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
 
 function InventoryManagementTab() {
   const { addNotification } = useNotifications();
@@ -1866,7 +1889,10 @@ function InventoryManagementTab() {
 
         setProducts(
           normalized.map((item) => ({
-            id: Number(item.id ?? item.product_id ?? item.inventory_id ?? 0),
+            // Prefer product_id as the canonical ID for API calls
+            id: Number(item.product_id ?? item.inventory_id ?? item.id ?? 0),
+            rawProductId: item.product_id ? Number(item.product_id) : undefined,
+            rawInventoryId: item.inventory_id ? Number(item.inventory_id) : undefined,
             name: item.name || item.product_name || "Unnamed Product",
             category: item.category || "Uncategorized",
             price: String(item.price ?? "0"),
@@ -1964,17 +1990,32 @@ function InventoryManagementTab() {
     }
     try {
       setSaving(true);
-      await apiCall(`/products/${editProduct.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          name: eName.trim(),
-          category: eCat.trim(),
-          price: parseFloat(ePrice),
-          unit: eUnit,
-          quantity: parseFloat(eStock) || 0,
-          description: eDesc.trim() || null,
-        }),
-      });
+
+      const payload = {
+        name: eName.trim(),
+        category: eCat.trim(),
+        price: parseFloat(ePrice),
+        unit: eUnit,
+        quantity: parseFloat(eStock) || 0,
+        description: eDesc.trim() || null,
+      };
+
+      // Build a prioritised list of endpoints to try:
+      // 1. /products/<product_id>  (most common)
+      // 2. /products/<inventory_id> (fallback if product_id differs)
+      // 3. /inventory/<product_id>  (some backends route here)
+      // 4. /inventory/<inventory_id>
+      const endpointsToTry: string[] = [];
+      const pid = editProduct.rawProductId ?? editProduct.id;
+      const iid = editProduct.rawInventoryId;
+
+      endpointsToTry.push(`/products/${pid}`);
+      if (iid && iid !== pid) endpointsToTry.push(`/products/${iid}`);
+      endpointsToTry.push(`/inventory/${pid}`);
+      if (iid && iid !== pid) endpointsToTry.push(`/inventory/${iid}`);
+
+      await tryPut(endpointsToTry, payload);
+
       await loadProducts();
       notify(
         addNotification,
@@ -1995,9 +2036,33 @@ function InventoryManagementTab() {
   }
 
   async function handleDelete(id: number) {
+    const product = products.find((p) => p.id === id);
+    const endpointsToTry: string[] = [];
+    const pid = product?.rawProductId ?? id;
+    const iid = product?.rawInventoryId;
+
+    endpointsToTry.push(`/products/${pid}`);
+    if (iid && iid !== pid) endpointsToTry.push(`/products/${iid}`);
+    endpointsToTry.push(`/inventory/${pid}`);
+    if (iid && iid !== pid) endpointsToTry.push(`/inventory/${iid}`);
+
     try {
       setSaving(true);
-      await apiCall(`/products/${id}`, { method: "DELETE" });
+      let lastErr: unknown;
+      let deleted = false;
+      for (const ep of endpointsToTry) {
+        try {
+          await apiCall(ep, { method: "DELETE" });
+          deleted = true;
+          break;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes("404") && !msg.includes("HTTP 404")) throw err;
+          lastErr = err;
+        }
+      }
+      if (!deleted) throw lastErr;
+
       await loadProducts();
       setDeleteId(null);
       notify(addNotification, "Product deleted successfully.", "success");
@@ -2017,11 +2082,18 @@ function InventoryManagementTab() {
     const product = products.find((p) => p.id === id);
     if (!product) return;
     const newStock = Math.max(0, product.stock + delta);
+
+    const payload = { quantity: newStock };
+    const pid = product.rawProductId ?? id;
+    const iid = product.rawInventoryId;
+    const endpointsToTry: string[] = [];
+    endpointsToTry.push(`/products/${pid}`);
+    if (iid && iid !== pid) endpointsToTry.push(`/products/${iid}`);
+    endpointsToTry.push(`/inventory/${pid}`);
+    if (iid && iid !== pid) endpointsToTry.push(`/inventory/${iid}`);
+
     try {
-      await apiCall(`/products/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ quantity: newStock }),
-      });
+      await tryPut(endpointsToTry, payload);
       setProducts((prev) =>
         prev.map((p) => (p.id === id ? { ...p, stock: newStock } : p)),
       );
@@ -2504,14 +2576,14 @@ export default function Inventory() {
 
         setInventoryItems(
           normalizedRows.map((item) => ({
-            id: Number(item.id ?? item.product_id ?? item.inventory_id ?? 0),
+            id: Number(item.product_id ?? item.inventory_id ?? item.id ?? 0),
             name: item.name || item.product_name || "Unnamed Product",
             category: item.category || "Uncategorized",
             image: item.image || "/img/placeholder.jpg",
             incoming: 0,
             stock: Number(
               (item as any).stock ??
-                (item as any).quantityity ??
+                (item as any).quantity ??
                 (item as any).dailyWithdrawn ??
                 0,
             ),
@@ -2803,7 +2875,6 @@ export default function Inventory() {
               <StockMovementTab />
             </motion.div>
           )}
-
         </AnimatePresence>
       </main>
     </div>
