@@ -1034,7 +1034,7 @@ export default function CashierView() {
   const handlePayment = async () => {
     if (cart.length === 0 || isPlacingOrder) return;
     setIsPlacingOrder(true);
-    const { gross, vatExemptAmount, vatAmount, discountAmount, amountDue } =
+    const { vatExemptAmount, vatAmount, discountAmount, amountDue } =
       computePricing(grossTotal, customerType);
     const cashierId = localStorage.getItem("userId");
     const payload: OrderPayload = {

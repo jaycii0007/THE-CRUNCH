@@ -9,7 +9,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ChevronLeft,
@@ -1551,11 +1550,10 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
 
 interface OrderRowProps {
   order: Order;
-  index: number;
   onRefund: (order: Order) => void;
 }
 
-function OrderRow({ order, index, onRefund }: OrderRowProps) {
+function OrderRow({ order, onRefund }: OrderRowProps) {
   const [open, setOpen] = useState(false);
 
   const statusColor2: Record<string, { bg: string; text: string }> = {
@@ -2073,11 +2071,10 @@ function OrdersTab({ orders, onRefund }: OrdersTabProps) {
                 </TableCell>
               </TableRow>
             ) : (
-              paginated.map((order, i) => (
+              paginated.map((order) => (
                 <OrderRow
                   key={order.id}
                   order={order}
-                  index={i}
                   onRefund={onRefund}
                 />
               ))
