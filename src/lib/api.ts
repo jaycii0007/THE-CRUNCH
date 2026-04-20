@@ -12,7 +12,6 @@ function resolveApiBaseUrl(): string {
   if (!RAW_API_URL) return "/api";
 
   const trimmed = RAW_API_URL.replace(/\/+$/, "");
-
   const baseWithApi = /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
 
   if (
@@ -22,7 +21,6 @@ function resolveApiBaseUrl(): string {
   ) {
     try {
       const parsed = new URL(trimmed);
-      // Local HTTP APIs are only safe behind a same-origin dev proxy.
       if (isLocalHostname(parsed.hostname)) return "/api";
       return baseWithApi.replace(/^http:\/\//i, "https://");
     } catch {
@@ -35,27 +33,24 @@ function resolveApiBaseUrl(): string {
 
 const API_BASE_URL = resolveApiBaseUrl();
 
-// Body types accepted by apiCall
 type ApiBody = object | FormData | URLSearchParams | string;
 
 interface FetchOptions extends Omit<RequestInit, "body"> {
   skipAuth?: boolean;
+  token?: string; // ✅ token passed directly — no localStorage
   body?: ApiBody;
 }
 
-// Shape of a failed API error response body
 interface ApiErrorData {
   message?: string;
   [key: string]: unknown;
 }
 
-// Enriched error thrown on non-OK responses
 interface ApiError extends Error {
   status: number;
   data: ApiErrorData | string | null;
 }
 
-// Return type for authApi.login
 interface LoginResponse {
   token: string;
   userId: number;
@@ -65,17 +60,14 @@ interface LoginResponse {
 }
 
 /**
- * Centralized API fetch wrapper
- * - Auth header is read from cookie/session (no localStorage)
- * - Serializes JSON bodies (but allows FormData/strings)
- * - Handles empty/non-JSON responses safely
- * - Throws enriched Error objects on non-OK responses
+ * Centralized API fetch wrapper.
+ * Pass `token` in options for authenticated requests.
  */
 export const apiCall = async <T = unknown>(
   endpoint: string,
   options: FetchOptions = {},
 ): Promise<T> => {
-  const { skipAuth = false, ...fetchOptions } = options;
+  const { skipAuth = false, token, ...fetchOptions } = options;
 
   const isAbsoluteUrl = /^https?:\/\//i.test(endpoint);
   const endpointWithoutApiPrefix = endpoint.replace(/^\/?api(?=\/)/i, "");
@@ -88,16 +80,15 @@ export const apiCall = async <T = unknown>(
     ...((fetchOptions.headers as Record<string, string>) || {}),
   };
 
-  // Bypass ngrok's browser warning page so API requests reach your backend.
   if (/ngrok-free\.(app|dev)|ngrok\.io/i.test(url)) {
     headers["ngrok-skip-browser-warning"] = "true";
   }
 
-  if (!skipAuth) {
-    const token = localStorage.getItem("authToken");
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+  // ✅ Use token passed directly from context — no localStorage
+  if (!skipAuth && token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
-  // Prepare body: if body present and not FormData/string, stringify and set JSON header
+
   let bodyToSend: BodyInit | undefined = undefined;
   if (fetchOptions.body !== undefined && fetchOptions.body !== null) {
     const b = fetchOptions.body as ApiBody;
@@ -122,7 +113,6 @@ export const apiCall = async <T = unknown>(
 
     const text = await response.text();
 
-    // Non-OK responses: try parse JSON then attach details
     if (!response.ok) {
       let errData: ApiErrorData | string | null = null;
       try {
@@ -140,7 +130,6 @@ export const apiCall = async <T = unknown>(
       throw err;
     }
 
-    // OK responses: return parsed JSON when available, otherwise return raw text or empty object
     if (!text) return {} as T;
     try {
       return JSON.parse(text) as T;
@@ -153,7 +142,9 @@ export const apiCall = async <T = unknown>(
   }
 };
 
-// Common API methods (pass raw bodies; apiCall handles serialization)
+// ─── Base API methods ─────────────────────────────────────────────────────────
+// These are for public/unauthenticated endpoints only.
+// For authenticated calls, use apiCall() directly and pass the token.
 export const api = {
   get: <T = unknown>(endpoint: string) =>
     apiCall<T>(endpoint, { method: "GET" }),
@@ -171,46 +162,52 @@ export const api = {
     apiCall<T>(endpoint, { method: "PATCH", body: body as BodyInit }),
 };
 
-// Auth-specific API calls
+// ─── Auth API (no token needed — these are public endpoints) ──────────────────
 export const authApi = {
   login: (usernameOrEmail: string, password: string) =>
-    api.post<LoginResponse>("/auth/login", {
-      username: usernameOrEmail,
-      email: usernameOrEmail,
-      password,
+    apiCall<LoginResponse>("/auth/login", {
+      method: "POST",
+      skipAuth: true,
+      body: {
+        username: usernameOrEmail,
+        email: usernameOrEmail,
+        password,
+      },
     }),
 
-  /**
-   * Register a new admin
-   * @param name user's name
-   * @param email user's email (will be used as username)
-   * @param password plain text password
-   */
   register: (name: string, email: string, password: string) =>
-    api.post<void>("/auth/register", { name, email, password }),
+    apiCall<void>("/auth/register", {
+      method: "POST",
+      skipAuth: true,
+      body: { name, email, password },
+    }),
 
-  logout: () => api.post<void>("/auth/logout"),
+  logout: (token: string) =>
+    apiCall<void>("/auth/logout", { method: "POST", token }),
 };
 
+// ─── Staff API (requires token) ───────────────────────────────────────────────
 export const staffApi = {
-  getAll: () => apiCall<StaffMember[]>("/users/staff", { method: "GET" }),
+  getAll: (token: string) =>
+    apiCall<StaffMember[]>("/users/staff", { method: "GET", token }),
 
-  create: (data: {
-    username: string;
-    email: string;
-    password: string;
-    role: string;
-  }) =>
+  create: (
+    token: string,
+    data: { username: string; email: string; password: string; role: string },
+  ) =>
     apiCall<{ message: string; userId: number; role: string }>(
       "/users/staff/create",
-      { method: "POST", body: data },
+      { method: "POST", token, body: data },
     ),
 
-  delete: (id: number) =>
-    apiCall<{ message: string }>(`/users/staff/${id}`, { method: "DELETE" }),
+  delete: (token: string, id: number) =>
+    apiCall<{ message: string }>(`/users/staff/${id}`, {
+      method: "DELETE",
+      token,
+    }),
 };
 
-// ─── Add StaffMember type ──────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 export interface StaffMember {
   id: number;
   username: string;

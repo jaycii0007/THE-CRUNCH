@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { useState, useEffect } from "react";
 import React from "react";
+import { useAuth } from "./context/authcontext";
 
 // ── Admin pages
 import AdminDashboard from "./pages/index";
@@ -11,7 +11,7 @@ import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
 import Products from "./pages/products";
 
-// ── Cashier pages
+// ── Cashier / Cook pages
 import Order from "./pages/Order";
 
 // ── Shared / Auth
@@ -41,20 +41,19 @@ function ProtectedRoute({
   userRole: Role;
 }) {
   if (!isAuth) return <Navigate to="/login" replace />;
-  if (!allowedRoles.includes(userRole))
-    return <Navigate to="/unauthorized" replace />;
+  if (!allowedRoles.includes(userRole)) return <Navigate to="/unauthorized" replace />;
   return element;
 }
 
 function Unauthorized() {
-  const role = localStorage.getItem("userRole");
+  const { user } = useAuth();
 
   const roleHomeMap: Record<string, string> = {
-    administrator:     "/dashboard",
-    cashier:           "/menu",
-    cook:              "/cook/orders",
+    administrator: "/dashboard",
+    cashier: "/orders",
+    cook: "/orders",
     inventory_manager: "/inventory",
-    customer:          "/products",
+    customer: "/products",
   };
 
   return (
@@ -63,11 +62,11 @@ function Unauthorized() {
       className="min-h-screen flex flex-col items-center justify-center gap-4"
     >
       <h1 className="text-4xl font-bold text-red-500">403</h1>
-      <p className="text-gray-600">
-        You don't have permission to view this page.
-      </p>
+      <p className="text-gray-600">You don't have permission to view this page.</p>
       <button
-        onClick={() => (window.location.href = roleHomeMap[role || ""] || "/")}
+        onClick={() =>
+          (window.location.href = roleHomeMap[user?.role ?? ""] || "/login")
+        }
         className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-black"
       >
         Go to my dashboard
@@ -77,25 +76,10 @@ function Unauthorized() {
 }
 
 export default function App() {
-  const [isAuth, setIsAuth] = useState<boolean>(
-    () => localStorage.getItem("isAuthenticated") === "true",
-  );
-  const [userRole, setUserRole] = useState<Role>(
-    () => localStorage.getItem("userRole") as Role,
-  );
-
-  useEffect(() => {
-    const handler = () => {
-      setIsAuth(localStorage.getItem("isAuthenticated") === "true");
-      setUserRole(localStorage.getItem("userRole") as Role);
-    };
-    window.addEventListener("storage", handler);
-    window.addEventListener("authChange", handler);
-    return () => {
-      window.removeEventListener("storage", handler);
-      window.removeEventListener("authChange", handler);
-    };
-  }, []);
+  // ✅ Auth state comes directly from context — always in sync with login/logout
+  const { user } = useAuth();
+  const isAuth = !!user;
+  const userRole = (user?.role ?? null) as Role;
 
   const protect = (element: React.ReactElement, allowedRoles: Role[]) => (
     <ProtectedRoute
@@ -108,29 +92,24 @@ export default function App() {
 
   return (
     <Routes>
-      {/* ── Public ─────────────────────────────────────────────── */}
-      {/* "/" redirects to "/products" so auth state is consistent  */}
+      {/* ── Public ───────────────────────────────────────────── */}
       <Route path="/" element={<Navigate to="/products" replace />} />
       <Route path="/login" element={<Login />} />
       <Route path="/aboutthecrunch" element={<AboutTheCrunch />} />
 
-      {/* ── Customer landing page ──────────────────────────────── */}
-      {/* Guests get redirected to /login, logged-in users see page */}
+      {/* ── Customer landing (public) ─────────────────────────── */}
       <Route path="/products" element={<Products />} />
 
-      {/* ── Customer menu ──────────────────────────────────────── */}
+      {/* ── Customer menu ────────────────────────────────────── */}
       <Route
         path="/usersmenu"
         element={protect(<UsersMenu />, ["administrator", "customer"])}
       />
 
-      {/* ── Administrator only ─────────────────────────────────── */}
+      {/* ── Administrator ────────────────────────────────────── */}
       <Route
         path="/dashboard"
-        element={protect(<AdminDashboard />, [
-          "administrator",
-          "inventory_manager",
-        ])}
+        element={protect(<AdminDashboard />, ["administrator", "inventory_manager"])}
       />
       <Route
         path="/sales-reports"
@@ -145,32 +124,29 @@ export default function App() {
         element={protect(<StaffAccounts />, ["administrator"])}
       />
 
-      {/* ── Administrator + Inventory Manager ─────────────────── */}
+      {/* ── Administrator + Inventory Manager ────────────────── */}
       <Route
         path="/inventory"
         element={protect(<Inventory />, ["administrator", "inventory_manager"])}
       />
       <Route
         path="/stockmanager"
-        element={protect(<StockManager />, [
-          "administrator",
-          "inventory_manager",
-        ])}
+        element={protect(<StockManager />, ["administrator", "inventory_manager"])}
       />
 
-      {/* ── Administrator + Cashier + Cook ────────────────────── */}
+      {/* ── Administrator + Cashier + Cook ───────────────────── */}
       <Route
         path="/orders"
         element={protect(<Order />, ["administrator", "cashier", "cook"])}
       />
 
-      {/* ── Cook only ──────────────────────────────────────────── */}
+      {/* ── Cook ─────────────────────────────────────────────── */}
       <Route
         path="/cook/orders"
         element={protect(<Order />, ["administrator", "cook"])}
       />
 
-      {/* ── Fallbacks ──────────────────────────────────────────── */}
+      {/* ── Fallbacks ────────────────────────────────────────── */}
       <Route path="/unauthorized" element={<Unauthorized />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

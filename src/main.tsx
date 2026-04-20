@@ -5,13 +5,16 @@ import { StrictMode } from 'react'
 import "./styles/globals.css";
 import App from './App.tsx'
 import { NotificationProvider } from "./lib/NotificationContext";
+import { AuthProvider } from "./context/authcontext";
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
     <StrictMode>
-      <NotificationProvider>
-        <App />
-      </NotificationProvider>
+      <AuthProvider>
+        <NotificationProvider>
+          <App />
+        </NotificationProvider>
+      </AuthProvider>
     </StrictMode>
   </BrowserRouter>
 )
