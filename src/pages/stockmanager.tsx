@@ -1510,6 +1510,7 @@ function CreatePOModal({
     if (!q) return [];
 
     return allProducts
+      .filter((product) => !isMenuFoodProduct(product))
       .filter((product) => product.product_name.toLowerCase().includes(q))
       .sort((a, b) => {
         const aPriority = supplierProductNameSet.has(
@@ -1524,8 +1525,7 @@ function CreatePOModal({
           : 1;
 
         return (
-          aPriority - bPriority ||
-          a.product_name.localeCompare(b.product_name)
+          aPriority - bPriority || a.product_name.localeCompare(b.product_name)
         );
       })
       .slice(0, 6);
@@ -1576,23 +1576,26 @@ function CreatePOModal({
     const today = new Date().toISOString().split("T")[0];
 
     try {
-      await onCreate({
-        supplier: supplierName,
-        contact,
-        date: today,
-        deliveryDate: today,
-        status: "Draft",
-        notes,
-        items: items.map((item, idx) => ({
-          ...item,
-          id: idx + 1,
-          quantity: toNumber(item.quantity),
-          unitCost: toNumber(item.unitCost),
-        })),
-      }, {
-        supplierId: Number(selectedSupplierId),
-        itemNames: items.map((item) => item.name.trim()).filter(Boolean),
-      });
+      await onCreate(
+        {
+          supplier: supplierName,
+          contact,
+          date: today,
+          deliveryDate: today,
+          status: "Draft",
+          notes,
+          items: items.map((item, idx) => ({
+            ...item,
+            id: idx + 1,
+            quantity: toNumber(item.quantity),
+            unitCost: toNumber(item.unitCost),
+          })),
+        },
+        {
+          supplierId: Number(selectedSupplierId),
+          itemNames: items.map((item) => item.name.trim()).filter(Boolean),
+        },
+      );
       onClose();
     } catch {
       /* error shown via onShowToast in parent */
@@ -1655,19 +1658,19 @@ function CreatePOModal({
                 {selectedSupplier.contact_number}
                 {selectedSupplier.email && ` · ${selectedSupplier.email}`}
               </p>
-              {parseSupplierProducts(selectedSupplier.products_supplied).length >
-                0 && (
+              {parseSupplierProducts(selectedSupplier.products_supplied)
+                .length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {parseSupplierProducts(selectedSupplier.products_supplied).map(
-                    (p) => (
-                      <span
-                        key={p}
-                        className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600"
-                      >
-                        {p}
-                      </span>
-                    ),
-                  )}
+                  {parseSupplierProducts(
+                    selectedSupplier.products_supplied,
+                  ).map((p) => (
+                    <span
+                      key={p}
+                      className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600"
+                    >
+                      {p}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
@@ -2396,7 +2399,8 @@ function KitchenBatchQueuePreview({
     () =>
       [...batches].sort(
         (a, b) =>
-          new Date(a.withdrawn_at).getTime() - new Date(b.withdrawn_at).getTime(),
+          new Date(a.withdrawn_at).getTime() -
+          new Date(b.withdrawn_at).getTime(),
       ),
     [batches],
   );
@@ -3179,6 +3183,7 @@ export default function StockManager() {
     );
 
     return products
+      .filter((product) => !isMenuFoodProduct(product))
       .filter((product) => !existing.has(product.product_name.toLowerCase()))
       .filter((product) =>
         q ? product.product_name.toLowerCase().includes(q) : false,
@@ -3496,6 +3501,13 @@ export default function StockManager() {
         }
 
         showToast("Purchase order created.", "success");
+
+        // Notify admin of new purchase order
+        addNotification({
+          id: crypto.randomUUID(),
+          label: `New purchase order submitted: ${created.id}`,
+          type: "success",
+        });
       } catch (err) {
         showToast(
           err instanceof Error
@@ -4318,9 +4330,8 @@ export default function StockManager() {
                             >
                               {products.map((p) => (
                                 <option key={p.product_id} value={p.product_id}>
-                                  {p.product_name} (
-                                  {fmtInt(p.dailyWithdrawn)} {p.unit}{" "}
-                                  withdrawn today)
+                                  {p.product_name} ({fmtInt(p.dailyWithdrawn)}{" "}
+                                  {p.unit} withdrawn today)
                                 </option>
                               ))}
                             </StyledSelect>
@@ -4332,7 +4343,9 @@ export default function StockManager() {
                                 <p className="text-sm font-semibold text-rose-700">
                                   Available for spoilage:{" "}
                                   <span className="font-bold">
-                                    {fmtInt(selectedSpoilageProduct.dailyWithdrawn)}{" "}
+                                    {fmtInt(
+                                      selectedSpoilageProduct.dailyWithdrawn,
+                                    )}{" "}
                                     {selectedSpoilageProduct.unit}
                                   </span>
                                 </p>
@@ -4371,7 +4384,9 @@ export default function StockManager() {
                                   type="button"
                                   onClick={() =>
                                     setAdjQty(
-                                      fmtInt(selectedSpoilageProduct.dailyWithdrawn),
+                                      fmtInt(
+                                        selectedSpoilageProduct.dailyWithdrawn,
+                                      ),
                                     )
                                   }
                                   disabled={
@@ -4380,7 +4395,9 @@ export default function StockManager() {
                                   className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Max (
-                                  {fmtInt(selectedSpoilageProduct.dailyWithdrawn)}
+                                  {fmtInt(
+                                    selectedSpoilageProduct.dailyWithdrawn,
+                                  )}
                                   )
                                 </button>
                               )}
@@ -5325,9 +5342,7 @@ export default function StockManager() {
                                       type="text"
                                       value={supplierProductInput}
                                       onChange={(e) =>
-                                        setSupplierProductInput(
-                                          e.target.value,
-                                        )
+                                        setSupplierProductInput(e.target.value)
                                       }
                                       onKeyDown={(e) => {
                                         if (e.key === "Enter") {
@@ -5363,10 +5378,10 @@ export default function StockManager() {
                                   </div>
                                 </div>
                                 <p className="text-[11px] text-slate-400 mt-1">
-                                  Search existing products as you type, or
-                                  press Enter to add a custom item. Products
-                                  will also be added automatically when you
-                                  create POs for this supplier.
+                                  Search existing products as you type, or press
+                                  Enter to add a custom item. Products will also
+                                  be added automatically when you create POs for
+                                  this supplier.
                                 </p>
                               </div>
                               <div className="col-span-3 pt-1">
@@ -5444,9 +5459,12 @@ export default function StockManager() {
                                   {s.contact_number}
                                 </td>
                                 <td className="py-3.5 px-4">
-                                  {parseSupplierProducts(s.products_supplied).length > 0 ? (
+                                  {parseSupplierProducts(s.products_supplied)
+                                    .length > 0 ? (
                                     <div className="flex flex-wrap gap-1">
-                                      {parseSupplierProducts(s.products_supplied).map((p) => (
+                                      {parseSupplierProducts(
+                                        s.products_supplied,
+                                      ).map((p) => (
                                         <span
                                           key={p}
                                           className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200"
@@ -5488,7 +5506,9 @@ export default function StockManager() {
                                       ))}
                                     </div>
                                   ) : (
-                                    <span className="text-xs text-slate-300 italic">No products yet</span>
+                                    <span className="text-xs text-slate-300 italic">
+                                      No products yet
+                                    </span>
                                   )}
                                 </td>
                                 <td className="py-3.5 px-4 text-right">
@@ -6425,4 +6445,3 @@ export default function StockManager() {
     </>
   );
 }
-
