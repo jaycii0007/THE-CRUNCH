@@ -30,6 +30,7 @@ type PageTab = "inventory" | "management" | "movement";
 type POStatus = "Pending" | "Received" | "Cancelled";
 type TRStatus = "Pending" | "Completed" | "Cancelled";
 type LogType = "Stock In" | "Transfer" | "Adjustment";
+type InventoryFilter = "all" | "in_stock" | "low_stock" | "out_of_stock";
 
 interface POItem {
   name: string;
@@ -141,6 +142,38 @@ const SM_TABS = [
   { key: "logs", label: "Logs" },
 ] as const;
 type SMTabKey = (typeof SM_TABS)[number]["key"];
+
+const INVENTORY_FILTERS: {
+  key: InventoryFilter;
+  label: string;
+  color: string;
+  activeClass: string;
+}[] = [
+  {
+    key: "all",
+    label: "All",
+    color: "text-gray-500",
+    activeClass: "bg-gray-700 border-gray-700 text-white",
+  },
+  {
+    key: "in_stock",
+    label: "In Stock",
+    color: "text-green-600",
+    activeClass: "bg-green-600 border-green-600 text-white",
+  },
+  {
+    key: "low_stock",
+    label: "Low Stock",
+    color: "text-yellow-600",
+    activeClass: "bg-yellow-500 border-yellow-500 text-white",
+  },
+  {
+    key: "out_of_stock",
+    label: "Out of Stock",
+    color: "text-red-500",
+    activeClass: "bg-red-500 border-red-500 text-white",
+  },
+];
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
@@ -388,11 +421,15 @@ function StatCard({
   value,
   meta,
   color,
+  onClick,
+  active,
 }: {
   label: string;
   value: number | string;
   meta?: string;
   color: "blue" | "green" | "yellow" | "red";
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const colorMap = {
     green: { border: "#16a34a", text: "#16a34a" },
@@ -403,8 +440,17 @@ function StatCard({
   const c = colorMap[color];
   return (
     <div
-      className="bg-white rounded-xl px-[18px] py-[15px] border border-gray-100 hover:shadow-md transition-shadow"
-      style={{ borderTop: `3px solid ${c.border}` }}
+      className={`bg-white rounded-xl px-[18px] py-[15px] border transition-all ${
+        onClick
+          ? "cursor-pointer select-none hover:shadow-md"
+          : "hover:shadow-md"
+      } ${active ? "shadow-md ring-2" : "border-gray-100"}`}
+      style={{
+        borderTop: `3px solid ${c.border}`,
+        outline: active ? `2px solid ${c.border}` : undefined,
+        outlineOffset: active ? "2px" : undefined,
+      }}
+      onClick={onClick}
     >
       <div
         className="text-[10px] font-bold uppercase tracking-[0.6px] mb-[7px]"
@@ -1772,7 +1818,6 @@ function StockMovementTab() {
 
 interface MgmtProduct {
   id: number;
-  // Store all possible raw IDs so we can try the right one on update
   rawProductId?: number;
   rawInventoryId?: number;
   name: string;
@@ -1794,11 +1839,7 @@ const UNIT_OPTIONS = [
   "box",
 ] as const;
 
-// ─── Helper: try PUT on multiple endpoints, return on first success ───────────
-async function tryPut(
-  endpoints: string[],
-  payload: object,
-): Promise<void> {
+async function tryPut(endpoints: string[], payload: object): Promise<void> {
   let lastErr: unknown;
   for (const ep of endpoints) {
     try {
@@ -1806,10 +1847,9 @@ async function tryPut(
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      return; // success — stop trying
+      return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Only keep trying on 404; any other error should bubble up immediately
       if (!msg.includes("404") && !msg.includes("HTTP 404")) throw err;
       lastErr = err;
     }
@@ -1827,7 +1867,6 @@ function InventoryManagementTab() {
   const [editProduct, setEditProduct] = useState<MgmtProduct | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  // ── Add form state
   const [fName, setFName] = useState("");
   const [fCat, setFCat] = useState("");
   const [fPrice, setFPrice] = useState("");
@@ -1835,7 +1874,6 @@ function InventoryManagementTab() {
   const [fStock, setFStock] = useState("");
   const [fDesc, setFDesc] = useState("");
 
-  // ── Edit form state
   const [eName, setEName] = useState("");
   const [eCat, setECat] = useState("");
   const [ePrice, setEPrice] = useState("");
@@ -1851,12 +1889,8 @@ function InventoryManagementTab() {
         | null;
       if (data && Array.isArray(data)) {
         const rows = data.filter((item) => {
-          const promo = String(item?.promo ?? "")
-            .toUpperCase()
-            .trim();
-          const category = String(item?.category ?? "")
-            .toLowerCase()
-            .trim();
+          const promo = String(item?.promo ?? "").toUpperCase().trim();
+          const category = String(item?.category ?? "").toLowerCase().trim();
           return (
             promo === "SUPPLIES" ||
             promo === "MENU FOOD" ||
@@ -1867,9 +1901,7 @@ function InventoryManagementTab() {
 
         const groupedByName = new Map<string, ApiInventoryRow[]>();
         for (const item of rows) {
-          const key = String(item?.product_name ?? item?.name ?? "")
-            .trim()
-            .toLowerCase();
+          const key = String(item?.product_name ?? item?.name ?? "").trim().toLowerCase();
           const group = groupedByName.get(key) ?? [];
           group.push(item);
           groupedByName.set(key, group);
@@ -1877,19 +1909,14 @@ function InventoryManagementTab() {
 
         const normalized = Array.from(groupedByName.values()).map((group) =>
           group.reduce((latest, current) => {
-            const latestId = Number(
-              latest?.product_id ?? latest?.id ?? latest?.inventory_id ?? 0,
-            );
-            const currentId = Number(
-              current?.product_id ?? current?.id ?? current?.inventory_id ?? 0,
-            );
+            const latestId = Number(latest?.product_id ?? latest?.id ?? latest?.inventory_id ?? 0);
+            const currentId = Number(current?.product_id ?? current?.id ?? current?.inventory_id ?? 0);
             return currentId > latestId ? current : latest;
           }),
         );
 
         setProducts(
           normalized.map((item) => ({
-            // Prefer product_id as the canonical ID for API calls
             id: Number(item.product_id ?? item.inventory_id ?? item.id ?? 0),
             rawProductId: item.product_id ? Number(item.product_id) : undefined,
             rawInventoryId: item.inventory_id ? Number(item.inventory_id) : undefined,
@@ -1905,11 +1932,7 @@ function InventoryManagementTab() {
       }
     } catch (error) {
       console.error("Failed to load products:", error);
-      notify(
-        addNotification,
-        "Failed to load products. Please try refreshing.",
-        "error",
-      );
+      notify(addNotification, "Failed to load products. Please try refreshing.", "error");
     } finally {
       setLoading(false);
     }
@@ -1920,40 +1943,26 @@ function InventoryManagementTab() {
   }, []);
 
   function resetAddForm() {
-    setFName("");
-    setFCat("");
-    setFPrice("");
-    setFUnit(UNIT_OPTIONS[0]);
-    setFStock("");
-    setFDesc("");
+    setFName(""); setFCat(""); setFPrice("");
+    setFUnit(UNIT_OPTIONS[0]); setFStock(""); setFDesc("");
   }
 
   function openEdit(p: MgmtProduct) {
     setEditProduct(p);
-    setEName(p.name);
-    setECat(p.category);
-    setEPrice(p.price);
-    setEUnit(p.unit);
-    setEStock(String(p.stock));
-    setEDesc(p.description ?? "");
+    setEName(p.name); setECat(p.category); setEPrice(p.price);
+    setEUnit(p.unit); setEStock(String(p.stock)); setEDesc(p.description ?? "");
   }
 
   async function handleAdd() {
     if (!fName.trim() || !fCat.trim() || !fPrice.trim()) {
-      notify(
-        addNotification,
-        "Please fill in Name, Category, and Price.",
-        "warning",
-      );
+      notify(addNotification, "Please fill in Name, Category, and Price.", "warning");
       return;
     }
     try {
       setSaving(true);
       await api.post("/products", {
-        name: fName.trim(),
-        category: fCat.trim(),
-        price: parseFloat(fPrice),
-        unit: fUnit,
+        name: fName.trim(), category: fCat.trim(),
+        price: parseFloat(fPrice), unit: fUnit,
         quantity: parseFloat(fStock) || 0,
         description: fDesc.trim() || null,
         image: "/img/placeholder.jpg",
@@ -1961,18 +1970,9 @@ function InventoryManagementTab() {
       await loadProducts();
       setShowAdd(false);
       resetAddForm();
-      notify(
-        addNotification,
-        `"${fName.trim()}" added successfully.`,
-        "success",
-      );
+      notify(addNotification, `"${fName.trim()}" added successfully.`, "success");
     } catch (error) {
-      console.error("Failed to add product:", error);
-      notify(
-        addNotification,
-        `Failed to add product: ${error instanceof Error ? error.message : "Unknown error"}`,
-        "error",
-      );
+      notify(addNotification, `Failed to add product: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
     } finally {
       setSaving(false);
     }
@@ -1981,55 +1981,30 @@ function InventoryManagementTab() {
   async function handleEdit() {
     if (!editProduct) return;
     if (!eName.trim() || !eCat.trim() || !ePrice.trim()) {
-      notify(
-        addNotification,
-        "Please fill in Name, Category, and Price.",
-        "warning",
-      );
+      notify(addNotification, "Please fill in Name, Category, and Price.", "warning");
       return;
     }
     try {
       setSaving(true);
-
       const payload = {
-        name: eName.trim(),
-        category: eCat.trim(),
-        price: parseFloat(ePrice),
-        unit: eUnit,
+        name: eName.trim(), category: eCat.trim(),
+        price: parseFloat(ePrice), unit: eUnit,
         quantity: parseFloat(eStock) || 0,
         description: eDesc.trim() || null,
       };
-
-      // Build a prioritised list of endpoints to try:
-      // 1. /products/<product_id>  (most common)
-      // 2. /products/<inventory_id> (fallback if product_id differs)
-      // 3. /inventory/<product_id>  (some backends route here)
-      // 4. /inventory/<inventory_id>
       const endpointsToTry: string[] = [];
       const pid = editProduct.rawProductId ?? editProduct.id;
       const iid = editProduct.rawInventoryId;
-
       endpointsToTry.push(`/products/${pid}`);
       if (iid && iid !== pid) endpointsToTry.push(`/products/${iid}`);
       endpointsToTry.push(`/inventory/${pid}`);
       if (iid && iid !== pid) endpointsToTry.push(`/inventory/${iid}`);
-
       await tryPut(endpointsToTry, payload);
-
       await loadProducts();
-      notify(
-        addNotification,
-        `"${eName.trim()}" updated successfully.`,
-        "success",
-      );
+      notify(addNotification, `"${eName.trim()}" updated successfully.`, "success");
       setEditProduct(null);
     } catch (error) {
-      console.error("Failed to update product:", error);
-      notify(
-        addNotification,
-        `Failed to update: ${error instanceof Error ? error.message : "Unknown error"}`,
-        "error",
-      );
+      notify(addNotification, `Failed to update: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
     } finally {
       setSaving(false);
     }
@@ -2040,12 +2015,10 @@ function InventoryManagementTab() {
     const endpointsToTry: string[] = [];
     const pid = product?.rawProductId ?? id;
     const iid = product?.rawInventoryId;
-
     endpointsToTry.push(`/products/${pid}`);
     if (iid && iid !== pid) endpointsToTry.push(`/products/${iid}`);
     endpointsToTry.push(`/inventory/${pid}`);
     if (iid && iid !== pid) endpointsToTry.push(`/inventory/${iid}`);
-
     try {
       setSaving(true);
       let lastErr: unknown;
@@ -2053,8 +2026,7 @@ function InventoryManagementTab() {
       for (const ep of endpointsToTry) {
         try {
           await apiCall(ep, { method: "DELETE" });
-          deleted = true;
-          break;
+          deleted = true; break;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           if (!msg.includes("404") && !msg.includes("HTTP 404")) throw err;
@@ -2062,17 +2034,11 @@ function InventoryManagementTab() {
         }
       }
       if (!deleted) throw lastErr;
-
       await loadProducts();
       setDeleteId(null);
       notify(addNotification, "Product deleted successfully.", "success");
     } catch (error) {
-      console.error("Failed to delete product:", error);
-      notify(
-        addNotification,
-        `Failed to delete: ${error instanceof Error ? error.message : "Unknown error"}`,
-        "error",
-      );
+      notify(addNotification, `Failed to delete: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
     } finally {
       setSaving(false);
     }
@@ -2082,7 +2048,6 @@ function InventoryManagementTab() {
     const product = products.find((p) => p.id === id);
     if (!product) return;
     const newStock = Math.max(0, product.stock + delta);
-
     const payload = { quantity: newStock };
     const pid = product.rawProductId ?? id;
     const iid = product.rawInventoryId;
@@ -2091,27 +2056,17 @@ function InventoryManagementTab() {
     if (iid && iid !== pid) endpointsToTry.push(`/products/${iid}`);
     endpointsToTry.push(`/inventory/${pid}`);
     if (iid && iid !== pid) endpointsToTry.push(`/inventory/${iid}`);
-
     try {
       await tryPut(endpointsToTry, payload);
-      setProducts((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, stock: newStock } : p)),
-      );
+      setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, stock: newStock } : p)));
     } catch (error) {
-      console.error("Failed to update stock:", error);
-      notify(
-        addNotification,
-        `Failed to update stock: ${error instanceof Error ? error.message : "Unknown error"}`,
-        "error",
-      );
+      notify(addNotification, `Failed to update stock: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
     }
   }
 
   const filtered = products.filter((p) => {
     const s = search.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(s) || p.category.toLowerCase().includes(s)
-    );
+    return p.name.toLowerCase().includes(s) || p.category.toLowerCase().includes(s);
   });
 
   const totalValue = products.reduce((sum, p) => {
@@ -2125,43 +2080,16 @@ function InventoryManagementTab() {
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
       <div className="mb-6">
-        <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">
-          Management
-        </p>
-        <h2 className="text-xl font-bold text-gray-900">
-          Inventory Management
-        </h2>
-        <p className="text-gray-500 text-sm mt-1">
-          Add, edit, delete products and adjust stock levels directly.
-        </p>
+        <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Management</p>
+        <h2 className="text-xl font-bold text-gray-900">Inventory Management</h2>
+        <p className="text-gray-500 text-sm mt-1">Add, edit, delete products and adjust stock levels directly.</p>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-4 gap-3 mb-6">
-        <StatCard
-          label="Total Products"
-          value={products.length}
-          meta="In system"
-          color="blue"
-        />
-        <StatCard
-          label="Total Value"
-          value={`₱${totalValue.toLocaleString()}`}
-          meta="Stock value"
-          color="green"
-        />
-        <StatCard
-          label="Low Stock"
-          value={lowStock}
-          meta="≤ 10 units"
-          color="yellow"
-        />
-        <StatCard
-          label="Out of Stock"
-          value={outOfStock}
-          meta="Zero stock"
-          color="red"
-        />
+        <StatCard label="Total Products" value={products.length} meta="In system" color="blue" />
+        <StatCard label="Total Value" value={`₱${totalValue.toLocaleString()}`} meta="Stock value" color="green" />
+        <StatCard label="Low Stock" value={lowStock} meta="≤ 10 units" color="yellow" />
+        <StatCard label="Out of Stock" value={outOfStock} meta="Zero stock" color="red" />
       </div>
 
       <SectionHeader
@@ -2169,24 +2097,14 @@ function InventoryManagementTab() {
         sub="All inventory items from your backend"
         cta={
           <div className="flex gap-2">
-            <button
-              className={primaryBtnClass}
-              onClick={() => void loadProducts()}
-              disabled={loading}
-            >
+            <button className={primaryBtnClass} onClick={() => void loadProducts()} disabled={loading}>
               {loading ? "Refreshing…" : "↻ Refresh"}
             </button>
-            <button
-              className={primaryBtnClass}
-              onClick={() => setShowAdd(true)}
-            >
-              + Add Product
-            </button>
+            <button className={primaryBtnClass} onClick={() => setShowAdd(true)}>+ Add Product</button>
           </div>
         }
       />
 
-      {/* Search */}
       <div className="mb-[14px]">
         <input
           className="w-full px-3 py-2 border-[1.5px] border-gray-200 rounded-[9px] text-[12.5px] font-[Poppins,sans-serif] text-gray-700 outline-none bg-white transition-all focus:border-gray-400 box-border"
@@ -2196,7 +2114,6 @@ function InventoryManagementTab() {
         />
       </div>
 
-      {/* Table */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4">
           <motion.div
@@ -2212,114 +2129,48 @@ function InventoryManagementTab() {
           emptyHint="No products found. Try refreshing or add a new product."
           rows={filtered.map((p) => {
             const stockColor =
-              p.stock === 0
-                ? "text-red-600 font-bold"
-                : p.stock <= 10
-                  ? "text-yellow-600 font-bold"
-                  : "text-gray-900 font-semibold";
-
+              p.stock === 0 ? "text-red-600 font-bold"
+              : p.stock <= 10 ? "text-yellow-600 font-bold"
+              : "text-gray-900 font-semibold";
             return (
-              <tr
-                key={p.id}
-                className="border-b border-gray-50 hover:bg-gray-50 transition-colors last:border-b-0"
-              >
-                {/* Product */}
+              <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors last:border-b-0">
                 <td className="px-[14px] py-[11px]">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
                       {p.image && p.image !== "/img/placeholder.jpg" ? (
-                        <img
-                          src={p.image}
-                          alt={p.name}
-                          className="w-full h-full object-cover"
-                        />
+                        <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-gray-400 text-[10px] font-bold">
-                          {p.name.charAt(0).toUpperCase()}
-                        </span>
+                        <span className="text-gray-400 text-[10px] font-bold">{p.name.charAt(0).toUpperCase()}</span>
                       )}
                     </div>
                     <div>
-                      <div className="text-[12.5px] font-semibold text-gray-900">
-                        {p.name}
-                      </div>
+                      <div className="text-[12.5px] font-semibold text-gray-900">{p.name}</div>
                       {p.description && (
-                        <div className="text-[11px] text-gray-400 max-w-[180px] truncate">
-                          {p.description}
-                        </div>
+                        <div className="text-[11px] text-gray-400 max-w-[180px] truncate">{p.description}</div>
                       )}
                     </div>
                   </div>
                 </td>
-
-                {/* Category */}
                 <td className="px-[14px] py-[11px]">
-                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">
-                    {p.category}
-                  </span>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">{p.category}</span>
                 </td>
-
-                {/* Price */}
                 <td className="px-[14px] py-[11px] text-[12.5px] font-bold text-green-700">
-                  ₱
-                  {parseFloat(
-                    String(p.price).replace(/[^0-9.]/g, ""),
-                  ).toLocaleString()}
+                  ₱{parseFloat(String(p.price).replace(/[^0-9.]/g, "")).toLocaleString()}
                 </td>
-
-                {/* Unit */}
-                <td className="px-[14px] py-[11px] text-[12.5px] text-gray-500">
-                  {p.unit}
-                </td>
-
-                {/* Stock with inline ± controls */}
+                <td className="px-[14px] py-[11px] text-[12.5px] text-gray-500">{p.unit}</td>
                 <td className="px-[14px] py-[11px]">
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => void handleStockUpdate(p.id, -1)}
-                      className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 text-[14px] font-bold flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors border-none cursor-pointer leading-none"
-                    >
-                      −
-                    </button>
-                    <span
-                      className={`min-w-[36px] text-center text-[12.5px] ${stockColor}`}
-                    >
-                      {p.stock}
-                    </span>
-                    <button
-                      onClick={() => void handleStockUpdate(p.id, 1)}
-                      className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 text-[14px] font-bold flex items-center justify-center hover:bg-green-50 hover:text-green-600 transition-colors border-none cursor-pointer leading-none"
-                    >
-                      +
-                    </button>
-                    {p.stock === 0 && (
-                      <span className="text-[10px] font-semibold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">
-                        Out
-                      </span>
-                    )}
-                    {p.stock > 0 && p.stock <= 10 && (
-                      <span className="text-[10px] font-semibold text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded-full">
-                        Low
-                      </span>
-                    )}
+                    <button onClick={() => void handleStockUpdate(p.id, -1)} className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 text-[14px] font-bold flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors border-none cursor-pointer leading-none">−</button>
+                    <span className={`min-w-[36px] text-center text-[12.5px] ${stockColor}`}>{p.stock}</span>
+                    <button onClick={() => void handleStockUpdate(p.id, 1)} className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 text-[14px] font-bold flex items-center justify-center hover:bg-green-50 hover:text-green-600 transition-colors border-none cursor-pointer leading-none">+</button>
+                    {p.stock === 0 && <span className="text-[10px] font-semibold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">Out</span>}
+                    {p.stock > 0 && p.stock <= 10 && <span className="text-[10px] font-semibold text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded-full">Low</span>}
                   </div>
                 </td>
-
-                {/* Actions */}
                 <td className="px-[14px] py-[11px]">
                   <div className="flex gap-[5px]">
-                    <button
-                      className={ghostBtnClass}
-                      onClick={() => openEdit(p)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className={dangerBtnClass}
-                      onClick={() => setDeleteId(p.id)}
-                    >
-                      Delete
-                    </button>
+                    <button className={ghostBtnClass} onClick={() => openEdit(p)}>Edit</button>
+                    <button className={dangerBtnClass} onClick={() => setDeleteId(p.id)}>Delete</button>
                   </div>
                 </td>
               </tr>
@@ -2328,191 +2179,52 @@ function InventoryManagementTab() {
         />
       )}
 
-      {/* ── Add Product Modal */}
       {showAdd && (
-        <SMModal
-          title="Add New Product"
-          onClose={() => {
-            setShowAdd(false);
-            resetAddForm();
-          }}
-          footer={
-            <>
-              <button
-                className={ghostBtnClass}
-                onClick={() => {
-                  setShowAdd(false);
-                  resetAddForm();
-                }}
-                disabled={saving}
-              >
-                Discard
-              </button>
-              <button
-                className={primaryBtnClass}
-                onClick={() => void handleAdd()}
-                disabled={saving}
-              >
-                {saving ? "Saving…" : "Add Product"}
-              </button>
-            </>
-          }
+        <SMModal title="Add New Product" onClose={() => { setShowAdd(false); resetAddForm(); }}
+          footer={<>
+            <button className={ghostBtnClass} onClick={() => { setShowAdd(false); resetAddForm(); }} disabled={saving}>Discard</button>
+            <button className={primaryBtnClass} onClick={() => void handleAdd()} disabled={saving}>{saving ? "Saving…" : "Add Product"}</button>
+          </>}
         >
-          <FormInput
-            label="Product Name *"
-            placeholder="e.g. Chicken Breast"
-            value={fName}
-            onChange={(e) => setFName(e.target.value)}
-          />
-          <FormInput
-            label="Category *"
-            placeholder="e.g. Ingredients"
-            value={fCat}
-            onChange={(e) => setFCat(e.target.value)}
-          />
+          <FormInput label="Product Name *" placeholder="e.g. Chicken Breast" value={fName} onChange={(e) => setFName(e.target.value)} />
+          <FormInput label="Category *" placeholder="e.g. Ingredients" value={fCat} onChange={(e) => setFCat(e.target.value)} />
           <div className="grid grid-cols-2 gap-[10px]">
-            <FormInput
-              label="Price (₱) *"
-              type="number"
-              placeholder="0.00"
-              value={fPrice}
-              onChange={(e) => setFPrice(e.target.value)}
-            />
-            <FormGroup label="Unit">
-              <select
-                className={inputClass}
-                value={fUnit}
-                onChange={(e) => setFUnit(e.target.value)}
-              >
-                {UNIT_OPTIONS.map((u) => (
-                  <option key={u}>{u}</option>
-                ))}
-              </select>
-            </FormGroup>
+            <FormInput label="Price (₱) *" type="number" placeholder="0.00" value={fPrice} onChange={(e) => setFPrice(e.target.value)} />
+            <FormGroup label="Unit"><select className={inputClass} value={fUnit} onChange={(e) => setFUnit(e.target.value)}>{UNIT_OPTIONS.map((u) => <option key={u}>{u}</option>)}</select></FormGroup>
           </div>
-          <FormInput
-            label="Initial Stock"
-            type="number"
-            placeholder="0"
-            value={fStock}
-            onChange={(e) => setFStock(e.target.value)}
-          />
-          <FormGroup label="Description (optional)">
-            <textarea
-              className={`${inputClass} resize-none`}
-              rows={2}
-              placeholder="Brief description…"
-              value={fDesc}
-              onChange={(e) => setFDesc(e.target.value)}
-            />
-          </FormGroup>
+          <FormInput label="Initial Stock" type="number" placeholder="0" value={fStock} onChange={(e) => setFStock(e.target.value)} />
+          <FormGroup label="Description (optional)"><textarea className={`${inputClass} resize-none`} rows={2} placeholder="Brief description…" value={fDesc} onChange={(e) => setFDesc(e.target.value)} /></FormGroup>
         </SMModal>
       )}
 
-      {/* ── Edit Product Modal */}
       {editProduct && (
-        <SMModal
-          title={`Edit — ${editProduct.name}`}
-          onClose={() => setEditProduct(null)}
-          footer={
-            <>
-              <button
-                className={ghostBtnClass}
-                onClick={() => setEditProduct(null)}
-                disabled={saving}
-              >
-                Discard
-              </button>
-              <button
-                className={primaryBtnClass}
-                onClick={() => void handleEdit()}
-                disabled={saving}
-              >
-                {saving ? "Saving…" : "Save Changes"}
-              </button>
-            </>
-          }
+        <SMModal title={`Edit — ${editProduct.name}`} onClose={() => setEditProduct(null)}
+          footer={<>
+            <button className={ghostBtnClass} onClick={() => setEditProduct(null)} disabled={saving}>Discard</button>
+            <button className={primaryBtnClass} onClick={() => void handleEdit()} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</button>
+          </>}
         >
-          <FormInput
-            label="Product Name *"
-            placeholder="e.g. Chicken Breast"
-            value={eName}
-            onChange={(e) => setEName(e.target.value)}
-          />
-          <FormInput
-            label="Category *"
-            placeholder="e.g. Ingredients"
-            value={eCat}
-            onChange={(e) => setECat(e.target.value)}
-          />
+          <FormInput label="Product Name *" placeholder="e.g. Chicken Breast" value={eName} onChange={(e) => setEName(e.target.value)} />
+          <FormInput label="Category *" placeholder="e.g. Ingredients" value={eCat} onChange={(e) => setECat(e.target.value)} />
           <div className="grid grid-cols-2 gap-[10px]">
-            <FormInput
-              label="Price (₱) *"
-              type="number"
-              placeholder="0.00"
-              value={ePrice}
-              onChange={(e) => setEPrice(e.target.value)}
-            />
-            <FormGroup label="Unit">
-              <select
-                className={inputClass}
-                value={eUnit}
-                onChange={(e) => setEUnit(e.target.value)}
-              >
-                {UNIT_OPTIONS.map((u) => (
-                  <option key={u}>{u}</option>
-                ))}
-              </select>
-            </FormGroup>
+            <FormInput label="Price (₱) *" type="number" placeholder="0.00" value={ePrice} onChange={(e) => setEPrice(e.target.value)} />
+            <FormGroup label="Unit"><select className={inputClass} value={eUnit} onChange={(e) => setEUnit(e.target.value)}>{UNIT_OPTIONS.map((u) => <option key={u}>{u}</option>)}</select></FormGroup>
           </div>
-          <FormInput
-            label="Stock Qty"
-            type="number"
-            placeholder="0"
-            value={eStock}
-            onChange={(e) => setEStock(e.target.value)}
-          />
-          <FormGroup label="Description (optional)">
-            <textarea
-              className={`${inputClass} resize-none`}
-              rows={2}
-              placeholder="Brief description…"
-              value={eDesc}
-              onChange={(e) => setEDesc(e.target.value)}
-            />
-          </FormGroup>
+          <FormInput label="Stock Qty" type="number" placeholder="0" value={eStock} onChange={(e) => setEStock(e.target.value)} />
+          <FormGroup label="Description (optional)"><textarea className={`${inputClass} resize-none`} rows={2} placeholder="Brief description…" value={eDesc} onChange={(e) => setEDesc(e.target.value)} /></FormGroup>
         </SMModal>
       )}
 
-      {/* ── Delete Confirmation Modal */}
       {deleteId !== null && (
-        <SMModal
-          title="Delete Product"
-          onClose={() => setDeleteId(null)}
-          footer={
-            <>
-              <button
-                className={ghostBtnClass}
-                onClick={() => setDeleteId(null)}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-              <button
-                className={dangerBtnClass}
-                onClick={() => void handleDelete(deleteId!)}
-                disabled={saving}
-              >
-                {saving ? "Deleting…" : "Yes, Delete"}
-              </button>
-            </>
-          }
+        <SMModal title="Delete Product" onClose={() => setDeleteId(null)}
+          footer={<>
+            <button className={ghostBtnClass} onClick={() => setDeleteId(null)} disabled={saving}>Cancel</button>
+            <button className={dangerBtnClass} onClick={() => void handleDelete(deleteId!)} disabled={saving}>{saving ? "Deleting…" : "Yes, Delete"}</button>
+          </>}
         >
           <p className="text-[13px] text-gray-600 leading-relaxed">
             Are you sure you want to delete{" "}
-            <span className="font-bold text-gray-900">
-              {products.find((p) => p.id === deleteId)?.name ?? "this product"}
-            </span>
+            <span className="font-bold text-gray-900">{products.find((p) => p.id === deleteId)?.name ?? "this product"}</span>
             ? This action cannot be undone.
           </p>
         </SMModal>
@@ -2530,6 +2242,9 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
 
+  // ── Inventory tab filter state
+  const [inventoryFilter, setInventoryFilter] = useState<InventoryFilter>("all");
+
   const loadInventory = async (showLoader = true) => {
     try {
       if (showLoader) setLoading(true);
@@ -2538,12 +2253,8 @@ export default function Inventory() {
         | null;
       if (data && Array.isArray(data)) {
         const inventoryRows = data.filter((item) => {
-          const promo = String(item?.promo ?? "")
-            .toUpperCase()
-            .trim();
-          const category = String(item?.category ?? "")
-            .toLowerCase()
-            .trim();
+          const promo = String(item?.promo ?? "").toUpperCase().trim();
+          const category = String(item?.category ?? "").toLowerCase().trim();
           return (
             promo === "SUPPLIES" ||
             promo === "MENU FOOD" ||
@@ -2554,9 +2265,7 @@ export default function Inventory() {
 
         const groupedByName = new Map<string, ApiInventoryRow[]>();
         for (const item of inventoryRows) {
-          const key = String(item?.product_name ?? item?.name ?? "")
-            .trim()
-            .toLowerCase();
+          const key = String(item?.product_name ?? item?.name ?? "").trim().toLowerCase();
           const group = groupedByName.get(key) ?? [];
           group.push(item);
           groupedByName.set(key, group);
@@ -2564,12 +2273,8 @@ export default function Inventory() {
 
         const normalizedRows = Array.from(groupedByName.values()).map((group) =>
           group.reduce((latest, current) => {
-            const latestId = Number(
-              latest?.product_id ?? latest?.id ?? latest?.inventory_id ?? 0,
-            );
-            const currentId = Number(
-              current?.product_id ?? current?.id ?? current?.inventory_id ?? 0,
-            );
+            const latestId = Number(latest?.product_id ?? latest?.id ?? latest?.inventory_id ?? 0);
+            const currentId = Number(current?.product_id ?? current?.id ?? current?.inventory_id ?? 0);
             return currentId > latestId ? current : latest;
           }),
         );
@@ -2600,11 +2305,7 @@ export default function Inventory() {
       }
     } catch (error) {
       console.error("Failed to load inventory:", error);
-      notify(
-        addNotification,
-        "Failed to load inventory. Please try again.",
-        "error",
-      );
+      notify(addNotification, "Failed to load inventory. Please try again.", "error");
     } finally {
       if (showLoader) setLoading(false);
     }
@@ -2645,11 +2346,7 @@ export default function Inventory() {
       notify(addNotification, "Product added successfully!", "success");
     } catch (error) {
       console.error("Failed to add product:", error);
-      notify(
-        addNotification,
-        `Failed to add product: ${error instanceof Error ? error.message : "Unknown error"}`,
-        "error",
-      );
+      notify(addNotification, `Failed to add product: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
     }
   };
 
@@ -2660,13 +2357,22 @@ export default function Inventory() {
       notify(addNotification, "Product deleted successfully!", "success");
     } catch (error) {
       console.error("Failed to delete product:", error);
-      notify(
-        addNotification,
-        `Failed to delete product: ${error instanceof Error ? error.message : "Unknown error"}`,
-        "error",
-      );
+      notify(addNotification, `Failed to delete product: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
     }
   };
+
+  // ── Derived counts for filter badges
+  const inStockCount = inventoryItems.filter((i) => i.stock > 10).length;
+  const lowStockCount = inventoryItems.filter((i) => i.stock > 0 && i.stock <= 10).length;
+  const outOfStockCount = inventoryItems.filter((i) => i.stock === 0).length;
+
+  // ── Filtered items passed to InventoryClient
+  const filteredInventoryItems = inventoryItems.filter((item) => {
+    if (inventoryFilter === "in_stock") return item.stock > 10;
+    if (inventoryFilter === "low_stock") return item.stock > 0 && item.stock <= 10;
+    if (inventoryFilter === "out_of_stock") return item.stock === 0;
+    return true;
+  });
 
   const totalStock = inventoryItems.reduce((sum, item) => sum + item.stock, 0);
   const totalBatches = inventoryItems.reduce(
@@ -2686,31 +2392,20 @@ export default function Inventory() {
           className="mb-2 flex items-start justify-between"
         >
           <div>
-            <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">
-              Management
-            </p>
+            <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Management</p>
             <h1 className="text-3xl font-bold text-gray-900">Inventory</h1>
           </div>
           <div className="flex flex-col items-end select-none">
             <p className="text-base font-semibold text-gray-700 tabular-nums">
-              {now.toLocaleTimeString("en-PH", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })}
+              {now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
-              {now.toLocaleDateString("en-PH", {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              })}
+              {now.toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
             </p>
           </div>
         </motion.div>
 
-        {/* Top-level tabs — 3 pills */}
+        {/* Top-level tabs */}
         <motion.div
           initial={{ opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
@@ -2727,18 +2422,13 @@ export default function Inventory() {
                 key={tab.key}
                 onClick={() => setPageTab(tab.key)}
                 className={`relative px-7 py-[9px] text-[13px] font-semibold font-[Poppins,sans-serif] border-none cursor-pointer rounded-[10px] transition-colors whitespace-nowrap z-[1] ${
-                  pageTab === tab.key
-                    ? "text-gray-900"
-                    : "text-gray-400 hover:text-gray-700 bg-transparent"
+                  pageTab === tab.key ? "text-gray-900" : "text-gray-400 hover:text-gray-700 bg-transparent"
                 }`}
               >
                 {pageTab === tab.key && (
                   <motion.span
                     className="absolute inset-0 bg-white rounded-[10px] z-0"
-                    style={{
-                      boxShadow:
-                        "0 1px 6px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)",
-                    }}
+                    style={{ boxShadow: "0 1px 6px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)" }}
                     layoutId="pageTabSlider"
                     transition={{ type: "spring", stiffness: 400, damping: 34 }}
                   />
@@ -2759,52 +2449,147 @@ export default function Inventory() {
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.22 }}
             >
-              <div className="grid grid-cols-3 gap-5 mb-8">
+              {/* Stat cards — clicking them sets the filter */}
+              <div className="grid grid-cols-4 gap-5 mb-8">
                 {[
                   {
                     label: "Total Products",
                     value: inventoryItems.length,
+                    filterKey: "all" as InventoryFilter,
                     icon: <Package className="w-[18px] h-[18px]" />,
                     iconBg: "bg-blue-50",
                     iconColor: "text-blue-500",
+                    ringColor: "#4f46e5",
                   },
                   {
                     label: "Total Stock",
                     value: totalStock,
+                    filterKey: "in_stock" as InventoryFilter,
                     icon: <Archive className="w-[18px] h-[18px]" />,
                     iconBg: "bg-emerald-50",
                     iconColor: "text-emerald-500",
+                    ringColor: "#16a34a",
                   },
                   {
-                    label: "Active Batches",
-                    value: totalBatches,
+                    label: "Low Stock",
+                    value: lowStockCount,
+                    filterKey: "low_stock" as InventoryFilter,
                     icon: <RefreshCw className="w-[18px] h-[18px]" />,
-                    iconBg: "bg-orange-50",
-                    iconColor: "text-orange-500",
+                    iconBg: "bg-yellow-50",
+                    iconColor: "text-yellow-500",
+                    ringColor: "#ca8a04",
                   },
-                ].map((stat, i) => (
-                  <motion.div
-                    key={stat.label}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.07 }}
-                    className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex items-center gap-4"
-                  >
-                    <div
-                      className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${stat.iconBg} ${stat.iconColor}`}
+                  {
+                    label: "Out of Stock",
+                    value: outOfStockCount,
+                    filterKey: "out_of_stock" as InventoryFilter,
+                    icon: <Package className="w-[18px] h-[18px]" />,
+                    iconBg: "bg-red-50",
+                    iconColor: "text-red-400",
+                    ringColor: "#dc2626",
+                  },
+                ].map((stat, i) => {
+                  const isActive = inventoryFilter === stat.filterKey;
+                  return (
+                    <motion.div
+                      key={stat.label}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.07 }}
+                      onClick={() => setInventoryFilter(stat.filterKey)}
+                      className={`bg-white rounded-2xl p-5 shadow-sm border flex items-center gap-4 cursor-pointer select-none transition-all hover:shadow-md ${
+                        isActive
+                          ? "border-transparent shadow-md"
+                          : "border-gray-100 hover:border-gray-200"
+                      }`}
+                      style={
+                        isActive
+                          ? { outline: `2px solid ${stat.ringColor}`, outlineOffset: "2px" }
+                          : {}
+                      }
                     >
-                      {stat.icon}
-                    </div>
-                    <div>
-                      <p className="text-[26px] font-bold text-gray-900 leading-none">
-                        {stat.value}
-                      </p>
-                      <p className="text-[12px] text-gray-400 mt-1 font-medium">
-                        {stat.label}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+                      <div
+                        className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${stat.iconBg} ${stat.iconColor}`}
+                      >
+                        {stat.icon}
+                      </div>
+                      <div>
+                        <p className="text-[26px] font-bold text-gray-900 leading-none">
+                          {stat.value}
+                        </p>
+                        <p className="text-[12px] text-gray-400 mt-1 font-medium">
+                          {stat.label}
+                        </p>
+                      </div>
+                      {isActive && (
+                        <div
+                          className="ml-auto w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ background: stat.ringColor }}
+                        />
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {/* Filter pill buttons */}
+              <div className="flex items-center gap-2 mb-5 flex-wrap">
+                <span className="text-[11.5px] text-gray-400 font-semibold uppercase tracking-[0.5px] mr-1">
+                  Filter:
+                </span>
+                {INVENTORY_FILTERS.map((f) => {
+                  const count =
+                    f.key === "all"
+                      ? inventoryItems.length
+                      : f.key === "in_stock"
+                        ? inStockCount
+                        : f.key === "low_stock"
+                          ? lowStockCount
+                          : outOfStockCount;
+                  return (
+                    <button
+                      key={f.key}
+                      onClick={() => setInventoryFilter(f.key)}
+                      className={`px-[13px] py-[5px] rounded-full text-[12px] font-semibold font-[Poppins,sans-serif] border cursor-pointer transition-all flex items-center gap-1.5 ${
+                        inventoryFilter === f.key
+                          ? f.activeClass
+                          : `bg-white border-gray-200 ${f.color} hover:border-gray-400 hover:bg-gray-50`
+                      }`}
+                    >
+                      {f.label}
+                      <span
+                        className={`text-[10px] font-bold rounded-full px-[5px] py-[1px] ${
+                          inventoryFilter === f.key
+                            ? "bg-white/25 text-inherit"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                {inventoryFilter !== "all" && (
+                  <button
+                    onClick={() => setInventoryFilter("all")}
+                    className="ml-1 text-[11.5px] text-gray-400 hover:text-gray-600 font-semibold font-[Poppins,sans-serif] bg-transparent border-none cursor-pointer underline underline-offset-2 transition-colors"
+                  >
+                    Clear filter
+                  </button>
+                )}
+
+                <span className="ml-auto text-[11.5px] text-gray-400 font-medium">
+                  Showing{" "}
+                  <span className="font-bold text-gray-700">
+                    {filteredInventoryItems.length}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-bold text-gray-700">
+                    {inventoryItems.length}
+                  </span>{" "}
+                  products
+                </span>
               </div>
 
               <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
@@ -2820,29 +2605,53 @@ export default function Inventory() {
                       <motion.div
                         className="w-12 h-12 rounded-full border-4 border-gray-200 border-t-blue-500"
                         animate={{ rotate: 360 }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: 0.9,
-                          ease: "linear",
-                        }}
+                        transition={{ repeat: Infinity, duration: 0.9, ease: "linear" }}
                       />
-                      <p className="text-gray-400 text-sm">
-                        Loading inventory...
-                      </p>
+                      <p className="text-gray-400 text-sm">Loading inventory...</p>
                     </motion.div>
                   ) : (
                     <motion.div
-                      key="content"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
+                      key={`content-${inventoryFilter}`}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      transition={{ duration: 0.3 }}
+                      transition={{ duration: 0.2 }}
                     >
-                      <InventoryClient
-                        items={inventoryItems}
-                        onAddProduct={handleAddProduct}
-                        onDeleteProduct={handleDeleteProduct}
-                      />
+                      {filteredInventoryItems.length === 0 && inventoryFilter !== "all" ? (
+                        <div className="flex flex-col items-center justify-center py-20 gap-3">
+                          <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
+                            <Package className="w-6 h-6 text-gray-400" />
+                          </div>
+                          <p className="text-[14px] font-semibold text-gray-500">
+                            No{" "}
+                            {inventoryFilter === "in_stock"
+                              ? "in-stock"
+                              : inventoryFilter === "low_stock"
+                                ? "low-stock"
+                                : "out-of-stock"}{" "}
+                            products
+                          </p>
+                          <p className="text-[12px] text-gray-400">
+                            {inventoryFilter === "out_of_stock"
+                              ? "Great — everything is stocked!"
+                              : inventoryFilter === "low_stock"
+                                ? "No items are running low right now."
+                                : ""}
+                          </p>
+                          <button
+                            onClick={() => setInventoryFilter("all")}
+                            className={`mt-1 ${primaryBtnClass}`}
+                          >
+                            Show all products
+                          </button>
+                        </div>
+                      ) : (
+                        <InventoryClient
+                          items={filteredInventoryItems}
+                          onAddProduct={handleAddProduct}
+                          onDeleteProduct={handleDeleteProduct}
+                        />
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>
