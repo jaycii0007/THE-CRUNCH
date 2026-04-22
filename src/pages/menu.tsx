@@ -1,5 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
-import { Search, Minus, Plus, Trash2, UtensilsCrossed, Check, Clock, Calendar, Hash, ChevronDown, Delete } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import {
+  Search, Minus, Plus, Trash2, UtensilsCrossed, Check,
+  Clock, Calendar, Hash, ChevronDown, Delete,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
@@ -7,7 +10,8 @@ import { Sidebar } from "@/components/Sidebar";
 // ─── FONT ─────────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("poppins-font")) {
   const l = document.createElement("link");
-  l.id = "poppins-font"; l.rel = "stylesheet";
+  l.id = "poppins-font";
+  l.rel = "stylesheet";
   l.href = "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap";
   document.head.appendChild(l);
 }
@@ -19,16 +23,41 @@ const VAT_RATE = 0.12;
 const DISCOUNT_RATE = 0.2;
 type CustomerType = "regular" | "pwd" | "senior";
 
-interface MenuItem { id: number; name: string; price: number; category: string; remainingStock: number; image?: string | null; }
+interface MenuItem {
+  id: number;
+  name: string;
+  price: number;
+  category: string;
+  remainingStock: number;
+  image?: string | null;
+}
 interface CartItem extends MenuItem { quantity: number; }
-interface TableItem { id: number; number: number; status: "available" | "occupied"; seats?: number; }
+interface TableItem {
+  id: number;
+  number: number;
+  status: "available" | "occupied";
+  seats?: number;
+}
+interface OnlineNotif {
+  id: number;
+  total: number;
+  createdAt: string;
+  orderType: string;
+  items: { name: string; quantity: number }[];
+}
 interface OrderPayload {
-  items: { product_id: number; qty: number; subtotal: number; name: string; price: number; }[];
-  total: number; order_type: "dine-in" | "take-out" | "delivery";
-  payment_method: "cash" | "e-payment"; customer_type: CustomerType;
-  discount_amount: number; vat_amount: number; vat_exempt_amount: number;
-  cashierId: number | null; table_id: number | null;
-  cash_tendered?: number; change_amount?: number;
+  items: { product_id: number; qty: number; subtotal: number; name: string; price: number }[];
+  total: number;
+  order_type: "dine-in" | "take-out" | "delivery";
+  payment_method: "cash" | "e-payment";
+  customer_type: CustomerType;
+  discount_amount: number;
+  vat_amount: number;
+  vat_exempt_amount: number;
+  cashierId: number | null;
+  table_id: number | null;
+  cash_tendered?: number;
+  change_amount?: number;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -63,7 +92,9 @@ const mapProducts = (data: Record<string, unknown>[]): MenuItem[] => {
     if (p.isRawMaterial) continue;
     const key = String(p.product_name ?? p.name ?? "").trim().toLowerCase();
     const ex = map.get(key);
-    if (!ex || Number(p.product_id ?? p.id ?? 0) > Number(ex.product_id ?? ex.id ?? 0)) map.set(key, p);
+    if (!ex || Number(p.product_id ?? p.id ?? 0) > Number(ex.product_id ?? ex.id ?? 0)) {
+      map.set(key, p);
+    }
   }
   return Array.from(map.values()).map((p) => ({
     id: Number(p.product_id ?? p.id),
@@ -90,14 +121,27 @@ const btn = (bg: string, color: string, extra?: object) => ({
 });
 
 // ─── PRODUCT CARD ─────────────────────────────────────────────────────────────
-function ProductCard({ item, onAdd, inCart }: { item: MenuItem; onAdd: (i: MenuItem) => void; inCart: boolean; }) {
+function ProductCard({ item, onAdd, inCart }: {
+  item: MenuItem;
+  onAdd: (i: MenuItem) => void;
+  inCart: boolean;
+}) {
   const out = item.remainingStock <= 0 && !isFood(item);
   return (
     <motion.button
-      layout onClick={() => !out && onAdd(item)} disabled={out}
+      layout
+      onClick={() => !out && onAdd(item)}
+      disabled={out}
       whileHover={!out ? { y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.07)" } : {}}
-      whileTap={!out ? { scale: 0.96 } : {}} transition={SP}
-      style={{ position: "relative", width: "100%", textAlign: "left", overflow: "hidden", borderRadius: 14, background: "#fff", border: `1px solid ${inCart ? "#111" : "#efefef"}`, opacity: out ? 0.4 : 1, cursor: out ? "not-allowed" : "pointer", fontFamily: F, padding: 0 }}
+      whileTap={!out ? { scale: 0.96 } : {}}
+      transition={SP}
+      style={{
+        position: "relative", width: "100%", textAlign: "left", overflow: "hidden",
+        borderRadius: 14, background: "#fff",
+        border: `1px solid ${inCart ? "#111" : "#efefef"}`,
+        opacity: out ? 0.4 : 1, cursor: out ? "not-allowed" : "pointer",
+        fontFamily: F, padding: 0,
+      }}
     >
       <div style={{ width: "100%", aspectRatio: "1", background: "#f7f7f7", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <UtensilsCrossed style={{ width: 22, height: 22, color: "#ddd" }} />
@@ -107,7 +151,11 @@ function ProductCard({ item, onAdd, inCart }: { item: MenuItem; onAdd: (i: MenuI
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: "#111" }}>₱{fmt(item.price)}</span>
           {!isFood(item) && (
-            <span style={{ fontSize: 10, fontWeight: 500, padding: "2px 6px", borderRadius: 5, background: out ? "#fff0f0" : "#f5f5f5", color: out ? "#f87171" : "#bbb" }}>
+            <span style={{
+              fontSize: 10, fontWeight: 500, padding: "2px 6px", borderRadius: 5,
+              background: out ? "#fff0f0" : "#f5f5f5",
+              color: out ? "#f87171" : "#bbb",
+            }}>
               {out ? "Out" : item.remainingStock}
             </span>
           )}
@@ -115,8 +163,10 @@ function ProductCard({ item, onAdd, inCart }: { item: MenuItem; onAdd: (i: MenuI
       </div>
       <AnimatePresence>
         {inCart && (
-          <motion.div initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={SP}
-            style={{ position: "absolute", top: 8, right: 8, width: 18, height: 18, borderRadius: "50%", background: "#111", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={SP}
+            style={{ position: "absolute", top: 8, right: 8, width: 18, height: 18, borderRadius: "50%", background: "#111", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
             <Check style={{ width: 9, height: 9, color: "#fff" }} strokeWidth={3} />
           </motion.div>
         )}
@@ -126,16 +176,26 @@ function ProductCard({ item, onAdd, inCart }: { item: MenuItem; onAdd: (i: MenuI
 }
 
 // ─── CART ROW ─────────────────────────────────────────────────────────────────
-function CartRow({ item, onRemove, onQty }: { item: CartItem; onRemove: (id: number) => void; onQty: (id: number, d: number) => void; }) {
+function CartRow({ item, onRemove, onQty }: {
+  item: CartItem;
+  onRemove: (id: number) => void;
+  onQty: (id: number, d: number) => void;
+}) {
   const qtyBtn = (delta: number, icon: React.ReactNode) => (
-    <motion.button whileTap={{ scale: 0.85 }} onClick={() => onQty(item.id, delta)}
-      style={{ width: 22, height: 22, borderRadius: 7, border: "1px solid #eee", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <motion.button
+      whileTap={{ scale: 0.85 }}
+      onClick={() => onQty(item.id, delta)}
+      style={{ width: 22, height: 22, borderRadius: 7, border: "1px solid #eee", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+    >
       {icon}
     </motion.button>
   );
   return (
-    <motion.div layout initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={SP}
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderBottom: "1px solid #f5f5f5", fontFamily: F }}>
+    <motion.div
+      layout
+      initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={SP}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderBottom: "1px solid #f5f5f5", fontFamily: F }}
+    >
       <div style={{ width: 32, height: 32, borderRadius: 9, background: "#f7f7f7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <UtensilsCrossed style={{ width: 13, height: 13, color: "#ddd" }} />
       </div>
@@ -149,8 +209,11 @@ function CartRow({ item, onRemove, onQty }: { item: CartItem; onRemove: (id: num
         {qtyBtn(1, <Plus style={{ width: 10, height: 10, color: "#666" }} />)}
       </div>
       <span style={{ fontSize: 11, fontWeight: 600, color: "#111", minWidth: 40, textAlign: "right" }}>₱{fmt(item.price * item.quantity)}</span>
-      <motion.button whileTap={{ scale: 0.85 }} onClick={() => onRemove(item.id)}
-        style={{ width: 22, height: 22, border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6 }}>
+      <motion.button
+        whileTap={{ scale: 0.85 }}
+        onClick={() => onRemove(item.id)}
+        style={{ width: 22, height: 22, border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6 }}
+      >
         <Trash2 style={{ width: 12, height: 12, color: "#ccc" }} />
       </motion.button>
     </motion.div>
@@ -158,11 +221,18 @@ function CartRow({ item, onRemove, onQty }: { item: CartItem; onRemove: (id: num
 }
 
 // ─── CUSTOM SELECT ────────────────────────────────────────────────────────────
-function CustomSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; }) {
+function CustomSelect({ value, onChange, options }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
   return (
     <div style={{ position: "relative" }}>
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        style={{ width: "100%", padding: "7px 24px 7px 10px", fontSize: 11, fontFamily: F, border: "1px solid #efefef", borderRadius: 9, background: "#fafafa", color: "#444", outline: "none", appearance: "none", cursor: "pointer" }}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ width: "100%", padding: "7px 24px 7px 10px", fontSize: 11, fontFamily: F, border: "1px solid #efefef", borderRadius: 9, background: "#fafafa", color: "#444", outline: "none", appearance: "none", cursor: "pointer" }}
+      >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       <ChevronDown style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 10, height: 10, color: "#bbb", pointerEvents: "none" }} />
@@ -172,8 +242,11 @@ function CustomSelect({ value, onChange, options }: { value: string; onChange: (
 
 // ─── AMOUNT ENTRY MODAL ───────────────────────────────────────────────────────
 function AmountEntryModal({ show, amountDue, paymentMethod, onConfirm, onCancel }: {
-  show: boolean; amountDue: number; paymentMethod: "cash" | "e-payment";
-  onConfirm: (t: number) => void; onCancel: () => void;
+  show: boolean;
+  amountDue: number;
+  paymentMethod: "cash" | "e-payment";
+  onConfirm: (t: number) => void;
+  onCancel: () => void;
 }) {
   const [input, setInput] = useState("");
   const [gcashDone, setGcashDone] = useState(false);
@@ -183,12 +256,12 @@ function AmountEntryModal({ show, amountDue, paymentMethod, onConfirm, onCancel 
   const tendered = parseFloat(input) || 0;
   const change = tendered - amountDue;
   const enough = tendered >= amountDue;
-  const KEYS = ["1","2","3","4","5","6","7","8","9","⌫","0","00"];
+  const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "00"];
   const QUICK = [50, 100, 200, 500, 1000].filter((d) => d >= amountDue);
 
   const handleKey = (k: string) => {
     if (k === "⌫") return setInput((p) => p.slice(0, -1));
-    if (k === "00") return setInput((p) => p === "" ? "" : p + "00");
+    if (k === "00") return setInput((p) => (p === "" ? "" : p + "00"));
     if (k === "." && input.includes(".")) return;
     const di = input.indexOf(".");
     if (di !== -1 && input.length - di > 2) return;
@@ -201,13 +274,17 @@ function AmountEntryModal({ show, amountDue, paymentMethod, onConfirm, onCancel 
     <AnimatePresence>
       {show && (
         <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-            onClick={onCancel} style={{ position: "fixed", inset: 0, zIndex: 60, backdropFilter: "blur(3px)", background: "rgba(0,0,0,0.35)" }} />
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+            onClick={onCancel}
+            style={{ position: "fixed", inset: 0, zIndex: 60, backdropFilter: "blur(3px)", background: "rgba(0,0,0,0.35)" }}
+          />
           <div style={{ position: "fixed", inset: 0, zIndex: 61, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, pointerEvents: "none" }}>
-            <motion.div initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 10 }}
               transition={{ type: "spring", stiffness: 380, damping: 30 }}
-              style={{ background: "#fff", width: "100%", maxWidth: 320, borderRadius: 20, overflow: "hidden", border: "1px solid #ebebeb", pointerEvents: "auto", fontFamily: F }}>
-
+              style={{ background: "#fff", width: "100%", maxWidth: 320, borderRadius: 20, overflow: "hidden", border: "1px solid #ebebeb", pointerEvents: "auto", fontFamily: F }}
+            >
               <div style={{ padding: "22px 22px 16px", borderBottom: "1px solid #f5f5f5" }}>
                 <p style={{ fontSize: 10, fontWeight: 600, color: "#bbb", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Amount due</p>
                 <p style={{ fontSize: 28, fontWeight: 600, color: "#111", margin: 0 }}>₱{fmt(amountDue)}</p>
@@ -234,8 +311,10 @@ function AmountEntryModal({ show, amountDue, paymentMethod, onConfirm, onCancel 
                     )}
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-                      {[{ label: "Change", val: enough && input ? `₱${fmt(change)}` : "—", color: enough && input ? "#16a34a" : "#ddd" },
-                        { label: "Tendered", val: input ? `₱${fmt(tendered)}` : "—", color: input ? "#111" : "#ddd" }].map(({ label, val, color }) => (
+                      {[
+                        { label: "Change", val: enough && input ? `₱${fmt(change)}` : "—", color: enough && input ? "#16a34a" : "#ddd" },
+                        { label: "Tendered", val: input ? `₱${fmt(tendered)}` : "—", color: input ? "#111" : "#ddd" },
+                      ].map(({ label, val, color }) => (
                         <div key={label} style={{ background: "#fafafa", border: "1px solid #f0f0f0", borderRadius: 10, padding: "10px 12px" }}>
                           <p style={{ fontSize: 10, color: "#bbb", marginBottom: 3 }}>{label}</p>
                           <p style={{ fontSize: 16, fontWeight: 600, color, margin: 0 }}>{val}</p>
@@ -261,8 +340,12 @@ function AmountEntryModal({ show, amountDue, paymentMethod, onConfirm, onCancel 
                       ))}
                     </div>
 
-                    <motion.button whileHover={{ opacity: 0.88 }} whileTap={{ scale: 0.98 }} disabled={!input || !enough} onClick={() => onConfirm(tendered)}
-                      style={{ ...btn("#16a34a", "#fff", { marginBottom: 6 }), cursor: !input || !enough ? "not-allowed" : "pointer", opacity: !input || !enough ? 0.4 : 1 }}>
+                    <motion.button
+                      whileHover={{ opacity: 0.88 }} whileTap={{ scale: 0.98 }}
+                      disabled={!input || !enough}
+                      onClick={() => onConfirm(tendered)}
+                      style={{ ...btn("#16a34a", "#fff", { marginBottom: 6 }), cursor: !input || !enough ? "not-allowed" : "pointer", opacity: !input || !enough ? 0.4 : 1 }}
+                    >
                       Confirm Payment
                     </motion.button>
                     <motion.button whileTap={{ scale: 0.97 }} onClick={onCancel} style={{ ...btn("transparent", "#bbb"), padding: "9px", fontSize: 12 }}>Cancel</motion.button>
@@ -314,7 +397,11 @@ function AmountEntryModal({ show, amountDue, paymentMethod, onConfirm, onCancel 
 }
 
 // ─── SUCCESS MODAL ────────────────────────────────────────────────────────────
-function SuccessModal({ show, onClose, orderNumber, savedCart, paidAmount, cashTendered, changeAmount, orderType, paymentMethod, customerType, discountAmount, vatAmount }: {
+function SuccessModal({
+  show, onClose, orderNumber, savedCart, paidAmount,
+  cashTendered, changeAmount, orderType, paymentMethod,
+  customerType, discountAmount, vatAmount,
+}: {
   show: boolean; onClose: () => void; orderNumber: string; savedCart: CartItem[];
   paidAmount: number; cashTendered: number; changeAmount: number; orderType: string;
   paymentMethod: string; customerType: CustomerType; discountAmount: number; vatAmount: number;
@@ -326,13 +413,17 @@ function SuccessModal({ show, onClose, orderNumber, savedCart, paidAmount, cashT
     <AnimatePresence>
       {show && (
         <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
-            onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 70, backdropFilter: "blur(2px)", background: "rgba(144,142,142,0.6)" }} />
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+            onClick={onClose}
+            style={{ position: "fixed", inset: 0, zIndex: 70, backdropFilter: "blur(2px)", background: "rgba(144,142,142,0.6)" }}
+          />
           <div style={{ position: "fixed", inset: 0, zIndex: 71, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, pointerEvents: "none" }}>
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 12 }}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 12 }}
               transition={{ type: "spring", stiffness: 360, damping: 30 }}
-              style={{ background: "#fff", width: "100%", maxWidth: 320, borderRadius: 20, overflow: "hidden", border: "1px solid #ebebeb", pointerEvents: "auto", fontFamily: F }}>
-
+              style={{ background: "#fff", width: "100%", maxWidth: 320, borderRadius: 20, overflow: "hidden", border: "1px solid #ebebeb", pointerEvents: "auto", fontFamily: F }}
+            >
               {/* Header */}
               <div style={{ padding: "28px 22px 18px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
                 <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 460, damping: 24, delay: 0.08 }}
@@ -351,9 +442,11 @@ function SuccessModal({ show, onClose, orderNumber, savedCart, paidAmount, cashT
 
               {/* Meta */}
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
-                {[{ icon: <Hash style={{ width: 11, height: 11 }} />, label: "Order ID", value: orderNumber },
+                {[
+                  { icon: <Hash style={{ width: 11, height: 11 }} />, label: "Order ID", value: orderNumber },
                   { icon: <Calendar style={{ width: 11, height: 11 }} />, label: "Date", value: date },
-                  { icon: <Clock style={{ width: 11, height: 11 }} />, label: "Time", value: time }].map(({ icon, label: l, value }, i) => (
+                  { icon: <Clock style={{ width: 11, height: 11 }} />, label: "Time", value: time },
+                ].map(({ icon, label: l, value }, i) => (
                   <div key={l} style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 6px", borderRight: i < 2 ? "1px solid #f5f5f5" : "none", textAlign: "center" }}>
                     <span style={{ color: "#ddd", marginBottom: 3 }}>{icon}</span>
                     <p style={{ fontSize: 9, fontWeight: 600, color: "#bbb", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>{l}</p>
@@ -449,15 +542,25 @@ export default function CashierView() {
   const [savedCash, setSavedCash] = useState({ tendered: 0, change: 0 });
   const [orderNumber, setOrderNumber] = useState("");
   const [placing, setPlacing] = useState(false);
+  const [onlineOrderNotifs, setOnlineOrderNotifs] = useState<OnlineNotif[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
+
+  // lastPollRef stores the ISO timestamp of the last successful poll.
+  // We start it 5 minutes in the past so we catch any orders placed just before
+  // the cashier opened the page.
+  const lastPollRef = useRef<string>(
+    new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  );
 
   const TABS = [
-    { key: "ALL", label: "All items", match: [] as string[] },
+    { key: "ALL",       label: "All items",             match: [] as string[] },
     { key: "WHOLE_HALF", label: "Whole & Half Chicken", match: ["WHOLE & HALF CHICKEN", "WHOLE AND HALF CHICKEN", "CHICKEN"] },
-    { key: "RICE_MEALS", label: "Rice Meals", match: ["RICE MEALS", "RICE MEAL", "MENU FOOD"] },
-    { key: "SIDES", label: "Sides", match: ["SIDES", "SIDE DISH", "SIDE DISHES", "SUPPLIES"] },
-    { key: "FRUIT_SODA", label: "Fruit Soda", match: ["FRUIT SODA", "FRUIT SODAS", "DRINKS", "BEVERAGES"] },
+    { key: "RICE_MEALS", label: "Rice Meals",           match: ["RICE MEALS", "RICE MEAL", "MENU FOOD"] },
+    { key: "SIDES",      label: "Sides",                match: ["SIDES", "SIDE DISH", "SIDE DISHES", "SUPPLIES"] },
+    { key: "FRUIT_SODA", label: "Fruit Soda",           match: ["FRUIT SODA", "FRUIT SODAS", "DRINKS", "BEVERAGES"] },
   ];
 
+  // Load products
   useEffect(() => {
     setLoadingProducts(true);
     api.get<Record<string, unknown>[]>("/inventory")
@@ -466,6 +569,7 @@ export default function CashierView() {
       .finally(() => setLoadingProducts(false));
   }, []);
 
+  // Load tables when order type is dine-in
   useEffect(() => {
     if (orderType !== "dine-in") { setSelectedTable(null); return; }
     api.get<Record<string, unknown>[]>("/tables")
@@ -473,9 +577,51 @@ export default function CashierView() {
       .catch(() => setTables([]));
   }, [orderType]);
 
+  // Poll for new online orders every 15 seconds
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const url = `/api/orders/new-online?since=${encodeURIComponent(lastPollRef.current)}`;
+        const res = await fetch(url);
+
+        if (!res.ok) {
+          console.warn(`[poll] /api/orders/new-online returned ${res.status}`);
+          return;
+        }
+
+        const data: OnlineNotif[] = await res.json();
+
+        // Advance the cursor BEFORE mutating state to avoid double-counting
+        lastPollRef.current = new Date().toISOString();
+
+        if (data.length > 0) {
+          setOnlineOrderNotifs((prev) => {
+            const existingIds = new Set(prev.map((o) => o.id));
+            const fresh = data.filter((o) => !existingIds.has(o.id));
+            return fresh.length > 0 ? [...fresh, ...prev] : prev;
+          });
+        }
+      } catch (err) {
+        // Network error — log quietly, do not crash
+        console.warn("[poll] online-order fetch failed:", err);
+      }
+    };
+
+    poll(); // fire immediately on mount
+    const interval = setInterval(poll, 15_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const dismissNotif = (id: number) =>
+    setDismissedIds((prev) => new Set([...prev, id]));
+
+  const visibleNotifs = onlineOrderNotifs.filter((o) => !dismissedIds.has(o.id));
+
   const filtered = products.filter((p) => {
     const cu = p.category.toUpperCase();
-    const tabOk = selectedCategory === "ALL" || (TABS.find((t) => t.key === selectedCategory)?.match ?? []).some((m) => cu.includes(m));
+    const tabOk =
+      selectedCategory === "ALL" ||
+      (TABS.find((t) => t.key === selectedCategory)?.match ?? []).some((m) => cu.includes(m));
     return tabOk && p.name.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
@@ -501,12 +647,14 @@ export default function CashierView() {
   const updateQty = (id: number, delta: number) => {
     const prod = products.find((p) => p.id === id);
     setCart((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        const next = Math.max(0, item.quantity + delta);
-        if (next > (prod?.remainingStock ?? 0) && !isFood(item)) return item;
-        return { ...item, quantity: next };
-      }).filter((i) => i.quantity > 0)
+      prev
+        .map((item) => {
+          if (item.id !== id) return item;
+          const next = Math.max(0, item.quantity + delta);
+          if (next > (prod?.remainingStock ?? 0) && !isFood(item)) return item;
+          return { ...item, quantity: next };
+        })
+        .filter((i) => i.quantity > 0)
     );
   };
 
@@ -519,8 +667,13 @@ export default function CashierView() {
 
     const payload: OrderPayload = {
       items: cart.map((i) => ({ product_id: i.id, qty: i.quantity, subtotal: i.price * i.quantity, name: i.name, price: i.price })),
-      total: amountDue, order_type: orderType, payment_method: paymentMethod, customer_type: customerType,
-      discount_amount: discountAmount, vat_amount: vatAmount, vat_exempt_amount: vatExemptAmount,
+      total: amountDue,
+      order_type: orderType,
+      payment_method: paymentMethod,
+      customer_type: customerType,
+      discount_amount: discountAmount,
+      vat_amount: vatAmount,
+      vat_exempt_amount: vatExemptAmount,
       cashierId: cashierId ? Number(cashierId) : null,
       table_id: orderType === "dine-in" ? selectedTable : null,
       ...(paymentMethod === "cash" && { cash_tendered: tendered, change_amount: change }),
@@ -535,11 +688,16 @@ export default function CashierView() {
       setSavedCash({ tendered, change });
       setOrderNumber(num);
       setShowSuccess(true);
-      setProducts((prev) => prev.map((p) => {
-        const o = cart.find((c) => c.id === p.id);
-        return o && !isFood(p) ? { ...p, remainingStock: Math.max(0, p.remainingStock - o.quantity) } : p;
-      }));
-      if (selectedTable !== null) setTables((prev) => prev.map((t) => t.id === selectedTable ? { ...t, status: "occupied" } : t));
+      // Optimistically deduct stock from local state
+      setProducts((prev) =>
+        prev.map((p) => {
+          const o = cart.find((c) => c.id === p.id);
+          return o && !isFood(p) ? { ...p, remainingStock: Math.max(0, p.remainingStock - o.quantity) } : p;
+        })
+      );
+      if (selectedTable !== null) {
+        setTables((prev) => prev.map((t) => t.id === selectedTable ? { ...t, status: "occupied" } : t));
+      }
     } catch (err) {
       console.error("Order failed:", err);
       alert("Failed to submit order. Please try again.");
@@ -549,67 +707,139 @@ export default function CashierView() {
   };
 
   const resetOrder = () => {
-    setShowSuccess(false); setCart([]); setSavedCart([]);
-    setOrderType("dine-in"); setPaymentMethod("cash"); setCustomerType("regular");
-    setSelectedTable(null); setSavedCash({ tendered: 0, change: 0 });
+    setShowSuccess(false);
+    setCart([]);
+    setSavedCart([]);
+    setOrderType("dine-in");
+    setPaymentMethod("cash");
+    setCustomerType("regular");
+    setSelectedTable(null);
+    setSavedCash({ tendered: 0, change: 0 });
   };
 
   const Spinner = ({ size = 20, light = false }: { size?: number; light?: boolean }) => (
-    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-      style={{ width: size, height: size, borderRadius: "50%", border: `2px solid ${light ? "rgba(255,255,255,0.3)" : "#eee"}`, borderTopColor: light ? "#fff" : "#555" }} />
+    <motion.div
+      animate={{ rotate: 360 }}
+      transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+      style={{ width: size, height: size, borderRadius: "50%", border: `2px solid ${light ? "rgba(255,255,255,0.3)" : "#eee"}`, borderTopColor: light ? "#fff" : "#555" }}
+    />
   );
 
   return (
     <>
       <Sidebar />
-      <style>{`* { scrollbar-width: none; } *::-webkit-scrollbar { display: none; }`}</style>
-      <div style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: F, background: "#fff", paddingLeft: 80 }}>
+
+      {/* ── Online Order Notification Banner ── */}
+      <AnimatePresence>
+        {visibleNotifs.length > 0 && (
+          <motion.div
+            initial={{ y: -80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -80, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            style={{
+              position: "fixed", top: 0, left: 80, right: 0, zIndex: 200,
+              background: "#111", borderBottom: "2px solid #16a34a",
+              padding: "0 24px", display: "flex", alignItems: "center",
+              gap: 12, height: 52, fontFamily: F,
+            }}
+          >
+            {/* Pulsing dot */}
+            <motion.div
+              animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
+              transition={{ repeat: Infinity, duration: 1.4 }}
+              style={{ width: 10, height: 10, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }}
+            />
+
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#22c55e" }}>
+              {visibleNotifs.length === 1 ? "1 new online order" : `${visibleNotifs.length} new online orders`}
+            </span>
+
+            <span style={{ fontSize: 11, color: "#666", flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+              {visibleNotifs[0].items.map((i) => `${i.name} ×${i.quantity}`).join(", ")}
+              {" "}— ₱{Number(visibleNotifs[0].total).toFixed(2)}
+            </span>
+
+            <span style={{ fontSize: 10, color: "#555", flexShrink: 0 }}>
+              {new Date(visibleNotifs[0].createdAt).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true })}
+            </span>
+
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              onClick={() => dismissNotif(visibleNotifs[0].id)}
+              style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", color: "#22c55e", borderRadius: 8, padding: "4px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F, flexShrink: 0 }}
+            >
+              Mark handled
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Main Layout ── */}
+      <div style={{
+        display: "flex", height: "100vh", overflow: "hidden", fontFamily: F,
+        background: "#fff", paddingLeft: 80,
+        paddingTop: visibleNotifs.length > 0 ? 52 : 0,
+        transition: "padding-top 0.3s",
+      }}>
 
         {/* ── LEFT: Menu ── */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-          <div style={{ padding: "20px 24px 16px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", background: "#fff", borderBottom: "1px solid #f0f0f0", flexShrink: 0 }}>
-            <div>
-              <p style={{ fontSize: 10, fontWeight: 500, color: "#bbb", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>Cashier</p>
-              <h1 style={{ fontSize: 22, fontWeight: 600, color: "#111", letterSpacing: "-0.3px" }}>Menu</h1>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
+            <h1 style={{ fontSize: 16, fontWeight: 600, color: "#111", marginBottom: 14, fontFamily: F }}>Menu</h1>
+
+            {/* Search */}
+            <div style={{ position: "relative", marginBottom: 14 }}>
+              <Search style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", width: 13, height: 13, color: "#bbb" }} />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search items…"
+                style={{ width: "100%", padding: "9px 12px 9px 32px", fontSize: 12, fontFamily: F, border: "1px solid #efefef", borderRadius: 10, background: "#fafafa", color: "#333", outline: "none", boxSizing: "border-box" }}
+              />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f7f7f7", border: "1px solid #efefef", borderRadius: 10, padding: "7px 12px", width: 200 }}>
-              <Search style={{ width: 13, height: 13, color: "#bbb", flexShrink: 0 }} />
-              <input type="text" placeholder="Search menu…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ border: "none", background: "transparent", outline: "none", fontSize: 12, fontFamily: F, color: "#333", width: "100%" }} />
+
+            {/* Category Tabs */}
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 14, scrollbarWidth: "none" }}>
+              {TABS.map((tab) => (
+                <motion.button
+                  key={tab.key}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => setSelectedCategory(tab.key)}
+                  style={{
+                    padding: "6px 14px", borderRadius: 20, border: "1px solid",
+                    borderColor: selectedCategory === tab.key ? "#111" : "#efefef",
+                    background: selectedCategory === tab.key ? "#111" : "#fff",
+                    color: selectedCategory === tab.key ? "#fff" : "#888",
+                    fontSize: 11, fontWeight: 500, fontFamily: F, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                  }}
+                >
+                  {tab.label}
+                </motion.button>
+              ))}
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 4, padding: "10px 24px", borderBottom: "1px solid #f0f0f0", flexShrink: 0, overflow: "hidden" }}>
-            {TABS.map((tab) => (
-              <motion.button key={tab.key} onClick={() => setSelectedCategory(tab.key)} whileTap={{ scale: 0.95 }}
-                style={{ padding: "5px 13px", fontSize: 11, fontFamily: F, borderRadius: 8, border: "1px solid transparent", cursor: "pointer", whiteSpace: "nowrap", fontWeight: selectedCategory === tab.key ? 500 : 400, color: selectedCategory === tab.key ? "#fff" : "#aaa", background: selectedCategory === tab.key ? "#111" : "transparent", transition: "all 0.15s" }}>
-                {tab.label}
-              </motion.button>
-            ))}
-          </div>
-
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px 20px" }}>
+          {/* Product Grid */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "0 24px 24px" }}>
             {loadingProducts ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}><Spinner /></div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200 }}>
+                <Spinner />
+              </div>
             ) : productsError ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-                <p style={{ fontSize: 13, color: "#f87171", fontFamily: F }}>{productsError}</p>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200 }}>
+                <p style={{ fontSize: 12, color: "#f87171", fontFamily: F }}>{productsError}</p>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 200, gap: 8 }}>
+                <UtensilsCrossed style={{ width: 28, height: 28, color: "#ddd" }} />
+                <p style={{ fontSize: 12, color: "#ccc", fontFamily: F }}>No items found</p>
               </div>
             ) : (
-              <motion.div layout style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(128px, 1fr))", gap: 10, alignContent: "start" }}>
-                <AnimatePresence>
-                  {filtered.map((item, i) => (
-                    <motion.div key={item.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: i * 0.02, duration: 0.18 }}>
-                      <ProductCard item={item} onAdd={addToCart} inCart={cart.some((c) => c.id === item.id)} />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-                {filtered.length === 0 && (
-                  <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 0", gap: 8 }}>
-                    <UtensilsCrossed style={{ width: 28, height: 28, color: "#ddd" }} />
-                    <p style={{ fontSize: 12, color: "#ccc", fontFamily: F }}>No items found</p>
-                  </div>
-                )}
+              <motion.div layout style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10 }}>
+                {filtered.map((item) => (
+                  <ProductCard key={item.id} item={item} onAdd={addToCart} inCart={cart.some((c) => c.id === item.id)} />
+                ))}
               </motion.div>
             )}
           </div>
@@ -640,7 +870,9 @@ export default function CashierView() {
                   <UtensilsCrossed style={{ width: 28, height: 28, color: "#ddd" }} />
                   <p style={{ fontSize: 12, color: "#ccc", fontFamily: F }}>Add items to start</p>
                 </motion.div>
-              ) : cart.map((item) => <CartRow key={item.id} item={item} onRemove={removeFromCart} onQty={updateQty} />)}
+              ) : (
+                cart.map((item) => <CartRow key={item.id} item={item} onRemove={removeFromCart} onQty={updateQty} />)
+              )}
             </AnimatePresence>
           </div>
 
@@ -651,7 +883,8 @@ export default function CashierView() {
 
                 {/* Pricing breakdown */}
                 <div style={{ background: "#fafafa", border: "1px solid #f0f0f0", borderRadius: 12, overflow: "hidden", marginBottom: 10 }}>
-                  {[{ label: "Subtotal", val: fmt(gross), color: "#999" },
+                  {[
+                    { label: "Subtotal", val: fmt(gross), color: "#999" },
                     customerType === "regular"
                       ? { label: "VAT (12% incl.)", val: fmt(pricing.vatAmount), color: "#999" }
                       : { label: "VAT exempt", val: `-₱${fmt(gross - pricing.vatExemptAmount)}`, color: "#999" },
@@ -688,13 +921,37 @@ export default function CashierView() {
                 </div>
                 <div style={{ marginBottom: 8 }}>
                   <CustomSelect value={customerType} onChange={(v) => setCustomerType(v as CustomerType)}
-                    options={[{ value: "regular", label: "Regular customer" }, { value: "pwd", label: "PWD (20% off, VAT exempt)" }, { value: "senior", label: "Senior Citizen (20% off, VAT exempt)" }]} />
+                    options={[
+                      { value: "regular", label: "Regular customer" },
+                      { value: "pwd", label: "PWD (20% off, VAT exempt)" },
+                      { value: "senior", label: "Senior Citizen (20% off, VAT exempt)" },
+                    ]} />
                 </div>
 
+                {/* Table selector for dine-in */}
+                {orderType === "dine-in" && tables.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <CustomSelect
+                      value={selectedTable !== null ? String(selectedTable) : ""}
+                      onChange={(v) => setSelectedTable(v ? Number(v) : null)}
+                      options={[
+                        { value: "", label: "Select table…" },
+                        ...tables.map((t) => ({
+                          value: String(t.id),
+                          label: `Table ${t.number}${t.status === "occupied" ? " (occupied)" : ""}`,
+                        })),
+                      ]}
+                    />
+                  </div>
+                )}
+
                 {/* Pay button */}
-                <motion.button onClick={() => { if (!placing && cart.length > 0) setShowAmountEntry(true); }} disabled={placing}
+                <motion.button
+                  onClick={() => { if (!placing && cart.length > 0) setShowAmountEntry(true); }}
+                  disabled={placing}
                   whileHover={{ opacity: 0.88 }} whileTap={{ scale: 0.98 }} transition={{ duration: 0.12 }}
-                  style={{ ...btn("#16a34a", "#fff"), cursor: placing ? "not-allowed" : "pointer", opacity: placing ? 0.5 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, letterSpacing: "0.01em" }}>
+                  style={{ ...btn("#16a34a", "#fff"), cursor: placing ? "not-allowed" : "pointer", opacity: placing ? 0.5 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, letterSpacing: "0.01em" }}
+                >
                   {placing ? <><Spinner size={14} light /> Processing…</> : `Pay ₱${fmt(pricing.amountDue)}`}
                 </motion.button>
               </motion.div>
@@ -703,13 +960,28 @@ export default function CashierView() {
         </div>
       </div>
 
-      <AmountEntryModal show={showAmountEntry} amountDue={pricing.amountDue} paymentMethod={paymentMethod}
-        onConfirm={(t) => { void handleAmountConfirmed(t); }} onCancel={() => setShowAmountEntry(false)} />
+      <AmountEntryModal
+        show={showAmountEntry}
+        amountDue={pricing.amountDue}
+        paymentMethod={paymentMethod}
+        onConfirm={(t) => { void handleAmountConfirmed(t); }}
+        onCancel={() => setShowAmountEntry(false)}
+      />
 
-      <SuccessModal show={showSuccess} onClose={resetOrder} orderNumber={orderNumber} savedCart={savedCart}
-        paidAmount={savedPricing.amountDue} cashTendered={savedCash.tendered} changeAmount={savedCash.change}
-        orderType={savedMeta.orderType} paymentMethod={savedMeta.paymentMethod} customerType={savedMeta.customerType}
-        discountAmount={savedPricing.discountAmount} vatAmount={savedPricing.vatAmount} />
+      <SuccessModal
+        show={showSuccess}
+        onClose={resetOrder}
+        orderNumber={orderNumber}
+        savedCart={savedCart}
+        paidAmount={savedPricing.amountDue}
+        cashTendered={savedCash.tendered}
+        changeAmount={savedCash.change}
+        orderType={savedMeta.orderType}
+        paymentMethod={savedMeta.paymentMethod}
+        customerType={savedMeta.customerType}
+        discountAmount={savedPricing.discountAmount}
+        vatAmount={savedPricing.vatAmount}
+      />
     </>
   );
 }
