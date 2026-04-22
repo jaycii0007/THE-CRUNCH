@@ -26,7 +26,7 @@ function useNow() {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PageTab = "inventory" | "management" | "movement";
+type PageTab = "menu" | "overview" | "movement";
 type POStatus = "Pending" | "Received" | "Cancelled";
 type TRStatus = "Pending" | "Completed" | "Cancelled";
 type LogType = "Stock In" | "Transfer" | "Adjustment";
@@ -91,6 +91,7 @@ interface ApiInventoryRow {
   id?: number;
   product_id?: number;
   inventory_id?: number;
+  menu_code?: string;
   name?: string;
   product_name?: string;
   category?: string;
@@ -103,6 +104,10 @@ interface ApiInventoryRow {
   promo?: string;
   isRawMaterial?: number | boolean;
   description?: string;
+  availability_status?: string;
+  is_promotional?: number | boolean;
+  promo_price?: number | string | null;
+  promo_label?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1804,12 +1809,13 @@ function StockMovementTab() {
   );
 }
 
-// ─── Inventory Management Tab ─────────────────────────────────────────────────
+// ─── Menu Management Tab ──────────────────────────────────────────────────────
 
 interface MgmtProduct {
   id: number;
   rawProductId?: number;
   rawInventoryId?: number;
+  menuCode: string;
   name: string;
   category: string;
   price: string;
@@ -1817,6 +1823,10 @@ interface MgmtProduct {
   stock: number;
   description?: string;
   image?: string;
+  availabilityStatus: string;
+  isPromotional: boolean;
+  promoPrice?: string;
+  promoLabel?: string;
 }
 
 const UNIT_OPTIONS = [
@@ -1828,6 +1838,7 @@ const UNIT_OPTIONS = [
   "bottle",
   "box",
 ] as const;
+const AVAILABILITY_OPTIONS = ["Available", "Hidden"] as const;
 
 async function tryPut(endpoints: string[], payload: object): Promise<void> {
   let lastErr: unknown;
@@ -1847,7 +1858,7 @@ async function tryPut(endpoints: string[], payload: object): Promise<void> {
   throw lastErr;
 }
 
-function InventoryManagementTab() {
+function MenuManagementTab() {
   const { addNotification } = useNotifications();
   const [products, setProducts] = useState<MgmtProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1863,6 +1874,12 @@ function InventoryManagementTab() {
   const [fUnit, setFUnit] = useState<string>(UNIT_OPTIONS[0]);
   const [fStock, setFStock] = useState("");
   const [fDesc, setFDesc] = useState("");
+  const [fAvailabilityStatus, setFAvailabilityStatus] = useState<string>(
+    AVAILABILITY_OPTIONS[0],
+  );
+  const [fIsPromotional, setFIsPromotional] = useState(false);
+  const [fPromoPrice, setFPromoPrice] = useState("");
+  const [fPromoLabel, setFPromoLabel] = useState("");
   const [fImageFile, setFImageFile] = useState<File | null>(null);
   const [fImagePreview, setFImagePreview] = useState<string>("");
 
@@ -1872,6 +1889,12 @@ function InventoryManagementTab() {
   const [eUnit, setEUnit] = useState<string>(UNIT_OPTIONS[0]);
   const [eStock, setEStock] = useState("");
   const [eDesc, setEDesc] = useState("");
+  const [eAvailabilityStatus, setEAvailabilityStatus] = useState<string>(
+    AVAILABILITY_OPTIONS[0],
+  );
+  const [eIsPromotional, setEIsPromotional] = useState(false);
+  const [ePromoPrice, setEPromoPrice] = useState("");
+  const [ePromoLabel, setEPromoLabel] = useState("");
   const [eImageFile, setEImageFile] = useState<File | null>(null);
   const [eImagePreview, setEImagePreview] = useState<string>("");
 
@@ -1936,6 +1959,7 @@ function InventoryManagementTab() {
             id: Number(item.product_id ?? item.inventory_id ?? item.id ?? 0),
             rawProductId: item.product_id ? Number(item.product_id) : undefined,
             rawInventoryId: item.inventory_id ? Number(item.inventory_id) : undefined,
+            menuCode: String((item as any).menu_code ?? `M-${String(item.product_id ?? item.id ?? item.inventory_id ?? 0).padStart(3, "0")}`),
             name: item.name || item.product_name || "Unnamed Product",
             category: item.category || "Uncategorized",
             price: String(item.price ?? "0"),
@@ -1943,6 +1967,17 @@ function InventoryManagementTab() {
             stock: Number((item as any).quantity ?? (item as any).stock ?? 0),
             description: String((item as any).description ?? ""),
             image: item.image || "/img/placeholder.jpg",
+            availabilityStatus: String(
+              (item as any).availability_status ?? "Available",
+            ),
+            isPromotional: Boolean(Number((item as any).is_promotional ?? 0)),
+            promoPrice:
+              (item as any).promo_price !== null &&
+              (item as any).promo_price !== undefined &&
+              String((item as any).promo_price) !== ""
+                ? String((item as any).promo_price)
+                : "",
+            promoLabel: String((item as any).promo_label ?? ""),
           })),
         );
       }
@@ -1960,14 +1995,22 @@ function InventoryManagementTab() {
 
   function resetAddForm() {
     setFName(""); setFCat(""); setFPrice("");
-    setFUnit(UNIT_OPTIONS[0]); setFStock(""); setFDesc("");
+    setFStock(""); setFDesc("");
+    setFAvailabilityStatus(AVAILABILITY_OPTIONS[0]);
+    setFIsPromotional(false);
+    setFPromoPrice("");
+    setFPromoLabel("");
     setFImageFile(null); setFImagePreview("");
   }
 
   function openEdit(p: MgmtProduct) {
     setEditProduct(p);
     setEName(p.name); setECat(p.category); setEPrice(p.price);
-    setEUnit(p.unit); setEStock(String(p.stock)); setEDesc(p.description ?? "");
+    setEStock(String(p.stock)); setEDesc(p.description ?? "");
+    setEAvailabilityStatus(p.availabilityStatus || "Available");
+    setEIsPromotional(Boolean(p.isPromotional));
+    setEPromoPrice(p.promoPrice ?? "");
+    setEPromoLabel(p.promoLabel ?? "");
     setEImageFile(null);
     setEImagePreview(p.image && p.image !== "/img/placeholder.jpg" ? p.image : "");
   }
@@ -1985,10 +2028,14 @@ function InventoryManagementTab() {
       }
       await api.post("/products", {
         name: fName.trim(), category: fCat.trim(),
-        price: parseFloat(fPrice), unit: fUnit,
+        price: parseFloat(fPrice), unit: UNIT_OPTIONS[0],
         quantity: parseFloat(fStock) || 0,
         description: fDesc.trim() || null,
         image: imageUrl,
+        availability_status: fAvailabilityStatus,
+        is_promotional: fIsPromotional,
+        promo_price: fIsPromotional && fPromoPrice.trim() ? parseFloat(fPromoPrice) : null,
+        promo_label: fIsPromotional ? fPromoLabel.trim() || null : null,
       });
       await loadProducts();
       setShowAdd(false);
@@ -2017,9 +2064,13 @@ function InventoryManagementTab() {
       }
       const payload: Record<string, unknown> = {
         name: eName.trim(), category: eCat.trim(),
-        price: parseFloat(ePrice), unit: eUnit,
+        price: parseFloat(ePrice), unit: editProduct.unit || UNIT_OPTIONS[0],
         quantity: parseFloat(eStock) || 0,
         description: eDesc.trim() || null,
+        availability_status: eAvailabilityStatus,
+        is_promotional: eIsPromotional,
+        promo_price: eIsPromotional && ePromoPrice.trim() ? parseFloat(ePromoPrice) : null,
+        promo_label: eIsPromotional ? ePromoLabel.trim() || null : null,
       };
       if (editImageUrl) payload.image = editImageUrl;
       const endpointsToTry: string[] = [];
@@ -2094,9 +2145,42 @@ function InventoryManagementTab() {
     }
   }
 
+  async function handleAvailabilityToggle(product: MgmtProduct) {
+    const nextStatus =
+      product.availabilityStatus === "Hidden" ? "Available" : "Hidden";
+    try {
+      await tryPut([`/products/${product.rawProductId ?? product.id}`], {
+        availability_status: nextStatus,
+      });
+      setProducts((prev) =>
+        prev.map((entry) =>
+          entry.id === product.id
+            ? { ...entry, availabilityStatus: nextStatus }
+            : entry,
+        ),
+      );
+      notify(
+        addNotification,
+        `"${product.name}" is now ${nextStatus}.`,
+        "success",
+      );
+    } catch (error) {
+      notify(
+        addNotification,
+        `Failed to update availability: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "error",
+      );
+    }
+  }
+
   const filtered = products.filter((p) => {
     const s = search.toLowerCase();
-    return p.name.toLowerCase().includes(s) || p.category.toLowerCase().includes(s);
+    return (
+      p.name.toLowerCase().includes(s) ||
+      p.category.toLowerCase().includes(s) ||
+      p.menuCode.toLowerCase().includes(s) ||
+      String(p.promoLabel ?? "").toLowerCase().includes(s)
+    );
   });
 
   const totalValue = products.reduce((sum, p) => {
@@ -2106,31 +2190,33 @@ function InventoryManagementTab() {
 
   const lowStock = products.filter((p) => p.stock > 0 && p.stock <= 10).length;
   const outOfStock = products.filter((p) => p.stock === 0).length;
+  const hiddenCount = products.filter((p) => p.availabilityStatus === "Hidden").length;
+  const promoCount = products.filter((p) => p.isPromotional).length;
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
       <div className="mb-6">
-        <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Management</p>
-        <h2 className="text-xl font-bold text-gray-900">Inventory Management</h2>
-        <p className="text-gray-500 text-sm mt-1">Add, edit, delete products and adjust stock levels directly.</p>
+        <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Menu Administration</p>
+        <h2 className="text-xl font-bold text-gray-900">Menu Management</h2>
+        <p className="text-gray-500 text-sm mt-1">Create, update, and maintain menu items, pricing, descriptions, images, units, and stock details.</p>
       </div>
 
       <div className="grid grid-cols-4 gap-3 mb-6">
-        <StatCard label="Total Products" value={products.length} meta="In system" color="blue" />
+        <StatCard label="Total Menu Items" value={products.length} meta="In system" color="blue" />
         <StatCard label="Total Value" value={`₱${totalValue.toLocaleString()}`} meta="Stock value" color="green" />
         <StatCard label="Low Stock" value={lowStock} meta="≤ 10 units" color="yellow" />
         <StatCard label="Out of Stock" value={outOfStock} meta="Zero stock" color="red" />
       </div>
 
       <SectionHeader
-        title="Product List"
-        sub="All inventory items from your backend"
+        title="Menu Item List"
+        sub="All menu and product records synced from your backend"
         cta={
           <div className="flex gap-2">
             <button className={primaryBtnClass} onClick={() => void loadProducts()} disabled={loading}>
               {loading ? "Refreshing…" : "↻ Refresh"}
             </button>
-            <button className={primaryBtnClass} onClick={() => setShowAdd(true)}>+ Add Product</button>
+            <button className={primaryBtnClass} onClick={() => setShowAdd(true)}>+ Add Menu Item</button>
           </div>
         }
       />
@@ -2156,7 +2242,7 @@ function InventoryManagementTab() {
       ) : (
         <DataTable
           cols={["Product", "Category", "Price", "Unit", "Stock", "Actions"]}
-          emptyHint="No products found. Try refreshing or add a new product."
+          emptyHint="No menu items found. Try refreshing or add a new product."
           rows={filtered.map((p) => {
             const stockColor =
               p.stock === 0 ? "text-red-600 font-bold"
@@ -2210,13 +2296,13 @@ function InventoryManagementTab() {
       )}
 
       {showAdd && (
-        <SMModal title="Add New Product" onClose={() => { setShowAdd(false); resetAddForm(); }}
+        <SMModal title="Add Menu Item" onClose={() => { setShowAdd(false); resetAddForm(); }}
           footer={<>
             <button className={ghostBtnClass} onClick={() => { setShowAdd(false); resetAddForm(); }} disabled={saving}>Discard</button>
-            <button className={primaryBtnClass} onClick={() => void handleAdd()} disabled={saving}>{saving ? "Saving…" : "Add Product"}</button>
+            <button className={primaryBtnClass} onClick={() => void handleAdd()} disabled={saving}>{saving ? "Saving…" : "Add Menu Item"}</button>
           </>}
         >
-          <FormInput label="Product Name *" placeholder="e.g. Chicken Breast" value={fName} onChange={(e) => setFName(e.target.value)} />
+          <FormInput label="Menu Item Name *" placeholder="e.g. Chicken Breast" value={fName} onChange={(e) => setFName(e.target.value)} />
           <FormInput label="Category *" placeholder="e.g. Ingredients" value={fCat} onChange={(e) => setFCat(e.target.value)} />
           <div className="grid grid-cols-2 gap-[10px]">
             <FormInput label="Price (₱) *" type="number" placeholder="0.00" value={fPrice} onChange={(e) => setFPrice(e.target.value)} />
@@ -2224,7 +2310,7 @@ function InventoryManagementTab() {
           </div>
           <FormInput label="Initial Stock" type="number" placeholder="0" value={fStock} onChange={(e) => setFStock(e.target.value)} />
           <FormGroup label="Description (optional)"><textarea className={`${inputClass} resize-none`} rows={2} placeholder="Brief description…" value={fDesc} onChange={(e) => setFDesc(e.target.value)} /></FormGroup>
-          <FormGroup label="Product Image (optional)">
+          <FormGroup label="Menu Item Image (optional)">
             <label className="flex flex-col items-center justify-center w-full border-[1.5px] border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-all overflow-hidden" style={{minHeight: fImagePreview ? "auto" : "80px"}}>
               {fImagePreview ? (
                 <div className="relative w-full">
@@ -2252,13 +2338,13 @@ function InventoryManagementTab() {
       )}
 
       {editProduct && (
-        <SMModal title={`Edit — ${editProduct.name}`} onClose={() => setEditProduct(null)}
+        <SMModal title={`Edit Menu Item — ${editProduct.name}`} onClose={() => setEditProduct(null)}
           footer={<>
             <button className={ghostBtnClass} onClick={() => setEditProduct(null)} disabled={saving}>Discard</button>
             <button className={primaryBtnClass} onClick={() => void handleEdit()} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</button>
           </>}
         >
-          <FormInput label="Product Name *" placeholder="e.g. Chicken Breast" value={eName} onChange={(e) => setEName(e.target.value)} />
+          <FormInput label="Menu Item Name *" placeholder="e.g. Chicken Breast" value={eName} onChange={(e) => setEName(e.target.value)} />
           <FormInput label="Category *" placeholder="e.g. Ingredients" value={eCat} onChange={(e) => setECat(e.target.value)} />
           <div className="grid grid-cols-2 gap-[10px]">
             <FormInput label="Price (₱) *" type="number" placeholder="0.00" value={ePrice} onChange={(e) => setEPrice(e.target.value)} />
@@ -2266,7 +2352,7 @@ function InventoryManagementTab() {
           </div>
           <FormInput label="Stock Qty" type="number" placeholder="0" value={eStock} onChange={(e) => setEStock(e.target.value)} />
           <FormGroup label="Description (optional)"><textarea className={`${inputClass} resize-none`} rows={2} placeholder="Brief description…" value={eDesc} onChange={(e) => setEDesc(e.target.value)} /></FormGroup>
-          <FormGroup label="Product Image (optional)">
+          <FormGroup label="Menu Item Image (optional)">
             <label className="flex flex-col items-center justify-center w-full border-[1.5px] border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-all overflow-hidden" style={{minHeight: eImagePreview ? "auto" : "80px"}}>
               {eImagePreview ? (
                 <div className="relative w-full">
@@ -2294,7 +2380,7 @@ function InventoryManagementTab() {
       )}
 
       {deleteId !== null && (
-        <SMModal title="Delete Product" onClose={() => setDeleteId(null)}
+        <SMModal title="Delete Menu Item" onClose={() => setDeleteId(null)}
           footer={<>
             <button className={ghostBtnClass} onClick={() => setDeleteId(null)} disabled={saving}>Cancel</button>
             <button className={dangerBtnClass} onClick={() => void handleDelete(deleteId!)} disabled={saving}>{saving ? "Deleting…" : "Yes, Delete"}</button>
@@ -2302,7 +2388,918 @@ function InventoryManagementTab() {
         >
           <p className="text-[13px] text-gray-600 leading-relaxed">
             Are you sure you want to delete{" "}
-            <span className="font-bold text-gray-900">{products.find((p) => p.id === deleteId)?.name ?? "this product"}</span>
+            <span className="font-bold text-gray-900">{products.find((p) => p.id === deleteId)?.name ?? "this menu item"}</span>
+            ? This action cannot be undone.
+          </p>
+        </SMModal>
+      )}
+    </div>
+  );
+}
+
+function MenuAdminTab() {
+  const { addNotification } = useNotifications();
+  const [products, setProducts] = useState<MgmtProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [editProduct, setEditProduct] = useState<MgmtProduct | null>(null);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  const [fName, setFName] = useState("");
+  const [fCat, setFCat] = useState("");
+  const [fPrice, setFPrice] = useState("");
+  const [fStock, setFStock] = useState("");
+  const [fDesc, setFDesc] = useState("");
+  const [fAvailabilityStatus, setFAvailabilityStatus] = useState<string>(
+    AVAILABILITY_OPTIONS[0],
+  );
+  const [fIsPromotional, setFIsPromotional] = useState(false);
+  const [fPromoPrice, setFPromoPrice] = useState("");
+  const [fPromoLabel, setFPromoLabel] = useState("");
+  const [fImageFile, setFImageFile] = useState<File | null>(null);
+  const [fImagePreview, setFImagePreview] = useState("");
+
+  const [eName, setEName] = useState("");
+  const [eCat, setECat] = useState("");
+  const [ePrice, setEPrice] = useState("");
+  const [eStock, setEStock] = useState("");
+  const [eDesc, setEDesc] = useState("");
+  const [eAvailabilityStatus, setEAvailabilityStatus] = useState<string>(
+    AVAILABILITY_OPTIONS[0],
+  );
+  const [eIsPromotional, setEIsPromotional] = useState(false);
+  const [ePromoPrice, setEPromoPrice] = useState("");
+  const [ePromoLabel, setEPromoLabel] = useState("");
+  const [eImageFile, setEImageFile] = useState<File | null>(null);
+  const [eImagePreview, setEImagePreview] = useState("");
+
+  function toBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function normalizeManagementRows(data: ApiInventoryRow[]) {
+    const rows = data.filter((item) => {
+      const promo = String(item?.promo ?? "").toUpperCase().trim();
+      const category = String(item?.category ?? "").toLowerCase().trim();
+      return (
+        promo === "SUPPLIES" ||
+        promo === "MENU FOOD" ||
+        category.includes("suppl") ||
+        category.includes("menu food")
+      );
+    });
+
+    const groupedByName = new Map<string, ApiInventoryRow[]>();
+    for (const item of rows) {
+      const key = String(item?.product_name ?? item?.name ?? "")
+        .trim()
+        .toLowerCase();
+      const group = groupedByName.get(key) ?? [];
+      group.push(item);
+      groupedByName.set(key, group);
+    }
+
+    return Array.from(groupedByName.values()).map((group) =>
+      group.reduce((latest, current) => {
+        const latestId = Number(
+          latest?.product_id ?? latest?.id ?? latest?.inventory_id ?? 0,
+        );
+        const currentId = Number(
+          current?.product_id ?? current?.id ?? current?.inventory_id ?? 0,
+        );
+        return currentId > latestId ? current : latest;
+      }),
+    );
+  }
+
+  const loadProducts = async () => {
+    try {
+      setLoading(true);
+      const data = (await apiCall("/inventory", { method: "GET" })) as
+        | ApiInventoryRow[]
+        | null;
+      if (!data || !Array.isArray(data)) return;
+
+      const normalized = normalizeManagementRows(data);
+      setProducts(
+        normalized.map((item) => ({
+          id: Number(item.product_id ?? item.inventory_id ?? item.id ?? 0),
+          rawProductId: item.product_id ? Number(item.product_id) : undefined,
+          rawInventoryId: item.inventory_id
+            ? Number(item.inventory_id)
+            : undefined,
+          menuCode: String(
+            item.menu_code ??
+              `M-${String(
+                item.product_id ?? item.id ?? item.inventory_id ?? 0,
+              ).padStart(3, "0")}`,
+          ),
+          name: item.name || item.product_name || "Unnamed Product",
+          category: item.category || "Uncategorized",
+          price: String(item.price ?? "0"),
+          unit: String(item.unit ?? "piece"),
+          stock: Number((item as any).quantity ?? (item as any).stock ?? 0),
+          description: String((item as any).description ?? ""),
+          image: item.image || "/img/placeholder.jpg",
+          availabilityStatus: String(item.availability_status ?? "Available"),
+          isPromotional: Boolean(Number(item.is_promotional ?? 0)),
+          promoPrice:
+            item.promo_price !== null &&
+            item.promo_price !== undefined &&
+            String(item.promo_price) !== ""
+              ? String(item.promo_price)
+              : "",
+          promoLabel: String(item.promo_label ?? ""),
+        })),
+      );
+    } catch (error) {
+      console.error("Failed to load products:", error);
+      notify(
+        addNotification,
+        "Failed to load products. Please try refreshing.",
+        "error",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadProducts();
+  }, []);
+
+  function resetAddForm() {
+    setFName("");
+    setFCat("");
+    setFPrice("");
+    setFStock("");
+    setFDesc("");
+    setFAvailabilityStatus(AVAILABILITY_OPTIONS[0]);
+    setFIsPromotional(false);
+    setFPromoPrice("");
+    setFPromoLabel("");
+    setFImageFile(null);
+    setFImagePreview("");
+  }
+
+  function openEdit(product: MgmtProduct) {
+    setEditProduct(product);
+    setEName(product.name);
+    setECat(product.category);
+    setEPrice(product.price);
+    setEStock(String(product.stock));
+    setEDesc(product.description ?? "");
+    setEAvailabilityStatus(product.availabilityStatus || "Available");
+    setEIsPromotional(Boolean(product.isPromotional));
+    setEPromoPrice(product.promoPrice ?? "");
+    setEPromoLabel(product.promoLabel ?? "");
+    setEImageFile(null);
+    setEImagePreview(
+      product.image && product.image !== "/img/placeholder.jpg"
+        ? product.image
+        : "",
+    );
+  }
+
+  async function handleAdd() {
+    if (!fName.trim() || !fCat.trim() || !fPrice.trim()) {
+      notify(
+        addNotification,
+        "Please fill in Name, Category, and Price.",
+        "warning",
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      let imageUrl = "/img/placeholder.jpg";
+      if (fImageFile) imageUrl = await toBase64(fImageFile);
+
+      await api.post("/products", {
+        name: fName.trim(),
+        category: fCat.trim(),
+        price: parseFloat(fPrice),
+        unit: UNIT_OPTIONS[0],
+        quantity: parseFloat(fStock) || 0,
+        description: fDesc.trim() || null,
+        image: imageUrl,
+        availability_status: fAvailabilityStatus,
+        is_promotional: fIsPromotional,
+        promo_price:
+          fIsPromotional && fPromoPrice.trim()
+            ? parseFloat(fPromoPrice)
+            : null,
+        promo_label: fIsPromotional ? fPromoLabel.trim() || null : null,
+      });
+
+      await loadProducts();
+      setShowAdd(false);
+      resetAddForm();
+      notify(
+        addNotification,
+        `"${fName.trim()}" added successfully.`,
+        "success",
+      );
+    } catch (error) {
+      notify(
+        addNotification,
+        `Failed to add product: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "error",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleEdit() {
+    if (!editProduct) return;
+    if (!eName.trim() || !eCat.trim() || !ePrice.trim()) {
+      notify(
+        addNotification,
+        "Please fill in Name, Category, and Price.",
+        "warning",
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      let editImageUrl: string | undefined;
+      if (eImageFile) {
+        editImageUrl = await toBase64(eImageFile);
+      } else if (eImagePreview && eImagePreview !== "/img/placeholder.jpg") {
+        editImageUrl = eImagePreview;
+      }
+
+      const payload: Record<string, unknown> = {
+        name: eName.trim(),
+        category: eCat.trim(),
+        price: parseFloat(ePrice),
+        unit: editProduct.unit || UNIT_OPTIONS[0],
+        quantity: parseFloat(eStock) || 0,
+        description: eDesc.trim() || null,
+        availability_status: eAvailabilityStatus,
+        is_promotional: eIsPromotional,
+        promo_price:
+          eIsPromotional && ePromoPrice.trim()
+            ? parseFloat(ePromoPrice)
+            : null,
+        promo_label: eIsPromotional ? ePromoLabel.trim() || null : null,
+      };
+      if (editImageUrl) payload.image = editImageUrl;
+
+      await tryPut([`/products/${editProduct.rawProductId ?? editProduct.id}`], payload);
+      await loadProducts();
+      setEditProduct(null);
+      notify(
+        addNotification,
+        `"${eName.trim()}" updated successfully.`,
+        "success",
+      );
+    } catch (error) {
+      notify(
+        addNotification,
+        `Failed to update: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "error",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: number) {
+    const product = products.find((entry) => entry.id === id);
+    const endpointsToTry: string[] = [];
+    const pid = product?.rawProductId ?? id;
+    const iid = product?.rawInventoryId;
+    endpointsToTry.push(`/products/${pid}`);
+    if (iid && iid !== pid) endpointsToTry.push(`/products/${iid}`);
+    endpointsToTry.push(`/inventory/${pid}`);
+    if (iid && iid !== pid) endpointsToTry.push(`/inventory/${iid}`);
+
+    try {
+      setSaving(true);
+      let lastErr: unknown;
+      let deleted = false;
+      for (const endpoint of endpointsToTry) {
+        try {
+          await apiCall(endpoint, { method: "DELETE" });
+          deleted = true;
+          break;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes("404") && !msg.includes("HTTP 404")) throw err;
+          lastErr = err;
+        }
+      }
+      if (!deleted) throw lastErr;
+      await loadProducts();
+      setDeleteId(null);
+      notify(addNotification, "Product deleted successfully.", "success");
+    } catch (error) {
+      notify(
+        addNotification,
+        `Failed to delete: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "error",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleStockUpdate(id: number, delta: number) {
+    const product = products.find((entry) => entry.id === id);
+    if (!product) return;
+
+    const newStock = Math.max(0, product.stock + delta);
+    try {
+      await tryPut([`/products/${product.rawProductId ?? product.id}`], {
+        quantity: newStock,
+      });
+      setProducts((prev) =>
+        prev.map((entry) =>
+          entry.id === id ? { ...entry, stock: newStock } : entry,
+        ),
+      );
+    } catch (error) {
+      notify(
+        addNotification,
+        `Failed to update stock: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "error",
+      );
+    }
+  }
+
+  async function handleAvailabilityToggle(product: MgmtProduct) {
+    const nextStatus =
+      product.availabilityStatus === "Hidden" ? "Available" : "Hidden";
+    try {
+      await tryPut([`/products/${product.rawProductId ?? product.id}`], {
+        availability_status: nextStatus,
+      });
+      setProducts((prev) =>
+        prev.map((entry) =>
+          entry.id === product.id
+            ? { ...entry, availabilityStatus: nextStatus }
+            : entry,
+        ),
+      );
+      notify(
+        addNotification,
+        `"${product.name}" is now ${nextStatus}.`,
+        "success",
+      );
+    } catch (error) {
+      notify(
+        addNotification,
+        `Failed to update availability: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "error",
+      );
+    }
+  }
+
+  const filtered = products.filter((product) => {
+    const term = search.toLowerCase();
+    return (
+      product.name.toLowerCase().includes(term) ||
+      product.category.toLowerCase().includes(term) ||
+      product.menuCode.toLowerCase().includes(term) ||
+      String(product.promoLabel ?? "").toLowerCase().includes(term)
+    );
+  });
+
+  const totalValue = products.reduce((sum, product) => {
+    const price = parseFloat(String(product.price).replace(/[^0-9.]/g, "")) || 0;
+    return sum + price * product.stock;
+  }, 0);
+  const hiddenCount = products.filter(
+    (product) => product.availabilityStatus === "Hidden",
+  ).length;
+  const promoCount = products.filter((product) => product.isPromotional).length;
+  const outOfStockCount = products.filter((product) => product.stock === 0).length;
+
+  return (
+    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
+      <div className="mb-6">
+        <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">
+          Menu Administration
+        </p>
+        <h2 className="text-xl font-bold text-gray-900">Menu Management</h2>
+        <p className="text-gray-500 text-sm mt-1">
+          Add, edit, hide, promote, and maintain menu items, prices,
+          categories, descriptions, images, and availability.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3 mb-6">
+        <StatCard
+          label="Total Menu Items"
+          value={products.length}
+          meta="In system"
+          color="blue"
+        />
+        <StatCard
+          label="Promotional"
+          value={promoCount}
+          meta="Special menus"
+          color="green"
+        />
+        <StatCard
+          label="Hidden"
+          value={hiddenCount}
+          meta="Unavailable"
+          color="yellow"
+        />
+        <StatCard
+          label="Menu Value"
+          value={`P${totalValue.toLocaleString()}`}
+          meta={`${outOfStockCount} out of stock`}
+          color="red"
+        />
+      </div>
+
+      <SectionHeader
+        title="Menu Item List"
+        sub="Menu codes, pricing, promotions, stock, and availability in one place"
+        cta={
+          <div className="flex gap-2">
+            <button
+              className={primaryBtnClass}
+              onClick={() => void loadProducts()}
+              disabled={loading}
+            >
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+            <button
+              className={primaryBtnClass}
+              onClick={() => setShowAdd(true)}
+            >
+              + Add Menu Item
+            </button>
+          </div>
+        }
+      />
+
+      <div className="mb-[14px]">
+        <input
+          className="w-full px-3 py-2 border-[1.5px] border-gray-200 rounded-[9px] text-[12.5px] font-[Poppins,sans-serif] text-gray-700 outline-none bg-white transition-all focus:border-gray-400 box-border"
+          placeholder="Search by menu code, name, category, or promo label..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-4">
+          <motion.div
+            className="w-10 h-10 rounded-full border-4 border-gray-200 border-t-blue-500"
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 0.9, ease: "linear" }}
+          />
+          <p className="text-gray-400 text-sm">Loading menu items...</p>
+        </div>
+      ) : (
+        <DataTable
+          cols={[
+            "Menu Code",
+            "Image",
+            "Name",
+            "Category",
+            "Price",
+            "Promo",
+            "Stock",
+            "Availability Status",
+            "Actions",
+          ]}
+          emptyHint="No menu items found. Try refreshing or add a new product."
+          rows={filtered.map((product) => (
+            <tr
+              key={product.id}
+              className="border-b border-gray-50 hover:bg-gray-50 transition-colors last:border-b-0"
+            >
+              <td className="px-[14px] py-[11px] text-[12px] font-bold text-indigo-600">
+                {product.menuCode}
+              </td>
+              <td className="px-[14px] py-[11px]">
+                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {product.image && product.image !== "/img/placeholder.jpg" ? (
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-gray-400 text-[10px] font-bold">
+                      {product.name.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              </td>
+              <td className="px-[14px] py-[11px]">
+                <div>
+                  <div className="text-[12.5px] font-semibold text-gray-900">
+                    {product.name}
+                  </div>
+                  {product.description && (
+                    <div className="text-[11px] text-gray-400 max-w-[180px] truncate">
+                      {product.description}
+                    </div>
+                  )}
+                </div>
+              </td>
+              <td className="px-[14px] py-[11px]">
+                <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">
+                  {product.category}
+                </span>
+              </td>
+              <td className="px-[14px] py-[11px] text-[12.5px] font-bold text-green-700">
+                P{parseFloat(String(product.price).replace(/[^0-9.]/g, "")).toLocaleString()}
+              </td>
+              <td className="px-[14px] py-[11px]">
+                {product.isPromotional ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-pink-50 text-pink-700">
+                      {product.promoLabel || "Promotional"}
+                    </span>
+                    {product.promoPrice && (
+                      <span className="text-[11px] font-semibold text-pink-700">
+                        P{parseFloat(String(product.promoPrice).replace(/[^0-9.]/g, "")).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-[12px] text-gray-400">Standard</span>
+                )}
+              </td>
+              <td className="px-[14px] py-[11px]">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void handleStockUpdate(product.id, -1)}
+                    className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 text-[14px] font-bold flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors border-none cursor-pointer leading-none"
+                  >
+                    -
+                  </button>
+                  <span className={`min-w-[36px] text-center text-[12.5px] ${
+                    product.stock === 0
+                      ? "text-red-600 font-bold"
+                      : product.stock <= 10
+                        ? "text-yellow-600 font-bold"
+                        : "text-gray-900 font-semibold"
+                  }`}>
+                    {product.stock}
+                  </span>
+                  <button
+                    onClick={() => void handleStockUpdate(product.id, 1)}
+                    className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 text-[14px] font-bold flex items-center justify-center hover:bg-green-50 hover:text-green-600 transition-colors border-none cursor-pointer leading-none"
+                  >
+                    +
+                  </button>
+                </div>
+              </td>
+              <td className="px-[14px] py-[11px]">
+                <span
+                  className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                    product.availabilityStatus === "Hidden"
+                      ? "bg-gray-200 text-gray-700"
+                      : "bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  {product.availabilityStatus === "Hidden"
+                    ? "Hidden"
+                    : "Available"}
+                </span>
+              </td>
+              <td className="px-[14px] py-[11px]">
+                <div className="flex gap-[5px]">
+                  <button
+                    className={ghostBtnClass}
+                    onClick={() => openEdit(product)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className={ghostBtnClass}
+                    onClick={() => void handleAvailabilityToggle(product)}
+                  >
+                    {product.availabilityStatus === "Hidden" ? "Show" : "Hide"}
+                  </button>
+                  <button
+                    className={dangerBtnClass}
+                    onClick={() => setDeleteId(product.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        />
+      )}
+
+      {showAdd && (
+        <SMModal
+          title="Add Menu Item"
+          onClose={() => {
+            setShowAdd(false);
+            resetAddForm();
+          }}
+          footer={
+            <>
+              <button
+                className={ghostBtnClass}
+                onClick={() => {
+                  setShowAdd(false);
+                  resetAddForm();
+                }}
+                disabled={saving}
+              >
+                Discard
+              </button>
+              <button
+                className={primaryBtnClass}
+                onClick={() => void handleAdd()}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Add Menu Item"}
+              </button>
+            </>
+          }
+        >
+          <FormInput
+            label="Menu Item Name *"
+            placeholder="e.g. Chicken Breast"
+            value={fName}
+            onChange={(e) => setFName(e.target.value)}
+          />
+          <FormInput
+            label="Category *"
+            placeholder="e.g. Menu Food"
+            value={fCat}
+            onChange={(e) => setFCat(e.target.value)}
+          />
+          <FormInput
+            label="Price (P) *"
+            type="number"
+            placeholder="0.00"
+            value={fPrice}
+            onChange={(e) => setFPrice(e.target.value)}
+          />
+          <FormInput
+            label="Initial Stock"
+            type="number"
+            placeholder="0"
+            value={fStock}
+            onChange={(e) => setFStock(e.target.value)}
+          />
+          <FormSelect
+            label="Availability Status"
+            opts={AVAILABILITY_OPTIONS}
+            value={fAvailabilityStatus}
+            onChange={(e) => setFAvailabilityStatus(e.target.value)}
+          />
+          <FormGroup label="Promotional Menu">
+            <label className="flex items-center gap-2 text-[12px] text-gray-700">
+              <input
+                type="checkbox"
+                checked={fIsPromotional}
+                onChange={(e) => setFIsPromotional(e.target.checked)}
+              />
+              Mark this menu item as promotional
+            </label>
+          </FormGroup>
+          {fIsPromotional && (
+            <div className="grid grid-cols-2 gap-[10px]">
+              <FormInput
+                label="Promo Price"
+                type="number"
+                placeholder="0.00"
+                value={fPromoPrice}
+                onChange={(e) => setFPromoPrice(e.target.value)}
+              />
+              <FormInput
+                label="Promo Label"
+                placeholder="e.g. Summer Special"
+                value={fPromoLabel}
+                onChange={(e) => setFPromoLabel(e.target.value)}
+              />
+            </div>
+          )}
+          <FormGroup label="Description (optional)">
+            <textarea
+              className={`${inputClass} resize-none`}
+              rows={2}
+              placeholder="Brief description..."
+              value={fDesc}
+              onChange={(e) => setFDesc(e.target.value)}
+            />
+          </FormGroup>
+          <FormGroup label="Menu Item Image (optional)">
+            <label
+              className="flex flex-col items-center justify-center w-full border-[1.5px] border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-all overflow-hidden"
+              style={{ minHeight: fImagePreview ? "auto" : "80px" }}
+            >
+              {fImagePreview ? (
+                <img
+                  src={fImagePreview}
+                  alt="Preview"
+                  className="w-full h-[120px] object-cover"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-1 py-5">
+                  <span className="text-[11px] text-gray-400 font-medium">
+                    Click to upload image
+                  </span>
+                  <span className="text-[10px] text-gray-300">
+                    PNG, JPG up to 5MB
+                  </span>
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setFImageFile(file);
+                  setFImagePreview(URL.createObjectURL(file));
+                }}
+              />
+            </label>
+          </FormGroup>
+        </SMModal>
+      )}
+
+      {editProduct && (
+        <SMModal
+          title={`Edit Menu Item - ${editProduct.name}`}
+          onClose={() => setEditProduct(null)}
+          footer={
+            <>
+              <button
+                className={ghostBtnClass}
+                onClick={() => setEditProduct(null)}
+                disabled={saving}
+              >
+                Discard
+              </button>
+              <button
+                className={primaryBtnClass}
+                onClick={() => void handleEdit()}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+            </>
+          }
+        >
+          <div className="mb-3 text-[12px] font-semibold text-indigo-600">
+            Menu Code: {editProduct.menuCode}
+          </div>
+          <FormInput
+            label="Menu Item Name *"
+            placeholder="e.g. Chicken Breast"
+            value={eName}
+            onChange={(e) => setEName(e.target.value)}
+          />
+          <FormInput
+            label="Category *"
+            placeholder="e.g. Menu Food"
+            value={eCat}
+            onChange={(e) => setECat(e.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-[10px]">
+            <FormInput
+              label="Price (P) *"
+              type="number"
+              placeholder="0.00"
+              value={ePrice}
+              onChange={(e) => setEPrice(e.target.value)}
+            />
+            <FormInput
+              label="Stock Qty"
+              type="number"
+              placeholder="0"
+              value={eStock}
+              onChange={(e) => setEStock(e.target.value)}
+            />
+          </div>
+          <FormSelect
+            label="Availability Status"
+            opts={AVAILABILITY_OPTIONS}
+            value={eAvailabilityStatus}
+            onChange={(e) => setEAvailabilityStatus(e.target.value)}
+          />
+          <FormGroup label="Promotional Menu">
+            <label className="flex items-center gap-2 text-[12px] text-gray-700">
+              <input
+                type="checkbox"
+                checked={eIsPromotional}
+                onChange={(e) => setEIsPromotional(e.target.checked)}
+              />
+              Mark this menu item as promotional
+            </label>
+          </FormGroup>
+          {eIsPromotional && (
+            <div className="grid grid-cols-2 gap-[10px]">
+              <FormInput
+                label="Promo Price"
+                type="number"
+                placeholder="0.00"
+                value={ePromoPrice}
+                onChange={(e) => setEPromoPrice(e.target.value)}
+              />
+              <FormInput
+                label="Promo Label"
+                placeholder="e.g. Summer Special"
+                value={ePromoLabel}
+                onChange={(e) => setEPromoLabel(e.target.value)}
+              />
+            </div>
+          )}
+          <FormGroup label="Description (optional)">
+            <textarea
+              className={`${inputClass} resize-none`}
+              rows={2}
+              placeholder="Brief description..."
+              value={eDesc}
+              onChange={(e) => setEDesc(e.target.value)}
+            />
+          </FormGroup>
+          <FormGroup label="Menu Item Image (optional)">
+            <label
+              className="flex flex-col items-center justify-center w-full border-[1.5px] border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-all overflow-hidden"
+              style={{ minHeight: eImagePreview ? "auto" : "80px" }}
+            >
+              {eImagePreview ? (
+                <img
+                  src={eImagePreview}
+                  alt="Preview"
+                  className="w-full h-[120px] object-cover"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-1 py-5">
+                  <span className="text-[11px] text-gray-400 font-medium">
+                    Click to upload image
+                  </span>
+                  <span className="text-[10px] text-gray-300">
+                    PNG, JPG up to 5MB
+                  </span>
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setEImageFile(file);
+                  setEImagePreview(URL.createObjectURL(file));
+                }}
+              />
+            </label>
+          </FormGroup>
+        </SMModal>
+      )}
+
+      {deleteId !== null && (
+        <SMModal
+          title="Delete Menu Item"
+          onClose={() => setDeleteId(null)}
+          footer={
+            <>
+              <button
+                className={ghostBtnClass}
+                onClick={() => setDeleteId(null)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                className={dangerBtnClass}
+                onClick={() => void handleDelete(deleteId!)}
+                disabled={saving}
+              >
+                {saving ? "Deleting..." : "Yes, Delete"}
+              </button>
+            </>
+          }
+        >
+          <p className="text-[13px] text-gray-600 leading-relaxed">
+            Are you sure you want to delete{" "}
+            <span className="font-bold text-gray-900">
+              {products.find((product) => product.id === deleteId)?.name ??
+                "this menu item"}
+            </span>
             ? This action cannot be undone.
           </p>
         </SMModal>
@@ -2316,7 +3313,7 @@ function InventoryManagementTab() {
 export default function Inventory() {
   const now = useNow();
   const { addNotification } = useNotifications();
-  const [pageTab, setPageTab] = useState<PageTab>("inventory");
+  const [pageTab, setPageTab] = useState<PageTab>("menu");
   const [loading, setLoading] = useState(true);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
 
@@ -2470,8 +3467,8 @@ export default function Inventory() {
           className="mb-2 flex items-start justify-between"
         >
           <div>
-            <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Management</p>
-            <h1 className="text-3xl font-bold text-gray-900">Inventory</h1>
+            <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Menu Administration</p>
+            <h1 className="text-3xl font-bold text-gray-900">Menu Management</h1>
           </div>
           <div className="flex flex-col items-end select-none">
             <p className="text-base font-semibold text-gray-700 tabular-nums">
@@ -2492,8 +3489,8 @@ export default function Inventory() {
         >
           <div className="inline-flex bg-gray-100 rounded-[14px] p-1 gap-0.5">
             {[
-              { key: "inventory" as PageTab, label: "Inventory" },
-              { key: "management" as PageTab, label: "Manage Products" },
+              { key: "menu" as PageTab, label: "Menu Management" },
+              { key: "overview" as PageTab, label: "Menu Overview" },
               { key: "movement" as PageTab, label: "Stock Movement" },
             ].map((tab) => (
               <button
@@ -2518,10 +3515,23 @@ export default function Inventory() {
         </motion.div>
 
         <AnimatePresence mode="wait">
-          {/* ── Inventory tab */}
-          {pageTab === "inventory" && (
+          {/* ── Menu Management tab */}
+          {pageTab === "menu" && (
             <motion.div
-              key="inventory"
+              key="menu"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.22 }}
+            >
+              <MenuAdminTab />
+            </motion.div>
+          )}
+
+          {/* ── Menu Overview tab */}
+          {pageTab === "overview" && (
+            <motion.div
+              key="overview"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
@@ -2531,7 +3541,7 @@ export default function Inventory() {
               <div className="grid grid-cols-4 gap-5 mb-8">
                 {[
                   {
-                    label: "Total Products",
+                    label: "Total Menu Items",
                     value: inventoryItems.length,
                     filterKey: "all" as InventoryFilter,
                     icon: <Package className="w-[18px] h-[18px]" />,
@@ -2540,7 +3550,7 @@ export default function Inventory() {
                     ringColor: "#4f46e5",
                   },
                   {
-                    label: "Total Stock",
+                    label: "Available Stock",
                     value: totalStock,
                     filterKey: "in_stock" as InventoryFilter,
                     icon: <Archive className="w-[18px] h-[18px]" />,
@@ -2558,7 +3568,7 @@ export default function Inventory() {
                     ringColor: "#ca8a04",
                   },
                   {
-                    label: "Out of Stock",
+                    label: "Unavailable",
                     value: outOfStockCount,
                     filterKey: "out_of_stock" as InventoryFilter,
                     icon: <Package className="w-[18px] h-[18px]" />,
@@ -2671,6 +3681,11 @@ export default function Inventory() {
               </div>
 
               <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
+                <div className="mb-6">
+                  <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Menu Overview</p>
+                  <h2 className="text-xl font-bold text-gray-900">Menu Product Snapshot</h2>
+                  <p className="text-gray-500 text-sm mt-1">Quick view of menu item availability and stock condition. Use Menu Management for full product editing.</p>
+                </div>
                 <AnimatePresence mode="wait">
                   {loading ? (
                     <motion.div
@@ -2703,11 +3718,11 @@ export default function Inventory() {
                           <p className="text-[14px] font-semibold text-gray-500">
                             No{" "}
                             {inventoryFilter === "in_stock"
-                              ? "in-stock"
+                              ? "available"
                               : inventoryFilter === "low_stock"
                                 ? "low-stock"
-                                : "out-of-stock"}{" "}
-                            products
+                                : "unavailable"}{" "}
+                            menu items
                           </p>
                           <p className="text-[12px] text-gray-400">
                             {inventoryFilter === "out_of_stock"
@@ -2720,7 +3735,7 @@ export default function Inventory() {
                             onClick={() => setInventoryFilter("all")}
                             className={`mt-1 ${primaryBtnClass}`}
                           >
-                            Show all products
+                            Show all menu items
                           </button>
                         </div>
                       ) : (
@@ -2734,19 +3749,6 @@ export default function Inventory() {
                   )}
                 </AnimatePresence>
               </div>
-            </motion.div>
-          )}
-
-          {/* ── Inventory Management tab */}
-          {pageTab === "management" && (
-            <motion.div
-              key="management"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.22 }}
-            >
-              <InventoryManagementTab />
             </motion.div>
           )}
 
