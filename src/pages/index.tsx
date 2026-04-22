@@ -1043,13 +1043,18 @@ export default function AdminDashboard() {
       : "—"}
   </p>
               {!isLoadingOrders && (
-              <p className="text-sm font-semibold text-[#7C2D2D] mt-2">
-                ₱{totalSales.toLocaleString()}{" "}
-              <span className="text-xs font-normal text-gray-400">
-                as of {formatDisplayDate(new Date())}
-              </span>
-                </p>
-              )}
+  <p className="text-sm font-semibold text-[#7C2D2D] mt-2">
+    ₱{totalSales.toLocaleString()}{" "}
+    <span className="text-xs font-normal text-gray-400">
+      as of{" "}
+      {hasCustomRange && dateRange.end
+        ? formatDisplayDate(dateRange.end)
+        : activeRange
+        ? formatDisplayDate(activeRange.end)
+        : formatDisplayDate(new Date())}
+    </span>
+  </p>
+)}
             </div>
                   <div className="flex gap-0 bg-[#F0EBE6] rounded-xl p-1">
                     {(["sales", "orders"] as const).map((v) => (
