@@ -21,6 +21,7 @@ interface OrderCard {
   id: string; orderNumber: string; tableNumber: number;
   status: "dine-in" | "take-out" | "delivery";
   orderType: "dine-in" | "take-out" | "delivery";
+  isOnlinePickup?: boolean;
   items: OrderItem[]; isPreparing: boolean; isReady: boolean;
   isFinished: boolean; startedAt?: number;
 }
@@ -109,7 +110,10 @@ export default function Order() {
         api.get<{ id?: number | string; orderId?: number | string; status: string }[]>("/orders"),
       ]);
       setOrders((queue ?? []).filter((o) => !o.isFinished));
-      setServedCount(new Set((all ?? []).filter((o) => o.status === "Completed").map((o) => String(o.id ?? o.orderId))).size);
+      setServedCount(new Set((all ?? []).filter((o) => {
+        const status = String(o.status || "").toLowerCase();
+        return status === "completed" || status === "picked up";
+      }).map((o) => String(o.id ?? o.orderId))).size);
     } catch (e) { console.error(e); }
   };
 
@@ -118,7 +122,7 @@ export default function Order() {
 
   const patch = async (id: string, body: object) => { try { await api.patch(`/orders/${id}`, body); fetchAll(); } catch {} };
   const handleStart  = (id: string) => patch(id, { status: "preparing", startedAt: new Date().toISOString() });
-  const handleReady  = (id: string) => patch(id, { status: "ready" });
+  const handleReady  = (id: string, isOnlinePickup?: boolean) => patch(id, { status: isOnlinePickup ? "Ready for Pickup" : "ready" });
   const handleFinish = (id: string) => patch(id, { status: "Completed" });
   const handleCancel = async (id: string) => {
     setCancellingId(id);
@@ -261,7 +265,7 @@ export default function Order() {
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                             padding: "5px 10px", borderRadius: 7, marginBottom: 10,
                             background: "#f9fafb", color: "#374151", fontSize: 11, fontWeight: 500 }}>
-                            <CheckCircle2 size={11} color="#111" /> Ready to serve
+                            <CheckCircle2 size={11} color="#111" /> {order.isOnlinePickup ? "Ready for Pickup" : "Ready to serve"}
                           </div>
                         )}
 
@@ -295,7 +299,7 @@ export default function Order() {
 
                             {/* Ready / Served */}
                             {!isReady ? (
-                              <button onClick={() => isPrep && handleReady(order.id)} disabled={!isPrep}
+                              <button onClick={() => isPrep && handleReady(order.id, order.isOnlinePickup)} disabled={!isPrep}
                                 style={{
                                   flex: 1, padding: "7px 0", borderRadius: 9, fontSize: 11, fontWeight: 500,
                                   cursor: isPrep ? "pointer" : "not-allowed", fontFamily: F,
@@ -305,7 +309,18 @@ export default function Order() {
                                   color: isPrep ? "#374151" : "#d1d5db",
                                   transition: "all 0.12s",
                                 }}>
-                                Ready
+                                {order.isOnlinePickup ? "Ready for Pickup" : "Ready"}
+                              </button>
+                            ) : order.isOnlinePickup ? (
+                              <button
+                                disabled
+                                style={{
+                                  flex: 1, padding: "7px 0", borderRadius: 9, fontSize: 11, fontWeight: 600,
+                                  cursor: "not-allowed", fontFamily: F,
+                                  border: "1px solid #e5e7eb", background: "#f9fafb", color: "#9ca3af",
+                                  transition: "all 0.12s",
+                                }}>
+                                Awaiting Pickup
                               </button>
                             ) : (
                               <button onClick={() => handleFinish(order.id)}

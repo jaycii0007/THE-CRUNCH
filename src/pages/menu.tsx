@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Search, Minus, Plus, Trash2, UtensilsCrossed, Check,
   Clock, Calendar, Hash, ChevronDown, Delete,
@@ -40,9 +40,11 @@ interface TableItem {
 }
 interface OnlineNotif {
   id: number;
+  orderNumber: string;
   total: number;
   createdAt: string;
   orderType: string;
+  trackingStatus: string;
   items: { name: string; quantity: number }[];
 }
 interface OrderPayload {
@@ -543,11 +545,8 @@ export default function CashierView() {
   const [orderNumber, setOrderNumber] = useState("");
   const [placing, setPlacing] = useState(false);
   const [onlineOrderNotifs, setOnlineOrderNotifs] = useState<OnlineNotif[]>([]);
+  const [readyPickupOrders, setReadyPickupOrders] = useState<OnlineNotif[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
-
-  const lastPollRef = useRef<string>(
-    new Date(Date.now() - 30 * 1000).toISOString()
-  );
 
   const TABS = [
     { key: "ALL",        label: "All items",             match: [] as string[] },
@@ -574,29 +573,22 @@ export default function CashierView() {
       .catch(() => setTables([]));
   }, [orderType]);
 
-  // Poll for new online orders every 15 seconds
+  // Poll the cashier review queue for online pickup orders
   useEffect(() => {
     const poll = async () => {
       try {
-        const url = `/api/orders/new-online?since=${encodeURIComponent(lastPollRef.current)}`;
-        const res = await fetch(url);
-        if (!res.ok) {
-          console.warn(`[poll] /api/orders/new-online returned ${res.status}`);
-          return;
-        }
-        const data: OnlineNotif[] = await res.json();
-        lastPollRef.current = new Date().toISOString();
-        if (data.length > 0) {
-          setOnlineOrderNotifs((prev) => {
-            const existingIds = new Set(prev.map((o) => o.id));
-            const fresh = data.filter((o) => !existingIds.has(o.id));
-            if (fresh.length > 0) {
-              setNotifOpen(true); // auto-open panel when new orders arrive
-              return [...fresh, ...prev];
-            }
-            return prev;
-          });
-        }
+        const [reviewData, readyData] = await Promise.all([
+          api.get<OnlineNotif[]>("/orders/new-online"),
+          api.get<OnlineNotif[]>("/orders/ready-pickup"),
+        ]);
+        setOnlineOrderNotifs((prev) => {
+          const next = reviewData ?? [];
+          if ((next.length > prev.length || (readyData ?? []).length > 0) && (next.length > 0 || (readyData ?? []).length > 0)) {
+            setNotifOpen(true);
+          }
+          return next;
+        });
+        setReadyPickupOrders(readyData ?? []);
       } catch (err) {
         console.warn("[poll] online-order fetch failed:", err);
       }
@@ -607,22 +599,33 @@ export default function CashierView() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-dismiss notifications once their order appears in the cook queue
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const queue = await api.get<{ id: string | number }[]>("/orders/queue");
-        const queueIds = new Set((queue ?? []).map((o) => Number(o.id)));
-        setOnlineOrderNotifs((prev) => prev.filter((o) => !queueIds.has(o.id)));
-      } catch {}
-    };
-    check();
-    const interval = setInterval(check, 5_000);
-    return () => clearInterval(interval);
-  }, []);
+  const handleProceedOnlineOrder = async (id: number) => {
+    try {
+      const cashierId = localStorage.getItem("userId");
+      await api.patch(`/orders/${id}`, {
+        status: "Pending",
+        cashierId: cashierId ? Number(cashierId) : null,
+      });
+      setOnlineOrderNotifs((prev) => prev.filter((o) => o.id !== id));
+    } catch (err) {
+      console.error("Failed to proceed online order:", err);
+      alert("Failed to move online order to processing queue.");
+    }
+  };
 
-  const dismissNotif = (id: number) =>
-    setOnlineOrderNotifs((prev) => prev.filter((o) => o.id !== id));
+  const handleConfirmPickup = async (id: number) => {
+    try {
+      const cashierId = localStorage.getItem("userId");
+      await api.patch(`/orders/${id}`, {
+        status: "Picked Up",
+        cashierId: cashierId ? Number(cashierId) : null,
+      });
+      setReadyPickupOrders((prev) => prev.filter((o) => o.id !== id));
+    } catch (err) {
+      console.error("Failed to confirm pickup:", err);
+      alert("Failed to confirm customer pickup.");
+    }
+  };
 
   const filtered = products.filter((p) => {
     const cu = p.category.toUpperCase();
@@ -756,17 +759,17 @@ export default function CashierView() {
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
                   padding: "5px 10px 5px 8px", borderRadius: 20,
-                  border: `1px solid ${onlineOrderNotifs.length > 0 ? "#16a34a" : "#efefef"}`,
-                  background: onlineOrderNotifs.length > 0
+                  border: `1px solid ${(onlineOrderNotifs.length + readyPickupOrders.length) > 0 ? "#16a34a" : "#efefef"}`,
+                  background: (onlineOrderNotifs.length + readyPickupOrders.length) > 0
                     ? (notifOpen ? "#e8f9ef" : "#f0fdf4")
                     : "#fafafa",
                   cursor: "pointer", fontFamily: F,
-                  boxShadow: onlineOrderNotifs.length > 0 ? "0 0 0 3px rgba(22,163,74,0.08)" : "none",
+                  boxShadow: (onlineOrderNotifs.length + readyPickupOrders.length) > 0 ? "0 0 0 3px rgba(22,163,74,0.08)" : "none",
                   transition: "all 0.2s",
                 }}
               >
                 {/* Pulsing dot — only when there are orders */}
-                {onlineOrderNotifs.length > 0 && (
+                {(onlineOrderNotifs.length + readyPickupOrders.length) > 0 && (
                   <motion.div
                     animate={{ scale: [1, 1.5, 1], opacity: [1, 0.4, 1] }}
                     transition={{ repeat: Infinity, duration: 1.4 }}
@@ -775,13 +778,13 @@ export default function CashierView() {
                 )}
                 <span style={{
                   fontSize: 11, fontWeight: 600,
-                  color: onlineOrderNotifs.length > 0 ? "#16a34a" : "#bbb",
+                  color: (onlineOrderNotifs.length + readyPickupOrders.length) > 0 ? "#16a34a" : "#bbb",
                 }}>
                   Online Orders
                 </span>
-                {onlineOrderNotifs.length > 0 && (
+                {(onlineOrderNotifs.length + readyPickupOrders.length) > 0 && (
                   <motion.span
-                    key={onlineOrderNotifs.length}
+                    key={onlineOrderNotifs.length + readyPickupOrders.length}
                     initial={{ scale: 0.6, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={SP}
@@ -792,7 +795,7 @@ export default function CashierView() {
                       minWidth: 16, textAlign: "center",
                     }}
                   >
-                    {onlineOrderNotifs.length}
+                    {onlineOrderNotifs.length + readyPickupOrders.length}
                   </motion.span>
                 )}
                 {/* Chevron indicator */}
@@ -801,12 +804,12 @@ export default function CashierView() {
                   transition={{ duration: 0.2 }}
                   style={{ display: "flex", alignItems: "center" }}
                 >
-                  <ChevronDown style={{ width: 11, height: 11, color: onlineOrderNotifs.length > 0 ? "#16a34a" : "#ccc" }} />
+                  <ChevronDown style={{ width: 11, height: 11, color: (onlineOrderNotifs.length + readyPickupOrders.length) > 0 ? "#16a34a" : "#ccc" }} />
                 </motion.div>
               </motion.button>
             </div>
 
-            {/* ── Online Orders Dropdown Panel ── */}
+            {/* ── Online Orders Review Panel ── */}
             <AnimatePresence>
               {notifOpen && (
                 <motion.div
@@ -822,13 +825,21 @@ export default function CashierView() {
                     background: "#f9fef9",
                     overflow: "hidden",
                   }}>
-                    {onlineOrderNotifs.length === 0 ? (
+                    {onlineOrderNotifs.length === 0 && readyPickupOrders.length === 0 ? (
                       <div style={{ padding: "16px", textAlign: "center" }}>
                         <p style={{ fontSize: 11, color: "#bbb", fontFamily: F, margin: 0 }}>
-                          No pending online orders
+                          No online pickup orders waiting for cashier action
                         </p>
                       </div>
                     ) : (
+                      <div>
+                        {onlineOrderNotifs.length > 0 && (
+                          <div style={{ padding: "10px 14px 8px", borderBottom: readyPickupOrders.length > 0 ? "1px solid #d1fae5" : "none" }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: "#166534", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
+                              Awaiting Cashier Review
+                            </p>
+                          </div>
+                        )}
                       <AnimatePresence>
                         {onlineOrderNotifs.map((notif, idx) => (
                           <motion.div
@@ -839,63 +850,177 @@ export default function CashierView() {
                             exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
                             transition={{ delay: idx * 0.04, ...SP }}
                             style={{
-                              display: "flex", alignItems: "flex-start", gap: 10,
-                              padding: "10px 12px",
+                              display: "grid", gap: 10,
+                              padding: "12px 14px",
                               borderBottom: idx < onlineOrderNotifs.length - 1
                                 ? "1px solid #d1fae5" : "none",
                             }}
                           >
-                            {/* Pulsing dot */}
-                            <motion.div
-                              animate={{ scale: [1, 1.3, 1], opacity: [1, 0.4, 1] }}
-                              transition={{ repeat: Infinity, duration: 1.6, delay: idx * 0.3 }}
-                              style={{ width: 7, height: 7, borderRadius: "50%", background: "#16a34a", marginTop: 4, flexShrink: 0 }}
-                            />
-
-                            {/* Order info */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
-                                <span style={{ fontSize: 12, fontWeight: 600, color: "#111", fontFamily: F }}>
-                                  ₱{Number(notif.total).toFixed(2)}
-                                </span>
-                                <span style={{
-                                  fontSize: 9, fontWeight: 500, padding: "1px 7px", borderRadius: 99,
-                                  background: "#d1fae5", color: "#065f46", textTransform: "capitalize",
-                                }}>
-                                  {notif.orderType}
-                                </span>
-                                <span style={{ fontSize: 9, color: "#bbb", marginLeft: "auto", flexShrink: 0 }}>
-                                  {new Date(notif.createdAt).toLocaleTimeString("en-PH", {
-                                    hour: "2-digit", minute: "2-digit", hour12: true,
-                                  })}
-                                </span>
+                            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: "#111", fontFamily: F }}>
+                                    {notif.orderNumber}
+                                  </span>
+                                  <span style={{
+                                    fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 99,
+                                    background: "#dcfce7", color: "#166534",
+                                  }}>
+                                    {notif.trackingStatus}
+                                  </span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                  <span style={{
+                                    fontSize: 9, fontWeight: 500, padding: "1px 7px", borderRadius: 99,
+                                    background: "#d1fae5", color: "#065f46", textTransform: "capitalize",
+                                  }}>
+                                    {notif.orderType}
+                                  </span>
+                                  <span style={{ fontSize: 9, color: "#6b7280" }}>
+                                    {new Date(notif.createdAt).toLocaleTimeString("en-PH", {
+                                      hour: "2-digit", minute: "2-digit", hour12: true,
+                                    })}
+                                  </span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: "#111" }}>
+                                    ₱{Number(notif.total).toFixed(2)}
+                                  </span>
+                                </div>
                               </div>
-                              <p style={{
-                                fontSize: 10, color: "#6b7280", fontFamily: F, margin: 0,
-                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                              }}>
-                                {notif.items.map((i) => `${i.name} ×${i.quantity}`).join(", ")}
-                              </p>
+                              <motion.button
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => handleProceedOnlineOrder(notif.id)}
+                                style={{
+                                  padding: "7px 11px",
+                                  borderRadius: 9,
+                                  border: "1px solid #16a34a",
+                                  background: "#16a34a",
+                                  color: "#fff",
+                                  cursor: "pointer",
+                                  fontSize: 10.5,
+                                  fontWeight: 600,
+                                  fontFamily: F,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                Proceed to Order
+                              </motion.button>
                             </div>
 
-                            {/* Dismiss (✓) button */}
-                            <motion.button
-                              whileTap={{ scale: 0.85 }}
-                              onClick={() => dismissNotif(notif.id)}
-                              title="Mark as handled"
-                              style={{
-                                width: 22, height: 22, borderRadius: 7,
-                                border: "1px solid #a7f3d0",
-                                background: "#fff", cursor: "pointer",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                flexShrink: 0,
-                              }}
-                            >
-                              <Check style={{ width: 11, height: 11, color: "#16a34a" }} strokeWidth={3} />
-                            </motion.button>
+                            <div style={{ display: "grid", gap: 5 }}>
+                              {notif.items.map((item, itemIndex) => (
+                                <div key={`${notif.id}-${itemIndex}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                  <span style={{ fontSize: 10.5, color: "#374151", fontFamily: F }}>
+                                    {item.quantity}x {item.name}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingTop: 2 }}>
+                              <span style={{ fontSize: 10, color: "#6b7280", fontFamily: F }}>
+                                Customer status: {notif.trackingStatus}
+                              </span>
+                              <span style={{ fontSize: 10, color: "#9ca3af", fontFamily: F }}>
+                                Review this order before sending it to the kitchen queue
+                              </span>
+                            </div>
                           </motion.div>
                         ))}
                       </AnimatePresence>
+                        {readyPickupOrders.length > 0 && (
+                          <div style={{ padding: "10px 14px 8px", borderTop: onlineOrderNotifs.length > 0 ? "1px solid #d1fae5" : "none" }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: "#166534", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
+                              Ready for Pickup
+                            </p>
+                          </div>
+                        )}
+                        <AnimatePresence>
+                          {readyPickupOrders.map((notif, idx) => (
+                            <motion.div
+                              key={`ready-${notif.id}`}
+                              layout
+                              initial={{ opacity: 0, x: -8 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
+                              transition={{ delay: idx * 0.04, ...SP }}
+                              style={{
+                                display: "grid", gap: 10,
+                                padding: "12px 14px",
+                                borderTop: idx > 0 ? "1px solid #d1fae5" : "none",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: "#111", fontFamily: F }}>
+                                      {notif.orderNumber}
+                                    </span>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 99,
+                                      background: "#dcfce7", color: "#166534",
+                                    }}>
+                                      {notif.trackingStatus}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 500, padding: "1px 7px", borderRadius: 99,
+                                      background: "#d1fae5", color: "#065f46", textTransform: "capitalize",
+                                    }}>
+                                      {notif.orderType}
+                                    </span>
+                                    <span style={{ fontSize: 9, color: "#6b7280" }}>
+                                      {new Date(notif.createdAt).toLocaleTimeString("en-PH", {
+                                        hour: "2-digit", minute: "2-digit", hour12: true,
+                                      })}
+                                    </span>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: "#111" }}>
+                                      ₱{Number(notif.total).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <motion.button
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => handleConfirmPickup(notif.id)}
+                                  style={{
+                                    padding: "7px 11px",
+                                    borderRadius: 9,
+                                    border: "1px solid #111",
+                                    background: "#111",
+                                    color: "#fff",
+                                    cursor: "pointer",
+                                    fontSize: 10.5,
+                                    fontWeight: 600,
+                                    fontFamily: F,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  Confirm Pickup
+                                </motion.button>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 5 }}>
+                                {notif.items.map((item, itemIndex) => (
+                                  <div key={`ready-${notif.id}-${itemIndex}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                    <span style={{ fontSize: 10.5, color: "#374151", fontFamily: F }}>
+                                      {item.quantity}x {item.name}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingTop: 2 }}>
+                                <span style={{ fontSize: 10, color: "#6b7280", fontFamily: F }}>
+                                  Customer status: {notif.trackingStatus}
+                                </span>
+                                <span style={{ fontSize: 10, color: "#9ca3af", fontFamily: F }}>
+                                  Confirm only when the customer has received the order
+                                </span>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                      </div>
                     )}
                   </div>
                 </motion.div>
