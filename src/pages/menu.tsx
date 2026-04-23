@@ -45,6 +45,8 @@ interface OnlineNotif {
   createdAt: string;
   orderType: string;
   trackingStatus: string;
+  handoverTimestamp?: string | null;
+  riderName?: string | null;
   items: { name: string; quantity: number }[];
 }
 interface OrderPayload {
@@ -61,6 +63,20 @@ interface OrderPayload {
   cash_tendered?: number;
   change_amount?: number;
 }
+interface ReceiptData {
+  orderNumber: string;
+  date: string;
+  time: string;
+  items: CartItem[];
+  paidAmount: number;
+  cashTendered: number;
+  changeAmount: number;
+  orderType: string;
+  paymentMethod: string;
+  customerType: CustomerType;
+  discountAmount: number;
+  vatAmount: number;
+}
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const isFood = (item: MenuItem) => item.category.toUpperCase().includes("MENU FOOD");
@@ -69,6 +85,14 @@ const fmt = (n: number) => {
   const [int, dec] = n.toFixed(2).split(".");
   return (dec === "00" ? int : `${int}.${dec}`).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 };
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 const getNow = () => {
   const d = new Date();
@@ -115,6 +139,210 @@ const mapTables = (data: Record<string, unknown>[]): TableItem[] =>
     status: (t.status as "available" | "occupied") ?? "available",
     seats: t.seats ? Number(t.seats) : undefined,
   }));
+
+const formatOrderTimestamp = (value?: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
+const buildReceiptHtml = ({
+  orderNumber,
+  date,
+  time,
+  items,
+  paidAmount,
+  cashTendered,
+  changeAmount,
+  orderType,
+  paymentMethod,
+  customerType,
+  discountAmount,
+  vatAmount,
+}: ReceiptData) => {
+  const customerLabel: Record<CustomerType, string> = {
+    regular: "Regular",
+    pwd: "PWD",
+    senior: "Senior Citizen",
+  };
+
+  const itemRows = items.map((item) => `
+    <tr>
+      <td>${escapeHtml(item.name)}</td>
+      <td class="qty">${item.quantity}</td>
+      <td class="amount">PHP ${fmt(item.price)}</td>
+      <td class="amount">PHP ${fmt(item.price * item.quantity)}</td>
+    </tr>
+  `).join("");
+
+  const pricingRows = customerType !== "regular"
+    ? `
+      <div class="line"><span>Discount</span><strong>-PHP ${fmt(discountAmount)}</strong></div>
+      <div class="line"><span>VAT Exempt</span><strong>PHP ${fmt(vatAmount)}</strong></div>
+    `
+    : `
+      <div class="line"><span>VAT (12% incl.)</span><strong>PHP ${fmt(vatAmount)}</strong></div>
+    `;
+
+  const cashRows = paymentMethod === "cash"
+    ? `
+      <div class="line"><span>Cash Tendered</span><strong>PHP ${fmt(cashTendered)}</strong></div>
+      <div class="line"><span>Change</span><strong>PHP ${fmt(changeAmount)}</strong></div>
+    `
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Receipt ${escapeHtml(orderNumber)}</title>
+  <style>
+    body {
+      font-family: ${F};
+      background: #f5f5f5;
+      color: #111;
+      margin: 0;
+      padding: 24px;
+    }
+    .receipt {
+      max-width: 420px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 18px;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 16px;
+      border-bottom: 1px dashed #d1d5db;
+      margin-bottom: 16px;
+    }
+    .header h1 {
+      font-size: 22px;
+      margin: 0 0 4px;
+    }
+    .header p,
+    .meta p,
+    .footer p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .meta,
+    .summary {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+    }
+    th,
+    td {
+      padding: 8px 0;
+      border-bottom: 1px dashed #e5e7eb;
+      font-size: 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .qty {
+      text-align: center;
+      width: 44px;
+    }
+    .amount {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .total {
+      padding-top: 12px;
+      border-top: 1px solid #111;
+      margin-top: 12px;
+      font-size: 15px;
+    }
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      border-top: 1px dashed #d1d5db;
+      padding-top: 16px;
+    }
+    @media print {
+      body {
+        background: #fff;
+        padding: 0;
+      }
+      .receipt {
+        border: none;
+        border-radius: 0;
+        max-width: none;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="receipt">
+    <section class="header">
+      <h1>The Crunch</h1>
+      <p>Official Sales Receipt</p>
+    </section>
+
+    <section class="meta">
+      <div class="line"><span>Order No.</span><strong>${escapeHtml(orderNumber)}</strong></div>
+      <div class="line"><span>Date</span><strong>${escapeHtml(date)}</strong></div>
+      <div class="line"><span>Time</span><strong>${escapeHtml(time)}</strong></div>
+      <div class="line"><span>Order Type</span><strong>${escapeHtml(orderType)}</strong></div>
+      <div class="line"><span>Payment</span><strong>${escapeHtml(paymentMethod)}</strong></div>
+      <div class="line"><span>Customer</span><strong>${escapeHtml(customerLabel[customerType])}</strong></div>
+    </section>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="qty">Qty</th>
+          <th class="amount">Price</th>
+          <th class="amount">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemRows}
+      </tbody>
+    </table>
+
+    <section class="summary">
+      ${pricingRows}
+      ${cashRows}
+      <div class="line total"><span>Total Paid</span><strong>PHP ${fmt(paidAmount)}</strong></div>
+    </section>
+
+    <section class="footer">
+      <p>Thank you for your order.</p>
+      <p>Please keep this receipt for your records.</p>
+    </section>
+  </main>
+</body>
+</html>`;
+};
 
 // ─── SHARED STYLES ────────────────────────────────────────────────────────────
 const btn = (bg: string, color: string, extra?: object) => ({
@@ -259,6 +487,84 @@ function CustomSelect({ value, onChange, options }: {
 }
 
 // ─── AMOUNT ENTRY MODAL ───────────────────────────────────────────────────────
+function RiderHandoverModal({ show, order, riderName, saving, onChange, onConfirm, onCancel }: {
+  show: boolean;
+  order: OnlineNotif | null;
+  riderName: string;
+  saving: boolean;
+  onChange: (value: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {show && order && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+            onClick={saving ? undefined : onCancel}
+            style={{ position: "fixed", inset: 0, zIndex: 65, backdropFilter: "blur(3px)", background: "rgba(0,0,0,0.35)" }}
+          />
+          <div style={{ position: "fixed", inset: 0, zIndex: 66, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, pointerEvents: "none" }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              style={{ background: "#fff", width: "100%", maxWidth: 336, borderRadius: 20, overflow: "hidden", border: "1px solid #ebebeb", pointerEvents: "auto", fontFamily: F }}
+            >
+              <div style={{ padding: "20px 20px 14px", borderBottom: "1px solid #f5f5f5" }}>
+                <p style={{ fontSize: 10, fontWeight: 600, color: "#16a34a", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>Delivery Handover</p>
+                <p style={{ fontSize: 16, fontWeight: 600, color: "#111", margin: 0 }}>{order.orderNumber}</p>
+                <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 5 }}>Record the rider before marking this delivery as handed over.</p>
+              </div>
+
+              <div style={{ padding: "16px 18px 18px" }}>
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, fontWeight: 600, color: "#bbb", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Rider Name</p>
+                  <input
+                    value={riderName}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder="Enter rider name"
+                    disabled={saving}
+                    style={{ width: "100%", padding: "10px 12px", fontSize: 12, fontFamily: F, border: `1px solid ${riderName.trim() ? "#111" : "#efefef"}`, borderRadius: 10, background: "#fafafa", color: "#333", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                <div style={{ background: "#fafafa", border: "1px solid #f0f0f0", borderRadius: 12, padding: "10px 12px", marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>Order Type</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "#065f46", textTransform: "capitalize" }}>{order.orderType}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{ fontSize: 10, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>Amount</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#111" }}>₱{Number(order.total).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <motion.button
+                  whileHover={{ opacity: 0.88 }} whileTap={{ scale: 0.98 }}
+                  disabled={saving || !riderName.trim()}
+                  onClick={onConfirm}
+                  style={{ ...btn("#111", "#fff", { marginBottom: 6 }), cursor: saving || !riderName.trim() ? "not-allowed" : "pointer", opacity: saving || !riderName.trim() ? 0.45 : 1 }}
+                >
+                  {saving ? "Saving..." : "Confirm Handover"}
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={onCancel}
+                  disabled={saving}
+                  style={{ ...btn("transparent", "#bbb"), padding: "9px", fontSize: 12, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.5 : 1 }}
+                >
+                  Cancel
+                </motion.button>
+              </div>
+            </motion.div>
+          </div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function AmountEntryModal({ show, amountDue, paymentMethod, onConfirm, onCancel }: {
   show: boolean;
   amountDue: number;
@@ -426,6 +732,46 @@ function SuccessModal({
 }) {
   const { date, time } = getNow();
   const label: Record<CustomerType, string> = { regular: "Regular", pwd: "PWD", senior: "Senior Citizen" };
+  const receiptHtml = buildReceiptHtml({
+    orderNumber,
+    date,
+    time,
+    items: savedCart,
+    paidAmount,
+    cashTendered,
+    changeAmount,
+    orderType,
+    paymentMethod,
+    customerType,
+    discountAmount,
+    vatAmount,
+  });
+
+  const handlePrintReceipt = () => {
+    if (typeof window === "undefined") return;
+    const receiptWindow = window.open("", "_blank", "width=420,height=760");
+    if (!receiptWindow) return;
+    receiptWindow.document.open();
+    receiptWindow.document.write(receiptHtml);
+    receiptWindow.document.close();
+    receiptWindow.focus();
+    receiptWindow.onload = () => {
+      receiptWindow.print();
+    };
+  };
+
+  const handleDownloadReceipt = () => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const blob = new Blob([receiptHtml], { type: "text/html;charset=utf-8" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `receipt-${orderNumber.replace(/[^a-zA-Z0-9-_]/g, "") || "order"}.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(url);
+  };
 
   return (
     <AnimatePresence>
@@ -528,7 +874,15 @@ function SuccessModal({
 
               {/* Actions */}
               <div style={{ padding: "0 16px 20px", display: "flex", flexDirection: "column", gap: 6 }}>
-                <motion.button whileHover={{ opacity: 0.88 }} whileTap={{ scale: 0.98 }} onClick={onClose} style={{ ...btn("#111", "#fff"), fontSize: 12 }}>New Order</motion.button>
+                <motion.button whileHover={{ opacity: 0.88 }} whileTap={{ scale: 0.98 }} onClick={handlePrintReceipt} style={{ ...btn("#111", "#fff"), fontSize: 12 }}>
+                  Print Receipt
+                </motion.button>
+                <motion.button whileHover={{ opacity: 0.88 }} whileTap={{ scale: 0.98 }} onClick={handleDownloadReceipt} style={{ ...btn("#f3f4f6", "#374151"), fontSize: 12 }}>
+                  Download Receipt
+                </motion.button>
+                <motion.button whileHover={{ opacity: 0.88 }} whileTap={{ scale: 0.98 }} onClick={onClose} style={{ ...btn("#16a34a", "#fff"), fontSize: 12 }}>
+                  New Order
+                </motion.button>
                 <button onClick={onClose} style={{ ...btn("transparent", "#bbb"), padding: "9px", fontSize: 12 }}>Close</button>
               </div>
             </motion.div>
@@ -562,7 +916,13 @@ export default function CashierView() {
   const [placing, setPlacing] = useState(false);
   const [onlineOrderNotifs, setOnlineOrderNotifs] = useState<OnlineNotif[]>([]);
   const [readyPickupOrders, setReadyPickupOrders] = useState<OnlineNotif[]>([]);
+  const [deliveryHandoverOrders, setDeliveryHandoverOrders] = useState<OnlineNotif[]>([]);
+  const [handedToRiderOrders, setHandedToRiderOrders] = useState<OnlineNotif[]>([]);
+  const [handoverOrder, setHandoverOrder] = useState<OnlineNotif | null>(null);
+  const [riderNameInput, setRiderNameInput] = useState("");
+  const [savingHandover, setSavingHandover] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [deliveryHandoverOpen, setDeliveryHandoverOpen] = useState(false);
   const [tablesSupported, setTablesSupported] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     return localStorage.getItem("tablesRouteUnsupported") !== "1";
@@ -630,9 +990,10 @@ export default function CashierView() {
   useEffect(() => {
     const poll = async () => {
       try {
-        const [reviewData, readyData] = await Promise.all([
+        const [reviewData, readyData, deliveryData] = await Promise.all([
           api.get<OnlineNotif[]>("/orders/new-online"),
           api.get<OnlineNotif[]>("/orders/ready-pickup"),
+          api.get<OnlineNotif[]>("/orders/delivery-handover"),
         ]);
         setOnlineOrderNotifs((prev) => {
           const next = reviewData ?? [];
@@ -642,6 +1003,13 @@ export default function CashierView() {
           return next;
         });
         setReadyPickupOrders(readyData ?? []);
+        setDeliveryHandoverOrders((prev) => {
+          const next = deliveryData ?? [];
+          if (next.length > prev.length && next.length > 0) {
+            setDeliveryHandoverOpen(true);
+          }
+          return next;
+        });
       } catch (err) {
         console.warn("[poll] online-order fetch failed:", err);
       }
@@ -652,12 +1020,31 @@ export default function CashierView() {
     return () => clearInterval(interval);
   }, []);
 
+  const getCashierId = () => {
+    const raw = localStorage.getItem("userId");
+    return raw ? Number(raw) : null;
+  };
+
+  const updateQueueOrder = async (id: number, payload: Record<string, unknown>) => {
+    await api.patch(`/orders/${id}`, payload);
+  };
+
+  const openRiderHandover = (order: OnlineNotif) => {
+    setHandoverOrder(order);
+    setRiderNameInput(order.riderName ?? "");
+  };
+
+  const closeRiderHandover = () => {
+    if (savingHandover) return;
+    setHandoverOrder(null);
+    setRiderNameInput("");
+  };
+
   const handleProceedOnlineOrder = async (id: number) => {
     try {
-      const cashierId = localStorage.getItem("userId");
-      await api.patch(`/orders/${id}`, {
+      await updateQueueOrder(id, {
         status: "Pending",
-        cashierId: cashierId ? Number(cashierId) : null,
+        cashierId: getCashierId(),
       });
       setOnlineOrderNotifs((prev) => prev.filter((o) => o.id !== id));
     } catch (err) {
@@ -668,15 +1055,46 @@ export default function CashierView() {
 
   const handleConfirmPickup = async (id: number) => {
     try {
-      const cashierId = localStorage.getItem("userId");
-      await api.patch(`/orders/${id}`, {
+      await updateQueueOrder(id, {
         status: "Picked Up",
-        cashierId: cashierId ? Number(cashierId) : null,
+        cashierId: getCashierId(),
       });
       setReadyPickupOrders((prev) => prev.filter((o) => o.id !== id));
     } catch (err) {
       console.error("Failed to confirm pickup:", err);
       alert("Failed to confirm customer pickup.");
+    }
+  };
+
+  const handleRiderHandover = async () => {
+    if (!handoverOrder || !riderNameInput.trim()) return;
+    const handoverTimestamp = new Date().toISOString();
+
+    try {
+      setSavingHandover(true);
+      await updateQueueOrder(handoverOrder.id, {
+        status: "Completed",
+        cashierId: getCashierId(),
+        handoverTimestamp,
+        riderName: riderNameInput.trim(),
+      });
+      setDeliveryHandoverOrders((prev) => prev.filter((o) => o.id !== handoverOrder.id));
+      setHandedToRiderOrders((prev) => [
+        {
+          ...handoverOrder,
+          trackingStatus: "Completed",
+          handoverTimestamp,
+          riderName: riderNameInput.trim(),
+        },
+        ...prev.filter((o) => o.id !== handoverOrder.id),
+      ]);
+      setHandoverOrder(null);
+      setRiderNameInput("");
+    } catch (err) {
+      console.error("Failed to hand order to rider:", err);
+      alert("Failed to record rider handover.");
+    } finally {
+      setSavingHandover(false);
     }
   };
 
@@ -688,6 +1106,12 @@ export default function CashierView() {
     return tabOk && p.name.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
+  const readyForPickupOrders = readyPickupOrders;
+  const readyForDeliveryOrders = deliveryHandoverOrders.filter((order) =>
+    !order.handoverTimestamp &&
+    order.trackingStatus.toLowerCase() !== "handed to rider" &&
+    order.trackingStatus.toLowerCase() !== "out for delivery"
+  );
   const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
   const gross = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const pricing = computePricing(gross, customerType);
@@ -726,7 +1150,6 @@ export default function CashierView() {
     setPlacing(true);
     const { vatExemptAmount, vatAmount, discountAmount, amountDue } = computePricing(gross, customerType);
     const change = Math.max(0, tendered - amountDue);
-    const cashierId = localStorage.getItem("userId");
 
     const payload: OrderPayload = {
       items: cart.map((i) => ({ product_id: i.id, qty: i.quantity, subtotal: i.price * i.quantity, name: i.name, price: i.price })),
@@ -737,7 +1160,7 @@ export default function CashierView() {
       discount_amount: discountAmount,
       vat_amount: vatAmount,
       vat_exempt_amount: vatExemptAmount,
-      cashierId: cashierId ? Number(cashierId) : null,
+      cashierId: getCashierId(),
       table_id: orderType === "dine-in" ? selectedTable : null,
       ...(paymentMethod === "cash" && { cash_tendered: tendered, change_amount: change }),
     };
@@ -806,6 +1229,7 @@ export default function CashierView() {
               <h1 style={{ fontSize: 16, fontWeight: 600, color: "#111", fontFamily: F }}>Menu</h1>
 
               {/* Online Orders pill button */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <motion.button
                 onClick={() => setNotifOpen((p) => !p)}
                 whileTap={{ scale: 0.95 }}
@@ -860,6 +1284,59 @@ export default function CashierView() {
                   <ChevronDown style={{ width: 11, height: 11, color: (onlineOrderNotifs.length + readyPickupOrders.length) > 0 ? "#16a34a" : "#ccc" }} />
                 </motion.div>
               </motion.button>
+              <motion.button
+                onClick={() => setDeliveryHandoverOpen((p) => !p)}
+                whileTap={{ scale: 0.95 }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "5px 10px 5px 8px", borderRadius: 20,
+                  border: `1px solid ${(readyForDeliveryOrders.length + handedToRiderOrders.length) > 0 ? "#111" : "#efefef"}`,
+                  background: (readyForDeliveryOrders.length + handedToRiderOrders.length) > 0
+                    ? (deliveryHandoverOpen ? "#f3f4f6" : "#fafafa")
+                    : "#fafafa",
+                  cursor: "pointer", fontFamily: F,
+                  boxShadow: (readyForDeliveryOrders.length + handedToRiderOrders.length) > 0 ? "0 0 0 3px rgba(17,17,17,0.06)" : "none",
+                  transition: "all 0.2s",
+                }}
+              >
+                {(readyForDeliveryOrders.length + handedToRiderOrders.length) > 0 && (
+                  <motion.div
+                    animate={{ scale: [1, 1.4, 1], opacity: [1, 0.45, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.4 }}
+                    style={{ width: 7, height: 7, borderRadius: "50%", background: "#111", flexShrink: 0 }}
+                  />
+                )}
+                <span style={{
+                  fontSize: 11, fontWeight: 600,
+                  color: (readyForDeliveryOrders.length + handedToRiderOrders.length) > 0 ? "#111" : "#bbb",
+                }}>
+                  Delivery Handover
+                </span>
+                {(readyForDeliveryOrders.length + handedToRiderOrders.length) > 0 && (
+                  <motion.span
+                    key={readyForDeliveryOrders.length + handedToRiderOrders.length}
+                    initial={{ scale: 0.6, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={SP}
+                    style={{
+                      fontSize: 10, fontWeight: 700,
+                      background: "#111", color: "#fff",
+                      borderRadius: 99, padding: "1px 6px",
+                      minWidth: 16, textAlign: "center",
+                    }}
+                  >
+                    {readyForDeliveryOrders.length + handedToRiderOrders.length}
+                  </motion.span>
+                )}
+                <motion.div
+                  animate={{ rotate: deliveryHandoverOpen ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ display: "flex", alignItems: "center" }}
+                >
+                  <ChevronDown style={{ width: 11, height: 11, color: (readyForDeliveryOrders.length + handedToRiderOrders.length) > 0 ? "#111" : "#ccc" }} />
+                </motion.div>
+              </motion.button>
+              </div>
             </div>
 
             {/* ── Online Orders Review Panel ── */}
@@ -878,7 +1355,7 @@ export default function CashierView() {
                     background: "#f9fef9",
                     overflow: "hidden",
                   }}>
-                    {onlineOrderNotifs.length === 0 && readyPickupOrders.length === 0 ? (
+                    {onlineOrderNotifs.length === 0 && readyForPickupOrders.length === 0 && readyForDeliveryOrders.length === 0 && handedToRiderOrders.length === 0 ? (
                       <div style={{ padding: "16px", textAlign: "center" }}>
                         <p style={{ fontSize: 11, color: "#bbb", fontFamily: F, margin: 0 }}>
                           No online pickup orders waiting for cashier action
@@ -887,7 +1364,7 @@ export default function CashierView() {
                     ) : (
                       <div>
                         {onlineOrderNotifs.length > 0 && (
-                          <div style={{ padding: "10px 14px 8px", borderBottom: readyPickupOrders.length > 0 ? "1px solid #d1fae5" : "none" }}>
+                          <div style={{ padding: "10px 14px 8px", borderBottom: (readyForPickupOrders.length + readyForDeliveryOrders.length + handedToRiderOrders.length) > 0 ? "1px solid #d1fae5" : "none" }}>
                             <p style={{ fontSize: 10, fontWeight: 700, color: "#166534", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
                               Awaiting Cashier Review
                             </p>
@@ -980,7 +1457,7 @@ export default function CashierView() {
                           </motion.div>
                         ))}
                       </AnimatePresence>
-                        {readyPickupOrders.length > 0 && (
+                        {readyForPickupOrders.length > 0 && (
                           <div style={{ padding: "10px 14px 8px", borderTop: onlineOrderNotifs.length > 0 ? "1px solid #d1fae5" : "none" }}>
                             <p style={{ fontSize: 10, fontWeight: 700, color: "#166534", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
                               Ready for Pickup
@@ -988,7 +1465,7 @@ export default function CashierView() {
                           </div>
                         )}
                         <AnimatePresence>
-                          {readyPickupOrders.map((notif, idx) => (
+                          {readyForPickupOrders.map((notif, idx) => (
                             <motion.div
                               key={`ready-${notif.id}`}
                               layout
@@ -1069,6 +1546,387 @@ export default function CashierView() {
                                 <span style={{ fontSize: 10, color: "#9ca3af", fontFamily: F }}>
                                   Confirm only when the customer has received the order
                                 </span>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                        {false && readyForDeliveryOrders.length > 0 && (
+                          <div style={{ padding: "10px 14px 8px", borderTop: (onlineOrderNotifs.length > 0 || readyForPickupOrders.length > 0) ? "1px solid #d1fae5" : "none" }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: "#166534", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
+                              Ready for Rider Handover
+                            </p>
+                          </div>
+                        )}
+                        <AnimatePresence>
+                          {[].map((notif: OnlineNotif, idx) => (
+                            <motion.div
+                              key={`delivery-${notif.id}`}
+                              layout
+                              initial={{ opacity: 0, x: -8 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
+                              transition={{ delay: idx * 0.04, ...SP }}
+                              style={{
+                                display: "grid", gap: 10,
+                                padding: "12px 14px",
+                                borderTop: idx > 0 ? "1px solid #d1fae5" : "none",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: "#111", fontFamily: F }}>
+                                      {notif.orderNumber}
+                                    </span>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 99,
+                                      background: "#dcfce7", color: "#166534",
+                                    }}>
+                                      {notif.trackingStatus}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 500, padding: "1px 7px", borderRadius: 99,
+                                      background: "#d1fae5", color: "#065f46", textTransform: "capitalize",
+                                    }}>
+                                      {notif.orderType}
+                                    </span>
+                                    <span style={{ fontSize: 9, color: "#6b7280" }}>
+                                      {new Date(notif.createdAt).toLocaleTimeString("en-PH", {
+                                        hour: "2-digit", minute: "2-digit", hour12: true,
+                                      })}
+                                    </span>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: "#111" }}>
+                                      â‚±{Number(notif.total).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <motion.button
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => openRiderHandover(notif)}
+                                  style={{
+                                    padding: "7px 11px",
+                                    borderRadius: 9,
+                                    border: "1px solid #111",
+                                    background: "#111",
+                                    color: "#fff",
+                                    cursor: "pointer",
+                                    fontSize: 10.5,
+                                    fontWeight: 600,
+                                    fontFamily: F,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  Handed to Rider
+                                </motion.button>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 5 }}>
+                                {notif.items.map((item, itemIndex) => (
+                                  <div key={`delivery-${notif.id}-${itemIndex}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                    <span style={{ fontSize: 10.5, color: "#374151", fontFamily: F }}>
+                                      {item.quantity}x {item.name}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingTop: 2 }}>
+                                <span style={{ fontSize: 10, color: "#6b7280", fontFamily: F }}>
+                                  Customer status: {notif.trackingStatus}
+                                </span>
+                                <span style={{ fontSize: 10, color: "#9ca3af", fontFamily: F }}>
+                                  Record this once the rider physically collects the order
+                                </span>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                        {false && handedToRiderOrders.length > 0 && (
+                          <div style={{ padding: "10px 14px 8px", borderTop: (onlineOrderNotifs.length > 0 || readyForPickupOrders.length > 0 || readyForDeliveryOrders.length > 0) ? "1px solid #d1fae5" : "none" }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: "#166534", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
+                              Handed to Rider
+                            </p>
+                          </div>
+                        )}
+                        <AnimatePresence>
+                          {[].map((notif: OnlineNotif, idx) => (
+                            <motion.div
+                              key={`handover-${notif.id}`}
+                              layout
+                              initial={{ opacity: 0, x: -8 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
+                              transition={{ delay: idx * 0.04, ...SP }}
+                              style={{
+                                display: "grid", gap: 10,
+                                padding: "12px 14px",
+                                borderTop: idx > 0 ? "1px solid #d1fae5" : "none",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: "#111", fontFamily: F }}>
+                                      {notif.orderNumber}
+                                    </span>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 99,
+                                      background: "#dcfce7", color: "#166534",
+                                    }}>
+                                      {notif.trackingStatus}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 500, padding: "1px 7px", borderRadius: 99,
+                                      background: "#d1fae5", color: "#065f46", textTransform: "capitalize",
+                                    }}>
+                                      {notif.orderType}
+                                    </span>
+                                    <span style={{ fontSize: 9, color: "#6b7280" }}>
+                                      {new Date(notif.createdAt).toLocaleTimeString("en-PH", {
+                                        hour: "2-digit", minute: "2-digit", hour12: true,
+                                      })}
+                                    </span>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: "#111" }}>
+                                      â‚±{Number(notif.total).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 5 }}>
+                                {notif.items.map((item, itemIndex) => (
+                                  <div key={`handover-${notif.id}-${itemIndex}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                    <span style={{ fontSize: 10.5, color: "#374151", fontFamily: F }}>
+                                      {item.quantity}x {item.name}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingTop: 2 }}>
+                                <span style={{ fontSize: 10, color: "#6b7280", fontFamily: F }}>
+                                  Customer status: {notif.trackingStatus}
+                                </span>
+                                <div style={{ display: "grid", justifyItems: "end", gap: 2 }}>
+                                  {notif.riderName && (
+                                    <span style={{ fontSize: 10, color: "#6b7280", fontFamily: F }}>
+                                      Rider: {notif.riderName}
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: 10, color: "#9ca3af", fontFamily: F }}>
+                                    Handed over at {formatOrderTimestamp(notif.handoverTimestamp)}
+                                  </span>
+                                </div>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {deliveryHandoverOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.22, ease: "easeInOut" }}
+                  style={{ overflow: "hidden", marginBottom: 14 }}
+                >
+                  <div style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 12,
+                    background: "#fcfcfc",
+                    overflow: "hidden",
+                  }}>
+                    {readyForDeliveryOrders.length === 0 && handedToRiderOrders.length === 0 ? (
+                      <div style={{ padding: "16px", textAlign: "center" }}>
+                        <p style={{ fontSize: 11, color: "#bbb", fontFamily: F, margin: 0 }}>
+                          No delivery orders waiting for rider handover
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        {readyForDeliveryOrders.length > 0 && (
+                          <div style={{ padding: "10px 14px 8px", borderBottom: handedToRiderOrders.length > 0 ? "1px solid #e5e7eb" : "none" }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: "#111", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
+                              Ready for Rider Handover
+                            </p>
+                          </div>
+                        )}
+                        <AnimatePresence>
+                          {readyForDeliveryOrders.map((notif, idx) => (
+                            <motion.div
+                              key={`delivery-${notif.id}`}
+                              layout
+                              initial={{ opacity: 0, x: -8 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
+                              transition={{ delay: idx * 0.04, ...SP }}
+                              style={{
+                                display: "grid", gap: 10,
+                                padding: "12px 14px",
+                                borderTop: idx > 0 ? "1px solid #e5e7eb" : "none",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: "#111", fontFamily: F }}>
+                                      {notif.orderNumber}
+                                    </span>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 99,
+                                      background: "#f3f4f6", color: "#111",
+                                    }}>
+                                      {notif.trackingStatus}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 500, padding: "1px 7px", borderRadius: 99,
+                                      background: "#f3f4f6", color: "#4b5563", textTransform: "capitalize",
+                                    }}>
+                                      {notif.orderType}
+                                    </span>
+                                    <span style={{ fontSize: 9, color: "#6b7280" }}>
+                                      {new Date(notif.createdAt).toLocaleTimeString("en-PH", {
+                                        hour: "2-digit", minute: "2-digit", hour12: true,
+                                      })}
+                                    </span>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: "#111" }}>
+                                      ₱{Number(notif.total).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <motion.button
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => openRiderHandover(notif)}
+                                  style={{
+                                    padding: "7px 11px",
+                                    borderRadius: 9,
+                                    border: "1px solid #111",
+                                    background: "#111",
+                                    color: "#fff",
+                                    cursor: "pointer",
+                                    fontSize: 10.5,
+                                    fontWeight: 600,
+                                    fontFamily: F,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  Handed to Rider
+                                </motion.button>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 5 }}>
+                                {notif.items.map((item, itemIndex) => (
+                                  <div key={`delivery-handover-${notif.id}-${itemIndex}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                    <span style={{ fontSize: 10.5, color: "#374151", fontFamily: F }}>
+                                      {item.quantity}x {item.name}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingTop: 2 }}>
+                                <span style={{ fontSize: 10, color: "#6b7280", fontFamily: F }}>
+                                  Customer status: {notif.trackingStatus}
+                                </span>
+                                <span style={{ fontSize: 10, color: "#9ca3af", fontFamily: F }}>
+                                  Record this once the rider physically collects the order
+                                </span>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+
+                        {handedToRiderOrders.length > 0 && (
+                          <div style={{ padding: "10px 14px 8px", borderTop: readyForDeliveryOrders.length > 0 ? "1px solid #e5e7eb" : "none" }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: "#111", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
+                              Handed to Rider
+                            </p>
+                          </div>
+                        )}
+                        <AnimatePresence>
+                          {handedToRiderOrders.map((notif, idx) => (
+                            <motion.div
+                              key={`handover-${notif.id}`}
+                              layout
+                              initial={{ opacity: 0, x: -8 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
+                              transition={{ delay: idx * 0.04, ...SP }}
+                              style={{
+                                display: "grid", gap: 10,
+                                padding: "12px 14px",
+                                borderTop: idx > 0 ? "1px solid #e5e7eb" : "none",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: "#111", fontFamily: F }}>
+                                      {notif.orderNumber}
+                                    </span>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 99,
+                                      background: "#f3f4f6", color: "#111",
+                                    }}>
+                                      {notif.trackingStatus}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 500, padding: "1px 7px", borderRadius: 99,
+                                      background: "#f3f4f6", color: "#4b5563", textTransform: "capitalize",
+                                    }}>
+                                      {notif.orderType}
+                                    </span>
+                                    <span style={{ fontSize: 9, color: "#6b7280" }}>
+                                      {new Date(notif.createdAt).toLocaleTimeString("en-PH", {
+                                        hour: "2-digit", minute: "2-digit", hour12: true,
+                                      })}
+                                    </span>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: "#111" }}>
+                                      ₱{Number(notif.total).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 5 }}>
+                                {notif.items.map((item, itemIndex) => (
+                                  <div key={`handover-delivery-${notif.id}-${itemIndex}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                    <span style={{ fontSize: 10.5, color: "#374151", fontFamily: F }}>
+                                      {item.quantity}x {item.name}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingTop: 2 }}>
+                                <span style={{ fontSize: 10, color: "#6b7280", fontFamily: F }}>
+                                  Customer status: {notif.trackingStatus}
+                                </span>
+                                <div style={{ display: "grid", justifyItems: "end", gap: 2 }}>
+                                  {notif.riderName && (
+                                    <span style={{ fontSize: 10, color: "#6b7280", fontFamily: F }}>
+                                      Rider: {notif.riderName}
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: 10, color: "#9ca3af", fontFamily: F }}>
+                                    Handed over at {formatOrderTimestamp(notif.handoverTimestamp)}
+                                  </span>
+                                </div>
                               </div>
                             </motion.div>
                           ))}
@@ -1258,6 +2116,16 @@ export default function CashierView() {
         paymentMethod={paymentMethod}
         onConfirm={(t) => { void handleAmountConfirmed(t); }}
         onCancel={() => setShowAmountEntry(false)}
+      />
+
+      <RiderHandoverModal
+        show={handoverOrder !== null}
+        order={handoverOrder}
+        riderName={riderNameInput}
+        saving={savingHandover}
+        onChange={setRiderNameInput}
+        onConfirm={() => { void handleRiderHandover(); }}
+        onCancel={closeRiderHandover}
       />
 
       <SuccessModal

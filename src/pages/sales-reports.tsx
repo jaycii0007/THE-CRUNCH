@@ -52,6 +52,8 @@ interface Order {
   status: string;
   paymentCategory: string;
   cashierName?: string;
+  riderName?: string;
+  handoverTimestamp?: string | null;
 }
 
 interface RawOrderRow {
@@ -72,6 +74,10 @@ interface RawOrderRow {
   cashier_name?: string;
   operatorName?: string;
   operator_name?: string;
+  riderName?: string;
+  rider_name?: string;
+  handoverTimestamp?: string;
+  handover_timestamp?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -231,6 +237,8 @@ function processRawRows(rows: RawOrderRow[]): { logs: SaleLog[]; orders: Order[]
     status: string;
     paymentMethod: string;
     cashierName: string;
+    riderName: string;
+    handoverTimestamp: string | null;
   };
 
   const orderMap: Record<number, OrderAccum> = {};
@@ -245,8 +253,14 @@ function processRawRows(rows: RawOrderRow[]): { logs: SaleLog[]; orders: Order[]
         status:        r.status ?? "",
         paymentMethod: (r.paymentMethod ?? r.payment_method ?? "cash").toString().trim() || "cash",
         cashierName:   (r.cashierName ?? r.cashier_name ?? r.operatorName ?? r.operator_name ?? "").toString().trim() || "Unknown",
+        riderName:     (r.riderName ?? r.rider_name ?? "").toString().trim(),
+        handoverTimestamp: (r.handoverTimestamp ?? r.handover_timestamp ?? null)?.toString() ?? null,
       };
     }
+    const riderName = (r.riderName ?? r.rider_name ?? "").toString().trim();
+    const handoverTimestamp = (r.handoverTimestamp ?? r.handover_timestamp ?? "").toString().trim();
+    if (riderName) orderMap[r.id].riderName = riderName;
+    if (handoverTimestamp) orderMap[r.id].handoverTimestamp = handoverTimestamp;
     orderMap[r.id].rows.push(r);
   });
 
@@ -289,6 +303,8 @@ function processRawRows(rows: RawOrderRow[]): { logs: SaleLog[]; orders: Order[]
       status,
       paymentCategory: order.paymentMethod,
       cashierName:     order.cashierName,
+      riderName:       order.riderName || undefined,
+      handoverTimestamp: order.handoverTimestamp,
     };
   });
 
@@ -319,6 +335,8 @@ function triggerPrint(revenue: number, period: Period, logs: SaleLog[], orders: 
       <td>${parseDateSafe(o.date)?.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) ?? "—"}</td>
       <td>${o.time}</td>
       <td style="max-width:200px">${o.items.map((it) => `${it.name} ×${it.quantity}`).join(", ")}</td>
+      <td>${o.orderType === "delivery" ? (o.riderName ?? "—") : "—"}</td>
+      <td>${o.orderType === "delivery" ? (parseDateSafe(o.handoverTimestamp)?.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) ?? "—") : "—"}</td>
       <td>${o.cashierName ?? "—"}</td>
       <td style="text-transform:capitalize;color:#2563eb">${o.paymentCategory}</td>
       <td style="text-align:right;font-weight:700">₱${o.total.toLocaleString()}</td>
@@ -383,12 +401,14 @@ function triggerPrint(revenue: number, period: Period, logs: SaleLog[], orders: 
         .section-title { font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
         colgroup col:nth-child(1) { width: 7%; }
-        colgroup col:nth-child(2) { width: 11%; }
+        colgroup col:nth-child(2) { width: 10%; }
         colgroup col:nth-child(3) { width: 9%; }
-        colgroup col:nth-child(4) { width: 36%; }
-        colgroup col:nth-child(5) { width: 13%; }
-        colgroup col:nth-child(6) { width: 11%; }
-        colgroup col:nth-child(7) { width: 13%; }
+        colgroup col:nth-child(4) { width: 22%; }
+        colgroup col:nth-child(5) { width: 11%; }
+        colgroup col:nth-child(6) { width: 14%; }
+        colgroup col:nth-child(7) { width: 10%; }
+        colgroup col:nth-child(8) { width: 8%; }
+        colgroup col:nth-child(9) { width: 9%; }
         thead tr { background: #f8fafc; }
         thead th { padding: 9px 10px; text-align: left; font-size: 9px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
         thead th:last-child { text-align: right; }
@@ -461,17 +481,17 @@ function triggerPrint(revenue: number, period: Period, logs: SaleLog[], orders: 
       </div>
       <p class="section-title">Completed Orders (${completedOrders.length})</p>
       <table>
-        <colgroup><col/><col/><col/><col/><col/><col/><col/></colgroup>
+        <colgroup><col/><col/><col/><col/><col/><col/><col/><col/><col/></colgroup>
         <thead>
           <tr>
             <th>Order #</th><th>Date</th><th>Time</th><th>Items</th>
-            <th>Cashier</th><th>Payment</th><th style="text-align:right">Amount</th>
+            <th>Rider</th><th>Handover</th><th>Cashier</th><th>Payment</th><th style="text-align:right">Amount</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
         <tfoot>
           <tr>
-            <td colspan="6" style="text-align:right;color:#0f172a">Total Revenue</td>
+            <td colspan="8" style="text-align:right;color:#0f172a">Total Revenue</td>
             <td style="text-align:right;color:#16a34a;font-size:15px">₱${revenue.toLocaleString()}</td>
           </tr>
         </tfoot>
@@ -1209,6 +1229,7 @@ function OrderRow({ order, index, onRefund }: { order: Order; index: number; onR
 
   const totalQty  = order.items.reduce((s, i) => s + i.quantity, 0);
   const canRefund = order.status === "Completed";
+  const isDelivery = order.orderType === "delivery";
 
   return (
     <>
@@ -1255,6 +1276,10 @@ function OrderRow({ order, index, onRefund }: { order: Order; index: number; onR
                       { label: "Date",         value: fmtDate(order.date) },
                       { label: "Time",         value: fmtTime(order.date) },
                       { label: "Cashier",      value: order.cashierName || "—" },
+                      ...(isDelivery ? [
+                        { label: "Rider", value: order.riderName || "—" },
+                        { label: "Handover", value: fmtTime(order.handoverTimestamp) === "—" ? "—" : `${fmtDate(order.handoverTimestamp)} ${fmtTime(order.handoverTimestamp)}` },
+                      ] : []),
                       { label: "Total Qty",    value: `${totalQty} pcs` },
                       { label: "Subtotal",     value: `₱${order.total.toLocaleString()}` },
                       { label: "Payment",      value: order.paymentCategory },
