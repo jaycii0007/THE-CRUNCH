@@ -60,6 +60,14 @@ interface LoginResponse {
   role: "administrator" | "cashier" | "cook" | "inventory_manager" | "customer";
 }
 
+export interface OnlineStaffAttendance {
+  userId: number;
+  username: string;
+  email: string;
+  role: string;
+  timeIn: string;
+}
+
 /**
  * Centralized API fetch wrapper.
  * Pass `token` in options for authenticated requests.
@@ -199,7 +207,17 @@ export const authApi = {
     }),
 
   logout: (token: string) =>
-    apiCall<void>("/auth/logout", { method: "POST", token }),
+    apiCall<void>("/auth/logout", {
+      method: "POST",
+      token,
+      suppressErrorStatuses: [401],
+    }),
+
+  getOnlineStaffAttendance: (token: string) =>
+    apiCall<OnlineStaffAttendance[]>("/auth/attendance/online-staff", {
+      method: "GET",
+      token,
+    }),
 };
 
 // ─── Staff API (requires token) ───────────────────────────────────────────────
