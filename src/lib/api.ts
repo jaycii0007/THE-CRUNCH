@@ -39,6 +39,7 @@ interface FetchOptions extends Omit<RequestInit, "body"> {
   skipAuth?: boolean;
   token?: string; // ✅ token passed directly — no localStorage
   body?: ApiBody;
+  suppressErrorStatuses?: number[];
 }
 
 interface ApiErrorData {
@@ -67,7 +68,12 @@ export const apiCall = async <T = unknown>(
   endpoint: string,
   options: FetchOptions = {},
 ): Promise<T> => {
-  const { skipAuth = false, token, ...fetchOptions } = options;
+  const {
+    skipAuth = false,
+    token,
+    suppressErrorStatuses = [],
+    ...fetchOptions
+  } = options;
 
   const isAbsoluteUrl = /^https?:\/\//i.test(endpoint);
   const endpointWithoutApiPrefix = endpoint.replace(/^\/?api(?=\/)/i, "");
@@ -137,7 +143,17 @@ export const apiCall = async <T = unknown>(
       return text as unknown as T;
     }
   } catch (error) {
-    console.error(`API Error [${endpoint}]:`, error);
+    const status =
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error &&
+      typeof (error as { status?: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : null;
+
+    if (!status || !suppressErrorStatuses.includes(status)) {
+      console.error(`API Error [${endpoint}]:`, error);
+    }
     throw error;
   }
 };

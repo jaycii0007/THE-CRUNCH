@@ -4,7 +4,7 @@ import {
   Clock, Calendar, Hash, ChevronDown, Delete,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { api } from "../lib/api";
+import { api, apiCall } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
 
 // ─── FONT ─────────────────────────────────────────────────────────────────────
@@ -145,8 +145,16 @@ function ProductCard({ item, onAdd, inCart }: {
         fontFamily: F, padding: 0,
       }}
     >
-      <div style={{ width: "100%", aspectRatio: "1", background: "#f7f7f7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <UtensilsCrossed style={{ width: 22, height: 22, color: "#ddd" }} />
+      <div style={{ width: "100%", aspectRatio: "1", background: "#f7f7f7", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        {item.image ? (
+          <img
+            src={item.image}
+            alt={item.name}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          <UtensilsCrossed style={{ width: 22, height: 22, color: "#ddd" }} />
+        )}
       </div>
       <div style={{ padding: "9px 10px 10px" }}>
         <p style={{ fontSize: 11, fontWeight: 500, color: "#222", lineHeight: 1.35, marginBottom: 7 }}>{item.name}</p>
@@ -198,8 +206,16 @@ function CartRow({ item, onRemove, onQty }: {
       initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={SP}
       style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderBottom: "1px solid #f5f5f5", fontFamily: F }}
     >
-      <div style={{ width: 32, height: 32, borderRadius: 9, background: "#f7f7f7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <UtensilsCrossed style={{ width: 13, height: 13, color: "#ddd" }} />
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: "#f7f7f7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+        {item.image ? (
+          <img
+            src={item.image}
+            alt={item.name}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          <UtensilsCrossed style={{ width: 13, height: 13, color: "#ddd" }} />
+        )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ fontSize: 11, fontWeight: 500, color: "#222", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</p>
@@ -547,6 +563,10 @@ export default function CashierView() {
   const [onlineOrderNotifs, setOnlineOrderNotifs] = useState<OnlineNotif[]>([]);
   const [readyPickupOrders, setReadyPickupOrders] = useState<OnlineNotif[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [tablesSupported, setTablesSupported] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("tablesRouteUnsupported") !== "1";
+  });
 
   const TABS = [
     { key: "ALL",        label: "All items",             match: [] as string[] },
@@ -568,9 +588,42 @@ export default function CashierView() {
   // Load tables when order type is dine-in
   useEffect(() => {
     if (orderType !== "dine-in") { setSelectedTable(null); return; }
-    api.get<Record<string, unknown>[]>("/tables")
-      .then((d) => setTables(mapTables(d ?? [])))
-      .catch(() => setTables([]));
+    if (!tablesSupported) { setTables([]); return; }
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const data = await apiCall<Record<string, unknown>[]>("/tables", {
+          method: "GET",
+          suppressErrorStatuses: [404],
+        });
+        if (cancelled) return;
+        setTables(mapTables(data ?? []));
+      } catch (error) {
+        if (cancelled) return;
+        const status =
+          typeof error === "object" &&
+          error !== null &&
+          "status" in error &&
+          typeof (error as { status?: unknown }).status === "number"
+            ? (error as { status: number }).status
+            : null;
+
+        if (status !== 404) {
+          console.warn("Failed to load tables:", error);
+        } else {
+          setTablesSupported(false);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("tablesRouteUnsupported", "1");
+          }
+        }
+        setTables([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [orderType]);
 
   // Poll the cashier review queue for online pickup orders
