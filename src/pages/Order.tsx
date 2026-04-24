@@ -187,7 +187,6 @@ export default function Order() {
   const patch = async (id: string, body: object) => { try { await api.patch(`/orders/${id}`, body); fetchAll(); } catch {} };
   const handleStart  = (id: string) => patch(id, { status: "preparing" });
   const handleReady  = (id: string) => patch(id, { status: "Ready for Pickup" });
-  const handleFinish = (id: string) => patch(id, { status: "Completed" });
   const handleCancel = async (id: string) => {
     setCancellingId(id);
     try { await api.patch(`/orders/${id}`, { status: "Cancelled" }); fetchAll(); }
@@ -625,14 +624,15 @@ export default function Order() {
                                 Awaiting Pickup
                               </button>
                             ) : (
-                              <button onClick={() => handleFinish(order.id)}
+                              <button
+                                disabled
                                 style={{
                                   flex: 1, padding: "7px 0", borderRadius: 9, fontSize: 11, fontWeight: 600,
-                                  cursor: "pointer", fontFamily: F,
-                                  border: "1px solid #111", background: "#111", color: "#fff",
+                                  cursor: "not-allowed", fontFamily: F,
+                                  border: "1px solid #e5e7eb", background: "#f9fafb", color: "#9ca3af",
                                   transition: "all 0.12s",
                                 }}>
-                                Served
+                                Awaiting Cashier
                               </button>
                             )}
                           </div>

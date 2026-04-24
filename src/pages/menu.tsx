@@ -2593,6 +2593,19 @@ export default function CashierView() {
     }
   };
 
+  const handleCancelOnlineOrder = async (id: number) => {
+    try {
+      await updateQueueOrder(id, {
+        status: "Cancelled",
+        cashierId: getCashierId(),
+      });
+      setOnlineOrderNotifs((prev) => prev.filter((o) => o.id !== id));
+    } catch (err) {
+      console.error("Failed to cancel online order:", err);
+      alert("Failed to cancel online order.");
+    }
+  };
+
   const handleConfirmPickup = async (id: number) => {
     try {
       await updateQueueOrder(id, {
@@ -3226,26 +3239,52 @@ export default function CashierView() {
                                     </span>
                                   </div>
                                 </div>
-                                <motion.button
-                                  whileTap={{ scale: 0.95 }}
-                                  onClick={() =>
-                                    handleProceedOnlineOrder(notif.id)
-                                  }
+                                <div
                                   style={{
-                                    padding: "7px 11px",
-                                    borderRadius: 9,
-                                    border: "1px solid #16a34a",
-                                    background: "#16a34a",
-                                    color: "#fff",
-                                    cursor: "pointer",
-                                    fontSize: 10.5,
-                                    fontWeight: 600,
-                                    fontFamily: F,
+                                    display: "flex",
+                                    gap: 6,
                                     flexShrink: 0,
                                   }}
                                 >
-                                  Proceed to Order
-                                </motion.button>
+                                  <motion.button
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() =>
+                                      handleCancelOnlineOrder(notif.id)
+                                    }
+                                    style={{
+                                      padding: "7px 11px",
+                                      borderRadius: 9,
+                                      border: "1px solid #fecaca",
+                                      background: "#fff1f2",
+                                      color: "#dc2626",
+                                      cursor: "pointer",
+                                      fontSize: 10.5,
+                                      fontWeight: 600,
+                                      fontFamily: F,
+                                    }}
+                                  >
+                                    Cancel
+                                  </motion.button>
+                                  <motion.button
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() =>
+                                      handleProceedOnlineOrder(notif.id)
+                                    }
+                                    style={{
+                                      padding: "7px 11px",
+                                      borderRadius: 9,
+                                      border: "1px solid #16a34a",
+                                      background: "#16a34a",
+                                      color: "#fff",
+                                      cursor: "pointer",
+                                      fontSize: 10.5,
+                                      fontWeight: 600,
+                                      fontFamily: F,
+                                    }}
+                                  >
+                                    Proceed to Order
+                                  </motion.button>
+                                </div>
                               </div>
                               <div style={{ display: "grid", gap: 5 }}>
                                 {notif.items.map((item, itemIndex) => (

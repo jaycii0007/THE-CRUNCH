@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { api } from "../lib/api";
+import { api, apiCall } from "../lib/api";
 
 const SP = { type: "spring" as const, stiffness: 340, damping: 30 };
 const SPG = { type: "spring" as const, stiffness: 200, damping: 24 };
@@ -3205,10 +3205,14 @@ export default function Delicacy() {
   const fetchCustomerOrders = async () => {
     if (!customerUserId) return;
     try {
-      const data = await api.get<{
+      const token = localStorage.getItem("authToken") || "";
+      const data = await apiCall<{
         activeOrders: CustomerOrder[];
         historyOrders: CustomerOrder[];
-      }>(`/orders/customer/${customerUserId}`);
+      }>(`/orders/customer/${customerUserId}`, {
+        method: "GET",
+        token,
+      });
       setActiveOrders(data.activeOrders ?? []);
       setOrderHistory(data.historyOrders ?? []);
     } catch (error) {
