@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { api } from "../lib/api";
+import { api, apiCall } from "../lib/api";
 
 const SP = { type: "spring" as const, stiffness: 340, damping: 30 };
 const SPG = { type: "spring" as const, stiffness: 200, damping: 24 };
@@ -472,7 +472,7 @@ const DELIVERY_LINKS = {
 const PAYMENT_SESSION_KEY = "the-crunch-paymongo-session";
 
 const CASH_TERMS =
-  "By selecting Cash as your payment method, you agree that your order will not be processed immediately and will only be prepared once full payment is made onsite. You are responsible for completing payment at the store. Delays in payment may result in longer waiting times or possible cancellation of your order. The store reserves the right to refuse or cancel orders that are not paid within a reasonable time. By proceeding with your order, you acknowledge and accept these terms.";
+  "The restaurant will only process the order once payment is made onsite during pickup.";
 
 // ─── INLINE SVG ICONS ─────────────────────────────────────────────────────────
 function IconHistory() {
@@ -2086,7 +2086,7 @@ function HistoryDrawer({
                                 }}
                               >
                                 {order.paymentMethod.toUpperCase()} ·{" "}
-                                {order.paymentStatus ?? order.trackingStatus}
+                                {order.paymentStatus ?? "N/A"}
                               </span>
                               <span
                                 style={{
@@ -2969,9 +2969,13 @@ function OrderDrawer({
 // ─── CHECKOUT MODAL ────────────────────────────────────────────────────────────
 function CheckoutModal({
   orderNumber,
+  statusLabel,
+  message,
   onClose,
 }: {
   orderNumber: string | null;
+  statusLabel?: string | null;
+  message?: string | null;
   onClose: () => void;
 }) {
   return (
@@ -3049,6 +3053,34 @@ function CheckoutModal({
         >
           Order Placed!
         </motion.h2>
+        {statusLabel ? (
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "6px 12px",
+              borderRadius: 999,
+              background:
+                statusLabel === "Pending Payment"
+                  ? "rgba(245,200,66,0.12)"
+                  : "rgba(34,197,94,0.12)",
+              border:
+                statusLabel === "Pending Payment"
+                  ? "1px solid rgba(245,200,66,0.22)"
+                  : "1px solid rgba(34,197,94,0.22)",
+              color:
+                statusLabel === "Pending Payment" ? "#f5c842" : "#4ade80",
+              fontSize: 11,
+              fontWeight: 700,
+              marginBottom: 14,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+            }}
+          >
+            {statusLabel}
+          </div>
+        ) : null}
         <motion.p
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -3067,7 +3099,7 @@ function CheckoutModal({
               <strong style={{ color: "#f5c842" }}>{orderNumber}</strong>.<br />
             </>
           ) : null}
-          Thank you! We're getting everything fresh and crispy for you.
+          {message ?? "Thank you! We're getting everything fresh and crispy for you."}
         </motion.p>
         <motion.button
           initial={{ opacity: 0, y: 8 }}
@@ -3430,6 +3462,10 @@ export default function Delicacy() {
   const [lastPlacedOrderNumber, setLastPlacedOrderNumber] = useState<
     string | null
   >(null);
+  const [checkoutStatusLabel, setCheckoutStatusLabel] = useState<string | null>(
+    null,
+  );
+  const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [justAdded, setJustAdded] = useState<number | null>(null);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -3739,10 +3775,14 @@ export default function Delicacy() {
   const fetchCustomerOrders = async () => {
     if (!customerUserId) return;
     try {
-      const data = await api.get<{
+      const token = localStorage.getItem("authToken") || "";
+      const data = await apiCall<{
         activeOrders: CustomerOrder[];
         historyOrders: CustomerOrder[];
-      }>(`/orders/customer/${customerUserId}`);
+      }>(`/orders/customer/${customerUserId}`, {
+        method: "GET",
+        token,
+      });
       setActiveOrders(data.activeOrders ?? []);
       setOrderHistory(data.historyOrders ?? []);
     } catch (error) {
@@ -3795,12 +3835,20 @@ export default function Delicacy() {
         customerUserId,
         order_type: "take-out",
         payment_method: "cash",
-        payment_status: "Pending",
+        payment_status: "Pending Payment",
       });
 
       await fetchCustomerOrders();
       setLastPlacedOrderNumber(
         placedOrder.orderNumber || `#${placedOrder.orderId}`,
+      );
+      setCheckoutStatusLabel("Pending Payment");
+      setCheckoutMessage(
+        "The restaurant will only process the order once payment is made onsite during pickup.",
+      );
+      setPaymentSession(null);
+      setPaymentMessage(
+        "Cash on Pickup selected. Please pay onsite at pickup to start order processing.",
       );
       setDrawerOpen(false);
       setTimeout(() => {
@@ -3943,6 +3991,10 @@ export default function Delicacy() {
       await fetchCustomerOrders();
       setLastPlacedOrderNumber(
         placedOrder.orderNumber || `#${placedOrder.orderId}`,
+      );
+      setCheckoutStatusLabel("Paid");
+      setCheckoutMessage(
+        "Thank you! We're getting everything fresh and crispy for you.",
       );
       setPaymentSession(null);
       setPaymentMessage(null);
@@ -4768,9 +4820,13 @@ export default function Delicacy() {
         {showCheckout && (
           <CheckoutModal
             orderNumber={lastPlacedOrderNumber}
+            statusLabel={checkoutStatusLabel}
+            message={checkoutMessage}
             onClose={() => {
               setShowCheckout(false);
               setLastPlacedOrderNumber(null);
+              setCheckoutStatusLabel(null);
+              setCheckoutMessage(null);
             }}
           />
         )}

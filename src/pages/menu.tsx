@@ -2583,13 +2583,14 @@ export default function CashierView() {
   const handleProceedOnlineOrder = async (id: number) => {
     try {
       await updateQueueOrder(id, {
-        status: "Pending",
+        status: "Queued",
+        paymentStatus: "Paid",
         cashierId: getCashierId(),
       });
       setOnlineOrderNotifs((prev) => prev.filter((o) => o.id !== id));
     } catch (err) {
       console.error("Failed to proceed online order:", err);
-      alert("Failed to move online order to processing queue.");
+      alert("Failed to confirm payment and move the online order to the cook queue.");
     }
   };
 
@@ -2626,6 +2627,7 @@ export default function CashierView() {
       setSavingHandover(true);
       await updateQueueOrder(handoverOrder.id, {
         status: "Completed",
+        paymentStatus: "Paid",
         cashierId: getCashierId(),
         handoverTimestamp,
         riderName: riderNameInput.trim(),
@@ -2646,7 +2648,19 @@ export default function CashierView() {
       setRiderNameInput("");
     } catch (err) {
       console.error("Failed to hand order to rider:", err);
-      alert("Failed to record rider handover.");
+      const message =
+        typeof err === "object" &&
+        err !== null &&
+        "data" in err &&
+        typeof (err as { data?: unknown }).data === "object" &&
+        (err as { data?: { error?: string; message?: string } }).data
+          ? (err as { data?: { error?: string; message?: string } }).data?.error ||
+            (err as { data?: { error?: string; message?: string } }).data?.message ||
+            (err instanceof Error ? err.message : "")
+          : err instanceof Error && err.message
+            ? err.message
+          : "Failed to record rider handover.";
+      alert(message);
     } finally {
       setSavingHandover(false);
     }
@@ -2785,17 +2799,6 @@ export default function CashierView() {
       setSavedCash({ tendered, change });
       setOrderNumber(num);
       setShowSuccess(true);
-      setProducts((prev) =>
-        prev.map((p) => {
-          const o = cart.find((c) => c.id === p.id);
-          return o && !isFood(p)
-            ? {
-                ...p,
-                remainingStock: Math.max(0, p.remainingStock - o.quantity),
-              }
-            : p;
-        }),
-      );
       if (selectedTable !== null) {
         setTables((prev) =>
           prev.map((t) =>

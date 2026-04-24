@@ -84,6 +84,12 @@ interface RawOrderRow {
   id: number;
   orderNumber?: string;
   order_number?: string;
+  transactionId?: string;
+  transaction_id?: string;
+  paymentReference?: string;
+  payment_reference?: string;
+  paymentId?: number;
+  payment_id?: number;
   total?: number;
   date?: string;
   orderType?: string;
@@ -325,6 +331,7 @@ function processRawRows(rows: RawOrderRow[]): {
     riderName: string;
     handoverTimestamp: string | null;
     orderNumber: string;
+    transactionId: string;
   };
 
   const orderMap: Record<number, OrderAccum> = {};
@@ -353,6 +360,17 @@ function processRawRows(rows: RawOrderRow[]): {
           String(r.handoverTimestamp ?? r.handover_timestamp ?? "").trim() ||
           null,
         orderNumber: String(r.orderNumber ?? r.order_number ?? "").trim(),
+        transactionId:
+          String(
+            r.transactionId ??
+              r.transaction_id ??
+              r.paymentReference ??
+              r.payment_reference ??
+              "",
+          ).trim() ||
+          (Number(r.paymentId ?? r.payment_id) > 0
+            ? `PAY-${Number(r.paymentId ?? r.payment_id)}`
+            : ""),
       };
     }
 
@@ -382,10 +400,11 @@ function processRawRows(rows: RawOrderRow[]): {
       (s, r) => s + (Number(r.quantity) || 0),
       0,
     );
-    const resolvedTxnId = order.orderNumber || `#${orderId}`;
+    const resolvedOrderId = order.orderNumber || `#${orderId}`;
+    const resolvedTxnId = order.transactionId || "N/A";
 
     allLogs.push({
-      id: resolvedTxnId,
+      id: `${orderId}-${resolvedTxnId}`,
       transactionId: resolvedTxnId,
       orderId,
       date: orderDate.toLocaleDateString("en-US", {
@@ -413,7 +432,7 @@ function processRawRows(rows: RawOrderRow[]): {
 
     ordersMap[orderId] = {
       id: orderId,
-      orderNumber: resolvedTxnId,
+      orderNumber: resolvedOrderId,
       transactionId: resolvedTxnId,
       items: order.rows.map((r) => ({
         name: r.productName ?? "",
@@ -2296,6 +2315,16 @@ function OrderRow({
             </span>
           </div>
         </TableCell>
+        <TableCell className="font-medium text-gray-700 whitespace-nowrap">
+          <span
+            style={{
+              fontFamily: "'Poppins', monospace",
+              letterSpacing: "0.02em",
+            }}
+          >
+            {order.orderNumber}
+          </span>
+        </TableCell>
         <TableCell className="text-gray-600 whitespace-nowrap">
           {fmtDate(order.date)}
         </TableCell>
@@ -2341,7 +2370,7 @@ function OrderRow({
       <AnimatePresence>
         {open && (
           <tr>
-            <td colSpan={7} style={{ padding: 0, border: "none" }}>
+            <td colSpan={8} style={{ padding: 0, border: "none" }}>
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
@@ -2365,6 +2394,7 @@ function OrderRow({
                   >
                     {[
                       { label: "Transaction ID", value: order.transactionId },
+                      { label: "Order ID", value: order.orderNumber },
                       { label: "Date", value: fmtDate(order.date) },
                       { label: "Time", value: fmtTime(order.date) },
                       { label: "Cashier", value: order.cashierName || "—" },
@@ -2424,6 +2454,7 @@ function OrderRow({
                               "Cashier",
                               "Subtotal",
                               "Transaction ID",
+                              "Order ID",
                             ].includes(f.label)
                               ? 700
                               : 500,
@@ -2435,13 +2466,17 @@ function OrderRow({
                                   ? "#4A1C1C"
                                   : f.label === "Transaction ID"
                                     ? "#111"
+                                    : f.label === "Order ID"
+                                    ? "#111"
                                     : "#334155",
                             fontFamily:
-                              f.label === "Transaction ID"
+                              f.label === "Transaction ID" ||
+                              f.label === "Order ID"
                                 ? "'Poppins', monospace"
                                 : undefined,
                             letterSpacing:
-                              f.label === "Transaction ID"
+                              f.label === "Transaction ID" ||
+                              f.label === "Order ID"
                                 ? "0.03em"
                                 : undefined,
                           }}
@@ -2761,6 +2796,7 @@ function OrdersTab({
             <TableRow className="border-gray-200 hover:bg-transparent">
               {[
                 "Transaction ID",
+                "Order ID",
                 "Date",
                 "Time",
                 "Order Type",
@@ -2781,7 +2817,7 @@ function OrdersTab({
             {filtered.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center text-gray-400 py-10"
                 >
                   {orders.length === 0
