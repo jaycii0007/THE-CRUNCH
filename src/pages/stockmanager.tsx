@@ -685,18 +685,14 @@ function isRawMaterialLabel(value?: string | null): boolean {
     .toLowerCase();
   return (
     normalized === "raw material" ||
+    normalized === "raw materials" ||
     normalized === "raw_material" ||
-    normalized.includes("raw material") ||
-    normalized.includes("raw_material")
+    normalized === "raw_materials"
   );
 }
 
 function isRawMaterialPOItem(item: POItem): boolean {
-  return (
-    Boolean(item.isRawMaterial) ||
-    isRawMaterialLabel(item.category) ||
-    isRawMaterialLabel(item.name)
-  );
+  return isRawMaterialLabel(item.category);
 }
 
 function formatShelfLife(days?: number | null, hours?: number | null): string {
@@ -4285,9 +4281,9 @@ export default function StockManager() {
               ? toNumber(p.shelfLifeHours)
               : null,
           promo: typeof p.promo === "string" ? p.promo : "",
-          isRawMaterial:
-            toNumber((p as { isRawMaterial?: unknown }).isRawMaterial) === 1 ||
-            p.promo === "RAW_MATERIAL",
+          isRawMaterial: isRawMaterialLabel(
+            typeof p.category === "string" ? p.category : "",
+          ),
         }))
         .filter((p) => {
           const promo = String(p.promo ?? "")
@@ -5762,7 +5758,7 @@ export default function StockManager() {
                                 "Main Stock",
                                 "Qty Purchased",
                                 "Withdrawn",
-                                "Shelf Life / Expiry",
+                                "Expiry Date",
                                 "Returned",
                                 "Level",
                                 "Status",
