@@ -472,7 +472,6 @@ function OrderDrawer({ cart, onClose, onRemove, onChangeQty, onClear, onSendPaym
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, backdropFilter: "blur(8px)" }} />
       <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={SPG}
         style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(420px,100vw)", background: "#151210", zIndex: 300, display: "flex", flexDirection: "column", boxShadow: "-24px 0 80px rgba(0,0,0,0.5)", borderLeft: "1px solid rgba(240,237,232,0.07)" }}>
-        {/* Header */}
         <div style={{ padding: "24px 28px 18px", borderBottom: "1px solid rgba(240,237,232,0.07)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <h2 style={{ fontSize: 20, fontWeight: 800, color: "#f0ede8", margin: 0 }}>Your Order</h2>
@@ -491,7 +490,6 @@ function OrderDrawer({ cart, onClose, onRemove, onChangeQty, onClear, onSendPaym
               style={{ background: "rgba(240,237,232,0.07)", border: "1px solid rgba(240,237,232,0.1)", color: "rgba(240,237,232,0.6)", borderRadius: "50%", width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700 }}>×</motion.button>
           </div>
         </div>
-        {/* Items */}
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 28px" }}>
           <AnimatePresence initial={false}>
             {cart.length === 0 ? (
@@ -526,7 +524,6 @@ function OrderDrawer({ cart, onClose, onRemove, onChangeQty, onClear, onSendPaym
             ))}
           </AnimatePresence>
         </div>
-        {/* Footer */}
         <AnimatePresence>
           {cart.length > 0 && (
             <motion.div key="footer" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} transition={SPG}
@@ -588,60 +585,170 @@ function CheckoutModal({ orderNumber, onClose }: { orderNumber: string | null; o
 }
 
 // ─── RECIPE CARD ──────────────────────────────────────────────────────────────
-function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleFav, onAddToCart, onFlavorChange, onVariantChange }: {
+function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleFav, onAddToCart, onFlavorChange, onVariantChange, isAvailable }: {
   recipe: Recipe; isFav: boolean; justAdded: boolean;
   flavorSel: string[]; variantSel: "original" | "spicy";
   onToggleFav: () => void; onAddToCart: () => void;
   onFlavorChange: (f: string[]) => void; onVariantChange: (v: "original" | "spicy") => void;
+  isAvailable: boolean;
 }) {
   return (
-    <motion.div layout initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={SPG} whileHover={{ borderColor: "rgba(245,200,66,0.22)" }}
-      style={{ background: "#151210", borderRadius: 24, padding: "clamp(20px,4vw,32px) clamp(20px,4vw,36px)", border: "1px solid rgba(240,237,232,0.07)", display: "flex", flexWrap: "wrap", gap: "clamp(20px,4vw,40px)", alignItems: "flex-start", position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: 0, left: 32, right: 32, height: 2, background: "linear-gradient(90deg,transparent,rgba(245,200,66,0.18),transparent)" }} />
+    <motion.div layout initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={SPG}
+      whileHover={{ borderColor: isAvailable ? "rgba(245,200,66,0.22)" : "rgba(240,237,232,0.1)" }}
+      style={{
+        background: "#151210",
+        borderRadius: 24,
+        padding: "clamp(20px,4vw,32px) clamp(20px,4vw,36px)",
+        border: "1px solid rgba(240,237,232,0.07)",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "clamp(20px,4vw,40px)",
+        alignItems: "flex-start",
+        position: "relative",
+        overflow: "hidden",
+        opacity: isAvailable ? 1 : 0.72,
+      }}>
+
+      {/* Top accent line */}
+      <div style={{ position: "absolute", top: 0, left: 32, right: 32, height: 2, background: isAvailable ? "linear-gradient(90deg,transparent,rgba(245,200,66,0.18),transparent)" : "linear-gradient(90deg,transparent,rgba(240,237,232,0.06),transparent)" }} />
+
       {/* Content */}
       <div style={{ flex: "1 1 260px" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 8 }}>
-          <h2 style={{ fontSize: "clamp(16px,2.5vw,18px)", fontWeight: 800, color: "#f0ede8", margin: 0, lineHeight: 1.28, flex: 1 }}>{recipe.name}</h2>
-          {recipe.tag && <Tag tag={recipe.tag} />}
+
+        {/* Title row */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <h2 style={{ fontSize: "clamp(16px,2.5vw,18px)", fontWeight: 800, color: isAvailable ? "#f0ede8" : "rgba(240,237,232,0.45)", margin: 0, lineHeight: 1.28, flex: 1 }}>
+            {recipe.name}
+          </h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
+            {recipe.tag && isAvailable && <Tag tag={recipe.tag} />}
+            {!isAvailable && (
+              <span style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "4px 10px",
+                borderRadius: 20,
+                background: "rgba(239,68,68,0.1)",
+                color: "#f87171",
+                border: "1px solid rgba(239,68,68,0.22)",
+                whiteSpace: "nowrap",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                flexShrink: 0,
+              }}>
+                Not Available
+              </span>
+            )}
+          </div>
         </div>
+
         <p style={{ fontSize: 13, color: "rgba(240,237,232,0.42)", lineHeight: 1.7, marginBottom: recipe.note ? 6 : 18, fontWeight: 300 }}>{recipe.description}</p>
         {recipe.note && <p style={{ fontSize: 11, color: "#f5c842", fontWeight: 600, marginBottom: 16 }}>{recipe.note}</p>}
+
         {/* Nutrition */}
         <p style={{ fontSize: 10, fontWeight: 700, color: "rgba(240,237,232,0.2)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.12em" }}>Nutrition</p>
         <div style={{ display: "flex", gap: "clamp(14px,3vw,24px)", marginBottom: 20 }}>
           {[{label:"Cal",unit:"kcal",value:recipe.nutrition.calories},{label:"Protein",unit:"g",value:recipe.nutrition.protein},{label:"Fats",unit:"g",value:recipe.nutrition.fats},{label:"Carbs",unit:"g",value:recipe.nutrition.carbs}].map(n => (
             <div key={n.label} style={{ textAlign: "center" }}>
-              <div style={{ fontSize: "clamp(16px,2.5vw,20px)", fontWeight: 800, color: "#f0ede8", lineHeight: 1 }}>{n.value}</div>
+              <div style={{ fontSize: "clamp(16px,2.5vw,20px)", fontWeight: 800, color: isAvailable ? "#f0ede8" : "rgba(240,237,232,0.3)", lineHeight: 1 }}>{n.value}</div>
               <div style={{ fontSize: 9.5, fontWeight: 600, color: "rgba(240,237,232,0.35)", marginTop: 3 }}>{n.label}</div>
               <div style={{ fontSize: 9, color: "rgba(240,237,232,0.2)" }}>{n.unit}</div>
             </div>
           ))}
         </div>
-        {recipe.variant !== undefined && <VariantToggle selected={variantSel} onChange={onVariantChange} />}
-        {recipe.maxFlavors !== undefined && <FlavorPicker maxFlavors={recipe.maxFlavors} selected={flavorSel} onChange={onFlavorChange} />}
+
+        {/* Variant / Flavors — hidden when unavailable */}
+        {isAvailable && recipe.variant !== undefined && <VariantToggle selected={variantSel} onChange={onVariantChange} />}
+        {isAvailable && recipe.maxFlavors !== undefined && <FlavorPicker maxFlavors={recipe.maxFlavors} selected={flavorSel} onChange={onFlavorChange} />}
+
         {/* Actions */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <motion.button onClick={onToggleFav} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.93 }} transition={SP}
+            {/* Save button — always shown */}
+            <motion.button
+              onClick={onToggleFav}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.93 }}
+              transition={SP}
               style={{ display: "flex", alignItems: "center", gap: 7, background: isFav ? "rgba(245,200,66,0.1)" : "rgba(240,237,232,0.05)", color: isFav ? "#f5c842" : "rgba(240,237,232,0.45)", border: `1px solid ${isFav ? "rgba(245,200,66,0.3)" : "rgba(240,237,232,0.1)"}`, borderRadius: 12, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
               {isFav ? "★ Saved" : "☆ Save"}
             </motion.button>
-            <motion.button onClick={onAddToCart} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.93 }} transition={SP}
-              style={{ display: "flex", alignItems: "center", gap: 7, background: justAdded ? "rgba(74,222,128,0.1)" : "#f5c842", color: justAdded ? "#4ade80" : "#111", border: justAdded ? "1px solid rgba(74,222,128,0.25)" : "none", borderRadius: 12, padding: "10px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", minWidth: 140, justifyContent: "center" }}>
+
+            {/* Add to Order / Not Available button */}
+            <motion.button
+              onClick={() => { if (isAvailable) onAddToCart(); }}
+              disabled={!isAvailable}
+              whileHover={isAvailable ? { scale: 1.04 } : {}}
+              whileTap={isAvailable ? { scale: 0.93 } : {}}
+              transition={SP}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                background: !isAvailable
+                  ? "rgba(240,237,232,0.04)"
+                  : justAdded
+                  ? "rgba(74,222,128,0.1)"
+                  : "#f5c842",
+                color: !isAvailable
+                  ? "rgba(240,237,232,0.2)"
+                  : justAdded
+                  ? "#4ade80"
+                  : "#111",
+                border: !isAvailable
+                  ? "1px solid rgba(240,237,232,0.1)"
+                  : justAdded
+                  ? "1px solid rgba(74,222,128,0.25)"
+                  : "none",
+                borderRadius: 12,
+                padding: "10px 22px",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: !isAvailable ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                minWidth: 140,
+                justifyContent: "center",
+                opacity: !isAvailable ? 0.55 : 1,
+              }}
+            >
               <AnimatePresence mode="wait">
-                <motion.span key={justAdded ? "added" : "add"} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={SP}>{justAdded ? "Added!" : "Add to Order"}</motion.span>
+                <motion.span
+                  key={!isAvailable ? "unavailable" : justAdded ? "added" : "add"}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={SP}
+                >
+                  {!isAvailable ? "Not Available" : justAdded ? "Added!" : "Add to Order"}
+                </motion.span>
               </AnimatePresence>
             </motion.button>
           </div>
+
+          {/* Price */}
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 10, color: "rgba(240,237,232,0.25)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>Price</div>
-            <div style={{ fontSize: "clamp(20px,3vw,26px)", fontWeight: 900, color: "#f5c842", letterSpacing: "-0.04em" }}>₱{recipe.price.toFixed(2)}</div>
+            <div style={{ fontSize: "clamp(20px,3vw,26px)", fontWeight: 900, color: isAvailable ? "#f5c842" : "rgba(240,237,232,0.3)", letterSpacing: "-0.04em" }}>₱{recipe.price.toFixed(2)}</div>
           </div>
         </div>
       </div>
+
       {/* Image */}
-      <motion.div whileHover={{ scale: 1.05 }} transition={SPG} style={{ width: "clamp(120px,20vw,200px)", height: "clamp(120px,20vw,200px)", borderRadius: "50%", overflow: "hidden", flexShrink: 0, boxShadow: "0 12px 48px rgba(0,0,0,0.45)", border: "1px solid rgba(240,237,232,0.08)", alignSelf: "center" }}>
-        <img src={recipe.image} alt={recipe.name} style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(0.96) saturate(1.1)" }} />
+      <motion.div
+        whileHover={isAvailable ? { scale: 1.05 } : {}}
+        transition={SPG}
+        style={{ width: "clamp(120px,20vw,200px)", height: "clamp(120px,20vw,200px)", borderRadius: "50%", overflow: "hidden", flexShrink: 0, boxShadow: "0 12px 48px rgba(0,0,0,0.45)", border: "1px solid rgba(240,237,232,0.08)", alignSelf: "center", position: "relative" }}>
+        <img
+          src={recipe.image}
+          alt={recipe.name}
+          style={{ width: "100%", height: "100%", objectFit: "cover", filter: isAvailable ? "brightness(0.96) saturate(1.1)" : "brightness(0.45) saturate(0.3)" }}
+        />
+        {/* Overlay X for unavailable */}
+        {!isAvailable && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.25)" }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(240,237,232,0.55)", letterSpacing: "0.1em", textTransform: "uppercase", textAlign: "center", lineHeight: 1.4, padding: "0 12px" }}>Not{"\n"}Available</span>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );
@@ -654,6 +761,9 @@ export default function Delicacy() {
   const [activeMeal, setActiveMeal] = useState("Lunch");
   const [hiddenRecipeNames, setHiddenRecipeNames] = useState<Set<string>>(new Set());
   const [recipeImages, setRecipeImages] = useState<Record<string, string>>({});
+  // ── NEW: tracks which item names exist in the cashier inventory ──
+  const [availableRecipeNames, setAvailableRecipeNames] = useState<Set<string>>(new Set());
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
   const [favorites, setFavorites] = useState<number[]>([]);
   const [flavorSels, setFlavorSels] = useState<Record<number, string[]>>({});
   const [variantSels, setVariantSels] = useState<Record<number, "original" | "spicy">>({});
@@ -683,7 +793,17 @@ export default function Delicacy() {
   const withImg = (r: Recipe): Recipe => { const img = recipeImages[norm(r.name)]; return img ? { ...r, image: img } : r; };
   const isVisible = (r: Recipe) => !hiddenRecipeNames.has(norm(r.name));
 
-  const allInCat = activeCategory === "All" ? Object.values(RECIPES).flat().filter(isVisible).map(withImg) : (RECIPES[activeCategory] ?? []).filter(isVisible).map(withImg);
+  // ── Helper: is this recipe available in the cashier inventory? ──
+  // Returns true while inventory hasn't loaded yet (avoid false "Not Available" flash).
+  const getIsAvailable = (r: Recipe): boolean => {
+    if (!inventoryLoaded) return true;
+    if (availableRecipeNames.size === 0) return true;
+    return availableRecipeNames.has(norm(r.name));
+  };
+
+  const allInCat = activeCategory === "All"
+    ? Object.values(RECIPES).flat().filter(isVisible).map(withImg)
+    : (RECIPES[activeCategory] ?? []).filter(isVisible).map(withImg);
   const displayed = allInCat.filter(r => r.mealTypes.includes(activeMeal));
   const totalItems = cart.reduce((s, i) => s + i.quantity, 0);
 
@@ -694,9 +814,35 @@ export default function Delicacy() {
       try {
         const data = await api.get<MenuVisibilityRow[]>("/inventory");
         if (cancelled || !Array.isArray(data)) return;
-        setHiddenRecipeNames(new Set(data.filter(i => String(i?.availability_status ?? "").trim().toLowerCase() === "hidden").map(i => norm(String(i?.name ?? i?.product_name ?? ""))).filter(Boolean)));
-        setRecipeImages(Object.fromEntries(data.map(i => [norm(String(i?.name ?? i?.product_name ?? "")), String(i?.image ?? "").trim()] as const).filter(([n, img]) => n && img)));
-      } catch (e) { console.error("Failed to load menu visibility:", e); }
+
+        // Hidden items
+        setHiddenRecipeNames(new Set(
+          data
+            .filter(i => String(i?.availability_status ?? "").trim().toLowerCase() === "hidden")
+            .map(i => norm(String(i?.name ?? i?.product_name ?? "")))
+            .filter(Boolean)
+        ));
+
+        // Images
+        setRecipeImages(Object.fromEntries(
+          data
+            .map(i => [norm(String(i?.name ?? i?.product_name ?? "")), String(i?.image ?? "").trim()] as const)
+            .filter(([n, img]) => n && img)
+        ));
+
+        // ── NEW: build the set of names that exist in the cashier menu ──
+        setAvailableRecipeNames(new Set(
+          data
+            .map(i => norm(String(i?.name ?? i?.product_name ?? "")))
+            .filter(Boolean)
+        ));
+
+        setInventoryLoaded(true);
+      } catch (e) {
+        console.error("Failed to load menu visibility:", e);
+        // On error, mark as loaded so we don't block the UI — all items show as available
+        setInventoryLoaded(true);
+      }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -784,6 +930,8 @@ export default function Delicacy() {
   const toggleFav = (id: number) => setFavorites(p => p.includes(id) ? p.filter(f => f !== id) : [...p, id]);
 
   const addToCart = (recipe: Recipe) => {
+    // Guard: don't add unavailable items
+    if (!getIsAvailable(recipe)) return;
     const flavors = flavorSels[recipe.id] ?? [];
     clearPayment();
     setCart(prev => { const f = prev.find(c => c.recipe.id === recipe.id); return f ? prev.map(c => c.recipe.id === recipe.id ? { ...c, quantity: c.quantity + 1, flavors } : c) : [...prev, { recipe, quantity: 1, flavors }]; });
@@ -984,10 +1132,11 @@ export default function Delicacy() {
             <AnimatePresence mode="popLayout">
               {displayed.length > 0 ? displayed.map(recipe => {
                 const isHL = highlightedId === recipe.id;
+                const isAvailable = getIsAvailable(recipe);
                 return (
                   <div key={`${recipe.id}-${activeMeal}-${activeCategory}`} ref={(el: HTMLDivElement | null) => { cardRefs.current[recipe.id] = el; }} style={{ position: "relative" }}>
                     <AnimatePresence>
-                      {isHL && (
+                      {isHL && isAvailable && (
                         <>
                           <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: [0,1,0.7,1,0.5,0], scale: [0.96,1.015,1.01,1.015,1.01,1] }} exit={{ opacity: 0 }} transition={{ duration: 2.8, ease: "easeInOut" }}
                             style={{ position: "absolute", inset: -4, borderRadius: 28, border: "2px solid rgba(245,200,66,0.8)", boxShadow: "0 0 0 4px rgba(245,200,66,0.15),0 0 48px rgba(245,200,66,0.3)", pointerEvents: "none", zIndex: 10 }} />
@@ -998,11 +1147,18 @@ export default function Delicacy() {
                         </>
                       )}
                     </AnimatePresence>
-                    <RecipeCard recipe={recipe} isFav={favorites.includes(recipe.id)} justAdded={justAdded === recipe.id}
-                      flavorSel={flavorSels[recipe.id] ?? []} variantSel={variantSels[recipe.id] ?? "original"}
-                      onToggleFav={() => toggleFav(recipe.id)} onAddToCart={() => addToCart(recipe)}
+                    <RecipeCard
+                      recipe={recipe}
+                      isFav={favorites.includes(recipe.id)}
+                      justAdded={justAdded === recipe.id}
+                      flavorSel={flavorSels[recipe.id] ?? []}
+                      variantSel={variantSels[recipe.id] ?? "original"}
+                      onToggleFav={() => toggleFav(recipe.id)}
+                      onAddToCart={() => addToCart(recipe)}
                       onFlavorChange={f => setFlavorSels(p => ({ ...p, [recipe.id]: f }))}
-                      onVariantChange={v => setVariantSels(p => ({ ...p, [recipe.id]: v }))} />
+                      onVariantChange={v => setVariantSels(p => ({ ...p, [recipe.id]: v }))}
+                      isAvailable={isAvailable}
+                    />
                   </div>
                 );
               }) : (
