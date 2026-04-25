@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { api, apiCall } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 // ─── FONT ─────────────────────────────────────────────────────────────────────
 if (
@@ -2393,6 +2394,7 @@ function SuccessModal({
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function CashierView() {
   const [products, setProducts] = useState<MenuItem[]>([]);
+  const isMobile = useIsMobile();
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [productsError, setProductsError] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
@@ -2852,21 +2854,25 @@ export default function CashierView() {
       <div
         style={{
           display: "flex",
-          height: "100vh",
-          overflow: "hidden",
-          fontFamily: F,
+          flexDirection: isMobile ? "column" : "row",
+          height: isMobile ? "auto" : "100vh",
+          minHeight: "100vh",
+          overflow: isMobile ? "auto" : "hidden",
+           fontFamily: F,
           background: "#fff",
-          paddingLeft: 80,
+          paddingLeft: isMobile ? 0 : 80,
+          paddingTop: isMobile ? 64 : 0,
         }}
       >
         {/* ── LEFT: Menu ── */}
         <div
           style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-          }}
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          overflow: isMobile ? "visible" : "hidden",
+          minWidth: 0,
+}}
         >
           <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
             <div
@@ -3912,9 +3918,10 @@ export default function CashierView() {
         {/* ── RIGHT: Cart ── */}
         <div
           style={{
-            width: 268,
+            width: isMobile ? "100%" : 268,
             flexShrink: 0,
-            borderLeft: "1px solid #f0f0f0",
+            borderLeft: isMobile ? "none" : "1px solid #f0f0f0",
+            borderTop: isMobile ? "1px solid #f0f0f0" : "none",
             display: "flex",
             flexDirection: "column",
             background: "#fff",
