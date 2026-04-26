@@ -1,41 +1,52 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { authApi } from "../lib/api";
 import { useAuth } from "../context/authcontext";
 
-// ── Inject fonts ──────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("login-fonts")) {
   const link = document.createElement("link");
   link.id = "login-fonts";
   link.rel = "stylesheet";
   link.href =
-    "https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,700&display=swap";
+    "https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap";
   document.head.appendChild(link);
 }
 
-// ── Field component ───────────────────────────────────────────────────────────
+const YELLOW = "#F5C518";
+const YELLOW_DARK = "#C9A010";
+
+const baseInputStyle: React.CSSProperties = {
+  width: "100%",
+  background: "rgba(255,255,255,0.07)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 10,
+  padding: "11px 14px",
+  color: "#fff",
+  fontSize: 13,
+  fontFamily: "'Poppins', sans-serif",
+  fontWeight: 400,
+  outline: "none",
+  boxSizing: "border-box" as const,
+  transition: "border-color 0.25s, background 0.25s, box-shadow 0.25s",
+};
+
 interface FieldProps {
   label: string;
   children: React.ReactNode;
-  delay?: number;
   extra?: React.ReactNode;
 }
-function Field({ label, children, delay = 0, extra }: FieldProps) {
+function Field({ label, children, extra }: FieldProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay, ease: [0.23, 1, 0.32, 1] }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <label style={{
           fontFamily: "'Poppins', sans-serif",
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: 500,
-          color: "rgba(255,255,255,0.4)",
-          letterSpacing: "0.7px",
+          color: "rgba(255,255,255,0.38)",
+          letterSpacing: "0.9px",
           textTransform: "uppercase",
         }}>
           {label}
@@ -43,639 +54,537 @@ function Field({ label, children, delay = 0, extra }: FieldProps) {
         {extra}
       </div>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+const pageVariants = {
+  enter: (dir: number) => ({
+    rotateY: dir > 0 ? 80 : -80,
+    opacity: 0,
+    scale: 0.96,
+  }),
+  center: { rotateY: 0, opacity: 1, scale: 1 },
+  exit: (dir: number) => ({
+    rotateY: dir > 0 ? -80 : 80,
+    opacity: 0,
+    scale: 0.96,
+  }),
+};
+
+function SignInForm({ formData, handleChange, handleSubmit, isLoading, error, showPassword, setShowPassword, goToSignUp }: any) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ marginBottom: 26 }}>
+        <p style={{
+          fontFamily: "'Poppins', sans-serif", fontSize: 10, fontWeight: 600,
+          color: YELLOW, letterSpacing: "1.6px", textTransform: "uppercase", margin: "0 0 10px",
+        }}>Welcome back</p>
+        <h1 style={{
+          fontFamily: "'Poppins', sans-serif", fontSize: 26, fontWeight: 700,
+          color: "#fff", margin: 0, lineHeight: 1.2, letterSpacing: "-0.3px",
+        }}>
+          Sign in to your<br />
+          <span style={{ fontWeight: 300, fontStyle: "italic", color: "rgba(255,255,255,0.45)", fontSize: 24 }}>
+            workspace
+          </span>
+        </h1>
+      </div>
+
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14, flex: 1 }}>
+        <AnimatePresence>
+          {error && (
+            <motion.p key="err" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              style={{ margin: 0, fontSize: 12, color: "#fca5a5", fontFamily: "'Poppins', sans-serif", textAlign: "center" }}>
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        <Field label="Email Address">
+          <input className="lf-input" style={baseInputStyle}
+            name="email" type="email" required autoComplete="email"
+            value={formData.email} onChange={handleChange} placeholder="you@example.com" />
+        </Field>
+
+        <Field label="Password" extra={
+          <a href="#" style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", textDecoration: "none", fontFamily: "'Poppins', sans-serif" }}
+            onMouseEnter={e => (e.currentTarget.style.color = YELLOW)}
+            onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.25)")}>
+            Forgot password?
+          </a>
+        }>
+          <div style={{ position: "relative" }}>
+            <input className="lf-input" style={{ ...baseInputStyle, paddingRight: 42 }}
+              name="password" type={showPassword ? "text" : "password"}
+              required autoComplete="current-password"
+              value={formData.password} onChange={handleChange} placeholder="••••••••" />
+            <button type="button" className="lf-eye" onClick={() => setShowPassword(!showPassword)}>
+              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </Field>
+
+        <button type="submit" className="lf-submit" disabled={isLoading} style={{ marginTop: 8 }}>
+          {isLoading ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+
+      <p style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: "'Poppins', sans-serif" }}>
+        No account yet?{" "}
+        <button type="button" onClick={goToSignUp} style={{
+          background: "none", border: "none", color: YELLOW, fontWeight: 600,
+          cursor: "pointer", fontSize: 12, fontFamily: "'Poppins', sans-serif",
+        }}>
+          Sign up
+        </button>
+      </p>
+    </div>
+  );
+}
+
+function SignUpForm({ formData, handleChange, handleSubmit, isLoading, error, showPassword, setShowPassword, showConfirm, setShowConfirm, goToSignIn }: any) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ marginBottom: 20 }}>
+        <p style={{
+          fontFamily: "'Poppins', sans-serif", fontSize: 10, fontWeight: 600,
+          color: YELLOW, letterSpacing: "1.6px", textTransform: "uppercase", margin: "0 0 10px",
+        }}>Get started</p>
+        <h1 style={{
+          fontFamily: "'Poppins', sans-serif", fontSize: 26, fontWeight: 700,
+          color: "#fff", margin: 0, lineHeight: 1.2, letterSpacing: "-0.3px",
+        }}>
+          Create your<br />
+          <span style={{ fontWeight: 300, fontStyle: "italic", color: "rgba(255,255,255,0.45)", fontSize: 24 }}>
+            account
+          </span>
+        </h1>
+      </div>
+
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 11, flex: 1 }}>
+        <AnimatePresence>
+          {error && (
+            <motion.p key="err" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              style={{ margin: 0, fontSize: 12, color: "#fca5a5", fontFamily: "'Poppins', sans-serif", textAlign: "center" }}>
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        <Field label="Full Name">
+          <input className="lf-input" style={baseInputStyle}
+            name="name" type="text" required autoComplete="name"
+            value={formData.name} onChange={handleChange} placeholder="Your full name" />
+        </Field>
+
+        <Field label="Email">
+          <input className="lf-input" style={baseInputStyle}
+            name="email" type="email" required autoComplete="email"
+            value={formData.email} onChange={handleChange} placeholder="you@example.com" />
+        </Field>
+
+        <Field label="Password">
+          <div style={{ position: "relative" }}>
+            <input className="lf-input" style={{ ...baseInputStyle, paddingRight: 42 }}
+              name="password" type={showPassword ? "text" : "password"}
+              required autoComplete="new-password"
+              value={formData.password} onChange={handleChange} placeholder="Min. 8 characters" />
+            <button type="button" className="lf-eye" onClick={() => setShowPassword(!showPassword)}>
+              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </Field>
+
+        <Field label="Confirm Password">
+          <div style={{ position: "relative" }}>
+            <input className="lf-input" style={{ ...baseInputStyle, paddingRight: 42 }}
+              name="confirmPassword" type={showConfirm ? "text" : "password"}
+              required autoComplete="new-password"
+              value={formData.confirmPassword} onChange={handleChange} placeholder="••••••••" />
+            <button type="button" className="lf-eye" onClick={() => setShowConfirm(!showConfirm)}>
+              {showConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </Field>
+
+        <button type="submit" className="lf-submit" disabled={isLoading} style={{ marginTop: 6 }}>
+          {isLoading ? "Creating account…" : "Create account"}
+        </button>
+      </form>
+
+      <p style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: "'Poppins', sans-serif" }}>
+        Already have an account?{" "}
+        <button type="button" onClick={goToSignIn} style={{
+          background: "none", border: "none", color: YELLOW, fontWeight: 600,
+          cursor: "pointer", fontSize: 12, fontFamily: "'Poppins', sans-serif",
+        }}>
+          Sign in
+        </button>
+      </p>
+    </div>
+  );
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, login } = useAuth();
 
   const [isLogin, setIsLogin] = useState(true);
+  const [direction, setDirection] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    confirmPassword: "",
-    name: "",
-  });
-
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [formData, setFormData] = useState({ email: "", password: "", confirmPassword: "", name: "" });
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    if (params.get("tab") === "signup") setIsLogin(false);
+    if (params.get("tab") === "signup") { setDirection(1); setIsLogin(false); }
   }, [location.search]);
 
   useEffect(() => {
     if (!user) return;
-
-    const roleHomeMap: Record<string, string> = {
-      administrator: "/dashboard",
-      cashier: "/orders",
-      cook: "/orders",
-      inventory_manager: "/inventory",
-      customer: "/products",
+    const map: Record<string, string> = {
+      administrator: "/dashboard", cashier: "/orders",
+      cook: "/orders", inventory_manager: "/inventory", customer: "/products",
     };
-
-    navigate(roleHomeMap[user.role] ?? "/", { replace: true });
+    navigate(map[user.role] ?? "/", { replace: true });
   }, [navigate, user]);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const card = cardRef.current;
-    if (!card) return;
-    const rect = card.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = (e.clientX - cx) / (rect.width / 2);
-    const dy = (e.clientY - cy) / (rect.height / 2);
-    setTilt({ x: dy * -5, y: dx * 5 });
-  };
-
-  const handleMouseLeave = () => setTilt({ x: 0, y: 0 });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const persistAuth = (data: {
-    token: string;
-    username: string;
-    role: string;
-    userId: number | string;
-  }) => {
-    login({
-      token: data.token,
-      username: data.username,
-      role: data.role,
-      userId: String(data.userId),
-    });
-    localStorage.setItem("authToken", data.token);
-    localStorage.setItem("isAuthenticated", "true");
-    localStorage.setItem("userName", data.username);
-    localStorage.setItem("userRole", data.role);
-    localStorage.setItem("userId", String(data.userId));
-    window.dispatchEvent(new Event("authChange"));
+  const persistAuth = (data: { token: string; username: string; role: string; userId: number | string }) => {
+    login({ token: data.token, username: data.username, role: data.role, userId: String(data.userId) });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-
+    const map: Record<string, string> = {
+      administrator: "/dashboard", cashier: "/orders",
+      cook: "/orders", inventory_manager: "/inventory", customer: "/products",
+    };
     if (isLogin) {
       try {
         const data = await authApi.login(formData.email, formData.password);
         persistAuth(data);
-        const roleHomeMap: Record<string, string> = {
-          administrator: "/dashboard",
-          cashier: "/orders",
-          cook: "/orders",
-          inventory_manager: "/inventory",
-          customer: "/products",
-        };
-        navigate(roleHomeMap[data.role] ?? "/");
+        navigate(map[data.role] ?? "/");
       } catch (err: any) {
         setError(err.message || "Invalid credentials.");
-      } finally {
-        setIsLoading(false);
-      }
+      } finally { setIsLoading(false); }
     } else {
-      const passwordRegex = /^.{8,}$/;
-      if (!passwordRegex.test(formData.password)) {
-        setError("Password must be at least 8 characters long.");
-        setIsLoading(false);
-        return;
-      }
-      if (formData.password !== formData.confirmPassword) {
-        setError("Passwords don't match!");
-        setIsLoading(false);
-        return;
-      }
+      if (formData.password.length < 8) { setError("Password must be at least 8 characters."); setIsLoading(false); return; }
+      if (formData.password !== formData.confirmPassword) { setError("Passwords don't match!"); setIsLoading(false); return; }
       try {
         await authApi.register(formData.name, formData.email, formData.password);
         const data = await authApi.login(formData.email, formData.password);
         persistAuth(data);
         navigate("/products");
       } catch (err: any) {
-        if (
-          err.message?.toLowerCase().includes("login") ||
-          err.message?.toLowerCase().includes("credential")
-        ) {
-          setError("");
-          setIsLogin(true);
+        if (err.message?.toLowerCase().includes("login") || err.message?.toLowerCase().includes("credential")) {
+          setError(""); switchTab(true);
           setFormData({ email: formData.email, password: "", confirmPassword: "", name: "" });
-        } else {
-          setError(err.message || "Failed to register.");
-        }
-      } finally {
-        setIsLoading(false);
-      }
+        } else { setError(err.message || "Failed to register."); }
+      } finally { setIsLoading(false); }
     }
   };
 
-  const switchTab = (login: boolean) => {
-    setIsLogin(login);
+  const switchTab = (toLogin: boolean) => {
+    setDirection(toLogin ? -1 : 1);
+    setIsLogin(toLogin);
     setError("");
     setFormData({ email: "", password: "", confirmPassword: "", name: "" });
     setShowPassword(false);
     setShowConfirm(false);
   };
 
-  const YELLOW = "#F5C518";
-  const YELLOW_DARK = "#D4A800";
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    background: "rgba(255,255,255,0.08)",
-    border: "1px solid rgba(255,255,255,0.14)",
-    borderRadius: 12,
-    backdropFilter: "blur(12px)",
-    WebkitBackdropFilter: "blur(12px)",
-    boxShadow: "0 2px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08)",
-    padding: "13px 16px",
-    color: "#fff",
-    fontSize: 14,
-    fontFamily: "'Poppins', sans-serif",
-    outline: "none",
-    boxSizing: "border-box",
-    transition: "border-color 0.3s ease, background 0.3s ease, box-shadow 0.35s ease",
-  };
 
   return (
     <>
       <style>{`
-        @keyframes shimmer {
-          0%   { background-position: -300px 0; }
-          100% { background-position: 300px 0; }
-        }
+        * { box-sizing: border-box; }
 
-        .login-input:focus {
+        .lf-input:focus {
           border-color: rgba(245,197,24,0.55) !important;
-          background: rgba(255,255,255,0.12) !important;
-          box-shadow: 0 0 0 3px rgba(245,197,24,0.10), inset 0 1px 0 rgba(255,255,255,0.14) !important;
+          background: rgba(255,255,255,0.11) !important;
+          box-shadow: 0 0 0 3px rgba(245,197,24,0.08) !important;
         }
-        .login-input::placeholder {
-          color: rgba(255,255,255,0.18);
-        }
-
-        .tab-pill {
-          background: none;
-          border: none;
-          cursor: pointer;
+        .lf-input::placeholder {
+          color: rgba(255,255,255,0.20);
           font-family: 'Poppins', sans-serif;
-          font-size: 13px;
-          font-weight: 500;
-          padding: 10px 24px;
-          position: relative;
-          transition: color 0.3s ease;
-        }
-        .tab-pill::after {
-          content: '';
-          position: absolute;
-          bottom: -1px; left: 0; right: 0;
-          height: 2px;
-          background: #F5C518;
-          border-radius: 2px 2px 0 0;
-          transform: scaleX(0);
-          transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
-        }
-        .tab-pill.active  { color: #F5C518; font-weight: 600; }
-        .tab-pill.active::after { transform: scaleX(1); }
-        .tab-pill.inactive { color: rgba(255,255,255,0.32); }
-        .tab-pill.inactive:hover { color: rgba(255,255,255,0.55); }
-
-        .submit-btn {
-          width: 100%;
-          padding: 14px;
-          border-radius: 12px;
-          border: none;
-          font-family: 'Poppins', sans-serif;
-          font-weight: 700;
-          font-size: 14px;
-          cursor: pointer;
-          position: relative;
-          overflow: hidden;
-          background: #F5C518;
-          color: #0a0a0a;
-          letter-spacing: 0.2px;
-          transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.23,1,0.32,1), background 0.3s ease;
-        }
-        .submit-btn:hover:not(:disabled) {
-          background: #D4A800;
-          transform: translateY(-1px);
-        }
-        .submit-btn:active:not(:disabled) {
-          transform: scale(0.985);
-        }
-        .submit-btn:disabled {
-          opacity: 0.35;
-          cursor: not-allowed;
-        }
-        .submit-btn::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent);
-          background-size: 300px 100%;
-          animation: shimmer 2.6s infinite;
         }
 
-        .eye-btn {
-          position: absolute;
-          right: 14px;
-          top: 50%;
-          transform: translateY(-50%);
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: rgba(255,255,255,0.25);
-          display: flex;
-          align-items: center;
-          padding: 0;
+        .lf-eye {
+          position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+          background: none; border: none; cursor: pointer;
+          color: rgba(255,255,255,0.25); display: flex; align-items: center; padding: 0;
           transition: color 0.2s;
         }
-        .eye-btn:hover { color: #F5C518; }
+        .lf-eye:hover { color: ${YELLOW}; }
 
-        @media (max-width: 480px) {
-          .login-card { padding: 28px 20px 24px !important; }
+        .lf-submit {
+          width: 100%; padding: 13px; border-radius: 10px; border: none;
+          font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 13px;
+          cursor: pointer; background: ${YELLOW}; color: #111;
+          letter-spacing: 0.2px; transition: background 0.25s, transform 0.2s;
+          position: relative; overflow: hidden;
+        }
+        .lf-submit:hover:not(:disabled) { background: ${YELLOW_DARK}; transform: translateY(-1px); }
+        .lf-submit:active:not(:disabled) { transform: scale(0.985); }
+        .lf-submit:disabled { opacity: 0.35; cursor: not-allowed; }
+        .lf-submit::after {
+          content: ''; position: absolute; inset: 0;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+          background-size: 200% 100%; animation: lf-shimmer 2.4s infinite;
+        }
+        @keyframes lf-shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+
+        .lf-spine {
+          position: absolute; left: 42%; top: 5%; bottom: 5%; width: 1px;
+          background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.09) 20%, rgba(255,255,255,0.09) 80%, transparent);
+          pointer-events: none; z-index: 10;
+        }
+
+        @media (max-width: 640px) {
+          .lf-left { display: none !important; }
+          .lf-book {
+            max-width: 100% !important;
+            border-radius: 16px !important;
+            min-height: auto !important;
+          }
+          .lf-page-wrap { padding: 30px 22px 24px !important; }
         }
       `}</style>
 
       <div style={{
         minHeight: "100vh",
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        display: "flex", alignItems: "center", justifyContent: "center",
         fontFamily: "'Poppins', sans-serif",
-        overflow: "hidden",
+        position: "relative", overflow: "hidden",
+        padding: "20px 16px",
       }}>
 
-        {/* ── Background image ── */}
-        <div style={{
-          position: "absolute", inset: 0,
-          backgroundImage: "url('https://shorturl.at/IyJkH')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-        }} />
+        {/* ── Background: blurred crunch22 image ── */}
+        <div style={{ position: "absolute", inset: 0 }}>
+          <img src="/src/assets/img/crunch22.png" alt=""
+            style={{
+              width: "100%", height: "100%", objectFit: "cover",
+              filter: "blur(22px) brightness(0.30) saturate(0.60)",
+              transform: "scale(1.1)",
+            }}
+          />
+        </div>
 
-        {/* ── Dark overlay ── */}
+        {/* Overlay tint */}
         <div style={{
           position: "absolute", inset: 0,
-          background: "linear-gradient(135deg, rgba(5,3,1,0.84) 0%, rgba(10,7,2,0.72) 50%, rgba(14,9,0,0.82) 100%)",
+          background: "linear-gradient(160deg, rgba(6,4,1,0.55) 0%, rgba(10,6,1,0.45) 50%, rgba(14,9,1,0.60) 100%)",
         }} />
-
-        {/* ── Warm bottom vignette ── */}
         <div style={{
           position: "absolute", inset: 0,
-          background: "radial-gradient(ellipse at 50% 110%, rgba(212,134,10,0.20) 0%, transparent 55%)",
+          background: "radial-gradient(ellipse at 50% 105%, rgba(200,130,0,0.14) 0%, transparent 55%)",
           pointerEvents: "none",
         }} />
 
-        {/* ── Logo top-left ── */}
+        {/* ── Logo ── */}
         <motion.div
-          initial={{ opacity: 0, y: -12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-          style={{
-            position: "absolute", top: 32, left: 36, zIndex: 10,
-            display: "inline-flex", alignItems: "center", gap: 10,
-          }}
+          initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          style={{ position: "absolute", top: 22, left: 26, zIndex: 20, display: "flex", alignItems: "center", gap: 9 }}
         >
           <div style={{
-            width: 30, height: 30, borderRadius: 8,
-            background: "#F5C518",
+            width: 28, height: 28, borderRadius: 7, background: YELLOW,
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(245,197,24,0.38)",
+            boxShadow: "0 4px 14px rgba(245,197,24,0.35)", flexShrink: 0,
           }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-              stroke="#0a0a0a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 11l19-9-9 19-2-8-8-2z" />
             </svg>
           </div>
-          <span style={{
-            color: "#fff",
-            fontFamily: "'Poppins', sans-serif",
-            fontWeight: 600, fontSize: 14,
-            textShadow: "0 1px 8px rgba(0,0,0,0.6)",
-          }}>
-            The Crunch Dahlia Fairview Branch
+          <span style={{ color: "#fff", fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 13 }}>
+            The Crunch Dahlia
           </span>
         </motion.div>
 
-        {/* ── Card wrapper ── */}
-        <div style={{
-          position: "relative", zIndex: 5,
-          width: "100%",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "100px 24px 40px",
-        }}>
+        {/* ── Book card ── */}
+        <motion.div
+          className="lf-book"
+          initial={{ opacity: 0, y: 28, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.65, ease: [0.23, 1, 0.32, 1] }}
+          style={{
+            position: "relative", zIndex: 5,
+            width: "100%", maxWidth: 800,
+            display: "flex",
+            borderRadius: 20,
+            overflow: "hidden",
+            background: "rgba(16,10,2,0.52)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            backdropFilter: "blur(32px)",
+            WebkitBackdropFilter: "blur(32px)",
+            boxShadow: "0 40px 100px rgba(0,0,0,0.72), inset 0 0 0 0.5px rgba(255,255,255,0.05)",
+            minHeight: 540,
+            perspective: 1400,
+          }}
+        >
+          <div className="lf-spine" />
 
-          {/* ── Card ── */}
-          <motion.div
-            ref={cardRef}
-            className="login-card"
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
-            initial={{ opacity: 0, y: 40, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.8, ease: [0.23, 1, 0.32, 1] }}
+          {/* ── Left panel ── */}
+          <div
+            className="lf-left"
             style={{
-              width: "100%",
-              maxWidth: 420,
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.14)",
-              borderRadius: 24,
-              padding: "36px 36px 32px",
-              backdropFilter: "blur(24px)",
-              WebkitBackdropFilter: "blur(24px)",
-              boxShadow: "0 24px 80px rgba(0,0,0,0.6), inset 0 0 0 0.5px rgba(255,255,255,0.05)",
-              transform: `perspective(900px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
-              transition: "transform 0.6s cubic-bezier(0.23, 1, 0.32, 1)",
-              position: "relative",
-              overflow: "hidden",
+              width: "42%", flexShrink: 0,
+              display: "flex", flexDirection: "column",
+              position: "relative", overflow: "hidden",
+              borderRight: "1px solid rgba(255,255,255,0.07)",
             }}
           >
-            {/* Inner top-edge glow */}
-            <div style={{
-              position: "absolute", top: 0, left: "20%", right: "20%", height: 1,
-              background: "linear-gradient(90deg, transparent, rgba(245,197,24,0.30), transparent)",
-              pointerEvents: "none",
-            }} />
-
-            {/* ── Heading ── */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.2 }}
-              style={{ marginBottom: 24 }}
-            >
-              <h1 style={{
-                fontFamily: "'Poppins', sans-serif",
-                fontSize: 22, fontWeight: 700,
-                color: "#fff", margin: "0 0 6px",
-                letterSpacing: "-0.3px",
-              }}>
-                {isLogin ? "Welcome back" : "Create account"}
-              </h1>
-              <p style={{
-                color: "rgba(255,255,255,0.28)",
-                fontSize: 13, fontWeight: 300, margin: 0,
-              }}>
-                {isLogin ? "Sign in to your workspace" : "Get started with your team"}
-              </p>
-            </motion.div>
-
-            {/* ── Tab switcher ── */}
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.25 }}
-              style={{
-                display: "inline-flex",
-                marginBottom: 26,
-                borderBottom: "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
-              <button
-                className={`tab-pill ${isLogin ? "active" : "inactive"}`}
-                onClick={() => switchTab(true)}
-              >
-                Sign In
-              </button>
-              <button
-                className={`tab-pill ${!isLogin ? "active" : "inactive"}`}
-                onClick={() => switchTab(false)}
-              >
-                Sign Up
-              </button>
-            </motion.div>
-
-            {/* ── Form ── */}
-            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-
-              {/* ── Error message — clean text only, no box ── */}
-              <AnimatePresence>
-                {error && (
-                  <motion.p
-                    key="error"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.22 }}
-                    style={{
-                      margin: 0,
-                      fontSize: 13,
-                      fontFamily: "'Poppins', sans-serif",
-                      color: "#fca5a5",
-                      textAlign: "center",
-                    }}
-                  >
-                    {error}
-                  </motion.p>
-                )}
-              </AnimatePresence>
-
-              {/* ── Full name — sign up only ── */}
-              <AnimatePresence>
-                {!isLogin && (
-                  <motion.div
-                    key="name-field"
-                    initial={{ opacity: 0, height: 0, y: -8 }}
-                    animate={{ opacity: 1, height: "auto", y: 0 }}
-                    exit={{ opacity: 0, height: 0, y: -8 }}
-                    transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-                    style={{ overflow: "hidden" }}
-                  >
-                    <Field label="Full Name" delay={0.28}>
-                      <input
-                        className="login-input"
-                        style={inputStyle}
-                        id="name"
-                        name="name"
-                        type="text"
-                        required={!isLogin}
-                        autoComplete="name"
-                        value={formData.name}
-                        onChange={handleChange}
-                        placeholder="Your full name"
-                      />
-                    </Field>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* ── Email ── */}
-              <Field label="Email Address" delay={0.3}>
-                <input
-                  className="login-input"
-                  style={inputStyle}
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  placeholder="you@example.com"
-                />
-              </Field>
-
-              {/* ── Password ── */}
-              <Field
-                label="Password"
-                delay={0.36}
-                extra={
-                  isLogin ? (
-                    <a
-                      href="#"
-                      style={{
-                        fontSize: 11,
-                        color: "rgba(255,255,255,0.28)",
-                        textDecoration: "none",
-                        fontFamily: "'Poppins', sans-serif",
-                        letterSpacing: "0.3px",
-                        transition: "color 0.2s",
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.color = YELLOW)}
-                      onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.28)")}
-                    >
-                      Forgot password?
-                    </a>
-                  ) : undefined
-                }
-              >
-                <div style={{ position: "relative" }}>
-                  <input
-                    className="login-input"
-                    style={{ ...inputStyle, paddingRight: 44 }}
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete={isLogin ? "current-password" : "new-password"}
-                    required
-                    value={formData.password}
-                    onChange={handleChange}
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    className="eye-btn"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-                {!isLogin && (
-                  <p style={{
-                    marginTop: 6, fontSize: 11,
-                    color: "rgba(255,255,255,0.18)",
-                    fontFamily: "'Poppins', sans-serif",
-                  }}>
-                    Min. 8 characters.
-                  </p>
-                )}
-              </Field>
-
-              {/* ── Confirm password — sign up only ── */}
-              <AnimatePresence>
-                {!isLogin && (
-                  <motion.div
-                    key="confirm-field"
-                    initial={{ opacity: 0, height: 0, y: -8 }}
-                    animate={{ opacity: 1, height: "auto", y: 0 }}
-                    exit={{ opacity: 0, height: 0, y: -8 }}
-                    transition={{ duration: 0.3, delay: 0.05, ease: [0.23, 1, 0.32, 1] }}
-                    style={{ overflow: "hidden" }}
-                  >
-                    <Field label="Confirm Password" delay={0}>
-                      <div style={{ position: "relative" }}>
-                        <input
-                          className="login-input"
-                          style={{ ...inputStyle, paddingRight: 44 }}
-                          id="confirmPassword"
-                          name="confirmPassword"
-                          type={showConfirm ? "text" : "password"}
-                          autoComplete="new-password"
-                          required={!isLogin}
-                          value={formData.confirmPassword}
-                          onChange={handleChange}
-                          placeholder="••••••••"
-                        />
-                        <button
-                          type="button"
-                          className="eye-btn"
-                          onClick={() => setShowConfirm(!showConfirm)}
-                        >
-                          {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
-                        </button>
-                      </div>
-                    </Field>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* ── Submit ── */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.42 }}
-                style={{ marginTop: 4 }}
-              >
-                <button
-                  type="submit"
-                  className="submit-btn"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Please wait…" : isLogin ? "Sign in" : "Create account"}
-                </button>
-              </motion.div>
-            </form>
-
-            {/* ── Switch link ── */}
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              style={{
-                textAlign: "center",
-                marginTop: 22,
-                fontSize: 13,
-                color: "rgba(255,255,255,0.25)",
-                fontFamily: "'Poppins', sans-serif",
-              }}
-            >
-              {isLogin ? "No account yet? " : "Already have an account? "}
-              <button
-                type="button"
-                onClick={() => switchTab(!isLogin)}
+            {/* TOP: image fills ~62% */}
+            <div style={{ flex: "0 0 62%", position: "relative", overflow: "hidden" }}>
+              <img
+                src="/src/assets/img/crunch22.png"
+                alt="The Crunch Dahlia"
                 style={{
-                  background: "none",
-                  border: "none",
-                  color: YELLOW,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontFamily: "'Poppins', sans-serif",
-                  textDecoration: "underline",
-                  textUnderlineOffset: 3,
-                  transition: "color 0.2s",
+                  width: "100%", height: "100%",
+                  objectFit: "cover",
+                  objectPosition: "center top",
+                  display: "block",
                 }}
-                onMouseEnter={e => (e.currentTarget.style.color = YELLOW_DARK)}
-                onMouseLeave={e => (e.currentTarget.style.color = YELLOW)}
+              />
+              {/* Soft bottom fade into the info section */}
+              <div style={{
+                position: "absolute", bottom: 0, left: 0, right: 0, height: "50%",
+                background: "linear-gradient(to bottom, transparent, rgba(12,8,2,0.92))",
+                pointerEvents: "none",
+              }} />
+              {/* Pill indicators top-left */}
+              <div style={{ position: "absolute", top: 18, left: 20, display: "flex", gap: 5, zIndex: 2 }}>
+                {[true, false].map((isSignIn, i) => (
+                  <div key={i} style={{
+                    width: isLogin === isSignIn ? 18 : 5,
+                    height: 5, borderRadius: 3,
+                    background: isLogin === isSignIn ? YELLOW : "rgba(255,255,255,0.25)",
+                    transition: "width 0.35s ease, background 0.35s ease",
+                  }} />
+                ))}
+              </div>
+            </div>
+
+            {/* BOTTOM: frosted info area fills remaining ~38% */}
+            <div style={{
+              flex: 1,
+              background: "rgba(12,8,2,0.82)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              padding: "18px 22px 22px",
+              display: "flex", flexDirection: "column", justifyContent: "space-between",
+            }}>
+              <motion.div
+                key={isLogin ? "lp-li" : "lp-su"}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
               >
-                {isLogin ? "Sign up" : "Sign in"}
-              </button>
-            </motion.p>
-          </motion.div>
-        </div>
+                {/* Icon + heading */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                    background: "rgba(245,197,24,0.13)",
+                    border: "1px solid rgba(245,197,24,0.22)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                      stroke={YELLOW} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      {isLogin
+                        ? <><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></>
+                        : <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></>
+                      }
+                    </svg>
+                  </div>
+                  <p style={{
+                    fontFamily: "'Poppins', sans-serif", fontSize: 15, fontWeight: 700,
+                    color: "#fff", margin: 0, lineHeight: 1.3,
+                  }}>
+                    {isLogin ? "Good to see you again." : "Join the team today."}
+                  </p>
+                </div>
+
+                <p style={{
+                  fontFamily: "'Poppins', sans-serif", fontSize: 12, fontWeight: 300,
+                  color: "rgba(255,255,255,0.35)", margin: 0, lineHeight: 1.65,
+                }}>
+                  {isLogin
+                    ? "Access your dashboard, orders, and more."
+                    : "Create your account and get started."}
+                </p>
+              </motion.div>
+
+              {/* Branch tag */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: YELLOW, flexShrink: 0 }} />
+                <span style={{
+                  fontSize: 10, color: "rgba(255,255,255,0.22)",
+                  fontFamily: "'Poppins', sans-serif", fontWeight: 500, letterSpacing: "0.8px",
+                }}>
+                  FAIRVIEW BRANCH
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Right panel — animated page flip ── */}
+          <div style={{ flex: 1, position: "relative", overflow: "hidden", perspective: 1400 }}>
+            <AnimatePresence custom={direction} mode="wait">
+              <motion.div
+                key={isLogin ? "signin" : "signup"}
+                custom={direction}
+                variants={pageVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{
+                  rotateY: { duration: 0.42, ease: [0.23, 1, 0.32, 1] },
+                  opacity: { duration: 0.22 },
+                  scale: { duration: 0.42, ease: [0.23, 1, 0.32, 1] },
+                }}
+                className="lf-page-wrap"
+                style={{
+                  position: "absolute", inset: 0,
+                  padding: "36px 32px 28px",
+                  display: "flex", flexDirection: "column",
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                  willChange: "transform",
+                }}
+              >
+                {isLogin
+                  ? <SignInForm
+                      formData={formData} handleChange={handleChange}
+                      handleSubmit={handleSubmit} isLoading={isLoading} error={error}
+                      showPassword={showPassword} setShowPassword={setShowPassword}
+                      goToSignUp={() => switchTab(false)}
+                    />
+                  : <SignUpForm
+                      formData={formData} handleChange={handleChange}
+                      handleSubmit={handleSubmit} isLoading={isLoading} error={error}
+                      showPassword={showPassword} setShowPassword={setShowPassword}
+                      showConfirm={showConfirm} setShowConfirm={setShowConfirm}
+                      goToSignIn={() => switchTab(true)}
+                    />
+                }
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </motion.div>
       </div>
     </>
   );
