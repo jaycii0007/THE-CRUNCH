@@ -29,6 +29,24 @@ type Role =
   | "customer"
   | null;
 
+const ROLE_MAP: Record<string, string> = {
+  administrator: "/dashboard",
+  cashier: "/orders",
+  cook: "/orders",
+  inventory_manager: "/inventory",
+  customer: "/products",
+};
+
+// ── Redirects already-logged-in users away from /login ──────────────────────
+function PublicOnlyRoute({ element }: { element: React.ReactElement }) {
+  const { user } = useAuth();
+  if (user) {
+    // Already logged in — send them to their home page instead of /login
+    return <Navigate to={ROLE_MAP[user.role] ?? "/"} replace />;
+  }
+  return element;
+}
+
 function ProtectedRoute({
   element,
   allowedRoles,
@@ -48,14 +66,6 @@ function ProtectedRoute({
 function Unauthorized() {
   const { user } = useAuth();
 
-  const roleHomeMap: Record<string, string> = {
-    administrator: "/dashboard",
-    cashier: "/orders",
-    cook: "/orders",
-    inventory_manager: "/inventory",
-    customer: "/products",
-  };
-
   return (
     <div
       style={{ fontFamily: "'Poppins', sans-serif" }}
@@ -65,7 +75,7 @@ function Unauthorized() {
       <p className="text-gray-600">You don't have permission to view this page.</p>
       <button
         onClick={() =>
-          (window.location.href = roleHomeMap[user?.role ?? ""] || "/login")
+          (window.location.href = ROLE_MAP[user?.role ?? ""] || "/login")
         }
         className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-black"
       >
@@ -76,8 +86,7 @@ function Unauthorized() {
 }
 
 export default function App() {
-  // ✅ Auth state comes directly from context — always in sync with login/logout
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const isAuth = !!user;
   const userRole = (user?.role ?? null) as Role;
 
@@ -94,11 +103,25 @@ export default function App() {
     <Routes>
       {/* ── Public ───────────────────────────────────────────── */}
       <Route path="/" element={<Navigate to="/products" replace />} />
-      <Route path="/login" element={<Login />} />
+
+      {/* /login is only for guests — logged-in users are redirected to their home */}
+      <Route
+        path="/login"
+        element={<PublicOnlyRoute element={<Login />} />}
+      />
+
       <Route path="/aboutthecrunch" element={<AboutTheCrunch />} />
 
-      {/* ── Customer landing (public) ─────────────────────────── */}
-      <Route path="/products" element={<Products />} />
+      {/* ── Customer landing (public, but passes auth state for nav) ── */}
+      <Route
+        path="/products"
+        element={
+          <Products
+            isAuthenticated={isAuth}
+            onLogout={logout}
+          />
+        }
+      />
 
       {/* ── Customer menu ────────────────────────────────────── */}
       <Route
@@ -137,7 +160,7 @@ export default function App() {
       {/* ── Administrator + Cashier + Cook ───────────────────── */}
       <Route
         path="/orders"
-        element={protect(<Order />, ["administrator", "cashier","cook"])}
+        element={protect(<Order />, ["administrator", "cashier", "cook"])}
       />
 
       {/* ── Cook ─────────────────────────────────────────────── */}

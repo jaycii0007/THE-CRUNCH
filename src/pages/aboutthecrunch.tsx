@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useInView, useScroll, useTransform } from 'framer-motion';
+import { useAuth } from '../context/authcontext';
 
 // ── Font injection ─────────────────────────────────────────────────────────────
 if (typeof document !== 'undefined' && !document.getElementById('crunch-fonts')) {
@@ -12,17 +13,6 @@ if (typeof document !== 'undefined' && !document.getElementById('crunch-fonts'))
 }
 
 const PP = "'Poppins', sans-serif";
-
-// ── Auth helper ───────────────────────────────────────────────────────────────
-function getAuth(): boolean {
-  const t = localStorage.getItem('authToken');
-  const f = localStorage.getItem('isAuthenticated') === 'true';
-  if (!t || !f) {
-    ['authToken', 'isAuthenticated', 'userName', 'userRole', 'userId'].forEach(k => localStorage.removeItem(k));
-    return false;
-  }
-  return true;
-}
 
 // ── Responsive hook ───────────────────────────────────────────────────────────
 function useBreakpoint() {
@@ -105,9 +95,8 @@ const perks = [
   { num: '06', title: '250+ Branches',    desc: 'From Luzon to Mindanao — The Crunch is everywhere you are.' },
 ];
 
-// ── Local asset paths ──────────────────────────────────────────────────────────
-const IMG_HERO  = '/src/assets/img/crunch22.png';       // tri-panel hero image
-const IMG_STORY = '/src/assets/img/chickchicken.png';   // annotated chicken image
+const IMG_HERO  = '/src/assets/img/crunch22.png';
+const IMG_STORY = '/src/assets/img/chickchicken.png';
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AboutTheCrunch() {
@@ -115,20 +104,15 @@ export default function AboutTheCrunch() {
   const { isMobile, isTablet } = useBreakpoint();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(() => getAuth());
 
-  useEffect(() => {
-    setIsAuthenticated(getAuth());
-    const sync = () => setIsAuthenticated(getAuth());
-    window.addEventListener('authChange', sync);
-    return () => window.removeEventListener('authChange', sync);
-  }, []);
+  // ── Auth from context — stays in sync with login/logout everywhere ──
+  const { user, logout } = useAuth();
+  const isAuthenticated = !!user;
 
   const handleLogout = () => {
-    ['authToken', 'isAuthenticated', 'userName', 'userRole', 'userId'].forEach(k => localStorage.removeItem(k));
-    window.dispatchEvent(new Event('authChange'));
+    logout();
     setMenuOpen(false);
-    navigate('/login');
+    navigate('/products');
   };
 
   useEffect(() => {
@@ -137,7 +121,6 @@ export default function AboutTheCrunch() {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
-  // Close mobile menu on resize
   useEffect(() => {
     if (!isTablet) setMenuOpen(false);
   }, [isTablet]);
@@ -148,9 +131,9 @@ export default function AboutTheCrunch() {
   const txtY = useTransform(scrollYProgress, [0, 1], ['0%', '12%']);
 
   const navLinks = [
-    { l: 'Home', p: '/' },
-    { l: 'Menu', p: '/usersmenu' },
+    { l: 'Home',  p: '/' },
     { l: 'About', p: '/aboutthecrunch' },
+    { l: 'Menu',  p: '/usersmenu' },
   ];
 
   return (
@@ -175,7 +158,7 @@ export default function AboutTheCrunch() {
       >
         {/* Logo */}
         <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          onClick={() => navigate('/products')}
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}
         >
           <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f5c842', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -310,7 +293,6 @@ export default function AboutTheCrunch() {
           position: 'relative', zIndex: 2,
           minHeight: isMobile ? 'auto' : isTablet ? 'auto' : '100vh',
         }}>
-          {/* Divider line — desktop only */}
           {!isTablet && (
             <div style={{ position: 'absolute', right: 0, top: '15%', bottom: '15%', width: 1, background: 'linear-gradient(to bottom, transparent, rgba(245,200,66,0.28), transparent)' }} />
           )}
@@ -355,44 +337,26 @@ export default function AboutTheCrunch() {
 
         {/* Right Image */}
         <div style={{
-          position: 'relative',
-          overflow: 'hidden',
-          minHeight: isMobile ? 320 : isTablet ? 420 : '100vh',
-          isolation: 'isolate',
+          position: 'relative', overflow: 'hidden',
+          minHeight: isMobile ? 360 : isTablet ? 480 : '100vh',
+          background: '#0a0806',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          {/* Parallax wrapper — only applied on desktop */}
           <motion.div
-            style={{ y: isTablet ? 0 : imgY, position: 'absolute', inset: 0 }}
-            initial={{ scale: 1.06, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
+            initial={{ opacity: 0, scale: 1.03 }}
+            animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}
+            style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            <img
-              src={IMG_HERO}
-              alt="Boneless Crunchy Savory chicken"
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                objectPosition: 'center top',
-                display: 'block',
-              }}
-            />
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(10,8,6,0.72) 0%, rgba(10,8,6,0.1) 50%, transparent 100%)' }} />
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,8,6,0.75) 0%, transparent 50%)' }} />
+            <img src={IMG_HERO} alt="Boneless Crunchy Savory chicken"
+              style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', display: 'block' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(10,8,6,0.55) 0%, transparent 18%)' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,8,6,0.5) 0%, transparent 30%)' }} />
           </motion.div>
 
           {/* Stats */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.1, duration: 0.6 }}
-            style={{
-              position: 'absolute',
-              bottom: isMobile ? 24 : 48,
-              left: isMobile ? 16 : 28,
-              display: 'flex',
-              gap: isMobile ? 8 : 10,
-              zIndex: 10,
-              flexWrap: 'wrap',
-            }}>
+            style={{ position: 'absolute', bottom: isMobile ? 24 : 48, left: isMobile ? 16 : 28, display: 'flex', gap: isMobile ? 8 : 10, zIndex: 10, flexWrap: 'wrap' }}>
             {[{ v: '250+', l: 'Branches' }, { v: '7', l: 'Flavors' }, { v: '2021', l: 'Est.' }].map(s => (
               <div key={s.l} style={{
                 background: 'rgba(10,8,6,0.8)', backdropFilter: 'blur(16px)',
@@ -406,7 +370,7 @@ export default function AboutTheCrunch() {
           </motion.div>
         </div>
 
-        {/* Scroll indicator — desktop */}
+        {/* Scroll indicator */}
         {!isMobile && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.8 }}
             style={{ position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}>
@@ -432,17 +396,12 @@ export default function AboutTheCrunch() {
           gap: isTablet ? 48 : 80,
           alignItems: 'center',
         }}>
-          {/* Image block */}
           <Reveal dir={isTablet ? 'up' : 'left'}>
             <div style={{ position: 'relative', paddingBottom: isTablet ? 0 : 48, paddingRight: isTablet ? 0 : 48 }}>
               <div style={{ borderRadius: 20, overflow: 'hidden', height: isMobile ? 260 : isTablet ? 380 : 460 }}>
-                <img
-                  src={IMG_STORY}
-                  alt="The Crunch — Crunchy Addicting Flavorful"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
-                />
+                <img src={IMG_STORY} alt="The Crunch — Crunchy Addicting Flavorful"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
               </div>
-              {/* Floating badge */}
               {!isMobile && (
                 <motion.div animate={{ y: [-4, 4, -4] }} transition={{ repeat: Infinity, duration: 4.5, ease: 'easeInOut' }}
                   style={{ position: isTablet ? 'relative' : 'absolute', bottom: isTablet ? 'auto' : 0, right: isTablet ? 'auto' : 0, marginTop: isTablet ? 16 : 0, background: '#f5c842', borderRadius: 18, padding: '20px 24px', minWidth: 120, textAlign: 'center', display: 'inline-block' }}>
@@ -450,7 +409,6 @@ export default function AboutTheCrunch() {
                   <div style={{ fontFamily: PP, fontSize: 9, fontWeight: 700, color: 'rgba(26,10,0,0.5)', letterSpacing: '0.18em', textTransform: 'uppercase', marginTop: 6 }}>Signature Flavors</div>
                 </motion.div>
               )}
-              {/* Est. badge */}
               {!isTablet && (
                 <motion.div animate={{ y: [3, -3, 3] }} transition={{ repeat: Infinity, duration: 5, ease: 'easeInOut', delay: 0.6 }}
                   style={{ position: 'absolute', top: -16, left: 20, background: 'rgba(14,12,10,0.95)', border: '1px solid rgba(245,200,66,0.2)', borderRadius: 12, padding: '10px 18px', backdropFilter: 'blur(16px)' }}>
@@ -461,15 +419,10 @@ export default function AboutTheCrunch() {
             </div>
           </Reveal>
 
-          {/* Text block */}
           <Reveal dir={isTablet ? 'up' : 'right'} delay={0.1}>
             <div>
               <p style={{ fontFamily: PP, fontSize: 10, fontWeight: 700, letterSpacing: '0.28em', textTransform: 'uppercase', color: '#f5c842', margin: '0 0 14px' }}>Our Vision</p>
-              <h2 style={{
-                fontFamily: PP, fontWeight: 900,
-                fontSize: isMobile ? 'clamp(32px, 9vw, 44px)' : 'clamp(32px, 3.5vw, 48px)',
-                color: '#ede9e2', lineHeight: 1.05, letterSpacing: '-0.02em', margin: '0 0 24px',
-              }}>
+              <h2 style={{ fontFamily: PP, fontWeight: 900, fontSize: isMobile ? 'clamp(32px, 9vw, 44px)' : 'clamp(32px, 3.5vw, 48px)', color: '#ede9e2', lineHeight: 1.05, letterSpacing: '-0.02em', margin: '0 0 24px' }}>
                 Excellence<br />in Every<br /><em style={{ color: '#f5c842' }}>Bite.</em>
               </h2>
               <div style={{ width: 40, height: 2, background: 'rgba(245,200,66,0.3)', marginBottom: 24 }} />
@@ -570,7 +523,6 @@ export default function AboutTheCrunch() {
                 </motion.div>
               </Reveal>
             ))}
-            {/* Bottom border fillers */}
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.06)' }} />
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
           </div>
@@ -580,21 +532,14 @@ export default function AboutTheCrunch() {
       {/* ── CTA ── */}
       <section style={{ position: 'relative', height: isMobile ? '70vh' : '85vh', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ position: 'absolute', inset: 0 }}>
-          <img
-            src={IMG_HERO}
-            alt="Chicken feast"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', filter: 'brightness(0.32) saturate(1.15)', display: 'block' }}
-          />
+          <img src={IMG_HERO} alt="Chicken feast"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', filter: 'brightness(0.32) saturate(1.15)', display: 'block' }} />
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(10,8,6,0.45)' }} />
         </div>
         <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: isMobile ? '0 24px' : '0 40px', maxWidth: 800, width: '100%' }}>
           <Reveal>
             <p style={{ fontFamily: PP, fontSize: 10, fontWeight: 700, letterSpacing: '0.28em', textTransform: 'uppercase', color: '#f5c842', marginBottom: 20 }}>Now Serving</p>
-            <h2 style={{
-              fontFamily: PP,
-              fontSize: isMobile ? 'clamp(38px, 11vw, 60px)' : 'clamp(44px, 7vw, 96px)',
-              fontWeight: 900, color: '#ede9e2', lineHeight: 0.92, letterSpacing: '-0.035em', margin: '0 0 24px',
-            }}>
+            <h2 style={{ fontFamily: PP, fontSize: isMobile ? 'clamp(38px, 11vw, 60px)' : 'clamp(44px, 7vw, 96px)', fontWeight: 900, color: '#ede9e2', lineHeight: 0.92, letterSpacing: '-0.035em', margin: '0 0 24px' }}>
               Ready to taste<br /><em style={{ color: '#f5c842' }}>The Crunch?</em>
             </h2>
             <p style={{ fontFamily: PP, fontSize: isMobile ? 13.5 : 15.5, color: 'rgba(237,233,226,0.5)', fontWeight: 300, lineHeight: 1.85, maxWidth: 440, margin: '0 auto 40px' }}>
@@ -606,7 +551,7 @@ export default function AboutTheCrunch() {
                 style={{ background: '#f5c842', color: '#1a0a00', border: 'none', borderRadius: 10, padding: isMobile ? '13px 36px' : '15px 44px', fontSize: isMobile ? 13 : 14, fontWeight: 700, cursor: 'pointer', fontFamily: PP }}>
                 Order Now
               </motion.button>
-              <motion.button whileHover={{ scale: 1.04, y: -2 }} whileTap={{ scale: 0.97 }} onClick={() => navigate('/')}
+              <motion.button whileHover={{ scale: 1.04, y: -2 }} whileTap={{ scale: 0.97 }} onClick={() => navigate('/products')}
                 style={{ background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(12px)', color: '#ede9e2', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, padding: isMobile ? '13px 36px' : '15px 44px', fontSize: isMobile ? 13 : 14, fontWeight: 500, cursor: 'pointer', fontFamily: PP }}>
                 Back to Home
               </motion.button>
@@ -618,13 +563,7 @@ export default function AboutTheCrunch() {
       {/* ── FOOTER ── */}
       <footer style={{ background: '#080604', borderTop: '1px solid rgba(255,255,255,0.05)', padding: isMobile ? '48px 24px 32px' : '60px 48px 36px' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : '2fr 1fr 1fr',
-            gap: isMobile ? 36 : 48,
-            marginBottom: 40,
-          }}>
-            {/* Brand */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : '2fr 1fr 1fr', gap: isMobile ? 36 : 48, marginBottom: 40 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 9, background: '#f5c842', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -639,7 +578,6 @@ export default function AboutTheCrunch() {
               </p>
             </div>
 
-            {/* Navigate */}
             <div>
               <p style={{ fontFamily: PP, fontSize: 9, fontWeight: 700, color: 'rgba(237,233,226,0.15)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 14 }}>Navigate</p>
               {navLinks.map(({ l, p }) => (
@@ -652,7 +590,6 @@ export default function AboutTheCrunch() {
               ))}
             </div>
 
-            {/* Follow */}
             <div>
               <p style={{ fontFamily: PP, fontSize: 9, fontWeight: 700, color: 'rgba(237,233,226,0.15)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 14 }}>Follow</p>
               {[

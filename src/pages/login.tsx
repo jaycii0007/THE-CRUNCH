@@ -17,6 +17,14 @@ if (typeof document !== "undefined" && !document.getElementById("login-fonts")) 
 const YELLOW = "#F5C518";
 const YELLOW_DARK = "#C9A010";
 
+const ROLE_MAP: Record<string, string> = {
+  administrator: "/dashboard",
+  cashier: "/orders",
+  cook: "/orders",
+  inventory_manager: "/inventory",
+  customer: "/products",
+};
+
 const baseInputStyle: React.CSSProperties = {
   width: "100%",
   background: "rgba(255,255,255,0.07)",
@@ -239,57 +247,76 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ email: "", password: "", confirmPassword: "", name: "" });
 
+  // ── Tab from URL param ──
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.get("tab") === "signup") { setDirection(1); setIsLogin(false); }
   }, [location.search]);
 
-  useEffect(() => {
-    if (!user) return;
-    const map: Record<string, string> = {
-      administrator: "/dashboard", cashier: "/orders",
-      cook: "/orders", inventory_manager: "/inventory", customer: "/products",
-    };
-    navigate(map[user.role] ?? "/", { replace: true });
-  }, [navigate, user]);
+  // ── REMOVED the auto-redirect useEffect that was bouncing logged-in users back ──
+  // We only navigate AFTER a successful form submission (see handleSubmit below)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
-
-  const persistAuth = (data: { token: string; username: string; role: string; userId: number | string }) => {
-    login({ token: data.token, username: data.username, role: data.role, userId: String(data.userId) });
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-    const map: Record<string, string> = {
-      administrator: "/dashboard", cashier: "/orders",
-      cook: "/orders", inventory_manager: "/inventory", customer: "/products",
-    };
+
     if (isLogin) {
       try {
         const data = await authApi.login(formData.email, formData.password);
-        persistAuth(data);
-        navigate(map[data.role] ?? "/");
+        // Store auth in context
+        login({
+          token: data.token,
+          username: data.username,
+          role: data.role,
+          userId: String(data.userId),
+        });
+        // Navigate based on role — only happens after successful login
+        navigate(ROLE_MAP[data.role] ?? "/", { replace: true });
       } catch (err: any) {
         setError(err.message || "Invalid credentials.");
-      } finally { setIsLoading(false); }
+      } finally {
+        setIsLoading(false);
+      }
     } else {
-      if (formData.password.length < 8) { setError("Password must be at least 8 characters."); setIsLoading(false); return; }
-      if (formData.password !== formData.confirmPassword) { setError("Passwords don't match!"); setIsLoading(false); return; }
+      if (formData.password.length < 8) {
+        setError("Password must be at least 8 characters.");
+        setIsLoading(false);
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        setError("Passwords don't match!");
+        setIsLoading(false);
+        return;
+      }
       try {
         await authApi.register(formData.name, formData.email, formData.password);
         const data = await authApi.login(formData.email, formData.password);
-        persistAuth(data);
-        navigate("/products");
+        login({
+          token: data.token,
+          username: data.username,
+          role: data.role,
+          userId: String(data.userId),
+        });
+        // Customers always go to /products after sign-up
+        navigate(ROLE_MAP[data.role] ?? "/products", { replace: true });
       } catch (err: any) {
-        if (err.message?.toLowerCase().includes("login") || err.message?.toLowerCase().includes("credential")) {
-          setError(""); switchTab(true);
+        if (
+          err.message?.toLowerCase().includes("login") ||
+          err.message?.toLowerCase().includes("credential")
+        ) {
+          setError("");
+          switchTab(true);
           setFormData({ email: formData.email, password: "", confirmPassword: "", name: "" });
-        } else { setError(err.message || "Failed to register."); }
-      } finally { setIsLoading(false); }
+        } else {
+          setError(err.message || "Failed to register.");
+        }
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -301,8 +328,6 @@ export default function Login() {
     setShowPassword(false);
     setShowConfirm(false);
   };
-
-
 
   return (
     <>
@@ -372,7 +397,7 @@ export default function Login() {
         padding: "20px 16px",
       }}>
 
-        {/* ── Background: blurred crunch22 image ── */}
+        {/* ── Background ── */}
         <div style={{ position: "absolute", inset: 0 }}>
           <img src="/src/assets/img/crunch22.png" alt=""
             style={{
@@ -383,7 +408,6 @@ export default function Login() {
           />
         </div>
 
-        {/* Overlay tint */}
         <div style={{
           position: "absolute", inset: 0,
           background: "linear-gradient(160deg, rgba(6,4,1,0.55) 0%, rgba(10,6,1,0.45) 50%, rgba(14,9,1,0.60) 100%)",
@@ -448,25 +472,17 @@ export default function Login() {
               borderRight: "1px solid rgba(255,255,255,0.07)",
             }}
           >
-            {/* TOP: image fills ~62% */}
             <div style={{ flex: "0 0 62%", position: "relative", overflow: "hidden" }}>
               <img
                 src="/src/assets/img/crunch22.png"
                 alt="The Crunch Dahlia"
-                style={{
-                  width: "100%", height: "100%",
-                  objectFit: "cover",
-                  objectPosition: "center top",
-                  display: "block",
-                }}
+                style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", display: "block" }}
               />
-              {/* Soft bottom fade into the info section */}
               <div style={{
                 position: "absolute", bottom: 0, left: 0, right: 0, height: "50%",
                 background: "linear-gradient(to bottom, transparent, rgba(12,8,2,0.92))",
                 pointerEvents: "none",
               }} />
-              {/* Pill indicators top-left */}
               <div style={{ position: "absolute", top: 18, left: 20, display: "flex", gap: 5, zIndex: 2 }}>
                 {[true, false].map((isSignIn, i) => (
                   <div key={i} style={{
@@ -479,7 +495,6 @@ export default function Login() {
               </div>
             </div>
 
-            {/* BOTTOM: frosted info area fills remaining ~38% */}
             <div style={{
               flex: 1,
               background: "rgba(12,8,2,0.82)",
@@ -494,7 +509,6 @@ export default function Login() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
               >
-                {/* Icon + heading */}
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                   <div style={{
                     width: 32, height: 32, borderRadius: 8, flexShrink: 0,
@@ -528,7 +542,6 @@ export default function Login() {
                 </p>
               </motion.div>
 
-              {/* Branch tag */}
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
                 <div style={{ width: 6, height: 6, borderRadius: "50%", background: YELLOW, flexShrink: 0 }} />
                 <span style={{
@@ -541,7 +554,7 @@ export default function Login() {
             </div>
           </div>
 
-          {/* ── Right panel — animated page flip ── */}
+          {/* ── Right panel ── */}
           <div style={{ flex: 1, position: "relative", overflow: "hidden", perspective: 1400 }}>
             <AnimatePresence custom={direction} mode="wait">
               <motion.div

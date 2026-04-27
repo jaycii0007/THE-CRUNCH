@@ -1,22 +1,33 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 
 // ─── SPRING PRESETS ───────────────────────────────────────────────────────────
-const SP = { type: "spring" as const, stiffness: 340, damping: 30 };
+const SP  = { type: "spring" as const, stiffness: 340, damping: 30 };
 const SPG = { type: "spring" as const, stiffness: 200, damping: 24 };
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 interface Nutrition { calories: number; protein: number; fats: number; carbs: number }
+
 interface Recipe {
-  id: number; name: string; description: string; image: string;
-  nutrition: Nutrition; price: number; maxFlavors?: number;
-  mealTypes: string[]; tag?: string; note?: string;
-  variant?: "original" | "spicy";
+  id:          number
+  name:        string
+  description: string
+  image:       string
+  nutrition:   Nutrition
+  price:       number
+  maxFlavors?: number
+  mealTypes:   string[]
+  tag?:        string
+  note?:       string
+  variant?:    "original" | "spicy"
+  category:    string
+  available:   boolean   // ← driven by backend
 }
-interface CartItem { recipe: Recipe; quantity: number; flavors: string[] }
+
+interface CartItem          { recipe: Recipe; quantity: number; flavors: string[] }
 interface CustomerOrderItem { name: string; quantity: number }
 interface CustomerOrder {
   id: number; orderNumber: string; total: number; createdAt: string;
@@ -28,98 +39,50 @@ interface PaymentSessionState {
   checkoutSessionId: string; checkoutUrl: string; status: string;
   paid: boolean; paymentReference: string | null;
 }
-interface MenuVisibilityRow {
-  name?: string; product_name?: string; availability_status?: string; image?: string;
-}
 type PaymentMethodType = "gcash" | "cash";
 
-// ─── STATIC DATA ──────────────────────────────────────────────────────────────
-const FLAVORS = ["Classic","Honey Garlic","Teriyaki","Texas BBQ","Garlic Parmesan","K-Style","Spicy K-Style"];
-
-const RECIPES: Record<string, Recipe[]> = {
-  Chicken: [
-    { id:1,  name:"Whole Crispy Fried Chicken", description:"12 pcs | Perfect for 4–6 pax. Choice of 2 Flavors.", image:"https://bit.ly/4ckRqHY", nutrition:{calories:350,protein:15,fats:25,carbs:90}, price:598, maxFlavors:2, mealTypes:["Lunch","Dinner"], tag:"Bestseller" },
-    { id:2,  name:"Half Crispy Fried Chicken", description:"6 pcs | Perfect for 2–3 pax. Choice of 1 Flavor.", image:"https://bit.ly/3P8sz0j", nutrition:{calories:310,protein:13,fats:22,carbs:80}, price:328, maxFlavors:1, mealTypes:["Lunch","Dinner"] },
-    { id:3,  name:"Crispy Chicken Shots with Drink", description:"Good for 1 pax.", image:"https://bit.ly/40Z9n7T", nutrition:{calories:235,protein:11,fats:30,carbs:60}, price:128, maxFlavors:1, mealTypes:["Breakfast","Lunch","Dinner"], tag:"Hot" },
-    { id:4,  name:"Chicken Skin with Rice and Drink", description:"Solo Meal.", image:"https://bit.ly/3P6DcAK", nutrition:{calories:280,protein:34,fats:14,carbs:5}, price:118, maxFlavors:1, mealTypes:["Breakfast","Lunch"] },
-    { id:5,  name:"2 pcs. Chicken With Rice and Drink", description:"Solo Meal.", image:"https://bit.ly/4r5rfZI", nutrition:{calories:280,protein:34,fats:14,carbs:5}, price:188, maxFlavors:1, mealTypes:["Lunch","Dinner"] },
-    { id:6,  name:"3 pcs. Chicken With Rice and Drink", description:"Good for 1 pax.", image:"https://bit.ly/4r1CAtC", nutrition:{calories:280,protein:34,fats:14,carbs:5}, price:228, maxFlavors:1, mealTypes:["Lunch","Dinner"], tag:"Fan Fave" },
-    { id:20, name:"1 pc. Chicken", description:"Solo Rice Meal. Choice of Original or Spicy.", image:"https://bit.ly/4r5rfZI", nutrition:{calories:260,protein:22,fats:12,carbs:30}, price:80, maxFlavors:1, mealTypes:["Lunch","Dinner"], variant:"original" },
-    { id:21, name:"2 pcs. Chicken", description:"Rice Meal. Choice of Original or Spicy.", image:"https://bit.ly/4r5rfZI", nutrition:{calories:420,protein:38,fats:22,carbs:40}, price:135, maxFlavors:1, mealTypes:["Lunch","Dinner"], variant:"original" },
-    { id:22, name:"3 pcs. Chicken", description:"Rice Meal. Choice of Original or Spicy.", image:"https://bit.ly/4r1CAtC", nutrition:{calories:580,protein:52,fats:30,carbs:50}, price:185, maxFlavors:1, mealTypes:["Lunch","Dinner"], tag:"Must Try", variant:"original" },
-    { id:23, name:"Chicken Skin", description:"Rice Meal. Crispy and flavorful chicken skin.", image:"https://bit.ly/3P6DcAK", nutrition:{calories:310,protein:18,fats:24,carbs:20}, price:70, maxFlavors:1, mealTypes:["Breakfast","Lunch"] },
-    { id:24, name:"Chicken Shots", description:"Rice Meal. Bite-sized crispy chicken shots.", image:"https://bit.ly/40Z9n7T", nutrition:{calories:290,protein:20,fats:18,carbs:25}, price:75, maxFlavors:1, mealTypes:["Breakfast","Lunch","Dinner"] },
-  ],
-  Drinks: [
-    { id:7,  name:"Kiwi Ice Blended", description:"Chilled to perfection — bright, citrusy, slightly creamy.", image:"https://tinyurl.com/56rwyuj8", nutrition:{calories:180,protein:3,fats:2,carbs:44}, price:79, mealTypes:["Breakfast","Lunch","Dinner"] },
-    { id:30, name:"Strawberry Fruit Soda", description:"Refreshing fruit soda. Bright and sweet.", image:"https://tinyurl.com/3ccde5sv", nutrition:{calories:120,protein:0,fats:0,carbs:30}, price:70, mealTypes:["Breakfast","Lunch","Dinner"] },
-    { id:31, name:"Green Apple Fruit Soda", description:"Refreshing fruit soda. Tangy and sweet.", image:"https://tinyurl.com/mrydynur", nutrition:{calories:120,protein:0,fats:0,carbs:30}, price:70, mealTypes:["Breakfast","Lunch","Dinner"] },
-    { id:32, name:"Kiwi Fruit Soda", description:"Refreshing fruit soda. Bright and citrusy.", image:"https://shorturl.at/sBHbi", nutrition:{calories:120,protein:0,fats:0,carbs:30}, price:70, mealTypes:["Breakfast","Lunch","Dinner"] },
-    { id:33, name:"Lychee Fruit Soda", description:"Refreshing fruit soda. Floral and sweet.", image:"https://shorturl.at/RuKTf", nutrition:{calories:120,protein:0,fats:0,carbs:30}, price:70, mealTypes:["Breakfast","Lunch","Dinner"] },
-    { id:34, name:"Mango Fruit Soda", description:"Refreshing fruit soda. Tropical and juicy.", image:"https://shorturl.at/MvNpm", nutrition:{calories:120,protein:0,fats:0,carbs:30}, price:70, mealTypes:["Breakfast","Lunch","Dinner"] },
-    { id:35, name:"Blueberry Fruit Soda", description:"Refreshing fruit soda. Rich and berry-forward.", image:"https://shorturl.at/PbnDy", nutrition:{calories:120,protein:0,fats:0,carbs:30}, price:70, mealTypes:["Breakfast","Lunch","Dinner"] },
-  ],
-  Burger: [
-    { id:8,  name:"The Crunch Burger", description:"Crispy chicken on a toasted bun with fresh lettuce & tangy sauce.", image:"https://i.pinimg.com/736x/d4/38/09/d4380931a50783483fc53d55209245e1.jpg", nutrition:{calories:520,protein:22,fats:18,carbs:68}, price:80, mealTypes:["Breakfast","Lunch"], tag:"Must Try", note:"+₱5 with cheese" },
-    { id:40, name:"The Crunch Burger with Cheese", description:"Crispy chicken burger topped with a melted cheese slice.", image:"https://i.pinimg.com/736x/d4/38/09/d4380931a50783483fc53d55209245e1.jpg", nutrition:{calories:560,protein:24,fats:21,carbs:68}, price:85, mealTypes:["Breakfast","Lunch"], tag:"Must Try" },
-  ],
-  Chips: [
-    { id:9, name:"Crispy Potato Chips", description:"Evenly seasoned — rich, savory, and impossible to put down.", image:"https://i.pinimg.com/736x/a4/a5/cd/a4a5cd6b777e7bb789ee02288b6eb4d2.jpg", nutrition:{calories:480,protein:28,fats:16,carbs:58}, price:69, mealTypes:["Breakfast","Lunch","Dinner"] },
-  ],
-  Sides: [
-    { id:50, name:"Kimchi", description:"Traditional fermented kimchi.", image:"https://bit.ly/47bPoX5", nutrition:{calories:40,protein:2,fats:0,carbs:8}, price:45, mealTypes:["Breakfast","Lunch","Dinner"] },
-    { id:51, name:"Fishcake", description:"Savory fishcake slices.", image:"https://bit.ly/4s9ZvUC", nutrition:{calories:120,protein:10,fats:5,carbs:12}, price:85, mealTypes:["Lunch","Dinner"] },
-    { id:52, name:"Tteokbokki", description:"Chewy rice cakes in a spicy-sweet sauce.", image:"https://bit.ly/3MMEeRT", nutrition:{calories:210,protein:6,fats:3,carbs:42}, price:85, mealTypes:["Lunch","Dinner"] },
-    { id:53, name:"Classic Chicken Skin Bucket", description:"Bucket of crispy classic chicken skin.", image:"https://bit.ly/3P6DcAK", nutrition:{calories:520,protein:28,fats:38,carbs:10}, price:140, mealTypes:["Lunch","Dinner"], tag:"Must Try" },
-    { id:54, name:"Flavored Chicken Skin Bucket", description:"Bucket of crispy flavored chicken skin.", image:"https://bit.ly/3P6DcAK", nutrition:{calories:530,protein:28,fats:39,carbs:12}, price:140, maxFlavors:1, mealTypes:["Lunch","Dinner"] },
-    { id:55, name:"Chicken Shots Bucket", description:"Bucket of bite-sized crispy chicken shots.", image:"https://bit.ly/40Z9n7T", nutrition:{calories:620,protein:42,fats:32,carbs:30}, price:160, maxFlavors:1, mealTypes:["Lunch","Dinner"] },
-    { id:56, name:"Twister Fries", description:"Seasoned spiral-cut fries — crispy and addictive.", image:"https://i.pinimg.com/736x/e1/fe/5d/e1fe5d75042f22074b9ec16f1db491f4.jpg", nutrition:{calories:380,protein:5,fats:18,carbs:50}, price:140, mealTypes:["Breakfast","Lunch","Dinner"], tag:"Must Try" },
-  ],
-  Alacarte: [
-    { id:10, name:"Crispy Chicken Shots", description:"Solo Meal.", image:"https://bit.ly/40Z9n7T", nutrition:{calories:235,protein:11,fats:30,carbs:60}, price:88, maxFlavors:1, mealTypes:["Breakfast","Lunch","Dinner"] },
-    { id:11, name:"Chicken Skin with Rice & Drink", description:"Solo Meal.", image:"https://bit.ly/3P6DcAK", nutrition:{calories:280,protein:34,fats:14,carbs:5}, price:78, maxFlavors:1, mealTypes:["Breakfast","Lunch"] },
-    { id:12, name:"2 pcs. Chicken With Rice & Drink", description:"Solo Meal.", image:"https://bit.ly/4r5rfZI", nutrition:{calories:280,protein:34,fats:14,carbs:5}, price:148, maxFlavors:1, mealTypes:["Lunch","Dinner"] },
-    { id:13, name:"3 pcs. Chicken With Rice & Drink", description:"Solo Meal.", image:"https://bit.ly/4r1CAtC", nutrition:{calories:280,protein:34,fats:14,carbs:5}, price:188, maxFlavors:1, mealTypes:["Lunch","Dinner"] },
-  ],
-};
-
-const ALL_RECIPES = Object.values(RECIPES).flat();
-const CATEGORIES = ["All","Chicken","Burger","Sides","Drinks","Chips","Alacarte"];
-const MEAL_TYPES = ["Breakfast","Lunch","Dinner"];
-const NAV_LINKS = [{ label:"Home", path:"/" },{ label:"Menu", path:"/usersmenu" },{ label:"About", path:"/aboutthecrunch" }];
-const TAG_COLORS: Record<string,{bg:string;text:string}> = {
-  Bestseller:{bg:"rgba(245,200,66,0.15)",text:"#f5c842"},
-  Hot:{bg:"rgba(239,68,68,0.14)",text:"#ef4444"},
-  "Fan Fave":{bg:"rgba(34,197,94,0.12)",text:"#4ade80"},
-  "Must Try":{bg:"rgba(139,92,246,0.12)",text:"#a78bfa"},
-};
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const DELIVERY_LINKS = {
-  foodpanda:"https://foodpanda.go.link/9O718",
-  grab:"https://r.grab.com/g/6-20260421_220129_6e23187a089147b69736d4cacea38146_MEXMPS-2-C4A3RBCER7NFUE",
+  foodpanda: "https://foodpanda.go.link/9O718",
+  grab:      "https://r.grab.com/g/6-20260421_220129_6e23187a089147b69736d4cacea38146_MEXMPS-2-C4A3RBCER7NFUE",
 };
 const PAYMENT_SESSION_KEY = "the-crunch-paymongo-session";
 const CASH_TERMS = "By selecting Cash as your payment method, you agree that your order will not be processed immediately and will only be prepared once full payment is made onsite. You are responsible for completing payment at the store. Delays in payment may result in longer waiting times or possible cancellation of your order. The store reserves the right to refuse or cancel orders that are not paid within a reasonable time.";
 
-// ─── ICONS ────────────────────────────────────────────────────────────────────
-const Icon = ({ d, size = 18, vb = "0 0 24 24", fill = "none", sw = "2" }: { d: string; size?: number; vb?: string; fill?: string; sw?: string }) => (
-  <svg width={size} height={size} viewBox={vb} fill={fill} stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: d }} />
-);
-const historyD = `<polyline points="12 8 12 12 14 14"/><path d="M3.05 11a9 9 0 1 0 .5-4.5"/><polyline points="1 4 3 6 5 4"/>`;
-const receiptD = `<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/>`;
-const chevronD = `<polyline points="6 9 12 15 18 9"/>`;
-const clipboardD = `<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>`;
-const bagD = `<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>`;
-const scooterD = `<circle cx="5.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M8 17.5h7"/><path d="M15 5h2l2 5H9l1-5h3"/><path d="M12 5v5"/>`;
-const externalD = `<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>`;
-const cashD = `<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>`;
-const gcashD = `<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 10v4M10 12h4"/><circle cx="12" cy="12" r="3"/>`;
-const shieldD = `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>`;
+const TAG_COLORS: Record<string, { bg: string; text: string }> = {
+  Bestseller: { bg: "rgba(245,200,66,0.15)",  text: "#f5c842" },
+  Hot:        { bg: "rgba(239,68,68,0.14)",   text: "#ef4444" },
+  "Fan Fave": { bg: "rgba(34,197,94,0.12)",   text: "#4ade80" },
+  "Must Try": { bg: "rgba(139,92,246,0.12)",  text: "#a78bfa" },
+};
 
-// ─── SMALL REUSABLE PIECES ────────────────────────────────────────────────────
+const NAV_LINKS = [
+  { label: "Home",  path: "/" },
+   { label: "About", path: "/aboutthecrunch" },
+  { label: "Menu",  path: "/usersmenu" },
+];
+
+// ─── ICONS ────────────────────────────────────────────────────────────────────
+const Icon = ({ d, size = 18, fill = "none", sw = "2" }: { d: string; size?: number; fill?: string; sw?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: d }} />
+);
+const historyD   = `<polyline points="12 8 12 12 14 14"/><path d="M3.05 11a9 9 0 1 0 .5-4.5"/><polyline points="1 4 3 6 5 4"/>`;
+const receiptD   = `<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/>`;
+const chevronD   = `<polyline points="6 9 12 15 18 9"/>`;
+const clipboardD = `<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>`;
+const bagD       = `<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>`;
+const scooterD   = `<circle cx="5.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M8 17.5h7"/><path d="M15 5h2l2 5H9l1-5h3"/><path d="M12 5v5"/>`;
+const externalD  = `<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>`;
+const cashD      = `<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>`;
+const gcashD     = `<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 10v4M10 12h4"/><circle cx="12" cy="12" r="3"/>`;
+const shieldD    = `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>`;
+
+// ─── SMALL COMPONENTS ─────────────────────────────────────────────────────────
 function Avatar({ src, size = 40 }: { src: string; size?: number }) {
+  const [err, setErr] = useState(false);
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "1.5px solid rgba(240,237,232,0.1)" }}>
-      <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "1.5px solid rgba(240,237,232,0.1)", background: "#1a1208" }}>
+      <img src={err ? "/placeholder.jpg" : src} alt="" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
     </div>
   );
 }
@@ -140,6 +103,29 @@ function Pill({ label, active, onClick, accent = "#f5c842" }: { label: string; a
       style={{ padding: "6px 14px", borderRadius: 30, border: `1.5px solid ${active ? accent : "rgba(240,237,232,0.12)"}`, background: active ? `${accent}1a` : "rgba(240,237,232,0.04)", color: active ? accent : "rgba(240,237,232,0.55)", fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
       {label}
     </motion.button>
+  );
+}
+
+// ─── SKELETON ─────────────────────────────────────────────────────────────────
+function RecipeSkeleton() {
+  return (
+    <div style={{ background: "#151210", borderRadius: 24, padding: "clamp(20px,4vw,32px) clamp(20px,4vw,36px)", border: "1px solid rgba(240,237,232,0.07)", display: "flex", flexWrap: "wrap", gap: "clamp(20px,4vw,40px)", alignItems: "flex-start", overflow: "hidden", position: "relative" }}>
+      <motion.div animate={{ x: ["-100%", "200%"] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+        style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,transparent,rgba(255,255,255,0.04),transparent)", zIndex: 1 }} />
+      <div style={{ flex: "1 1 260px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ height: 22, width: "60%", borderRadius: 8, background: "rgba(255,255,255,0.06)" }} />
+        <div style={{ height: 14, width: "90%", borderRadius: 6, background: "rgba(255,255,255,0.04)" }} />
+        <div style={{ height: 14, width: "75%", borderRadius: 6, background: "rgba(255,255,255,0.04)" }} />
+        <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
+          {[1,2,3,4].map(i => <div key={i} style={{ height: 40, width: 48, borderRadius: 8, background: "rgba(255,255,255,0.05)" }} />)}
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+          <div style={{ height: 40, width: 120, borderRadius: 12, background: "rgba(255,255,255,0.05)" }} />
+          <div style={{ height: 40, width: 140, borderRadius: 12, background: "rgba(255,255,255,0.07)" }} />
+        </div>
+      </div>
+      <div style={{ width: "clamp(120px,20vw,200px)", height: "clamp(120px,20vw,200px)", borderRadius: "50%", background: "rgba(255,255,255,0.05)", flexShrink: 0, alignSelf: "center" }} />
+    </div>
   );
 }
 
@@ -167,8 +153,7 @@ function CashTermsModal({ onAccept, onDecline }: { onAccept: () => void; onDecli
             <p style={{ fontSize: 13, color: "rgba(240,237,232,0.62)", lineHeight: 1.78, margin: 0, fontWeight: 300 }}>{CASH_TERMS}</p>
           </div>
           <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer", marginBottom: 22 }}>
-            <div onClick={() => setChecked(v => !v)}
-              style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${checked ? "#f5c842" : "rgba(240,237,232,0.22)"}`, background: checked ? "rgba(245,200,66,0.12)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, cursor: "pointer", transition: "all 0.18s" }}>
+            <div onClick={() => setChecked(v => !v)} style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${checked ? "#f5c842" : "rgba(240,237,232,0.22)"}`, background: checked ? "rgba(245,200,66,0.12)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, cursor: "pointer", transition: "all 0.18s" }}>
               <AnimatePresence>{checked && <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={SP} style={{ color: "#f5c842", fontSize: 12, fontWeight: 800 }}>✓</motion.span>}</AnimatePresence>
             </div>
             <span style={{ fontSize: 12.5, color: "rgba(240,237,232,0.5)", lineHeight: 1.6 }}>I have read and agree to the Cash Payment Terms & Conditions.</span>
@@ -192,8 +177,8 @@ function CashTermsModal({ onAccept, onDecline }: { onAccept: () => void; onDecli
 // ─── PAYMENT METHOD SELECTOR ──────────────────────────────────────────────────
 function PaymentMethodSelector({ selected, onChange, disabled }: { selected: PaymentMethodType; onChange: (m: PaymentMethodType) => void; disabled?: boolean }) {
   const methods = [
-    { id: "cash" as const, label: "Cash", sub: "Pay onsite at the store", d: cashD, rgb: "34,197,94" },
-    { id: "gcash" as const, label: "GCash", sub: "Pay now via GCash", d: gcashD, rgb: "0,120,255" },
+    { id: "cash"  as const, label: "Cash",  sub: "Pay onsite at the store",  d: cashD,  rgb: "34,197,94"  },
+    { id: "gcash" as const, label: "GCash", sub: "Pay now via GCash",        d: gcashD, rgb: "0,120,255"  },
   ];
   return (
     <div style={{ marginBottom: 18 }}>
@@ -228,7 +213,7 @@ function PaymentMethodSelector({ selected, onChange, disabled }: { selected: Pay
   );
 }
 
-// ─── ORDER TYPE MODAL ──────────────────────────────────────────────────────────
+// ─── ORDER TYPE MODAL ─────────────────────────────────────────────────────────
 function OrderTypeModal({ onClose }: { onClose: () => void }) {
   const [view, setView] = useState<"choose" | "delivery">("choose");
   return (
@@ -236,7 +221,7 @@ function OrderTypeModal({ onClose }: { onClose: () => void }) {
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 500, backdropFilter: "blur(10px)" }} />
       <motion.div initial={{ opacity: 0, scale: 0.9, y: 24 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 16 }} transition={{ ...SPG, delay: 0.04 }}
-        style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 600, width: "min(720px,92vw)" }}>
+        style={{ position: "fixed", top: "27%", left: "27%", transform: "translate(-50%,-50%)", zIndex: 600, width: "min(720px,92vw)" }}>
         <motion.button onClick={onClose} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} transition={SP}
           style={{ position: "absolute", top: -14, right: -14, width: 36, height: 36, borderRadius: "50%", background: "#1e1b17", border: "1px solid rgba(240,237,232,0.14)", color: "rgba(240,237,232,0.55)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, zIndex: 10, fontFamily: "inherit" }}>×</motion.button>
         <AnimatePresence mode="wait">
@@ -244,8 +229,8 @@ function OrderTypeModal({ onClose }: { onClose: () => void }) {
             <motion.div key="choose" initial={{ opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={SPG}
               style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               {[
-                { icon: bagD, title: "Pick-up Order", desc: "Order online and pick up your items at the store when it's ready.", cta: "Browse the Menu", action: onClose, ctaStyle: { background: "#f5c842", color: "#111" } },
-                { icon: scooterD, title: "Delivery Order", desc: "Order for delivery through Foodpanda or Grab.", cta: "Order via Delivery App", action: () => setView("delivery"), ctaStyle: { background: "rgba(249,159,4,0.07)", border: "1px solid rgba(240,237,232,0.12)", color: "rgb(215,162,71)" } },
+                { icon: bagD,     title: "Pick-up Order",   desc: "Order online and pick up your items at the store when it's ready.", cta: "Browse the Menu",       action: onClose,             ctaStyle: { background: "#f5c842", color: "#111" } },
+                { icon: scooterD, title: "Delivery Order",  desc: "Order for delivery through Foodpanda or Grab.",                     cta: "Order via Delivery App", action: () => setView("delivery"), ctaStyle: { background: "rgba(249,159,4,0.07)", border: "1px solid rgba(240,237,232,0.12)", color: "rgb(215,162,71)" } },
               ].map(card => (
                 <motion.button key={card.title} onClick={card.action} whileHover={{ borderColor: "rgba(245,200,66,0.45)", y: -4 }} whileTap={{ scale: 0.97 }} transition={SPG}
                   style={{ background: "#151210", border: "1px solid rgba(245,200,66,0.2)", borderRadius: 24, padding: "36px 32px 32px", cursor: "pointer", fontFamily: "inherit", textAlign: "left", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
@@ -256,7 +241,7 @@ function OrderTypeModal({ onClose }: { onClose: () => void }) {
                   <p style={{ fontSize: 13, fontWeight: 400, color: "rgba(240,237,232,0.42)", lineHeight: 1.7, margin: "0 0 auto" }}>{card.desc}</p>
                   {card.title === "Delivery Order" && (
                     <div style={{ display: "flex", gap: 8, margin: "24px 0 28px" }}>
-                      {[{name:"FoodPanda",color:"#e91e8c",bg:"rgba(233,30,140,0.1)",border:"rgba(233,30,140,0.2)"},{name:"Grab",color:"#00b14f",bg:"rgba(0,177,79,0.1)",border:"rgba(0,177,79,0.2)"}].map(p => (
+                      {[{ name: "FoodPanda", color: "#e91e8c", bg: "rgba(233,30,140,0.1)", border: "rgba(233,30,140,0.2)" }, { name: "Grab", color: "#00b14f", bg: "rgba(0,177,79,0.1)", border: "rgba(0,177,79,0.2)" }].map(p => (
                         <span key={p.name} style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: p.bg, color: p.color, border: `1px solid ${p.border}` }}>{p.name}</span>
                       ))}
                     </div>
@@ -277,7 +262,7 @@ function OrderTypeModal({ onClose }: { onClose: () => void }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 {[
                   { label: "FoodPanda", desc: "Order via the FoodPanda app", href: DELIVERY_LINKS.foodpanda, color: "#e91e8c", rgba: "233,30,140" },
-                  { label: "Grab", desc: "Order via the Grab app", href: DELIVERY_LINKS.grab, color: "#00b14f", rgba: "0,177,79" },
+                  { label: "Grab",      desc: "Order via the Grab app",      href: DELIVERY_LINKS.grab,      color: "#00b14f", rgba: "0,177,79"   },
                 ].map(d => (
                   <motion.a key={d.label} href={d.href} target="_blank" rel="noopener noreferrer" whileHover={{ borderColor: `rgba(${d.rgba},0.45)`, y: -3 }} whileTap={{ scale: 0.97 }} transition={SPG}
                     style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", background: `rgba(${d.rgba},0.05)`, border: `1px solid rgba(${d.rgba},0.2)`, borderRadius: 18, padding: "24px 22px 20px", textDecoration: "none" }}>
@@ -314,7 +299,9 @@ function TrackingPanel({ orders }: { orders: CustomerOrder[] }) {
                 <span style={{ fontSize: 18, fontWeight: 900, color: "#f0ede8" }}>{order.orderNumber}</span>
                 <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "rgba(245,200,66,0.1)", border: "1px solid rgba(245,200,66,0.22)", color: "#f5c842" }}>{order.trackingStatus}</span>
               </div>
-              <p style={{ margin: 0, fontSize: 12, color: "rgba(240,237,232,0.35)" }}>{new Date(order.createdAt).toLocaleString("en-PH",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",hour12:true})}</p>
+              <p style={{ margin: 0, fontSize: 12, color: "rgba(240,237,232,0.35)" }}>
+                {new Date(order.createdAt).toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+              </p>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -330,9 +317,11 @@ function TrackingPanel({ orders }: { orders: CustomerOrder[] }) {
   );
 }
 
-// ─── HISTORY DRAWER ────────────────────────────────────────────────────────────
-function HistoryDrawer({ orders, onClose }: { orders: CustomerOrder[]; onClose: () => void }) {
+// ─── HISTORY DRAWER ───────────────────────────────────────────────────────────
+function HistoryDrawer({ orders, recipes, onClose }: { orders: CustomerOrder[]; recipes: Recipe[]; onClose: () => void }) {
   const [expanded, setExpanded] = useState<number | null>(orders[0]?.id ?? null);
+  const findImg = (name: string) => recipes.find(r => r.name.trim().toLowerCase() === name.trim().toLowerCase())?.image ?? "/placeholder.jpg";
+
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
@@ -361,22 +350,30 @@ function HistoryDrawer({ orders, onClose }: { orders: CustomerOrder[]; onClose: 
             const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
             return (
               <motion.div key={order.id} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPG, delay: oi * 0.04 }} style={{ marginBottom: 10 }}>
-                <motion.button onClick={() => setExpanded(isOpen ? null : order.id)} whileHover={{ borderColor: "rgba(240,237,232,0.18)" }} style={{ width: "100%", background: isOpen ? "rgba(245,200,66,0.05)" : "rgba(240,237,232,0.03)", border: `1px solid ${isOpen ? "rgba(245,200,66,0.25)" : "rgba(240,237,232,0.09)"}`, borderRadius: isOpen ? "16px 16px 0 0" : 16, padding: "14px 16px", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12, textAlign: "left" }}>
+                <motion.button onClick={() => setExpanded(isOpen ? null : order.id)} whileHover={{ borderColor: "rgba(240,237,232,0.18)" }}
+                  style={{ width: "100%", background: isOpen ? "rgba(245,200,66,0.05)" : "rgba(240,237,232,0.03)", border: `1px solid ${isOpen ? "rgba(245,200,66,0.25)" : "rgba(240,237,232,0.09)"}`, borderRadius: isOpen ? "16px 16px 0 0" : 16, padding: "14px 16px", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12, textAlign: "left" }}>
                   <div style={{ width: 34, height: 34, borderRadius: "50%", background: isOpen ? "#f5c842" : "rgba(240,237,232,0.07)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 800, color: isOpen ? "#111" : "rgba(240,237,232,0.38)" }}>{order.orderNumber.replace("#","")}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 800, color: isOpen ? "#111" : "rgba(240,237,232,0.38)" }}>{order.orderNumber.replace("#", "")}</span>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
                       <span style={{ fontSize: 12.5, fontWeight: 700, color: "#f0ede8" }}>{order.orderNumber}</span>
                       <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: order.trackingStatus === "Cancelled" ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)", color: order.trackingStatus === "Cancelled" ? "#f87171" : "#4ade80", border: `1px solid ${order.trackingStatus === "Cancelled" ? "rgba(239,68,68,0.22)" : "rgba(34,197,94,0.22)"}` }}>{order.trackingStatus}</span>
                     </div>
-                    <div style={{ fontSize: 11, color: "rgba(240,237,232,0.32)", marginBottom: 6 }}>{new Date(order.createdAt).toLocaleString("en-PH",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",hour12:true})}</div>
+                    <div style={{ fontSize: 11, color: "rgba(240,237,232,0.32)", marginBottom: 6 }}>
+                      {new Date(order.createdAt).toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+                    </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                      {order.items.slice(0, 6).map((item, ii) => {
-                        const img = ALL_RECIPES.find(r => r.name.trim().toLowerCase() === item.name.trim().toLowerCase())?.image ?? "https://via.placeholder.com/80x80?text=Order";
-                        return <div key={ii} title={item.name} style={{ width: 22, height: 22, borderRadius: "50%", overflow: "hidden", border: "1.5px solid rgba(14,12,10,0.9)", flexShrink: 0, marginLeft: ii > 0 ? -6 : 0 }}><img src={img} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /></div>;
-                      })}
-                      {order.items.length > 6 && <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(240,237,232,0.1)", border: "1.5px solid rgba(14,12,10,0.9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginLeft: -6 }}><span style={{ fontSize: 7.5, fontWeight: 800, color: "rgba(240,237,232,0.5)" }}>+{order.items.length-6}</span></div>}
+                      {order.items.slice(0, 6).map((item, ii) => (
+                        <div key={ii} title={item.name} style={{ width: 22, height: 22, borderRadius: "50%", overflow: "hidden", border: "1.5px solid rgba(14,12,10,0.9)", flexShrink: 0, marginLeft: ii > 0 ? -6 : 0 }}>
+                          <img src={findImg(item.name)} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                      ))}
+                      {order.items.length > 6 && (
+                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(240,237,232,0.1)", border: "1.5px solid rgba(14,12,10,0.9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginLeft: -6 }}>
+                          <span style={{ fontSize: 7.5, fontWeight: 800, color: "rgba(240,237,232,0.5)" }}>+{order.items.length - 6}</span>
+                        </div>
+                      )}
                       <span style={{ fontSize: 10.5, color: "rgba(240,237,232,0.28)", marginLeft: 8 }}>{totalQty} item{totalQty !== 1 ? "s" : ""}</span>
                     </div>
                   </div>
@@ -392,7 +389,7 @@ function HistoryDrawer({ orders, onClose }: { orders: CustomerOrder[]; onClose: 
                       <div style={{ padding: "6px 0" }}>
                         {order.items.map((item, ii) => (
                           <div key={ii} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: ii < order.items.length - 1 ? "1px solid rgba(240,237,232,0.05)" : "none" }}>
-                            <Avatar src={ALL_RECIPES.find(r => r.name.trim().toLowerCase() === item.name.trim().toLowerCase())?.image ?? "https://via.placeholder.com/80x80?text=Order"} size={38} />
+                            <Avatar src={findImg(item.name)} size={38} />
                             <p style={{ fontSize: 12.5, fontWeight: 600, color: "#f0ede8", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{item.name}</p>
                             <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: "rgba(240,237,232,0.06)", color: "rgba(240,237,232,0.4)", border: "1px solid rgba(240,237,232,0.09)" }}>×{item.quantity}</span>
                           </div>
@@ -416,7 +413,7 @@ function HistoryDrawer({ orders, onClose }: { orders: CustomerOrder[]; onClose: 
 }
 
 // ─── FLAVOR PICKER ────────────────────────────────────────────────────────────
-function FlavorPicker({ maxFlavors, selected, onChange }: { maxFlavors: number; selected: string[]; onChange: (f: string[]) => void }) {
+function FlavorPicker({ maxFlavors, selected, onChange, flavors }: { maxFlavors: number; selected: string[]; onChange: (f: string[]) => void; flavors: string[] }) {
   const toggle = (name: string) => {
     if (selected.includes(name)) onChange(selected.filter(f => f !== name));
     else if (selected.length < maxFlavors) onChange([...selected, name]);
@@ -427,8 +424,8 @@ function FlavorPicker({ maxFlavors, selected, onChange }: { maxFlavors: number; 
         Pick {maxFlavors === 1 ? "1 flavor" : `up to ${maxFlavors} flavors`}
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-        {FLAVORS.map(name => {
-          const active = selected.includes(name);
+        {flavors.map(name => {
+          const active   = selected.includes(name);
           const disabled = !active && selected.length >= maxFlavors;
           return (
             <motion.button key={name} onClick={() => !disabled && toggle(name)} whileHover={disabled ? {} : { scale: 1.04 }} whileTap={disabled ? {} : { scale: 0.93 }} transition={SP}
@@ -446,7 +443,7 @@ function FlavorPicker({ maxFlavors, selected, onChange }: { maxFlavors: number; 
 function VariantToggle({ selected, onChange }: { selected: "original" | "spicy"; onChange: (v: "original" | "spicy") => void }) {
   return (
     <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-      {(["original","spicy"] as const).map(v => (
+      {(["original", "spicy"] as const).map(v => (
         <Pill key={v} label={v === "spicy" ? "Spicy" : "Original"} active={selected === v} onClick={() => onChange(v)} accent={v === "spicy" ? "#f97316" : "#f5c842"} />
       ))}
     </div>
@@ -460,10 +457,10 @@ function OrderDrawer({ cart, onClose, onRemove, onChangeQty, onClear, onSendPaym
   paymentSession: PaymentSessionState | null; paymentMessage: string | null; isSubmitting: boolean;
   selectedPaymentMethod: PaymentMethodType; onPaymentMethodChange: (m: PaymentMethodType) => void; onRequestCashTerms: () => void;
 }) {
-  const total = cart.reduce((s, i) => s + i.recipe.price * i.quantity, 0);
-  const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
-  const isCash = selectedPaymentMethod === "cash";
-  const primaryLabel = isCash ? "Place Order" : (paymentSession?.paid ? "Place Order" : paymentSession ? "Check Payment Status" : "Send Payment");
+  const total     = cart.reduce((s, i) => s + i.recipe.price * i.quantity, 0);
+  const totalQty  = cart.reduce((s, i) => s + i.quantity, 0);
+  const isCash    = selectedPaymentMethod === "cash";
+  const primaryLabel  = isCash ? "Place Order" : (paymentSession?.paid ? "Place Order" : paymentSession ? "Check Payment Status" : "Send Payment");
   const primaryAction = isCash ? onRequestCashTerms : (paymentSession?.paid ? onPlaceOrder : paymentSession ? onVerifyPayment : onSendPayment);
 
   return (
@@ -494,7 +491,6 @@ function OrderDrawer({ cart, onClose, onRemove, onChangeQty, onClear, onSendPaym
           <AnimatePresence initial={false}>
             {cart.length === 0 ? (
               <motion.div key="empty" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={SPG} style={{ textAlign: "center", paddingTop: 88 }}>
-                <motion.div animate={{ y: [0,-8,0] }} transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }} style={{ fontSize: 44, marginBottom: 18 }}>🍗</motion.div>
                 <p style={{ color: "rgba(240,237,232,0.25)", fontSize: 14, lineHeight: 1.75 }}>Your order is empty.<br />Add something delicious!</p>
               </motion.div>
             ) : cart.map((item, idx) => (
@@ -506,11 +502,11 @@ function OrderDrawer({ cart, onClose, onRemove, onChangeQty, onClear, onSendPaym
                   {item.flavors.length > 0 && <p style={{ fontSize: 11, color: "rgba(240,237,232,0.35)", margin: "0 0 10px" }}>{item.flavors.join(" · ")}</p>}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(240,237,232,0.06)", borderRadius: 10, padding: "5px 12px", border: "1px solid rgba(240,237,232,0.08)" }}>
-                      <motion.button whileTap={{ scale: 0.75 }} transition={SP} onClick={() => onChangeQty(item.recipe.id,-1)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(240,237,232,0.6)", fontSize: 16, lineHeight: 1, padding: 0, fontWeight: 700 }}>−</motion.button>
+                      <motion.button whileTap={{ scale: 0.75 }} transition={SP} onClick={() => onChangeQty(item.recipe.id, -1)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(240,237,232,0.6)", fontSize: 16, lineHeight: 1, padding: 0, fontWeight: 700 }}>−</motion.button>
                       <AnimatePresence mode="wait">
                         <motion.span key={item.quantity} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }} transition={SP} style={{ fontSize: 13, fontWeight: 700, color: "#f0ede8", minWidth: 14, textAlign: "center" }}>{item.quantity}</motion.span>
                       </AnimatePresence>
-                      <motion.button whileTap={{ scale: 0.75 }} transition={SP} onClick={() => onChangeQty(item.recipe.id,1)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(240,237,232,0.6)", fontSize: 16, lineHeight: 1, padding: 0, fontWeight: 700 }}>+</motion.button>
+                      <motion.button whileTap={{ scale: 0.75 }} transition={SP} onClick={() => onChangeQty(item.recipe.id, 1)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(240,237,232,0.6)", fontSize: 16, lineHeight: 1, padding: 0, fontWeight: 700 }}>+</motion.button>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <AnimatePresence mode="wait">
@@ -531,7 +527,7 @@ function OrderDrawer({ cart, onClose, onRemove, onChangeQty, onClear, onSendPaym
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
                 <span style={{ fontSize: 13, color: "rgba(240,237,232,0.4)" }}>Total</span>
                 <AnimatePresence mode="wait">
-                  <motion.span key={Math.round(total*100)} initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} transition={SPG} style={{ fontSize: 28, fontWeight: 900, color: "#f5c842", letterSpacing: "-0.03em" }}>₱{total.toFixed(2)}</motion.span>
+                  <motion.span key={Math.round(total * 100)} initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} transition={SPG} style={{ fontSize: 28, fontWeight: 900, color: "#f5c842", letterSpacing: "-0.03em" }}>₱{total.toFixed(2)}</motion.span>
                 </AnimatePresence>
               </div>
               <PaymentMethodSelector selected={selectedPaymentMethod} onChange={onPaymentMethodChange} disabled={!isCash && !!paymentSession} />
@@ -560,7 +556,7 @@ function OrderDrawer({ cart, onClose, onRemove, onChangeQty, onClear, onSendPaym
   );
 }
 
-// ─── CHECKOUT MODAL ────────────────────────────────────────────────────────────
+// ─── CHECKOUT MODAL ───────────────────────────────────────────────────────────
 function CheckoutModal({ orderNumber, onClose }: { orderNumber: string | null; onClose: () => void }) {
   return (
     <>
@@ -572,8 +568,8 @@ function CheckoutModal({ orderNumber, onClose }: { orderNumber: string | null; o
           style={{ width: 72, height: 72, borderRadius: "50%", background: "#f5c842", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", boxShadow: "0 8px 28px rgba(245,200,66,0.3)", fontSize: 30 }}>✓</motion.div>
         <motion.h2 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24, ...SPG }} style={{ fontSize: 24, fontWeight: 800, color: "#f0ede8", marginBottom: 10 }}>Order Placed!</motion.h2>
         <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, ...SPG }} style={{ fontSize: 14, color: "rgba(240,237,232,0.5)", lineHeight: 1.75, marginBottom: 32, fontWeight: 300 }}>
-          {orderNumber && <>Your pickup order number is <strong style={{ color: "#f5c842" }}>{orderNumber}</strong>.<br /></>}
-          Thank you! We're getting everything fresh and crispy for you.
+          {orderNumber && <><strong style={{ color: "#f5c842" }}>{orderNumber}</strong> is your pickup number.<br /></>}
+          We're getting everything fresh and crispy for you.
         </motion.p>
         <motion.button initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36, ...SPG }} whileHover={{ scale: 1.04, backgroundColor: "#e6b800" }} whileTap={{ scale: 0.96 }} onClick={onClose}
           style={{ background: "#f5c842", color: "#111", border: "none", borderRadius: 12, padding: "13px 40px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
@@ -585,36 +581,30 @@ function CheckoutModal({ orderNumber, onClose }: { orderNumber: string | null; o
 }
 
 // ─── RECIPE CARD ──────────────────────────────────────────────────────────────
-function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleFav, onAddToCart, onFlavorChange, onVariantChange, isAvailable }: {
-  recipe: Recipe; isFav: boolean; justAdded: boolean;
-  flavorSel: string[]; variantSel: "original" | "spicy";
-  onToggleFav: () => void; onAddToCart: () => void;
-  onFlavorChange: (f: string[]) => void; onVariantChange: (v: "original" | "spicy") => void;
-  isAvailable: boolean;
+function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleFav, onAddToCart, onFlavorChange, onVariantChange, flavors }: {
+  recipe:         Recipe
+  isFav:          boolean
+  justAdded:      boolean
+  flavorSel:      string[]
+  variantSel:     "original" | "spicy"
+  onToggleFav:    () => void
+  onAddToCart:    () => void
+  onFlavorChange: (f: string[]) => void
+  onVariantChange:(v: "original" | "spicy") => void
+  flavors:        string[]
 }) {
+  const isAvailable = recipe.available;
+  const [imgErr, setImgErr] = useState(false);
+
   return (
     <motion.div layout initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={SPG}
       whileHover={{ borderColor: isAvailable ? "rgba(245,200,66,0.22)" : "rgba(240,237,232,0.1)" }}
-      style={{
-        background: "#151210",
-        borderRadius: 24,
-        padding: "clamp(20px,4vw,32px) clamp(20px,4vw,36px)",
-        border: "1px solid rgba(240,237,232,0.07)",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "clamp(20px,4vw,40px)",
-        alignItems: "flex-start",
-        position: "relative",
-        overflow: "hidden",
-        opacity: isAvailable ? 1 : 0.72,
-      }}>
+      style={{ background: "#151210", borderRadius: 24, padding: "clamp(20px,4vw,32px) clamp(20px,4vw,36px)", border: "1px solid rgba(240,237,232,0.07)", display: "flex", flexWrap: "wrap", gap: "clamp(20px,4vw,40px)", alignItems: "flex-start", position: "relative", overflow: "hidden", opacity: isAvailable ? 1 : 0.72 }}>
 
       {/* Top accent line */}
       <div style={{ position: "absolute", top: 0, left: 32, right: 32, height: 2, background: isAvailable ? "linear-gradient(90deg,transparent,rgba(245,200,66,0.18),transparent)" : "linear-gradient(90deg,transparent,rgba(240,237,232,0.06),transparent)" }} />
 
-      {/* Content */}
       <div style={{ flex: "1 1 260px" }}>
-
         {/* Title row */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
           <h2 style={{ fontSize: "clamp(16px,2.5vw,18px)", fontWeight: 800, color: isAvailable ? "#f0ede8" : "rgba(240,237,232,0.45)", margin: 0, lineHeight: 1.28, flex: 1 }}>
@@ -622,20 +612,9 @@ function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleF
           </h2>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
             {recipe.tag && isAvailable && <Tag tag={recipe.tag} />}
+            {/* ── NOT AVAILABLE BADGE ── */}
             {!isAvailable && (
-              <span style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: "4px 10px",
-                borderRadius: 20,
-                background: "rgba(239,68,68,0.1)",
-                color: "#f87171",
-                border: "1px solid rgba(239,68,68,0.22)",
-                whiteSpace: "nowrap",
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                flexShrink: 0,
-              }}>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: "rgba(239,68,68,0.1)", color: "#f87171", border: "1px solid rgba(239,68,68,0.22)", whiteSpace: "nowrap", letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>
                 Not Available
               </span>
             )}
@@ -648,7 +627,12 @@ function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleF
         {/* Nutrition */}
         <p style={{ fontSize: 10, fontWeight: 700, color: "rgba(240,237,232,0.2)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.12em" }}>Nutrition</p>
         <div style={{ display: "flex", gap: "clamp(14px,3vw,24px)", marginBottom: 20 }}>
-          {[{label:"Cal",unit:"kcal",value:recipe.nutrition.calories},{label:"Protein",unit:"g",value:recipe.nutrition.protein},{label:"Fats",unit:"g",value:recipe.nutrition.fats},{label:"Carbs",unit:"g",value:recipe.nutrition.carbs}].map(n => (
+          {[
+            { label: "Cal",    unit: "kcal", value: recipe.nutrition.calories },
+            { label: "Protein",unit: "g",    value: recipe.nutrition.protein  },
+            { label: "Fats",   unit: "g",    value: recipe.nutrition.fats     },
+            { label: "Carbs",  unit: "g",    value: recipe.nutrition.carbs    },
+          ].map(n => (
             <div key={n.label} style={{ textAlign: "center" }}>
               <div style={{ fontSize: "clamp(16px,2.5vw,20px)", fontWeight: 800, color: isAvailable ? "#f0ede8" : "rgba(240,237,232,0.3)", lineHeight: 1 }}>{n.value}</div>
               <div style={{ fontSize: 9.5, fontWeight: 600, color: "rgba(240,237,232,0.35)", marginTop: 3 }}>{n.label}</div>
@@ -657,75 +641,30 @@ function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleF
           ))}
         </div>
 
-        {/* Variant / Flavors — hidden when unavailable */}
+        {/* Variant / Flavor — hidden when unavailable */}
         {isAvailable && recipe.variant !== undefined && <VariantToggle selected={variantSel} onChange={onVariantChange} />}
-        {isAvailable && recipe.maxFlavors !== undefined && <FlavorPicker maxFlavors={recipe.maxFlavors} selected={flavorSel} onChange={onFlavorChange} />}
+        {isAvailable && recipe.maxFlavors !== undefined && flavors.length > 0 && (
+          <FlavorPicker maxFlavors={recipe.maxFlavors} selected={flavorSel} onChange={onFlavorChange} flavors={flavors} />
+        )}
 
         {/* Actions */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {/* Save button — always shown */}
-            <motion.button
-              onClick={onToggleFav}
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.93 }}
-              transition={SP}
+            <motion.button onClick={onToggleFav} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.93 }} transition={SP}
               style={{ display: "flex", alignItems: "center", gap: 7, background: isFav ? "rgba(245,200,66,0.1)" : "rgba(240,237,232,0.05)", color: isFav ? "#f5c842" : "rgba(240,237,232,0.45)", border: `1px solid ${isFav ? "rgba(245,200,66,0.3)" : "rgba(240,237,232,0.1)"}`, borderRadius: 12, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
               {isFav ? "★ Saved" : "☆ Save"}
             </motion.button>
 
-            {/* Add to Order / Not Available button */}
-            <motion.button
-              onClick={() => { if (isAvailable) onAddToCart(); }}
-              disabled={!isAvailable}
-              whileHover={isAvailable ? { scale: 1.04 } : {}}
-              whileTap={isAvailable ? { scale: 0.93 } : {}}
-              transition={SP}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                background: !isAvailable
-                  ? "rgba(240,237,232,0.04)"
-                  : justAdded
-                  ? "rgba(74,222,128,0.1)"
-                  : "#f5c842",
-                color: !isAvailable
-                  ? "rgba(240,237,232,0.2)"
-                  : justAdded
-                  ? "#4ade80"
-                  : "#111",
-                border: !isAvailable
-                  ? "1px solid rgba(240,237,232,0.1)"
-                  : justAdded
-                  ? "1px solid rgba(74,222,128,0.25)"
-                  : "none",
-                borderRadius: 12,
-                padding: "10px 22px",
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: !isAvailable ? "not-allowed" : "pointer",
-                fontFamily: "inherit",
-                minWidth: 140,
-                justifyContent: "center",
-                opacity: !isAvailable ? 0.55 : 1,
-              }}
-            >
+            <motion.button onClick={() => { if (isAvailable) onAddToCart(); }} disabled={!isAvailable} whileHover={isAvailable ? { scale: 1.04 } : {}} whileTap={isAvailable ? { scale: 0.93 } : {}} transition={SP}
+              style={{ display: "flex", alignItems: "center", gap: 7, background: !isAvailable ? "rgba(240,237,232,0.04)" : justAdded ? "rgba(74,222,128,0.1)" : "#f5c842", color: !isAvailable ? "rgba(240,237,232,0.2)" : justAdded ? "#4ade80" : "#111", border: !isAvailable ? "1px solid rgba(240,237,232,0.1)" : justAdded ? "1px solid rgba(74,222,128,0.25)" : "none", borderRadius: 12, padding: "10px 22px", fontSize: 13, fontWeight: 700, cursor: !isAvailable ? "not-allowed" : "pointer", fontFamily: "inherit", minWidth: 140, justifyContent: "center", opacity: !isAvailable ? 0.55 : 1 }}>
               <AnimatePresence mode="wait">
-                <motion.span
-                  key={!isAvailable ? "unavailable" : justAdded ? "added" : "add"}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={SP}
-                >
+                <motion.span key={!isAvailable ? "unavailable" : justAdded ? "added" : "add"} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={SP}>
                   {!isAvailable ? "Not Available" : justAdded ? "Added!" : "Add to Order"}
                 </motion.span>
               </AnimatePresence>
             </motion.button>
           </div>
 
-          {/* Price */}
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 10, color: "rgba(240,237,232,0.25)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>Price</div>
             <div style={{ fontSize: "clamp(20px,3vw,26px)", fontWeight: 900, color: isAvailable ? "#f5c842" : "rgba(240,237,232,0.3)", letterSpacing: "-0.04em" }}>₱{recipe.price.toFixed(2)}</div>
@@ -734,16 +673,14 @@ function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleF
       </div>
 
       {/* Image */}
-      <motion.div
-        whileHover={isAvailable ? { scale: 1.05 } : {}}
-        transition={SPG}
-        style={{ width: "clamp(120px,20vw,200px)", height: "clamp(120px,20vw,200px)", borderRadius: "50%", overflow: "hidden", flexShrink: 0, boxShadow: "0 12px 48px rgba(0,0,0,0.45)", border: "1px solid rgba(240,237,232,0.08)", alignSelf: "center", position: "relative" }}>
+      <motion.div whileHover={isAvailable ? { scale: 1.05 } : {}} transition={SPG}
+        style={{ width: "clamp(120px,20vw,200px)", height: "clamp(120px,20vw,200px)", borderRadius: "50%", overflow: "hidden", flexShrink: 0, boxShadow: "0 12px 48px rgba(0,0,0,0.45)", border: "1px solid rgba(240,237,232,0.08)", alignSelf: "center", position: "relative", background: "#1a1208" }}>
         <img
-          src={recipe.image}
+          src={imgErr ? "/placeholder.jpg" : recipe.image}
           alt={recipe.name}
+          onError={() => setImgErr(true)}
           style={{ width: "100%", height: "100%", objectFit: "cover", filter: isAvailable ? "brightness(0.96) saturate(1.1)" : "brightness(0.45) saturate(0.3)" }}
         />
-        {/* Overlay X for unavailable */}
         {!isAvailable && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.25)" }}>
             <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(240,237,232,0.55)", letterSpacing: "0.1em", textTransform: "uppercase", textAlign: "center", lineHeight: 1.4, padding: "0 12px" }}>Not{"\n"}Available</span>
@@ -757,102 +694,77 @@ function RecipeCard({ recipe, isFav, justAdded, flavorSel, variantSel, onToggleF
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function Delicacy() {
   const navigate = useNavigate();
-  const [activeCategory, setActiveCategory] = useState("Chicken");
-  const [activeMeal, setActiveMeal] = useState("Lunch");
-  const [hiddenRecipeNames, setHiddenRecipeNames] = useState<Set<string>>(new Set());
-  const [recipeImages, setRecipeImages] = useState<Record<string, string>>({});
-  // ── NEW: tracks which item names exist in the cashier inventory ──
-  const [availableRecipeNames, setAvailableRecipeNames] = useState<Set<string>>(new Set());
-  const [inventoryLoaded, setInventoryLoaded] = useState(false);
-  const [favorites, setFavorites] = useState<number[]>([]);
-  const [flavorSels, setFlavorSels] = useState<Record<number, string[]>>({});
-  const [variantSels, setVariantSels] = useState<Record<number, "original" | "spicy">>({});
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [lastPlacedOrderNumber, setLastPlacedOrderNumber] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [justAdded, setJustAdded] = useState<number | null>(null);
-  const [highlightedId, setHighlightedId] = useState<number | null>(null);
-  const [scrolled, setScrolled] = useState(false);
-  const [orderTypeOpen, setOrderTypeOpen] = useState(false);
-  const [orderHistory, setOrderHistory] = useState<CustomerOrder[]>([]);
-  const [activeOrders, setActiveOrders] = useState<CustomerOrder[]>([]);
+
+  // ── Data from API ──
+  const [recipes,    setRecipes]    = useState<Recipe[]>([]);
+  const [flavors,    setFlavors]    = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [mealTypes,  setMealTypes]  = useState<string[]>([]);
+  const [loading,    setLoading]    = useState(true);
+
+  // ── UI state ──
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [activeMeal,     setActiveMeal]     = useState("Lunch");
+  const [favorites,      setFavorites]      = useState<number[]>([]);
+  const [flavorSels,     setFlavorSels]     = useState<Record<number, string[]>>({});
+  const [variantSels,    setVariantSels]    = useState<Record<number, "original" | "spicy">>({});
+  const [cart,           setCart]           = useState<CartItem[]>([]);
+  const [drawerOpen,     setDrawerOpen]     = useState(false);
+  const [historyOpen,    setHistoryOpen]    = useState(false);
+  const [showCheckout,   setShowCheckout]   = useState(false);
+  const [lastOrderNum,   setLastOrderNum]   = useState<string | null>(null);
+  const [isSubmitting,   setIsSubmitting]   = useState(false);
+  const [justAdded,      setJustAdded]      = useState<number | null>(null);
+  const [highlightedId,  setHighlightedId]  = useState<number | null>(null);
+  const [scrolled,       setScrolled]       = useState(false);
+  const [orderTypeOpen,  setOrderTypeOpen]  = useState(false);
+  const [orderHistory,   setOrderHistory]   = useState<CustomerOrder[]>([]);
+  const [activeOrders,   setActiveOrders]   = useState<CustomerOrder[]>([]);
   const [paymentSession, setPaymentSession] = useState<PaymentSessionState | null>(null);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethodType>("gcash");
-  const [showCashTerms, setShowCashTerms] = useState(false);
+  const [paymentMethod,  setPaymentMethod]  = useState<PaymentMethodType>("gcash");
+  const [showCashTerms,  setShowCashTerms]  = useState(false);
 
-  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const cardRefs       = useRef<Record<number, HTMLDivElement | null>>({});
   const customerUserId = Number(localStorage.getItem("userId") || 0);
-  const customerName = localStorage.getItem("userName") || "The Crunch Customer";
-  const customerEmail = localStorage.getItem("userEmail") || "";
+  const customerName   = localStorage.getItem("userName")  || "The Crunch Customer";
+  const customerEmail  = localStorage.getItem("userEmail") || "";
 
-  const norm = (s: string) => s.trim().toLowerCase();
-  const withImg = (r: Recipe): Recipe => { const img = recipeImages[norm(r.name)]; return img ? { ...r, image: img } : r; };
-  const isVisible = (r: Recipe) => !hiddenRecipeNames.has(norm(r.name));
-
-  // ── Helper: is this recipe available in the cashier inventory? ──
-  // Returns true while inventory hasn't loaded yet (avoid false "Not Available" flash).
-  const getIsAvailable = (r: Recipe): boolean => {
-    if (!inventoryLoaded) return true;
-    if (availableRecipeNames.size === 0) return true;
-    return availableRecipeNames.has(norm(r.name));
-  };
-
-  const allInCat = activeCategory === "All"
-    ? Object.values(RECIPES).flat().filter(isVisible).map(withImg)
-    : (RECIPES[activeCategory] ?? []).filter(isVisible).map(withImg);
-  const displayed = allInCat.filter(r => r.mealTypes.includes(activeMeal));
-  const totalItems = cart.reduce((s, i) => s + i.quantity, 0);
-
-  // ── EFFECTS ──
+  // ── Fetch all menu data from backend ──
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const data = await api.get<MenuVisibilityRow[]>("/inventory");
-        if (cancelled || !Array.isArray(data)) return;
+    setLoading(true);
 
-        // Hidden items
-        setHiddenRecipeNames(new Set(
-          data
-            .filter(i => String(i?.availability_status ?? "").trim().toLowerCase() === "hidden")
-            .map(i => norm(String(i?.name ?? i?.product_name ?? "")))
-            .filter(Boolean)
-        ));
+    Promise.all([
+      api.get<Recipe[]>("/menu/items"),       // full recipe list with `available` field
+      api.get<string[]>("/menu/flavors"),     // flavor names array
+      api.get<string[]>("/menu/categories"),  // category names
+      api.get<string[]>("/menu/meal-types"),  // meal type names
+    ])
+      .then(([items, flavorList, cats, meals]) => {
+        if (cancelled) return;
+        setRecipes(Array.isArray(items)      ? items      : []);
+        setFlavors(Array.isArray(flavorList) ? flavorList : []);
+        const allCats  = ["All", ...(Array.isArray(cats)  ? cats  : [])];
+        const allMeals = Array.isArray(meals) ? meals : ["Breakfast", "Lunch", "Dinner"];
+        setCategories(allCats);
+        setMealTypes(allMeals);
+        setActiveMeal(allMeals.includes("Lunch") ? "Lunch" : allMeals[0] ?? "Lunch");
+      })
+      .catch(err => { console.error("Failed to load menu:", err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
 
-        // Images
-        setRecipeImages(Object.fromEntries(
-          data
-            .map(i => [norm(String(i?.name ?? i?.product_name ?? "")), String(i?.image ?? "").trim()] as const)
-            .filter(([n, img]) => n && img)
-        ));
-
-        // ── NEW: build the set of names that exist in the cashier menu ──
-        setAvailableRecipeNames(new Set(
-          data
-            .map(i => norm(String(i?.name ?? i?.product_name ?? "")))
-            .filter(Boolean)
-        ));
-
-        setInventoryLoaded(true);
-      } catch (e) {
-        console.error("Failed to load menu visibility:", e);
-        // On error, mark as loaded so we don't block the UI — all items show as available
-        setInventoryLoaded(true);
-      }
-    })();
     return () => { cancelled = true; };
   }, []);
 
+  // ── Scroll listener ──
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", fn);
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
+  // ── Restore payment session from localStorage ──
   useEffect(() => {
     const raw = localStorage.getItem(PAYMENT_SESSION_KEY);
     if (!raw) return;
@@ -864,89 +776,120 @@ export default function Delicacy() {
     else localStorage.removeItem(PAYMENT_SESSION_KEY);
   }, [paymentSession]);
 
+  // ── Handle GCash return URL ──
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const paymentState = params.get("payment");
     if (!paymentState) return;
-    const clear = () => { const u = new URL(window.location.href); u.searchParams.delete("payment"); window.history.replaceState({}, "", `${u.pathname}${u.search}${u.hash}`); };
-    if (paymentState === "cancelled") { setDrawerOpen(true); setPaymentMessage("GCash checkout was cancelled. You can try again when you're ready."); clear(); return; }
-    if (paymentState !== "success") { clear(); return; }
+
+    const clearParam = () => {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("payment");
+      window.history.replaceState({}, "", `${u.pathname}${u.search}${u.hash}`);
+    };
+
+    if (paymentState === "cancelled") {
+      setDrawerOpen(true);
+      setPaymentMessage("GCash checkout was cancelled. You can try again when you're ready.");
+      clearParam();
+      return;
+    }
+    if (paymentState !== "success") { clearParam(); return; }
+
     const raw = localStorage.getItem(PAYMENT_SESSION_KEY);
-    if (!raw) { clear(); return; }
+    if (!raw) { clearParam(); return; }
     let session: PaymentSessionState | null = null;
-    try { session = JSON.parse(raw); setPaymentSession(session!); } catch { localStorage.removeItem(PAYMENT_SESSION_KEY); clear(); return; }
+    try { session = JSON.parse(raw); setPaymentSession(session!); } catch { localStorage.removeItem(PAYMENT_SESSION_KEY); clearParam(); return; }
+
     setDrawerOpen(true);
-    setPaymentMessage("Payment return detected. Verifying your GCash payment now...");
+    setPaymentMessage("Payment return detected. Verifying your GCash payment...");
+
     let cancelled = false;
     (async () => {
       try {
         const data = await api.get<{ paid: boolean; status: string; paymentReference: string | null }>(`/orders/paymongo/checkout/${session!.checkoutSessionId}`);
         if (cancelled) return;
         setPaymentSession({ ...session!, ...data });
-        setPaymentMessage(data.paid ? "Payment confirmed. You can now click Place Order." : "Payment is still pending. Please check again in a moment.");
-      } catch { if (!cancelled) setPaymentMessage("We could not verify the payment automatically. Please click Check Payment Status."); }
-      finally { clear(); }
+        setPaymentMessage(data.paid ? "Payment confirmed. You can now click Place Order." : "Payment still pending. Please check again.");
+      } catch {
+        if (!cancelled) setPaymentMessage("Could not verify payment automatically. Click Check Payment Status.");
+      } finally { clearParam(); }
     })();
     return () => { cancelled = true; };
   }, []);
 
+  // ── Handle ?showOrderModal and ?item deep-links ──
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("showOrderModal") === "true") setOrderTypeOpen(true);
+
     const itemSlug = params.get("item");
-    if (!itemSlug) return;
+    if (!itemSlug || recipes.length === 0) return;
+
     const needle = decodeURIComponent(itemSlug).trim().toLowerCase();
-    const all = Object.values(RECIPES).flat().filter(isVisible).map(withImg);
-    const match = all.find(r => r.name.trim().toLowerCase() === needle) ?? all.find(r => r.name.toLowerCase().includes(needle) || needle.includes(r.name.toLowerCase()));
+    const match  = recipes.find(r => r.name.trim().toLowerCase() === needle)
+                ?? recipes.find(r => r.name.toLowerCase().includes(needle) || needle.includes(r.name.toLowerCase()));
     if (!match) return;
-    const cat = Object.entries(RECIPES).find(([,rs]) => rs.some(r => r.id === match.id))?.[0] ?? "All";
-    setActiveCategory(cat);
-    setActiveMeal(match.mealTypes[0] ?? "Lunch");
+
+    setActiveCategory(match.category ?? "All");
+    setActiveMeal(match.mealTypes[0] ?? activeMeal);
     setTimeout(() => {
       const el = cardRefs.current[match.id];
       if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - window.innerHeight / 2 + el.getBoundingClientRect().height / 2, behavior: "smooth" });
       setTimeout(() => { setHighlightedId(match.id); setTimeout(() => setHighlightedId(null), 3200); }, 600);
     }, 480);
-  }, []);
+  }, [recipes]);
 
-  const fetchOrders = async () => {
+  // ── Fetch orders (poll every 5s) ──
+  const fetchOrders = useCallback(async () => {
     if (!customerUserId) return;
     try {
       const data = await api.get<{ activeOrders: CustomerOrder[]; historyOrders: CustomerOrder[] }>(`/orders/customer/${customerUserId}`);
-      setActiveOrders(data.activeOrders ?? []);
+      setActiveOrders(data.activeOrders  ?? []);
       setOrderHistory(data.historyOrders ?? []);
     } catch (e) { console.error("Failed to load orders:", e); }
-  };
+  }, [customerUserId]);
 
   useEffect(() => {
     fetchOrders();
     if (!customerUserId) return;
     const t = window.setInterval(fetchOrders, 5000);
     return () => window.clearInterval(t);
-  }, [customerUserId]);
+  }, [fetchOrders, customerUserId]);
 
-  // ── CART ──
+  // ── Derived display list ──
+  const displayed = recipes.filter(r =>
+    (activeCategory === "All" || r.category === activeCategory) &&
+    r.mealTypes.includes(activeMeal)
+  );
+
+  const totalItems = cart.reduce((s, i) => s + i.quantity, 0);
+
+  // ── Cart helpers ──
   const clearPayment = () => { setPaymentSession(null); setPaymentMessage(null); };
-  const toggleFav = (id: number) => setFavorites(p => p.includes(id) ? p.filter(f => f !== id) : [...p, id]);
 
   const addToCart = (recipe: Recipe) => {
-    // Guard: don't add unavailable items
-    if (!getIsAvailable(recipe)) return;
+    if (!recipe.available) return;
     const flavors = flavorSels[recipe.id] ?? [];
     clearPayment();
-    setCart(prev => { const f = prev.find(c => c.recipe.id === recipe.id); return f ? prev.map(c => c.recipe.id === recipe.id ? { ...c, quantity: c.quantity + 1, flavors } : c) : [...prev, { recipe, quantity: 1, flavors }]; });
+    setCart(prev => {
+      const found = prev.find(c => c.recipe.id === recipe.id);
+      return found
+        ? prev.map(c => c.recipe.id === recipe.id ? { ...c, quantity: c.quantity + 1, flavors } : c)
+        : [...prev, { recipe, quantity: 1, flavors }];
+    });
     setJustAdded(recipe.id);
     setTimeout(() => setJustAdded(null), 1400);
   };
 
   const removeFromCart = (id: number) => { clearPayment(); setCart(p => p.filter(c => c.recipe.id !== id)); };
-  const changeQty = (id: number, delta: number) => { clearPayment(); setCart(p => p.map(c => c.recipe.id === id ? { ...c, quantity: c.quantity + delta } : c).filter(c => c.quantity > 0)); };
-  const clearCart = () => { setCart([]); clearPayment(); };
-  const handlePaymentMethodChange = (m: PaymentMethodType) => { setSelectedPaymentMethod(m); clearPayment(); };
+  const changeQty      = (id: number, delta: number) => { clearPayment(); setCart(p => p.map(c => c.recipe.id === id ? { ...c, quantity: c.quantity + delta } : c).filter(c => c.quantity > 0)); };
+  const clearCart      = () => { setCart([]); clearPayment(); };
+  const handlePaymentMethodChange = (m: PaymentMethodType) => { setPaymentMethod(m); clearPayment(); };
 
   const buildItems = () => cart.map(i => ({ product_id: i.recipe.id, qty: i.quantity, subtotal: i.recipe.price * i.quantity, name: i.recipe.name, price: i.recipe.price }));
 
-  // ── ORDER ACTIONS ──
+  // ── Order actions ──
   const handleRequestCashTerms = () => {
     if (isSubmitting || !cart.length) return;
     if (!customerUserId) { setPaymentMessage("Please log in as a customer first."); return; }
@@ -957,9 +900,9 @@ export default function Delicacy() {
     setIsSubmitting(true);
     try {
       const total = cart.reduce((s, i) => s + i.recipe.price * i.quantity, 0);
-      const res = await api.post<{ orderId: number; orderNumber: string }>("/orders", { items: buildItems(), total, customerUserId, order_type: "take-out", payment_method: "cash", payment_status: "Pending" });
+      const res   = await api.post<{ orderId: number; orderNumber: string }>("/orders", { items: buildItems(), total, customerUserId, order_type: "take-out", payment_method: "cash", payment_status: "Pending" });
       await fetchOrders();
-      setLastPlacedOrderNumber(res.orderNumber || `#${res.orderId}`);
+      setLastOrderNum(res.orderNumber || `#${res.orderId}`);
       setDrawerOpen(false);
       setTimeout(() => { setShowCheckout(true); setCart([]); }, 320);
     } catch (e) { console.error(e); setPaymentMessage("Could not place your order. Please try again."); }
@@ -972,7 +915,7 @@ export default function Delicacy() {
     setIsSubmitting(true); setPaymentMessage(null);
     try {
       const total = cart.reduce((s, i) => s + i.recipe.price * i.quantity, 0);
-      const data = await api.post<{ checkoutSessionId: string; checkoutUrl: string; status: string }>("/orders/paymongo/checkout", { items: buildItems(), total, customerUserId, customerName, customerEmail });
+      const data  = await api.post<{ checkoutSessionId: string; checkoutUrl: string; status: string }>("/orders/paymongo/checkout", { items: buildItems(), total, customerUserId, customerName, customerEmail });
       const next: PaymentSessionState = { checkoutSessionId: data.checkoutSessionId, checkoutUrl: data.checkoutUrl, status: data.status, paid: false, paymentReference: null };
       setPaymentSession(next);
       setPaymentMessage("GCash payment page opened. Finish payment there, then click Check Payment Status.");
@@ -996,7 +939,7 @@ export default function Delicacy() {
       const data = await api.get<{ paid: boolean; status: string; paymentReference: string | null }>(`/orders/paymongo/checkout/${paymentSession.checkoutSessionId}`);
       setPaymentSession({ ...paymentSession, ...data });
       setPaymentMessage(data.paid ? "Payment confirmed. You can now click Place Order." : "Payment still pending. Finish GCash checkout, then check again.");
-    } catch { setPaymentMessage("Could not verify payment. Please try again in a moment."); }
+    } catch { setPaymentMessage("Could not verify payment. Please try again."); }
     finally { setIsSubmitting(false); }
   };
 
@@ -1005,18 +948,18 @@ export default function Delicacy() {
     setIsSubmitting(true);
     try {
       const total = cart.reduce((s, i) => s + i.recipe.price * i.quantity, 0);
-      const res = await api.post<{ orderId: number; orderNumber: string }>("/orders", { items: buildItems(), total, customerUserId, order_type: "take-out", payment_method: "gcash", checkout_session_id: paymentSession.checkoutSessionId, payment_reference: paymentSession.paymentReference || paymentSession.checkoutSessionId, payment_status: "Paid" });
+      const res   = await api.post<{ orderId: number; orderNumber: string }>("/orders", { items: buildItems(), total, customerUserId, order_type: "take-out", payment_method: "gcash", checkout_session_id: paymentSession.checkoutSessionId, payment_reference: paymentSession.paymentReference || paymentSession.checkoutSessionId, payment_status: "Paid" });
       await fetchOrders();
-      setLastPlacedOrderNumber(res.orderNumber || `#${res.orderId}`);
+      setLastOrderNum(res.orderNumber || `#${res.orderId}`);
       clearPayment();
       setDrawerOpen(false);
       setTimeout(() => { setShowCheckout(true); setCart([]); }, 320);
-    } catch { setPaymentMessage("Payment is done, but could not place the order. Please try again."); }
+    } catch { setPaymentMessage("Payment done, but could not place the order. Please try again."); }
     finally { setIsSubmitting(false); }
   };
 
   const handleLogout = () => {
-    ["isAuthenticated","authToken","userName","userRole","userId"].forEach(k => localStorage.removeItem(k));
+    ["isAuthenticated", "authToken", "userName", "userRole", "userId"].forEach(k => localStorage.removeItem(k));
     navigate("/aboutthecrunch");
   };
 
@@ -1027,7 +970,7 @@ export default function Delicacy() {
 
       {/* Ambient glows */}
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
-        {[{top:"-8%",left:"10%",w:700,op:0.05},{top:"45%",right:"-8%",w:520,op:0.03},{bottom:"-8%",left:"30%",w:600,op:0.04}].map((g,i) => (
+        {[{ top: "-8%", left: "10%", w: 700, op: 0.05 }, { top: "45%", right: "-8%", w: 520, op: 0.03 }, { bottom: "-8%", left: "30%", w: 600, op: 0.04 }].map((g, i) => (
           <div key={i} style={{ position: "absolute", ...g, width: g.w, height: g.w, borderRadius: "50%", background: `radial-gradient(circle,rgba(245,200,66,${g.op}) 0%,transparent 65%)` }} />
         ))}
       </div>
@@ -1038,6 +981,7 @@ export default function Delicacy() {
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} transition={SP} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
           <span style={{ fontSize: 20, fontWeight: 900, color: "#f0ede8" }}>The <span style={{ color: "#f5c842" }}>Crunch</span></span>
         </motion.button>
+
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
           {NAV_LINKS.map(item => (
             <motion.button key={item.label} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} transition={SP}
@@ -1049,7 +993,8 @@ export default function Delicacy() {
             </motion.button>
           ))}
           <div style={{ width: 1, height: 16, background: "rgba(240,237,232,0.12)", margin: "0 4px" }} />
-          {/* History btn */}
+
+          {/* History */}
           <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.9 }} transition={SP} onClick={() => setHistoryOpen(true)} title="Order History"
             style={{ position: "relative", background: orderHistory.length > 0 ? "rgba(245,200,66,0.08)" : "rgba(240,237,232,0.06)", border: `1px solid ${orderHistory.length > 0 ? "rgba(245,200,66,0.25)" : "rgba(240,237,232,0.12)"}`, color: orderHistory.length > 0 ? "#f5c842" : "rgba(240,237,232,0.42)", borderRadius: 10, width: 40, height: 40, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icon d={historyD} size={17} />
@@ -1062,7 +1007,8 @@ export default function Delicacy() {
               )}
             </AnimatePresence>
           </motion.button>
-          {/* My Order btn */}
+
+          {/* My Order */}
           <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.9 }} transition={SP} onClick={() => setDrawerOpen(true)}
             style={{ position: "relative", background: "#f5c842", color: "#111", border: "none", borderRadius: 10, padding: "9px 20px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
             My Order
@@ -1077,6 +1023,7 @@ export default function Delicacy() {
               )}
             </AnimatePresence>
           </motion.button>
+
           {/* Log Out */}
           <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.9 }} transition={SP} onClick={handleLogout}
             style={{ background: "rgba(240,237,232,0.06)", color: "#f0ede8", border: "1px solid rgba(240,237,232,0.12)", borderRadius: 10, padding: "9px 18px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600 }}>
@@ -1085,8 +1032,9 @@ export default function Delicacy() {
         </div>
       </motion.nav>
 
-      {/* ── MAIN CONTENT ── */}
+      {/* ── MAIN ── */}
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "clamp(32px,5vw,52px) clamp(16px,4vw,40px) 0", position: "relative", zIndex: 1 }}>
+
         {/* Hero */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.75, ease: EASE }} style={{ marginBottom: 36 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
@@ -1103,7 +1051,7 @@ export default function Delicacy() {
         {/* Category Tabs */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, duration: 0.65, ease: EASE }}
           style={{ display: "flex", gap: 0, marginBottom: 40, borderBottom: "1px solid rgba(240,237,232,0.07)", overflowX: "auto" }}>
-          {CATEGORIES.map(cat => (
+          {(loading ? ["All", "Chicken", "Sides", "Drinks"] : categories).map(cat => (
             <motion.button key={cat} onClick={() => setActiveCategory(cat)} whileTap={{ scale: 0.95 }} transition={SP}
               style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: activeCategory === cat ? 700 : 400, color: activeCategory === cat ? "#f5c842" : "rgba(240,237,232,0.3)", padding: "13px 22px", position: "relative", whiteSpace: "nowrap" }}>
               {cat}
@@ -1116,7 +1064,7 @@ export default function Delicacy() {
           {/* Meal Sidebar */}
           <div style={{ display: "flex", flexDirection: "column", gap: 44, paddingTop: 8, minWidth: 56, alignItems: "center", position: "relative" }}>
             <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: 1, background: "rgba(240,237,232,0.06)", transform: "translateX(-50%)" }} />
-            {MEAL_TYPES.map((meal, mi) => (
+            {(loading ? ["Breakfast", "Lunch", "Dinner"] : mealTypes).map((meal, mi) => (
               <motion.button key={meal} initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.22 + mi * 0.07 }} onClick={() => setActiveMeal(meal)} whileHover={{ x: 2 }} whileTap={{ scale: 0.9 }}
                 style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", padding: 0, position: "relative", zIndex: 1 }}>
                 <span style={{ fontSize: 11.5, fontWeight: activeMeal === meal ? 700 : 400, color: activeMeal === meal ? "#f5c842" : "rgba(240,237,232,0.22)", writingMode: "vertical-rl", transform: "rotate(180deg)", letterSpacing: "0.1em" }}>{meal}</span>
@@ -1129,63 +1077,72 @@ export default function Delicacy() {
 
           {/* Recipe Cards */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
-            <AnimatePresence mode="popLayout">
-              {displayed.length > 0 ? displayed.map(recipe => {
-                const isHL = highlightedId === recipe.id;
-                const isAvailable = getIsAvailable(recipe);
-                return (
-                  <div key={`${recipe.id}-${activeMeal}-${activeCategory}`} ref={(el: HTMLDivElement | null) => { cardRefs.current[recipe.id] = el; }} style={{ position: "relative" }}>
-                    <AnimatePresence>
-                      {isHL && isAvailable && (
-                        <>
-                          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: [0,1,0.7,1,0.5,0], scale: [0.96,1.015,1.01,1.015,1.01,1] }} exit={{ opacity: 0 }} transition={{ duration: 2.8, ease: "easeInOut" }}
-                            style={{ position: "absolute", inset: -4, borderRadius: 28, border: "2px solid rgba(245,200,66,0.8)", boxShadow: "0 0 0 4px rgba(245,200,66,0.15),0 0 48px rgba(245,200,66,0.3)", pointerEvents: "none", zIndex: 10 }} />
-                          <motion.div initial={{ opacity: 0, y: -12, scale: 0.85 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8 }} transition={{ type: "spring", stiffness: 300, damping: 22, delay: 0.2 }}
-                            style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "#f5c842", color: "#111", fontSize: 11, fontWeight: 800, padding: "5px 16px", borderRadius: 30, whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(245,200,66,0.5)", zIndex: 20, pointerEvents: "none" }}>
-                            ✦ Tap to Order
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                    <RecipeCard
-                      recipe={recipe}
-                      isFav={favorites.includes(recipe.id)}
-                      justAdded={justAdded === recipe.id}
-                      flavorSel={flavorSels[recipe.id] ?? []}
-                      variantSel={variantSels[recipe.id] ?? "original"}
-                      onToggleFav={() => toggleFav(recipe.id)}
-                      onAddToCart={() => addToCart(recipe)}
-                      onFlavorChange={f => setFlavorSels(p => ({ ...p, [recipe.id]: f }))}
-                      onVariantChange={v => setVariantSels(p => ({ ...p, [recipe.id]: v }))}
-                      isAvailable={isAvailable}
-                    />
-                  </div>
-                );
-              }) : (
-                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={SPG}
-                  style={{ textAlign: "center", padding: "88px 0", color: "rgba(240,237,232,0.2)", fontSize: 14 }}>
-                  No items for {activeMeal} in this category.
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {loading ? (
+              <>
+                <RecipeSkeleton />
+                <RecipeSkeleton />
+                <RecipeSkeleton />
+              </>
+            ) : (
+              <AnimatePresence mode="popLayout">
+                {displayed.length > 0 ? displayed.map(recipe => {
+                  const isHL = highlightedId === recipe.id;
+                  return (
+                    <div key={`${recipe.id}-${activeMeal}-${activeCategory}`} ref={(el: HTMLDivElement | null) => { cardRefs.current[recipe.id] = el; }} style={{ position: "relative" }}>
+                      <AnimatePresence>
+                        {isHL && recipe.available && (
+                          <>
+                            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: [0, 1, 0.7, 1, 0.5, 0], scale: [0.96, 1.015, 1.01, 1.015, 1.01, 1] }} exit={{ opacity: 0 }} transition={{ duration: 2.8, ease: "easeInOut" }}
+                              style={{ position: "absolute", inset: -4, borderRadius: 28, border: "2px solid rgba(245,200,66,0.8)", boxShadow: "0 0 0 4px rgba(245,200,66,0.15),0 0 48px rgba(245,200,66,0.3)", pointerEvents: "none", zIndex: 10 }} />
+                            <motion.div initial={{ opacity: 0, y: -12, scale: 0.85 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8 }} transition={{ type: "spring", stiffness: 300, damping: 22, delay: 0.2 }}
+                              style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "#f5c842", color: "#111", fontSize: 11, fontWeight: 800, padding: "5px 16px", borderRadius: 30, whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(245,200,66,0.5)", zIndex: 20, pointerEvents: "none" }}>
+                              ✦ Tap to Order
+                            </motion.div>
+                          </>
+                        )}
+                      </AnimatePresence>
+                      <RecipeCard
+                        recipe={recipe}
+                        isFav={favorites.includes(recipe.id)}
+                        justAdded={justAdded === recipe.id}
+                        flavorSel={flavorSels[recipe.id] ?? []}
+                        variantSel={variantSels[recipe.id] ?? "original"}
+                        onToggleFav={() => setFavorites(p => p.includes(recipe.id) ? p.filter(f => f !== recipe.id) : [...p, recipe.id])}
+                        onAddToCart={() => addToCart(recipe)}
+                        onFlavorChange={f => setFlavorSels(p => ({ ...p, [recipe.id]: f }))}
+                        onVariantChange={v => setVariantSels(p => ({ ...p, [recipe.id]: v }))}
+                        flavors={flavors}
+                      />
+                    </div>
+                  );
+                }) : (
+                  <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={SPG}
+                    style={{ textAlign: "center", padding: "88px 0", color: "rgba(240,237,232,0.2)", fontSize: 14 }}>
+                    No items for {activeMeal} in this category.
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── MODALS & DRAWERS ── */}
-      <AnimatePresence>{orderTypeOpen && <OrderTypeModal onClose={() => setOrderTypeOpen(false)} />}</AnimatePresence>
+      <AnimatePresence>{orderTypeOpen  && <OrderTypeModal onClose={() => setOrderTypeOpen(false)} />}</AnimatePresence>
       <AnimatePresence>
         {drawerOpen && (
-          <OrderDrawer cart={cart} onClose={() => setDrawerOpen(false)} onRemove={removeFromCart} onChangeQty={changeQty} onClear={clearCart}
+          <OrderDrawer
+            cart={cart} onClose={() => setDrawerOpen(false)} onRemove={removeFromCart} onChangeQty={changeQty} onClear={clearCart}
             onSendPayment={handleSendPayment} onVerifyPayment={handleVerifyPayment} onPlaceOrder={handlePlaceOrder}
             paymentSession={paymentSession} paymentMessage={paymentMessage} isSubmitting={isSubmitting}
-            selectedPaymentMethod={selectedPaymentMethod} onPaymentMethodChange={handlePaymentMethodChange}
-            onRequestCashTerms={handleRequestCashTerms} />
+            selectedPaymentMethod={paymentMethod} onPaymentMethodChange={handlePaymentMethodChange}
+            onRequestCashTerms={handleRequestCashTerms}
+          />
         )}
       </AnimatePresence>
       <AnimatePresence>{showCashTerms && <CashTermsModal onAccept={() => { setShowCashTerms(false); handlePlaceCashOrder(); }} onDecline={() => setShowCashTerms(false)} />}</AnimatePresence>
-      <AnimatePresence>{historyOpen && <HistoryDrawer orders={orderHistory} onClose={() => setHistoryOpen(false)} />}</AnimatePresence>
-      <AnimatePresence>{showCheckout && <CheckoutModal orderNumber={lastPlacedOrderNumber} onClose={() => { setShowCheckout(false); setLastPlacedOrderNumber(null); }} />}</AnimatePresence>
+      <AnimatePresence>{historyOpen   && <HistoryDrawer orders={orderHistory} recipes={recipes} onClose={() => setHistoryOpen(false)} />}</AnimatePresence>
+      <AnimatePresence>{showCheckout  && <CheckoutModal orderNumber={lastOrderNum} onClose={() => { setShowCheckout(false); setLastOrderNum(null); }} />}</AnimatePresence>
     </div>
   );
 }
