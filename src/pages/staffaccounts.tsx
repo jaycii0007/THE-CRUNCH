@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "@/components/Sidebar";
 import { staffApi } from "../lib/api";
-import type { StaffMember, AttendanceRecord } from "../lib/api";
+import type { StaffMember } from "../lib/api";
 import { useNotifications, useConfirm } from "../lib/NotificationContext";
 import { useAuth } from "../context/authcontext";
 
@@ -90,6 +90,32 @@ export default function StaffAccounts() {
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [error, setError] = useState("");
 
+  const fetchStaff = useCallback(async (): Promise<void> => {
+    if (!user?.token) return;
+    setIsLoading(true);
+    try {
+      const data = await staffApi.getAll(user.token);
+      setEmployees(data);
+    } catch (err: unknown) {
+      if (isAuthError(err)) {
+        logout();
+        addNotification({
+          id: crypto.randomUUID(),
+          type: "error",
+          label: "Session expired. Please log in again.",
+        });
+        return;
+      }
+      addNotification({
+        id: crypto.randomUUID(),
+        type: "error",
+        label: "Failed to load staff accounts.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.token, logout, addNotification]);
+
   const stats = [
     { label: "Total", value: employees.length },
     { label: "Active", value: employees.length },
@@ -102,20 +128,8 @@ export default function StaffAccounts() {
 
   useEffect(() => {
     if (!user?.token) return;
-    setIsLoading(true);
-    staffApi
-      .getAll(user.token)
-      .then(setEmployees)
-      .catch((err: unknown) => {
-        if (isAuthError(err)) {
-          logout();
-          addNotification({ id: crypto.randomUUID(), type: "error", label: "Session expired. Please log in again." });
-          return;
-        }
-        addNotification({ id: crypto.randomUUID(), type: "error", label: "Failed to load staff accounts." });
-      })
-      .finally(() => setIsLoading(false));
-  }, [user?.token, addNotification, logout]);
+    void fetchStaff();
+  }, [user?.token, fetchStaff]);
 
   const handleAdd = async (): Promise<void> => {
     if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
