@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   motion, AnimatePresence, useScroll, useTransform, useInView, type Variants,
 } from 'framer-motion'
-import { Search, Flame, Crown, Clock, ChevronDown, Droplets, MapPin, Star, X, Tag, CalendarDays } from 'lucide-react'
+import { Search, Flame, Crown, Clock, ChevronDown, Droplets, MapPin, Star, X, Tag, CalendarDays, MessageSquare, Send, CheckCircle } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
+
 
 // ─────────────────────────────────────────────
 // Constants
@@ -67,11 +68,17 @@ interface Promo {
   img:         string
   badge?:      string
   badgeColor?: string
-  eventDate?:  string   // ISO date e.g. "2025-12-25"
-  validUntil?: string   // ISO date
-  tag?:        string   // e.g. "Valentine's", "Christmas"
+  eventDate?:  string
+  validUntil?: string
+  tag?:        string
   highlight?:  boolean
-  discount?:   string   // e.g. "20% OFF"
+  discount?:   string
+}
+
+interface FeedbackPayload {
+  rating:  number
+  message: string
+  name:    string
 }
 
 // ─────────────────────────────────────────────
@@ -731,7 +738,6 @@ function PromoCard({ promo, index, large = false }: {
         flexDirection: 'column',
       }}
     >
-      {/* Shimmer line */}
       <div style={{
         position: 'absolute', top: 0, left: 20, right: 20, height: 1, zIndex: 3,
         background: hovered
@@ -740,7 +746,6 @@ function PromoCard({ promo, index, large = false }: {
         transition: 'background 0.35s',
       }} />
 
-      {/* Image */}
       <div style={{
         position: 'relative',
         aspectRatio: large ? '21/9' : '16/9',
@@ -773,7 +778,6 @@ function PromoCard({ promo, index, large = false }: {
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom,transparent 35%,rgba(8,6,4,0.92))' }} />
         <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(135deg,${accentColor}10,transparent 55%)` }} />
 
-        {/* Event date badge */}
         {eventDateObj && (
           <div style={{
             position: 'absolute', top: 14, left: 14, zIndex: 4,
@@ -793,7 +797,6 @@ function PromoCard({ promo, index, large = false }: {
           </div>
         )}
 
-        {/* Badge pill */}
         {promo.badge && (
           <span style={{
             position: 'absolute', top: 14, right: 14, zIndex: 4,
@@ -808,7 +811,6 @@ function PromoCard({ promo, index, large = false }: {
           </span>
         )}
 
-        {/* Discount stamp */}
         {promo.discount && (
           <motion.div
             animate={{ rotate: hovered ? [0, -5, 5, 0] : -12 }}
@@ -834,7 +836,6 @@ function PromoCard({ promo, index, large = false }: {
         )}
       </div>
 
-      {/* Content */}
       <div style={{ padding: '16px 18px 20px', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
         {promo.tag && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -974,6 +975,326 @@ function PromoSection({ promos, loading }: { promos: Promo[]; loading: boolean }
         </>
       )}
     </Reveal>
+  )
+}
+
+// ─────────────────────────────────────────────
+// Star Rating (Feedback)
+// ─────────────────────────────────────────────
+function StarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [hovered, setHovered] = useState(0)
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {[1, 2, 3, 4, 5].map((n) => {
+        const active = n <= (hovered || value)
+        return (
+          <motion.button
+            key={n}
+            whileHover={{ scale: 1.2 }}
+            whileTap={{ scale: 0.9 }}
+            onMouseEnter={() => setHovered(n)}
+            onMouseLeave={() => setHovered(0)}
+            onClick={() => onChange(n)}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 0 }}
+          >
+            <Star
+              size={28}
+              fill={active ? '#f5c842' : 'none'}
+              color={active ? '#f5c842' : 'rgba(240,237,232,0.25)'}
+              style={{ transition: 'fill 0.15s, color 0.15s' }}
+            />
+          </motion.button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
+// Feedback Modal
+// ─────────────────────────────────────────────
+function FeedbackModal({ onClose }: { onClose: () => void }) {
+  const [rating,   setRating]   = useState(0)
+  const [message,  setMessage]  = useState('')
+  const [name,     setName]     = useState('')
+  const [status,   setStatus]   = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
+  const [focused,  setFocused]  = useState<string | null>(null)
+
+  const canSubmit = rating > 0 && message.trim().length > 0
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return
+    setStatus('submitting')
+    setErrorMsg('')
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rating,
+          message: message.trim(),
+          name: name.trim() || 'Anonymous',
+        } satisfies FeedbackPayload),
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      setStatus('success')
+    } catch (err) {
+      setErrorMsg('Could not submit. Please try again.')
+      setStatus('error')
+    }
+  }
+
+  const inputStyle = (field: string): React.CSSProperties => ({
+    fontFamily: "'Poppins', sans-serif",
+    fontSize: 13,
+    color: '#f0ede8',
+    background: focused === field ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.04)',
+    border: `1px solid ${focused === field ? 'rgba(245,200,66,0.45)' : 'rgba(255,255,255,0.1)'}`,
+    borderRadius: 10,
+    padding: '10px 14px',
+    width: '100%',
+    outline: 'none',
+    boxSizing: 'border-box',
+    resize: 'none' as const,
+    transition: 'border-color 0.2s, background 0.2s',
+    boxShadow: focused === field ? '0 0 0 3px rgba(245,200,66,0.07)' : 'none',
+  })
+
+  return (
+    <>
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(0,0,0,0.72)',
+          backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+          zIndex: 900,
+        }}
+      />
+
+      {/* Panel */}
+      <motion.div
+        initial={{ opacity: 0, y: 40, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 24, scale: 0.97 }}
+        transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+        style={{
+          position: 'fixed', bottom: 100, right: 24,
+          width: 'min(420px, calc(100vw - 32px))',
+          background: 'rgba(20,17,13,0.97)',
+          border: '1px solid rgba(245,200,66,0.18)',
+          borderRadius: 20, padding: 28,
+          zIndex: 901,
+          boxShadow: '0 32px 80px rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+        }}
+      >
+        {/* Shimmer accent line */}
+        <div style={{
+          position: 'absolute', top: 0, left: 24, right: 24, height: 1,
+          background: 'linear-gradient(90deg,transparent,rgba(245,200,66,0.5),transparent)',
+        }} />
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <p style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: '#f0ede8', margin: 0, letterSpacing: '-0.01em' }}>
+              Share your thoughts
+            </p>
+            <p style={{ fontFamily: "'Poppins', sans-serif", fontSize: 12, color: 'rgba(240,237,232,0.35)', margin: '4px 0 0', fontWeight: 300 }}>
+              Help us improve The Crunch experience
+            </p>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+            onClick={onClose}
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: '50%', width: 32, height: 32,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            <X size={14} color="rgba(240,237,232,0.6)" />
+          </motion.button>
+        </div>
+
+        <AnimatePresence mode="wait">
+          {status === 'success' ? (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '24px 0', textAlign: 'center' }}
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', damping: 14, stiffness: 200, delay: 0.1 }}
+              >
+                <CheckCircle size={48} color="#22c55e" />
+              </motion.div>
+              <p style={{ fontFamily: "'Poppins', sans-serif", fontSize: 15, fontWeight: 700, color: '#f0ede8', margin: 0 }}>
+                Thank you!
+              </p>
+              <p style={{ fontFamily: "'Poppins', sans-serif", fontSize: 13, color: 'rgba(240,237,232,0.4)', margin: 0, fontWeight: 300 }}>
+                Your feedback has been received.
+              </p>
+              <motion.button
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={onClose}
+                style={{
+                  marginTop: 8, background: 'rgba(245,200,66,0.1)', border: '1px solid rgba(245,200,66,0.25)',
+                  borderRadius: 10, padding: '9px 24px', fontSize: 13, fontWeight: 600, color: '#f5c842',
+                  cursor: 'pointer', fontFamily: "'Poppins', sans-serif",
+                }}
+              >
+                Close
+              </motion.button>
+            </motion.div>
+          ) : (
+            <motion.div key="form" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Star rating */}
+              <div>
+                <p style={{ fontFamily: "'Poppins', sans-serif", fontSize: 11, fontWeight: 600, color: 'rgba(240,237,232,0.35)', margin: '0 0 8px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  Overall Rating
+                </p>
+                <StarRating value={rating} onChange={setRating} />
+                {rating > 0 && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                    style={{ fontFamily: "'Poppins', sans-serif", fontSize: 11, color: '#f5c842', margin: '6px 0 0', fontWeight: 500 }}
+                  >
+                    {['', 'Poor', 'Fair', 'Good', 'Great', 'Amazing!'][rating]}
+                  </motion.p>
+                )}
+              </div>
+
+              {/* Name */}
+              <div>
+                <p style={{ fontFamily: "'Poppins', sans-serif", fontSize: 11, fontWeight: 600, color: 'rgba(240,237,232,0.35)', margin: '0 0 8px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  Name <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span>
+                </p>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name"
+                  onFocus={() => setFocused('name')}
+                  onBlur={() => setFocused(null)}
+                  style={inputStyle('name')}
+                />
+              </div>
+
+              {/* Message */}
+              <div>
+                <p style={{ fontFamily: "'Poppins', sans-serif", fontSize: 11, fontWeight: 600, color: 'rgba(240,237,232,0.35)', margin: '0 0 8px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  Your Feedback
+                </p>
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Tell us about your experience…"
+                  rows={4}
+                  onFocus={() => setFocused('message')}
+                  onBlur={() => setFocused(null)}
+                  style={inputStyle('message')}
+                />
+                <p style={{ fontFamily: "'Poppins', sans-serif", fontSize: 10, color: 'rgba(240,237,232,0.2)', margin: '4px 0 0', textAlign: 'right' }}>
+                  {message.length} / 500
+                </p>
+              </div>
+
+              {/* Error */}
+              <AnimatePresence>
+                {status === 'error' && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    style={{
+                      fontFamily: "'Poppins', sans-serif", fontSize: 12, color: '#ef4444', margin: 0,
+                      background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+                      borderRadius: 8, padding: '8px 12px',
+                    }}
+                  >
+                    {errorMsg}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+
+              {/* Submit */}
+              <motion.button
+                whileHover={canSubmit ? { scale: 1.02 } : {}}
+                whileTap={canSubmit ? { scale: 0.97 } : {}}
+                onClick={handleSubmit}
+                disabled={!canSubmit || status === 'submitting'}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  background: canSubmit ? '#f5c842' : 'rgba(245,200,66,0.15)',
+                  border: 'none', borderRadius: 12, padding: '12px',
+                  fontSize: 14, fontWeight: 700,
+                  color: canSubmit ? '#111' : 'rgba(245,200,66,0.35)',
+                  cursor: canSubmit ? 'pointer' : 'default',
+                  fontFamily: "'Poppins', sans-serif",
+                  transition: 'background 0.2s, color 0.2s',
+                }}
+              >
+                {status === 'submitting' ? (
+                  <span style={{
+                    display: 'inline-block', width: 14, height: 14,
+                    border: '2px solid rgba(17,17,17,0.4)', borderTopColor: '#111',
+                    borderRadius: '50%', animation: 'crunch-spin 0.7s linear infinite',
+                  }} />
+                ) : (
+                  <Send size={15} />
+                )}
+                {status === 'submitting' ? 'Sending…' : 'Submit Feedback'}
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </>
+  )
+}
+
+// ─────────────────────────────────────────────
+// Feedback Button (floating trigger)
+// ─────────────────────────────────────────────
+function FeedbackButton() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <style>{`@keyframes crunch-spin { to { transform: rotate(360deg); } }`}</style>
+
+      <AnimatePresence>
+        {open && <FeedbackModal onClose={() => setOpen(false)} />}
+      </AnimatePresence>
+
+      <motion.button
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 1.2, type: 'spring', damping: 18, stiffness: 260 }}
+        whileHover={{ scale: 1.08 }}
+        whileTap={{ scale: 0.93 }}
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          position: 'fixed', bottom: 28, right: 24, zIndex: 800,
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: '#f5c842', border: 'none', borderRadius: 999,
+          padding: '12px 20px', fontSize: 13, fontWeight: 700, color: '#111',
+          cursor: 'pointer', fontFamily: "'Poppins', sans-serif",
+          boxShadow: '0 8px 32px rgba(245,200,66,0.35)', letterSpacing: '0.01em',
+        }}
+      >
+        <MessageSquare size={16} />
+        {open ? 'Close' : 'Feedback'}
+      </motion.button>
+    </>
   )
 }
 
@@ -1723,6 +2044,10 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
           </div>
         </div>
       </footer>
+
+      {/* ── Feedback Button (floating) ── */}
+      <FeedbackButton />
+
     </div>
   )
 }
