@@ -237,7 +237,7 @@ const buildReceiptHtml = ({
     paymentMethod === "cash"
       ? "Cash"
       : paymentMethod === "gcash_onsite"
-        ? "Onsite E-Payment"
+        ? "Epayment"
         : paymentMethod;
   const customerLabel: Record<CustomerType, string> = {
     regular: "Regular",
@@ -475,7 +475,7 @@ function PaymentStatusBadge({
     ? paymentMethod === "cash"
       ? " · Cash"
       : paymentMethod === "gcash_onsite"
-        ? " · E-Payment"
+        ? " · Epayment"
         : paymentMethod
           ? ` · ${paymentMethod}`
           : ""
@@ -1484,7 +1484,7 @@ function AmountEntryModal({
                             color: "#0070BA",
                           }}
                         >
-                          Onsite GCash / E-Payment
+                          Epayment
                         </span>
                       </div>
                       <img
@@ -4252,7 +4252,7 @@ export default function CashierView() {
                       { value: "cash", label: "Cash" },
                       {
                         value: "gcash_onsite",
-                        label: "Onsite GCash / E-Payment",
+                        label: "Epayment",
                       },
                     ]}
                   />
