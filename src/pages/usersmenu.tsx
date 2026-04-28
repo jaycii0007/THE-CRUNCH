@@ -247,7 +247,7 @@ function CashTermsModal({ onAccept, onDecline }: { onAccept: () => void; onDecli
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onDecline}
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 700, backdropFilter: "blur(14px)" }} />
       <motion.div initial={{ opacity: 0, scale: 0.92, y: 28 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 16 }} transition={{ ...SPG, delay: 0.04 }}
-        style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 800, width: "min(480px,92vw)", background: "#151210", borderRadius: 26, border: "1px solid rgba(240,237,232,0.1)", boxShadow: "0 40px 80px rgba(0,0,0,0.6)", overflow: "hidden" }}>
+        style={{ position: "fixed", top: "27%", left: "35%", transform: "translate(-50%,-50%)", zIndex: 800, width: "min(480px,92vw)", background: "#151210", borderRadius: 26, border: "1px solid rgba(240,237,232,0.1)", boxShadow: "0 40px 80px rgba(0,0,0,0.6)", overflow: "hidden" }}>
         <div style={{ height: 3, background: "linear-gradient(90deg,#f5c842,rgba(245,200,66,0.3))" }} />
         <div style={{ padding: "32px 28px 28px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
@@ -673,7 +673,7 @@ function CheckoutModal({ orderNumber, onClose }: { orderNumber: string | null; o
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 400, backdropFilter: "blur(12px)" }} />
       <motion.div initial={{ opacity: 0, scale: 0.88, y: 32 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} transition={{ ...SPG, delay: 0.04 }}
-        style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "#151210", borderRadius: 28, padding: "48px 40px", zIndex: 500, textAlign: "center", width: "min(360px,90vw)", boxShadow: "0 40px 80px rgba(0,0,0,0.5)", border: "1px solid rgba(240,237,232,0.08)" }}>
+        style={{ position: "fixed", top: "29%", left: "38%", transform: "translate(-50%,-50%)", background: "#151210", borderRadius: 28, padding: "48px 40px", zIndex: 500, textAlign: "center", width: "min(360px,90vw)", boxShadow: "0 40px 80px rgba(0,0,0,0.5)", border: "1px solid rgba(240,237,232,0.08)" }}>
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.18, type: "spring", stiffness: 280, damping: 20 }}
           style={{ width: 72, height: 72, borderRadius: "50%", background: "#f5c842", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", boxShadow: "0 8px 28px rgba(245,200,66,0.3)", fontSize: 30 }}>✓</motion.div>
         <motion.h2 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24, ...SPG }} style={{ fontSize: 24, fontWeight: 800, color: "#f0ede8", marginBottom: 10 }}>Order Placed!</motion.h2>

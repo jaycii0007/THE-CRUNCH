@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   motion, AnimatePresence, useScroll, useTransform, useInView, type Variants,
 } from 'framer-motion'
-import { Search, Flame, Crown, Clock, ChevronDown, Droplets, MapPin, Star, X } from 'lucide-react'
+import { Search, Flame, Crown, Clock, ChevronDown, Droplets, MapPin, Star, X, Tag, CalendarDays } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 
 // ─────────────────────────────────────────────
@@ -16,6 +16,7 @@ const CATEGORIES = ['All', 'Chicken', 'Sides', 'Drinks', 'Combos'] as const
 type Category = typeof CATEGORIES[number]
 
 const PLACEHOLDER = '/placeholder.jpg'
+const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // ─────────────────────────────────────────────
 // Types
@@ -58,6 +59,21 @@ interface MenuSection {
   isDrink?: boolean
 }
 
+interface Promo {
+  id:          string
+  title:       string
+  subtitle?:   string
+  description: string
+  img:         string
+  badge?:      string
+  badgeColor?: string
+  eventDate?:  string   // ISO date e.g. "2025-12-25"
+  validUntil?: string   // ISO date
+  tag?:        string   // e.g. "Valentine's", "Christmas"
+  highlight?:  boolean
+  discount?:   string   // e.g. "20% OFF"
+}
+
 // ─────────────────────────────────────────────
 // Motion variants
 // ─────────────────────────────────────────────
@@ -84,6 +100,29 @@ const BADGE_CONFIG: Record<string, { label: string; bg: string; textDark?: boole
   'Fan Fave':   { label: 'Fan Fave',   bg: '#16a34a' },
   'Best Value': { label: 'Best Value', bg: '#0284c7' },
   'Must Try':   { label: 'Must Try',   bg: '#7c3aed' },
+}
+
+// ─────────────────────────────────────────────
+// Promo helpers
+// ─────────────────────────────────────────────
+function getCountdown(dateStr: string): string | null {
+  const target = new Date(dateStr)
+  const now    = new Date()
+  const diff   = target.getTime() - now.getTime()
+  if (diff <= 0) return null
+  const days  = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  if (days > 30) return null
+  if (days > 0)  return `${days}d ${hours}h left`
+  return `${hours}h left`
+}
+
+function formatEventDate(dateStr: string): { day: string; month: string } {
+  const d = new Date(dateStr)
+  return {
+    day:   String(d.getDate()).padStart(2, '0'),
+    month: MONTH_LABELS[d.getMonth()],
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -229,12 +268,12 @@ function MenuRow({ item, index }: { item: MenuItem; index: number }) {
 // Progressive Image
 // ─────────────────────────────────────────────
 interface ProgressiveImageProps {
-  src:            string
-  alt:            string
-  style?:         React.CSSProperties
+  src:             string
+  alt:             string
+  style?:          React.CSSProperties
   containerStyle?: React.CSSProperties
-  parallaxScale?: boolean
-  isHovered?:     boolean
+  parallaxScale?:  boolean
+  isHovered?:      boolean
 }
 
 function ProgressiveImage({ src, alt, style, containerStyle, parallaxScale, isHovered }: ProgressiveImageProps) {
@@ -650,6 +689,295 @@ function FlavorCard({ flavor, index, expanded, onToggle }: {
 }
 
 // ─────────────────────────────────────────────
+// Promo Card
+// ─────────────────────────────────────────────
+function PromoCard({ promo, index, large = false }: {
+  promo:  Promo
+  index:  number
+  large?: boolean
+}) {
+  const [hovered,   setHovered]   = useState(false)
+  const [imgLoaded, setImgLoaded] = useState(false)
+  const [imgError,  setImgError]  = useState(false)
+
+  const accentColor  = promo.badgeColor ?? '#f5c842'
+  const eventDateObj = promo.eventDate ? formatEventDate(promo.eventDate) : null
+  const countdown    = promo.validUntil ? getCountdown(promo.validUntil) : null
+  const imgSrc       = imgError ? PLACEHOLDER : (promo.img || PLACEHOLDER)
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 28 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay: index * 0.07, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+      onHoverStart={() => setHovered(true)}
+      onHoverEnd={() => setHovered(false)}
+      whileHover={{ y: -6, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } }}
+      style={{
+        borderRadius: 22,
+        overflow: 'hidden',
+        background: 'rgba(255,255,255,0.025)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        border: `1px solid ${hovered ? `${accentColor}44` : 'rgba(255,255,255,0.07)'}`,
+        boxShadow: hovered
+          ? `0 24px 60px rgba(0,0,0,0.6), 0 0 0 1px ${accentColor}22`
+          : '0 4px 24px rgba(0,0,0,0.35)',
+        cursor: 'default',
+        position: 'relative',
+        transition: 'border-color 0.3s, box-shadow 0.3s',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {/* Shimmer line */}
+      <div style={{
+        position: 'absolute', top: 0, left: 20, right: 20, height: 1, zIndex: 3,
+        background: hovered
+          ? `linear-gradient(90deg,transparent,${accentColor}66,transparent)`
+          : 'linear-gradient(90deg,transparent,rgba(255,255,255,0.07),transparent)',
+        transition: 'background 0.35s',
+      }} />
+
+      {/* Image */}
+      <div style={{
+        position: 'relative',
+        aspectRatio: large ? '21/9' : '16/9',
+        overflow: 'hidden',
+        background: '#0f0d0a',
+        flexShrink: 0,
+      }}>
+        {!imgLoaded && !imgError && (
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,#1a1208,#2a1f0e)', zIndex: 1 }}>
+            <motion.div
+              animate={{ x: ['-100%', '200%'] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg,transparent,${accentColor}0a,transparent)` }}
+            />
+          </div>
+        )}
+        <motion.img
+          src={imgSrc}
+          alt={promo.title}
+          onLoad={() => setImgLoaded(true)}
+          onError={() => { setImgError(true); setImgLoaded(true) }}
+          animate={{ scale: hovered ? 1.07 : 1 }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+            opacity: imgLoaded ? 1 : 0, transition: 'opacity 0.5s',
+            filter: hovered ? 'brightness(1.1) saturate(1.2)' : 'brightness(0.82) saturate(1.05)',
+          }}
+        />
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom,transparent 35%,rgba(8,6,4,0.92))' }} />
+        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(135deg,${accentColor}10,transparent 55%)` }} />
+
+        {/* Event date badge */}
+        {eventDateObj && (
+          <div style={{
+            position: 'absolute', top: 14, left: 14, zIndex: 4,
+            background: accentColor,
+            borderRadius: 12,
+            padding: '6px 10px',
+            textAlign: 'center',
+            boxShadow: `0 4px 16px ${accentColor}55`,
+            minWidth: 42,
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#111', lineHeight: 1 }}>
+              {eventDateObj.day}
+            </div>
+            <div style={{ fontSize: 8.5, fontWeight: 700, color: '#111', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              {eventDateObj.month}
+            </div>
+          </div>
+        )}
+
+        {/* Badge pill */}
+        {promo.badge && (
+          <span style={{
+            position: 'absolute', top: 14, right: 14, zIndex: 4,
+            background: `${accentColor}22`,
+            border: `1px solid ${accentColor}44`,
+            backdropFilter: 'blur(10px)',
+            color: accentColor,
+            fontSize: 9, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+            letterSpacing: '0.08em', textTransform: 'uppercase',
+          }}>
+            {promo.badge}
+          </span>
+        )}
+
+        {/* Discount stamp */}
+        {promo.discount && (
+          <motion.div
+            animate={{ rotate: hovered ? [0, -5, 5, 0] : -12 }}
+            transition={{ duration: 0.4 }}
+            style={{
+              position: 'absolute', bottom: 14, right: 14, zIndex: 4,
+              background: accentColor,
+              borderRadius: '50%',
+              width: 56, height: 56,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              boxShadow: `0 4px 20px ${accentColor}55`,
+              transform: 'rotate(-12deg)',
+            }}
+          >
+            <span style={{
+              fontSize: promo.discount.length > 6 ? 8 : 10,
+              fontWeight: 900, color: '#111', lineHeight: 1.1,
+              textAlign: 'center', padding: '0 5px',
+            }}>
+              {promo.discount}
+            </span>
+          </motion.div>
+        )}
+      </div>
+
+      {/* Content */}
+      <div style={{ padding: '16px 18px 20px', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {promo.tag && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <CalendarDays size={10} color={accentColor} />
+            <span style={{
+              fontSize: 9, fontWeight: 700, color: accentColor,
+              letterSpacing: '0.2em', textTransform: 'uppercase',
+            }}>
+              {promo.tag}
+            </span>
+          </div>
+        )}
+
+        <h3 style={{
+          margin: 0,
+          fontSize: large ? 20 : 15,
+          fontWeight: 800, color: '#f0ede8',
+          lineHeight: 1.2, letterSpacing: '-0.02em',
+        }}>
+          {promo.title}
+        </h3>
+
+        {promo.subtitle && (
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: accentColor, opacity: 0.85 }}>
+            {promo.subtitle}
+          </p>
+        )}
+
+        <p style={{
+          margin: 0,
+          fontSize: 12.5, color: 'rgba(240,237,232,0.38)',
+          lineHeight: 1.65, fontWeight: 300,
+          flex: 1,
+        }}>
+          {promo.description}
+        </p>
+
+        {countdown && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            marginTop: 4,
+            background: 'rgba(239,68,68,0.09)',
+            border: '1px solid rgba(239,68,68,0.22)',
+            borderRadius: 999, padding: '4px 11px',
+            alignSelf: 'flex-start',
+          }}>
+            <motion.div
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              style={{ width: 5, height: 5, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }}
+            />
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#ef4444' }}>{countdown}</span>
+          </div>
+        )}
+      </div>
+    </motion.article>
+  )
+}
+
+// ─────────────────────────────────────────────
+// Promo Section
+// ─────────────────────────────────────────────
+function PromoSection({ promos, loading }: { promos: Promo[]; loading: boolean }) {
+  const pinned = promos.filter(p => p.highlight)
+  const rest   = promos.filter(p => !p.highlight)
+
+  return (
+    <Reveal style={{ marginTop: 100 }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <div style={{ width: 28, height: 1, background: '#f5c842' }} />
+        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: '#f5c842' }}>
+          Year-Round Events
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 44 }}>
+        <h2
+          className="crunch-section-title"
+          style={{ fontWeight: 800, color: '#f0ede8', margin: 0, letterSpacing: '-0.02em' }}
+        >
+          Deals &amp; <em style={{ color: '#f5c842', fontStyle: 'italic' }}>Promos</em>
+        </h2>
+        <p style={{ fontSize: 13, color: 'rgba(240,237,232,0.3)', margin: 0, fontWeight: 300, maxWidth: 260, lineHeight: 1.65 }}>
+          Holiday specials, payday bundles, and limited-time flavors — all year long.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="crunch-promo-grid">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                borderRadius: 22, overflow: 'hidden',
+                background: 'rgba(255,255,255,0.025)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                aspectRatio: '16/9',
+                position: 'relative',
+              }}
+            >
+              <motion.div
+                animate={{ x: ['-100%', '200%'] }}
+                transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut', delay: i * 0.12 }}
+                style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg,transparent,rgba(245,200,66,0.05),transparent)' }}
+              />
+            </div>
+          ))}
+        </div>
+      ) : promos.length === 0 ? (
+        <div style={{
+          textAlign: 'center', padding: '60px 0',
+          color: 'rgba(240,237,232,0.22)', fontSize: 14, fontWeight: 300,
+        }}>
+          No active promos right now — check back soon! 🍗
+        </div>
+      ) : (
+        <>
+          {pinned.length > 0 && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,540px),1fr))',
+              gap: 20,
+              marginBottom: rest.length > 0 ? 20 : 0,
+            }}>
+              {pinned.map((p, i) => (
+                <PromoCard key={p.id} promo={p} index={i} large />
+              ))}
+            </div>
+          )}
+          {rest.length > 0 && (
+            <div className="crunch-promo-grid">
+              {rest.map((p, i) => (
+                <PromoCard key={p.id} promo={p} index={pinned.length + i} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Reveal>
+  )
+}
+
+// ─────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────
 interface ProductsProps {
@@ -661,18 +989,20 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
   const navigate = useNavigate()
 
   // ── State ──
-  const [products, setProducts]             = useState<Product[]>([])
-  const [flavors, setFlavors]               = useState<FlavorItem[]>([])
-  const [menuSections, setMenuSections]     = useState<MenuSection[]>([])
+  const [products, setProducts]               = useState<Product[]>([])
+  const [flavors, setFlavors]                 = useState<FlavorItem[]>([])
+  const [menuSections, setMenuSections]       = useState<MenuSection[]>([])
+  const [promos, setPromos]                   = useState<Promo[]>([])
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [loadingFlavors, setLoadingFlavors]   = useState(true)
   const [loadingMenu, setLoadingMenu]         = useState(true)
-  const [category, setCategory]             = useState<Category>('All')
-  const [search, setSearch]                 = useState('')
-  const [isOpen, setIsOpen]                 = useState(false)
-  const [expandedFlavor, setExpandedFlavor] = useState<string | null>(null)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [searchFocused, setSearchFocused]   = useState(false)
+  const [loadingPromos, setLoadingPromos]     = useState(true)
+  const [category, setCategory]               = useState<Category>('All')
+  const [search, setSearch]                   = useState('')
+  const [isOpen, setIsOpen]                   = useState(false)
+  const [expandedFlavor, setExpandedFlavor]   = useState<string | null>(null)
+  const [mobileMenuOpen, setMobileMenuOpen]   = useState(false)
+  const [searchFocused, setSearchFocused]     = useState(false)
 
   // ── Refs ──
   const heroRef = useRef<HTMLDivElement>(null)
@@ -725,6 +1055,14 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
         }
         @media (max-width: 860px) { .crunch-menu-grid { grid-template-columns: 1fr; } }
 
+        .crunch-promo-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+          gap: 18px;
+        }
+        @media (max-width: 640px) { .crunch-promo-grid { grid-template-columns: 1fr; gap: 14px; } }
+        @media (min-width: 641px) and (max-width: 900px) { .crunch-promo-grid { grid-template-columns: repeat(2,1fr); gap: 16px; } }
+
         .crunch-nav-links { display: flex; gap: 4px; align-items: center; }
         @media (max-width: 768px) { .crunch-nav-links { display: none; } .crunch-mobile-menu-btn { display: flex !important; } }
 
@@ -773,7 +1111,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
     }
   }, [])
 
-  // ── Fetch products ── 
+  // ── Fetch products ──
   useEffect(() => {
     let cancelled = false
     setLoadingProducts(true)
@@ -803,6 +1141,17 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
       .then(r => { if (!r.ok) throw new Error('Failed'); return r.json() })
       .then((data: MenuSection[]) => { if (!cancelled) { setMenuSections(Array.isArray(data) ? data : []); setLoadingMenu(false) } })
       .catch(() => { if (!cancelled) setLoadingMenu(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  // ── Fetch promos ──
+  useEffect(() => {
+    let cancelled = false
+    setLoadingPromos(true)
+    fetch('/api/promos')
+      .then(r => { if (!r.ok) throw new Error('Failed'); return r.json() })
+      .then((data: Promo[]) => { if (!cancelled) { setPromos(Array.isArray(data) ? data : []); setLoadingPromos(false) } })
+      .catch(() => { if (!cancelled) setLoadingPromos(false) })
     return () => { cancelled = true }
   }, [])
 
@@ -936,9 +1285,8 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
             >
               {[
                 { label: 'Home',  action: () => { navigate('/'); setMobileMenuOpen(false) } },
-                 { label: 'Menu',  action: () => { handleOrder(); setMobileMenuOpen(false) } },
-                { label: 'About', action: () => { navigate('/aboutthecrunch'); setMobileMenuOpen(false) } }
-              
+                { label: 'Menu',  action: () => { handleOrder(); setMobileMenuOpen(false) } },
+                { label: 'About', action: () => { navigate('/aboutthecrunch'); setMobileMenuOpen(false) } },
               ].map(item => (
                 <button key={item.label} onClick={item.action}
                   style={{ background: 'none', border: 'none', textAlign: 'left', padding: '12px 8px', fontSize: 15, fontWeight: 500, color: 'rgba(240,237,232,0.7)', cursor: 'pointer', fontFamily: "'Poppins', sans-serif", borderRadius: 10, transition: 'color 0.2s' }}>
@@ -1245,6 +1593,9 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
             )}
           </motion.div>
         )}
+
+        {/* ── Deals & Promos ── */}
+        <PromoSection promos={promos} loading={loadingPromos} />
 
         {/* ── Signature Flavors ── */}
         {(loadingFlavors || flavors.length > 0) && (
