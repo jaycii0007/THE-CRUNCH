@@ -65,6 +65,8 @@ interface OnlineNotif {
   trackingStatus: string;
   handoverTimestamp?: string | null;
   riderName?: string | null;
+  paymentMethod?: string | null;
+  paymentStatus?: string | null;
   items: { name: string; quantity: number }[];
 }
 interface OrderPayload {
@@ -458,6 +460,62 @@ const btn = (bg: string, color: string, extra?: object) => ({
   cursor: "pointer",
   ...extra,
 });
+
+// ─── PAYMENT STATUS BADGE ─────────────────────────────────────────────────────
+function PaymentStatusBadge({
+  paymentStatus,
+  paymentMethod,
+}: {
+  paymentStatus?: string | null;
+  paymentMethod?: string | null;
+}) {
+  const isPaid = paymentStatus?.toLowerCase() === "paid";
+
+  const methodLabel = isPaid
+    ? paymentMethod === "cash"
+      ? " · Cash"
+      : paymentMethod === "gcash_onsite"
+        ? " · E-Payment"
+        : paymentMethod
+          ? ` · ${paymentMethod}`
+          : ""
+    : "";
+
+  return isPaid ? (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 700,
+        padding: "2px 8px",
+        borderRadius: 99,
+        background: "#dcfce7",
+        color: "#15803d",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 3,
+        border: "1px solid #bbf7d0",
+        whiteSpace: "nowrap",
+      }}
+    >
+      ✓ Paid{methodLabel}
+    </span>
+  ) : (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 600,
+        padding: "2px 8px",
+        borderRadius: 99,
+        background: "#fef9c3",
+        color: "#a16207",
+        border: "1px solid #fde68a",
+        whiteSpace: "nowrap",
+      }}
+    >
+      Unpaid
+    </span>
+  );
+}
 
 // ─── PRODUCT CARD ─────────────────────────────────────────────────────────────
 function ProductCard({
@@ -1090,8 +1148,6 @@ function AmountEntryModal({
     setProofError("");
   };
 
-  // Legacy fallback branch remains below, but the active POS flow now uses
-  // the explicit gcash_onsite path above.
   const gcashDone = false;
   const handleGcash = () => {};
 
@@ -1462,7 +1518,7 @@ function AmountEntryModal({
                           marginTop: 2,
                         }}
                       >
-                    ₱{fmt(amountDue)}
+                        ₱{fmt(amountDue)}
                       </p>
                     </div>
 
@@ -2018,7 +2074,6 @@ function SuccessModal({
                   >
                     We'll start preparing right away!
                   </p>
-                  {/* ── Transaction ID Badge ── */}
                   <div
                     style={{
                       display: "inline-flex",
@@ -2879,7 +2934,7 @@ export default function CashierView() {
           height: isMobile ? "auto" : "100vh",
           minHeight: "100vh",
           overflow: isMobile ? "auto" : "hidden",
-           fontFamily: F,
+          fontFamily: F,
           background: "#fff",
           paddingLeft: isMobile ? 0 : 80,
           paddingTop: isMobile ? 64 : 0,
@@ -2888,12 +2943,12 @@ export default function CashierView() {
         {/* ── LEFT: Menu ── */}
         <div
           style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          overflow: isMobile ? "visible" : "hidden",
-          minWidth: 0,
-}}
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflow: isMobile ? "visible" : "hidden",
+            minWidth: 0,
+          }}
         >
           <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
             <div
@@ -3267,6 +3322,11 @@ export default function CashierView() {
                                     >
                                       ₱{Number(notif.total).toFixed(2)}
                                     </span>
+                                    {/* ── PAYMENT STATUS BADGE ── */}
+                                    <PaymentStatusBadge
+                                      paymentStatus={notif.paymentStatus}
+                                      paymentMethod={notif.paymentMethod}
+                                    />
                                   </div>
                                 </div>
                                 <div
@@ -3456,6 +3516,11 @@ export default function CashierView() {
                                     >
                                       ₱{Number(notif.total).toFixed(2)}
                                     </span>
+                                    {/* ── PAYMENT STATUS BADGE ── */}
+                                    <PaymentStatusBadge
+                                      paymentStatus={notif.paymentStatus}
+                                      paymentMethod={notif.paymentMethod}
+                                    />
                                   </div>
                                 </div>
                                 <motion.button
