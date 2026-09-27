@@ -1,7 +1,22 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Clock, Bell, ClipboardList, XCircle, CheckCircle2, Utensils, Play, AlertCircle } from "lucide-react";
+import {
+  Clock,
+  Bell,
+  ClipboardList,
+  XCircle,
+  CheckCircle2,
+  Utensils,
+  Play,
+  AlertCircle,
+  CreditCard,
+  Flame,
+  PackageCheck,
+  Ban,
+  Minus,
+  Plus,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
@@ -18,10 +33,38 @@ import {
 if (typeof document !== "undefined" && !document.getElementById("dm-sans-font")) {
   const l = document.createElement("link");
   l.id = "dm-sans-font"; l.rel = "stylesheet";
-  l.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap";
+  l.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap";
   document.head.appendChild(l);
 }
 const F = "'DM Sans', sans-serif";
+
+// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
+const C = {
+  canvas: "#F7F8FA",
+  surface: "#FFFFFF",
+  border: "#E7EAF0",
+  borderSoft: "#EFF1F5",
+  ink: "#0F172A",
+  inkSoft: "#475569",
+  body: "#374151",
+  muted: "#94A3B8",
+  mutedLight: "#CBD5E1",
+  amber: "#D97706",
+  amberBg: "#FFFBEB",
+  amberBorder: "#FDE68A",
+  red: "#DC2626",
+  redBg: "#FEF2F2",
+  redBorder: "#FECACA",
+  green: "#059669",
+  greenBg: "#ECFDF5",
+  greenBorder: "#A7F3D0",
+  slate: "#64748B",
+  slateBg: "#F1F5F9",
+} as const;
+
+const shadowSm = "0 1px 2px rgba(15, 23, 42, 0.04)";
+const shadowMd = "0 8px 24px rgba(15, 23, 42, 0.06)";
+
 const isPaidOrderStatus = (value?: string | null) =>
   String(value || "").trim().toLowerCase() === "paid";
 const normalizeWorkflowStatus = (value?: string | null) =>
@@ -266,21 +309,24 @@ function OrderTimer({
   const progress = Math.min(elapsed / totalSeconds, 1);
   const warn = !overdue && elapsed > totalSeconds * 0.75;
 
+  const tint = overdue ? C.red : warn ? C.amber : C.inkSoft;
+  const tintBg = overdue ? C.redBg : warn ? C.amberBg : C.slateBg;
+
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-        padding: "5px 10px", borderRadius: 7, marginBottom: 6,
-        background: overdue ? "#fef2f2" : warn ? "#fffbeb" : "#f8fafc",
-        color: overdue ? "#dc2626" : warn ? "#d97706" : "#475569",
-        fontSize: 11, fontWeight: 600, fontFamily: F,
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        padding: "6px 10px", borderRadius: 8, marginBottom: 6,
+        background: tintBg, color: tint,
+        fontSize: 12, fontWeight: 600, fontFamily: F, fontVariantNumeric: "tabular-nums",
+        letterSpacing: "0.01em",
       }}>
-        {overdue ? <AlertCircle size={11} /> : <Clock size={11} />}
+        {overdue ? <AlertCircle size={12} /> : <Clock size={12} />}
         {overdue ? `+${timeStr}` : timeStr}
       </div>
-      <div style={{ height: 2, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
+      <div style={{ height: 3, background: C.borderSoft, borderRadius: 99, overflow: "hidden" }}>
         <div style={{ height: "100%", width: `${progress * 100}%`, borderRadius: 99, transition: "width 1s linear",
-          background: overdue ? "#ef4444" : warn ? "#f59e0b" : "#94a3b8" }} />
+          background: overdue ? C.red : warn ? C.amber : C.mutedLight }} />
       </div>
     </div>
   );
@@ -660,12 +706,12 @@ export default function Order() {
 
   const renderUsageForm = () => {
     if (usageLoading) {
-      return <p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>Loading report...</p>;
+      return <p style={{ fontSize: 12, color: C.muted, margin: 0 }}>Loading report...</p>;
     }
 
     if (usageItems.length === 0) {
       return (
-        <div style={{ border: "1px dashed #d1d5db", borderRadius: 14, padding: 20, textAlign: "center", color: "#9ca3af", fontSize: 12 }}>
+        <div style={{ border: `1px dashed ${C.border}`, borderRadius: 14, padding: 20, textAlign: "center", color: C.muted, fontSize: 12 }}>
           No kitchen stock has been withdrawn yet for today.
         </div>
       );
@@ -674,7 +720,7 @@ export default function Order() {
     return (
       <>
         <div style={{ marginBottom: 12 }}>
-          <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>
+          <p style={{ fontSize: 12, color: C.inkSoft, margin: 0 }}>
             Enter today&apos;s actual used, wasted, and returned quantities for each withdrawn stock item.
           </p>
         </div>
@@ -686,10 +732,10 @@ export default function Order() {
             const { remaining, invalid } = getUsageTotals(item);
             const cardBorderColor =
               timingState?.tone === "expired"
-                ? "#fecaca"
+                ? C.redBorder
                 : timingState?.tone === "warning"
-                  ? "#fde68a"
-                  : "#e5e7eb";
+                  ? C.amberBorder
+                  : C.border;
             const cardBackground =
               timingState?.tone === "expired"
                 ? "#fff7f7"
@@ -697,7 +743,7 @@ export default function Order() {
                   ? "#fffdf5"
                   : "#fcfcfc";
             const chipBackground =
-              timingState?.tone === "expired" ? "#fef2f2" : "#fffbeb";
+              timingState?.tone === "expired" ? C.redBg : C.amberBg;
             const chipColor =
               timingState?.tone === "expired" ? "#b91c1c" : "#b45309";
 
@@ -713,17 +759,17 @@ export default function Order() {
               >
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginBottom: 4 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 4 }}>
                       {item.product_name}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 11, color: "#6b7280" }}>{item.category}</span>
-                      <span style={{ fontSize: 11, color: "#9ca3af" }}>•</span>
-                      <span style={{ fontSize: 11, color: "#6b7280" }}>{item.unit}</span>
+                      <span style={{ fontSize: 11, color: C.inkSoft }}>{item.category}</span>
+                      <span style={{ fontSize: 11, color: C.muted }}>•</span>
+                      <span style={{ fontSize: 11, color: C.inkSoft }}>{item.unit}</span>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <div style={{ borderRadius: 999, background: "#f3f4f6", color: "#374151", fontSize: 11, fontWeight: 600, padding: "6px 10px" }}>
+                    <div style={{ borderRadius: 999, background: C.slateBg, color: C.body, fontSize: 11, fontWeight: 600, padding: "6px 10px" }}>
                       Withdrawn: {item.withdrawn_qty} {item.unit}
                     </div>
                     {timingState && (
@@ -736,28 +782,28 @@ export default function Order() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 10 }}>
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Used</div>
-                    <input type="number" min="0" step="0.01" value={item.used_qty === 0 ? "" : item.used_qty} onChange={(e) => updateUsageItem(index, "used_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Used</div>
+                    <input type="number" min="0" step="0.01" value={item.used_qty === 0 ? "" : item.used_qty} onChange={(e) => updateUsageItem(index, "used_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Wasted</div>
-                    <input type="number" min="0" step="0.01" value={item.spoilage_qty === 0 ? "" : item.spoilage_qty} onChange={(e) => updateUsageItem(index, "spoilage_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Wasted</div>
+                    <input type="number" min="0" step="0.01" value={item.spoilage_qty === 0 ? "" : item.spoilage_qty} onChange={(e) => updateUsageItem(index, "spoilage_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Returned</div>
-                    <input type="number" min="0" step="0.01" value={item.returned_qty === 0 ? "" : item.returned_qty} onChange={(e) => updateUsageItem(index, "returned_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Returned</div>
+                    <input type="number" min="0" step="0.01" value={item.returned_qty === 0 ? "" : item.returned_qty} onChange={(e) => updateUsageItem(index, "returned_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Remaining</div>
-                    <div style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${invalid ? "#fecaca" : "#e5e7eb"}`, fontSize: 12, fontFamily: F, background: invalid ? "#fef2f2" : "#f8fafc", color: invalid ? "#b91c1c" : "#111", fontWeight: 600 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Remaining</div>
+                    <div style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${invalid ? C.redBorder : C.border}`, fontSize: 12, fontFamily: F, background: invalid ? C.redBg : "#f8fafc", color: invalid ? "#b91c1c" : C.ink, fontWeight: 600 }}>
                       {remaining} {item.unit}
                     </div>
                   </div>
                 </div>
 
                 <div style={{ marginBottom: invalid ? 8 : 0 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Notes</div>
-                  <input value={item.note} onChange={(e) => updateUsageItem(index, "note", e.target.value)} placeholder="Optional notes for this item" disabled={usageInputDisabled} style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Notes</div>
+                  <input value={item.note} onChange={(e) => updateUsageItem(index, "note", e.target.value)} placeholder="Optional notes for this item" disabled={usageInputDisabled} style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
                 </div>
 
                 {invalid && (
@@ -771,7 +817,7 @@ export default function Order() {
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <button onClick={() => { void saveUsage(); }} disabled={usageSubmitDisabled} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #111", background: usageSubmitDisabled ? "#9ca3af" : "#111", color: "#fff", fontSize: 12, fontWeight: 600, cursor: usageSubmitDisabled ? "not-allowed" : "pointer", fontFamily: F }}>
+          <button onClick={() => { void saveUsage(); }} disabled={usageSubmitDisabled} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${C.ink}`, background: usageSubmitDisabled ? C.muted : C.ink, color: "#fff", fontSize: 12, fontWeight: 600, cursor: usageSubmitDisabled ? "not-allowed" : "pointer", fontFamily: F }}>
             {usageSaving ? "Submitting..." : "Submit for Review"}
           </button>
         </div>
@@ -779,25 +825,46 @@ export default function Order() {
     );
   };
 
+  const statCards: Array<{
+    label: string;
+    val: number;
+    icon: typeof CreditCard;
+    tint: string;
+    tintBg: string;
+    dim?: boolean;
+  }> = [
+    { label: "Pending Payment", val: statusCounts.pendingPayment, icon: CreditCard, tint: C.slate, tintBg: C.slateBg },
+    { label: "Queued", val: statusCounts.queued, icon: ClipboardList, tint: C.slate, tintBg: C.slateBg },
+    { label: "Preparing", val: statusCounts.preparing, icon: Flame, tint: C.amber, tintBg: C.amberBg },
+    { label: "Ready", val: statusCounts.ready, icon: PackageCheck, tint: C.green, tintBg: C.greenBg },
+    { label: "Completed", val: statusCounts.completed, icon: CheckCircle2, tint: C.muted, tintBg: C.borderSoft, dim: true },
+    { label: "Refunded", val: statusCounts.refunded, icon: Ban, tint: C.muted, tintBg: C.borderSoft, dim: true },
+  ];
+
   return (
-    <div style={{ minHeight: "100vh", background: "#fafafa", fontFamily: F }}>
+    <div style={{ minHeight: "100vh", background: C.canvas, fontFamily: F }}>
       <Sidebar />
 
       <div style={{ paddingLeft: isTablet ? 0 : 96, paddingTop: isMobile ? 72 : isTablet ? 76 : 0 }}>
 
         {/* ── Header ── */}
-        <div style={{ padding: isMobile ? "16px 14px 0" : isTablet ? "20px 18px 0" : "28px 32px 0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+        <div style={{ padding: isMobile ? "18px 14px 0" : isTablet ? "22px 18px 0" : "30px 32px 0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
 
           {/* Left: brand + clock */}
           <div style={{ display: "flex", alignItems: isTablet ? "flex-start" : "center", flexDirection: isTablet ? "column" : "row", gap: isTablet ? 10 : 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <ClipboardList size={15} color="#111" />
-              <span style={{ fontSize: 11, fontWeight: 600, color: "#111", letterSpacing: "0.1em", textTransform: "uppercase" }}>Orders</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: 9, background: C.ink,
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <ClipboardList size={14} color="#fff" />
+              </div>
+              <span style={{ fontSize: 15, fontWeight: 700, color: C.ink, letterSpacing: "-0.01em" }}>Orders</span>
             </div>
-            {!isTablet && <div style={{ width: 1, height: 24, background: "#e5e7eb" }} />}
+            {!isTablet && <div style={{ width: 1, height: 26, background: C.border }} />}
             <div>
-              <div style={{ fontSize: 17, fontWeight: 600, color: "#111", lineHeight: 1.1 }}>{fmt(currentTime)}</div>
-              <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 1 }}>{fmtDate(currentTime)}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: C.ink, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{fmt(currentTime)}</div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{fmtDate(currentTime)}</div>
             </div>
           </div>
 
@@ -807,20 +874,22 @@ export default function Order() {
 
           {/* Right: stats */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isTablet ? "100%" : "auto" }}>
-            {[
-              { label: "Pending Payment", val: statusCounts.pendingPayment, dim: false },
-              { label: "Queued",          val: statusCounts.queued,         dim: false },
-              { label: "Preparing",       val: statusCounts.preparing,      dim: false },
-              { label: "Ready",           val: statusCounts.ready,          dim: false },
-              { label: "Completed",       val: statusCounts.completed,      dim: true  },
-              { label: "Refunded",        val: statusCounts.refunded,       dim: true  },
-            ].map(({ label, val, dim }) => (
+            {statCards.map(({ label, val, icon: Icon, tint, tintBg, dim }) => (
               <div key={label} style={{
-                background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12,
-                padding: "10px 18px", textAlign: "center", minWidth: 64, flex: isTablet ? "1 1 120px" : "0 0 auto",
+                background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
+                padding: "10px 16px", minWidth: 92, flex: isTablet ? "1 1 120px" : "0 0 auto",
+                display: "flex", alignItems: "center", gap: 10, boxShadow: shadowSm,
               }}>
-                <div style={{ fontSize: 9, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 22, fontWeight: 600, color: dim ? "#d1d5db" : "#111", lineHeight: 1 }}>{val}</div>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 9, background: tintBg,
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                }}>
+                  <Icon size={13} color={dim ? C.muted : tint} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: dim ? C.mutedLight : C.ink, lineHeight: 1 }}>{val}</div>
+                  <div style={{ fontSize: 10, fontWeight: 500, color: C.muted, marginTop: 3, whiteSpace: "nowrap" }}>{label}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -828,60 +897,60 @@ export default function Order() {
 
         {/* ── Notification banner ── */}
         {notifPermission !== "granted" && (
-          <div style={{ padding: isMobile ? "12px 14px 0" : isTablet ? "12px 18px 0" : "12px 32px 0" }}>
+          <div style={{ padding: isMobile ? "14px 14px 0" : isTablet ? "14px 18px 0" : "16px 32px 0" }}>
             <button onClick={() => Notification.requestPermission().then(setNotifPermission)}
-              style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11, background: "#fff",
-                border: "1px solid #e5e7eb", color: "#6b7280", padding: "7px 14px", borderRadius: 9, cursor: "pointer", fontFamily: F }}>
-              <Bell size={11} /> Enable notifications for order updates
+              style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, background: C.surface,
+                border: `1px solid ${C.border}`, color: C.inkSoft, padding: "9px 14px", borderRadius: 11,
+                cursor: "pointer", fontFamily: F, boxShadow: shadowSm, fontWeight: 500 }}>
+              <Bell size={13} color={C.amber} /> Enable notifications for order updates
             </button>
           </div>
         )}
 
-        {/* ── Queue ── */}
+        {/* ── Legacy usage panel (feature-flagged) ── */}
         {SHOW_LEGACY_USAGE_PANEL && (
-        <div style={{ padding: isMobile ? "16px 14px 0" : isTablet ? "16px 18px 0" : "16px 32px 0", display: "none" }}>
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-            style={{ background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden" }}>
-            <button
-              onClick={() => setUsageOpen((v) => !v)}
-              style={{ width: "100%", background: "#fff", border: "none", padding: "15px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", fontFamily: F }}
-            >
-              <div style={{ textAlign: "left" }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#111", letterSpacing: "0.08em", textTransform: "uppercase" }}>Daily Usage Report</div>
-                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
-                  {usageReport ? `Status: ${usageReport.status}` : "Preparing today's kitchen usage sheet"}
-                </div>
-              </div>
-              <motion.div animate={{ rotate: usageOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                <AlertCircle size={14} color="#9ca3af" />
-              </motion.div>
-            </button>
-
-            <AnimatePresence initial={false}>
-              {usageOpen && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2 }}
-                  style={{ overflow: "hidden", borderTop: "1px solid #f3f4f6" }}
-                >
-                  <div style={{ padding: 16 }}>
-                    {renderUsageForm()}
+          <div style={{ padding: isMobile ? "18px 14px 0" : isTablet ? "18px 18px 0" : "18px 32px 0" }}>
+            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+              style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, overflow: "hidden", boxShadow: shadowSm }}>
+              <button
+                onClick={() => setUsageOpen((v) => !v)}
+                style={{ width: "100%", background: "transparent", border: "none", padding: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", fontFamily: F }}
+              >
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Daily Usage Report</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
+                    {usageReport ? `Status: ${usageReport.status}` : "Preparing today's kitchen usage sheet"}
                   </div>
+                </div>
+                <motion.div animate={{ rotate: usageOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                  <AlertCircle size={14} color={C.muted} />
                 </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        </div>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {usageOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ overflow: "hidden", borderTop: `1px solid ${C.borderSoft}` }}
+                  >
+                    <div style={{ padding: 16 }}>
+                      {renderUsageForm()}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          </div>
         )}
 
-        <div style={{ padding: isMobile ? "18px 14px 28px" : isTablet ? "20px 18px 32px" : "24px 32px 40px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
-            <ClipboardList size={13} color="#9ca3af" />
-            <span style={{ fontSize: 12, fontWeight: 500, color: "#6b7280" }}>Active Orders</span>
+        <div style={{ padding: isMobile ? "20px 14px 28px" : isTablet ? "22px 18px 32px" : "26px 32px 40px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Active Orders</span>
             {orders.length > 0 && (
-              <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>
+              <span style={{ background: C.slateBg, color: C.inkSoft, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99 }}>
                 {orders.length}
               </span>
             )}
@@ -889,12 +958,15 @@ export default function Order() {
 
           {orders.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-              padding: "80px 0", gap: 10, background: "#fff", borderRadius: 20, border: "1px solid #e5e7eb" }}>
-              <Utensils size={28} color="#e5e7eb" />
-              <p style={{ fontSize: 12, color: "#d1d5db", margin: 0 }}>No pending orders. New orders will appear here.</p>
+              padding: "88px 0", gap: 12, background: C.surface, borderRadius: 20, border: `1px dashed ${C.border}` }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: C.slateBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Utensils size={22} color={C.mutedLight} />
+              </div>
+              <p style={{ fontSize: 13, color: C.muted, margin: 0, fontWeight: 500 }}>No pending orders</p>
+              <p style={{ fontSize: 12, color: C.mutedLight, margin: 0 }}>New orders will appear here as they come in.</p>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(224px, 1fr))", gap: 14 }}>
               <AnimatePresence mode="popLayout">
                 {orders.map((order) => {
                   const isNew = !order.isPreparing && !order.isReady;
@@ -916,6 +988,8 @@ export default function Order() {
                   const timerBase = order.prepStartedAt;
                   const estimatedPrepMinutes = Math.max(order.estimatedPrepMinutes ?? 10, 1);
 
+                  const accent = order.overdue ? C.red : isReady ? C.green : isPrep ? C.amber : C.mutedLight;
+
                   return (
                     <motion.div
                       key={order.id} layout
@@ -924,21 +998,22 @@ export default function Order() {
                       exit={{ opacity: 0, scale: 0.94, y: -8, transition: { duration: 0.22 } }}
                       whileHover={{ y: -2, transition: { duration: 0.12 } }}
                       style={{
-                        background: "#fff", borderRadius: 16,
-                        border: `1px solid ${order.overdue ? "#fecaca" : "#e5e7eb"}`,
+                        background: C.surface, borderRadius: 18,
+                        border: `1px solid ${order.overdue ? C.redBorder : C.border}`,
                         overflow: "hidden", display: "flex", flexDirection: "column",
+                        boxShadow: shadowMd,
                       }}
                     >
-                      {/* Thin state line at top */}
-                      <div style={{ height: 2, background: order.overdue ? "#ef4444" : isReady ? "#111" : isPrep ? "#d1d5db" : "#f3f4f6" }} />
+                      {/* Status accent bar */}
+                      <div style={{ height: 3, background: accent }} />
 
-                      <div style={{ padding: "14px 14px 14px", flex: 1, display: "flex", flexDirection: "column" }}>
+                      <div style={{ padding: "16px 16px 14px", flex: 1, display: "flex", flexDirection: "column" }}>
 
                         {/* Order number + type */}
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: "#111" }}>{order.orderNumber}</span>
-                          <span style={{ fontSize: 10, fontWeight: 500, color: "#9ca3af", background: "#f9fafb",
-                            border: "1px solid #f3f4f6", padding: "2px 8px", borderRadius: 99 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, letterSpacing: "-0.01em" }}>{order.orderNumber}</span>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: C.inkSoft, background: C.slateBg,
+                            padding: "3px 9px", borderRadius: 99 }}>
                             {STATUS_LABEL[order.status] ?? order.status}
                           </span>
                         </div>
@@ -954,20 +1029,20 @@ export default function Order() {
                         )}
 
                         {isPrep && order.overdue && (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                            padding: "5px 10px", borderRadius: 7, marginBottom: 10,
-                            background: "#fef2f2", color: "#dc2626", fontSize: 11, fontWeight: 600 }}>
-                            <AlertCircle size={11} /> Overdue
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                            padding: "6px 10px", borderRadius: 8, marginBottom: 10,
+                            background: C.redBg, color: C.red, fontSize: 11, fontWeight: 700 }}>
+                            <AlertCircle size={12} /> Overdue
                           </div>
                         )}
 
                         {timerEditable && (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-                              <span style={{ fontSize: 10, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                          <div style={{ marginBottom: 12, background: C.canvas, border: `1px solid ${C.borderSoft}`, borderRadius: 12, padding: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                                 Prep Timer
                               </span>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: "#111" }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>
                                 {estimatedPrepMinutes} min
                               </span>
                             </div>
@@ -975,20 +1050,22 @@ export default function Order() {
                               <button
                                 onClick={() => handleTimerAdjust(order, -1)}
                                 style={{
-                                  flex: 1, padding: "6px 0", borderRadius: 9, border: "1px solid #e5e7eb",
-                                  background: "#fff", color: "#374151", fontSize: 11, fontWeight: 600,
+                                  flex: 1, padding: "7px 0", borderRadius: 9, border: `1px solid ${C.border}`,
+                                  background: C.surface, color: C.body, fontSize: 11, fontWeight: 600,
                                   cursor: "pointer", fontFamily: F,
+                                  display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
                                 }}>
-                                -1 min
+                                <Minus size={11} /> 1 min
                               </button>
                               <button
                                 onClick={() => handleTimerAdjust(order, 1)}
                                 style={{
-                                  flex: 1, padding: "6px 0", borderRadius: 9, border: "1px solid #e5e7eb",
-                                  background: "#fff", color: "#374151", fontSize: 11, fontWeight: 600,
+                                  flex: 1, padding: "7px 0", borderRadius: 9, border: `1px solid ${C.border}`,
+                                  background: C.surface, color: C.body, fontSize: 11, fontWeight: 600,
                                   cursor: "pointer", fontFamily: F,
+                                  display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
                                 }}>
-                                +1 min
+                                <Plus size={11} /> 1 min
                               </button>
                             </div>
                           </div>
@@ -996,19 +1073,19 @@ export default function Order() {
 
                         {/* Ready badge */}
                         {isReady && (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                            padding: "5px 10px", borderRadius: 7, marginBottom: 10,
-                            background: "#f9fafb", color: "#374151", fontSize: 11, fontWeight: 500 }}>
-                            <CheckCircle2 size={11} color="#111" /> {order.isOnlinePickup ? "Ready for Pickup" : "Ready to serve"}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                            padding: "6px 10px", borderRadius: 8, marginBottom: 10,
+                            background: C.greenBg, color: C.green, fontSize: 11, fontWeight: 700 }}>
+                            <CheckCircle2 size={12} /> {order.isOnlinePickup ? "Ready for Pickup" : "Ready to serve"}
                           </div>
                         )}
 
                         {/* Items */}
-                        <div style={{ flex: 1, marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid #f3f4f6" }}>
+                        <div style={{ flex: 1, marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.borderSoft}` }}>
                           {order.items.map((item, i) => (
-                            <div key={i} style={{ display: "flex", gap: 8, marginBottom: 4, alignItems: "baseline" }}>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", minWidth: 20 }}>{item.quantity}×</span>
-                              <span style={{ fontSize: 11, color: "#6b7280", flex: 1 }}>{item.name}</span>
+                            <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "baseline" }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: C.ink, minWidth: 20 }}>{item.quantity}×</span>
+                              <span style={{ fontSize: 12, color: C.inkSoft, flex: 1 }}>{item.name}</span>
                             </div>
                           ))}
                         </div>
@@ -1019,30 +1096,32 @@ export default function Order() {
                             {/* Start */}
                             <button onClick={() => isNew && !isActionPending && handleStart(order.id)} disabled={!isNew || isActionPending}
                               style={{
-                                flex: 1, padding: "7px 0", borderRadius: 9, fontSize: 11, fontWeight: 500,
+                                flex: 1, padding: "8px 0", borderRadius: 10, fontSize: 11, fontWeight: 600,
                                 cursor: isNew && !isActionPending ? "pointer" : "not-allowed", fontFamily: F,
                                 border: "1px solid",
-                                borderColor: isNew && !isActionPending ? "#e5e7eb" : "#f3f4f6",
-                                background: isNew && !isActionPending ? "#fff" : "#fafafa",
-                                color: isNew && !isActionPending ? "#374151" : "#d1d5db",
-                                display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                                borderColor: isNew && !isActionPending ? C.ink : C.borderSoft,
+                                background: isNew && !isActionPending ? C.ink : C.canvas,
+                                color: isNew && !isActionPending ? "#fff" : C.mutedLight,
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                                 transition: "all 0.12s",
                               }}>
-                              <Play size={9} /> {pendingAction === "start" ? "Starting..." : "Start"}
+                              <Play size={10} /> {pendingAction === "start" ? "Starting..." : "Start"}
                             </button>
 
                             {/* Ready / Served */}
                             {!isReady ? (
                               <button onClick={() => isPrep && !isActionPending && handleReady(order)} disabled={!isPrep || isActionPending}
                                 style={{
-                                  flex: 1, padding: "7px 0", borderRadius: 9, fontSize: 11, fontWeight: 500,
+                                  flex: 1, padding: "8px 0", borderRadius: 10, fontSize: 11, fontWeight: 600,
                                   cursor: isPrep && !isActionPending ? "pointer" : "not-allowed", fontFamily: F,
                                   border: "1px solid",
-                                  borderColor: isPrep && !isActionPending ? "#d1d5db" : "#f3f4f6",
-                                  background: isPrep && !isActionPending ? "#f9fafb" : "#fafafa",
-                                  color: isPrep && !isActionPending ? "#374151" : "#d1d5db",
+                                  borderColor: isPrep && !isActionPending ? C.green : C.borderSoft,
+                                  background: isPrep && !isActionPending ? C.greenBg : C.canvas,
+                                  color: isPrep && !isActionPending ? C.green : C.mutedLight,
+                                  display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                                   transition: "all 0.12s",
                                 }}>
+                                {pendingAction !== "complete" && <CheckCircle2 size={10} />}
                                 {pendingAction === "complete"
                                   ? "Completing..."
                                   : ((order.orderType || order.status) === "delivery") || order.isOnlinePickup
@@ -1053,9 +1132,9 @@ export default function Order() {
                               <button
                                 disabled
                                 style={{
-                                  flex: 1, padding: "7px 0", borderRadius: 9, fontSize: 11, fontWeight: 600,
+                                  flex: 1, padding: "8px 0", borderRadius: 10, fontSize: 11, fontWeight: 600,
                                   cursor: "not-allowed", fontFamily: F,
-                                  border: "1px solid #e5e7eb", background: "#f9fafb", color: "#9ca3af",
+                                  border: `1px solid ${C.borderSoft}`, background: C.canvas, color: C.mutedLight,
                                   transition: "all 0.12s",
                                 }}>
                                 Awaiting Cashier
@@ -1068,16 +1147,16 @@ export default function Order() {
                           <button onClick={() => !settlementLocked && handleSettlementAction(order)}
                             disabled={settlementLocked}
                             style={{
-                              width: "100%", padding: "6px 0", borderRadius: 9, fontSize: 11, fontWeight: 500,
-                              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                              width: "100%", padding: "7px 0", borderRadius: 10, fontSize: 11, fontWeight: 600,
+                              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                               cursor: settlementLocked ? "not-allowed" : "pointer", fontFamily: F,
                               border: "1px solid",
-                              borderColor: settlementLocked ? "#f3f4f6" : "#e5e7eb",
+                              borderColor: settlementLocked ? C.borderSoft : "transparent",
                               background: "transparent",
-                              color: settlementLocked ? "#d1d5db" : "#9ca3af",
+                              color: settlementLocked ? C.mutedLight : C.red,
                               transition: "all 0.12s",
                             }}>
-                            <XCircle size={10} />
+                            <XCircle size={11} />
                             {isSettling
                               ? settlementAction === "refund"
                                 ? "Refunding..."
@@ -1094,44 +1173,6 @@ export default function Order() {
                 })}
               </AnimatePresence>
             </div>
-          )}
-
-          {SHOW_LEGACY_USAGE_PANEL && (
-          <div style={{ paddingTop: 24 }}>
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-              style={{ background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden" }}>
-              <button
-                onClick={() => setUsageOpen((v) => !v)}
-                style={{ width: "100%", background: "#fff", border: "none", padding: "15px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", fontFamily: F }}
-              >
-                <div style={{ textAlign: "left" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#111", letterSpacing: "0.08em", textTransform: "uppercase" }}>Daily Usage Report</div>
-                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
-                    {usageReport ? `Status: ${usageReport.status}` : "Preparing today's kitchen usage sheet"}
-                  </div>
-                </div>
-                <motion.div animate={{ rotate: usageOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                  <AlertCircle size={14} color="#9ca3af" />
-                </motion.div>
-              </button>
-
-              <AnimatePresence initial={false}>
-                {usageOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    style={{ overflow: "hidden", borderTop: "1px solid #f3f4f6" }}
-                  >
-                    <div style={{ padding: 16 }}>
-                      {renderUsageForm()}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          </div>
           )}
         </div>
       </div>

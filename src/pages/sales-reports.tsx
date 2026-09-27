@@ -39,7 +39,7 @@ import {
 } from "@/lib/restaurantSettings";
 import { useViewport } from "@/hooks/use-tablet";
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Types Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Types ---
 
 type Status = "Completed" | "Pending" | "Cancelled" | "Refunded";
 type LogType = "Sale" | "Refund" | "Void" | "Adjustment";
@@ -60,6 +60,7 @@ type OrderStatusFilter =
   | "Cancelled"
   | "Refunded";
 type PaymentMethodFilter = "All" | "Cash" | "GCash" | "Cash on Pickup";
+type OrderTypeFilter = "All" | "Dine In" | "Take Out" | "Delivery";
 
 interface SaleLog {
   id: string;
@@ -137,7 +138,7 @@ interface RawOrderRow {
   handover_timestamp?: string;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Constants Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Constants ---
 
 const ORDER_PAGE_SIZE = 10;
 const LOG_PAGE_SIZE = 20;
@@ -179,13 +180,13 @@ const STATUS_COLOR: Record<Status, string> = {
 };
 
 const TYPE_COLOR: Record<LogType, string> = {
-  Sale: "#f97316",
+  Sale: "#4f46e5",
   Refund: "#3b82f6",
   Void: "#9ca3af",
   Adjustment: "#8b5cf6",
 };
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Helpers ---
 
 function daysInMonth(month: number, year: number): number {
   return new Date(year, month + 1, 0).getDate();
@@ -388,6 +389,19 @@ function normalizePaymentMethod(value?: string | null): PaymentMethodFilter {
     return "GCash";
   }
   return "Cash";
+}
+
+function formatOrderType(value?: string | null): string {
+  switch (String(value ?? "").trim().toLowerCase()) {
+    case "dine-in":
+      return "Dine In";
+    case "take-out":
+      return "Take Out";
+    case "delivery":
+      return "Delivery";
+    default:
+      return value || "—";
+  }
 }
 
 const PROOF_NOTICE_EVENT = "the-crunch:proof-notice";
@@ -617,7 +631,7 @@ function processRawRows(rows: RawOrderRow[]): {
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Print Helper Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Print Helper ---
 
 function triggerPrint(
   revenue: number,
@@ -706,7 +720,7 @@ function triggerPrint(
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Poppins', sans-serif; background: #fff; color: #0f172a; padding: 40px 48px; font-size: 12px; }
         .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #f1f5f9; }
-        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #f97316; text-transform: uppercase; margin-bottom: 6px; }
+        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #4f46e5; text-transform: uppercase; margin-bottom: 6px; }
         .header-title { font-size: 24px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
         .header-period { font-size: 12px; color: #94a3b8; }
         .header-meta { text-align: right; }
@@ -833,7 +847,7 @@ function triggerPrint(
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Drum Picker Column Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Drum Picker Column ---
 
 interface DrumColProps {
   label: string;
@@ -865,7 +879,7 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
       const div = el as HTMLDivElement;
       div.style.fontSize = i === idx ? "17px" : "14px";
       div.style.fontWeight = i === idx ? "600" : "400";
-      div.style.color = i === idx ? "#4A1C1C" : "#94a3b8";
+      div.style.color = i === idx ? "#4f46e5" : "#94a3b8";
     });
   }
 
@@ -997,7 +1011,6 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
           textTransform: "uppercase",
           color: "#94a3b8",
           marginBottom: 8,
-          fontFamily: "'Poppins', sans-serif",
         }}
       >
         {label}
@@ -1043,8 +1056,8 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
             height: ITEM_H,
             marginTop: -ITEM_H / 2,
             borderRadius: 10,
-            background: "rgba(74,28,28,0.07)",
-            border: "0.5px solid rgba(74,28,28,0.18)",
+            background: "rgba(79,70,229,0.08)",
+            border: "0.5px solid rgba(79,70,229,0.22)",
             zIndex: 1,
             pointerEvents: "none",
           }}
@@ -1079,9 +1092,8 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
                 width: "100%",
                 fontSize: i === selectedIndex ? 17 : 14,
                 fontWeight: i === selectedIndex ? 600 : 400,
-                color: i === selectedIndex ? "#4A1C1C" : "#94a3b8",
+                color: i === selectedIndex ? "#4f46e5" : "#94a3b8",
                 transition: "color 0.15s, font-size 0.15s",
-                fontFamily: "'Poppins', sans-serif",
               }}
             >
               {item}
@@ -1093,7 +1105,7 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Drum Date Picker Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Drum Date Picker ---
 
 interface DrumDatePickerProps {
   open: boolean;
@@ -1177,7 +1189,6 @@ function DrumDatePicker({
               borderRadius: 20,
               border: "0.5px solid #e2e8f0",
               paddingBottom: 32,
-              fontFamily: "'Poppins', sans-serif",
               boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
             }}
           >
@@ -1292,7 +1303,6 @@ function DrumDatePicker({
                   fontWeight: 500,
                   color: "#64748b",
                   cursor: "pointer",
-                  fontFamily: "'Poppins', sans-serif",
                 }}
               >
                 Cancel
@@ -1304,12 +1314,11 @@ function DrumDatePicker({
                   padding: "11px 0",
                   borderRadius: 12,
                   border: "none",
-                  background: "#4A1C1C",
+                  background: "#4f46e5",
                   fontSize: 13,
                   fontWeight: 600,
                   color: "#fff",
                   cursor: "pointer",
-                  fontFamily: "'Poppins', sans-serif",
                 }}
               >
                 Apply
@@ -1322,7 +1331,7 @@ function DrumDatePicker({
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Revenue Dropdown Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Revenue Dropdown ---
 
 interface RevenueDropdownProps {
   period: Period;
@@ -1414,7 +1423,6 @@ function RevenueDropdown({
               alignItems: "center",
               gap: 10,
               boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-              fontFamily: "'Poppins', sans-serif",
             }}
           >
             <Printer size={14} color="#4ade80" />
@@ -1604,7 +1612,6 @@ function RevenueDropdown({
                           color: period === p ? "#0f172a" : "#64748b",
                           fontSize: 13,
                           fontWeight: period === p ? 600 : 400,
-                          fontFamily: "'Poppins', sans-serif",
                           display: "block",
                         }}
                       >
@@ -1614,7 +1621,6 @@ function RevenueDropdown({
                         style={{
                           fontSize: 10,
                           color: "#cbd5e1",
-                          fontFamily: "'Poppins', sans-serif",
                         }}
                       >
                         {formatReportCurrency(getRevenueForPeriod(logs, p))} revenue
@@ -1622,7 +1628,7 @@ function RevenueDropdown({
                     </div>
                   </div>
                   {period === p && (
-                    <span style={{ color: "#f97316", fontSize: 12 }}>✓</span>
+                    <span style={{ color: "#4f46e5", fontSize: 12 }}>✓</span>
                   )}
                 </motion.div>
               ))}
@@ -1664,12 +1670,12 @@ function RevenueDropdown({
                     width: 36,
                     height: 36,
                     borderRadius: 10,
-                    background: "#4A1C1C",
+                    background: "#4f46e5",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     flexShrink: 0,
-                    boxShadow: "0 2px 8px rgba(74,28,28,0.25)",
+                    boxShadow: "0 2px 8px rgba(79,70,229,0.25)",
                   }}
                 >
                   <Printer size={16} color="#fff" />
@@ -1681,7 +1687,6 @@ function RevenueDropdown({
                       fontSize: 13,
                       fontWeight: 600,
                       color: "#0f172a",
-                      fontFamily: "'Poppins', sans-serif",
                     }}
                   >
                     Print Sales Report
@@ -1691,7 +1696,6 @@ function RevenueDropdown({
                       margin: 0,
                       fontSize: 11,
                       color: "#64748b",
-                      fontFamily: "'Poppins', sans-serif",
                       lineHeight: 1.5,
                     }}
                   >
@@ -1722,7 +1726,6 @@ function RevenueDropdown({
                     fontSize: 10,
                     color: "#94a3b8",
                     lineHeight: 1.6,
-                    fontFamily: "'Poppins', sans-serif",
                   }}
                 >
                   Includes: revenue summary, completed orders, cashier
@@ -1737,7 +1740,7 @@ function RevenueDropdown({
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Refund Modal Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Refund Modal ---
 
 interface RefundModalProps {
   open: boolean;
@@ -1802,7 +1805,6 @@ function RefundModal({
               background: "#fff",
               borderRadius: 20,
               boxShadow: "0 16px 48px rgba(0,0,0,0.12)",
-              fontFamily: "'Poppins', sans-serif",
               overflow: "hidden",
               border: "1px solid #e2e8f0",
             }}
@@ -1989,7 +1991,6 @@ function RefundModal({
                     fontWeight: 500,
                     color: "#64748b",
                     cursor: loading ? "not-allowed" : "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                     opacity: loading ? 0.6 : 1,
                   }}
                 >
@@ -2008,7 +2009,6 @@ function RefundModal({
                     fontWeight: 600,
                     color: "#fff",
                     cursor: loading ? "not-allowed" : "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -2045,7 +2045,7 @@ function RefundModal({
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Summary Bar Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Summary Bar ---
 
 function SummaryBar({ logs }: { logs: SaleLog[] }) {
   const paidCompleted = logs.filter(
@@ -2234,7 +2234,7 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Log Row Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Log Row ---
 
 function LogRow({ log, index }: { log: SaleLog; index: number }) {
   const [open, setOpen] = useState(false);
@@ -2427,7 +2427,7 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                         f.label === "Order Status"
                           ? STATUS_COLOR["Completed"]
                           : f.label === "Cashier"
-                            ? "#4A1C1C"
+                            ? "#4f46e5"
                             : f.label === "Transaction ID"
                               ? "#111"
                               : "#334155",
@@ -2523,7 +2523,7 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Empty State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Empty / Loading States ---
 
 function EmptyState({ message }: { message: string }) {
   return (
@@ -2619,7 +2619,7 @@ function LoadingState({ label }: { label: string }) {
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Log Pagination Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Pagination ---
 
 interface LogPaginationProps {
   currentPage: number;
@@ -2627,6 +2627,7 @@ interface LogPaginationProps {
   totalCount: number;
   pageSize: number;
   onPageChange: (page: number) => void;
+  itemLabel?: string;
 }
 
 function LogPagination({
@@ -2635,6 +2636,7 @@ function LogPagination({
   totalCount,
   pageSize,
   onPageChange,
+  itemLabel = "sales",
 }: LogPaginationProps) {
   if (totalPages <= 1) return null;
 
@@ -2654,7 +2656,7 @@ function LogPagination({
   return (
     <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100 px-1">
       <span className="text-sm text-gray-500">
-              Showing {start}–{end} of {totalCount} sales
+        Showing {start}–{end} of {totalCount} {itemLabel}
       </span>
       <div className="flex items-center gap-2">
         <Button
@@ -2676,7 +2678,7 @@ function LogPagination({
               key={p}
               variant={currentPage === p ? "default" : "outline"}
               size="icon"
-              className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#4A1C1C] hover:bg-[#3a1515] text-white border-0" : ""}`}
+              className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#4f46e5] hover:bg-[#4338ca] text-white border-0" : ""}`}
               onClick={() => onPageChange(p as number)}
             >
               {p}
@@ -2697,7 +2699,48 @@ function LogPagination({
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Order Row Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Filter Chips ---
+// Shared pill-button filter group, used for order status, payment method,
+// and order type so we don't repeat the same markup three times.
+
+function FilterChips<T extends string>({
+  label,
+  options,
+  active,
+  onChange,
+  activeClass,
+}: {
+  label: string;
+  options: readonly T[];
+  active: T;
+  onChange: (value: T) => void;
+  activeClass?: (option: T) => string;
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-3">
+        {label}
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        {options.map((opt) => (
+          <button
+            key={opt}
+            onClick={() => onChange(opt)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+              active === opt
+                ? (activeClass?.(opt) ?? "bg-[#0f172a] text-white border-[#0f172a]")
+                : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
+            }`}
+          >
+            {opt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- Order Row ---
 
 const statusStyle: Record<string, { bg: string; text: string }> = {
   Completed: { bg: "#f0fdf4", text: "#16a34a" },
@@ -2709,7 +2752,7 @@ const statusStyle: Record<string, { bg: string; text: string }> = {
 const orderTypeStyle: Record<string, { bg: string; text: string }> = {
   "take-out": { bg: "#fffbeb", text: "#d97706" },
   delivery: { bg: "#eff6ff", text: "#2563eb" },
-  "dine-in": { bg: "#fff1f2", text: "#e11d48" },
+  "dine-in": { bg: "#f5f3ff", text: "#7c3aed" },
 };
 
 const paymentBadgeStyle: Record<string, { bg: string; text: string; border: string }> = {
@@ -2752,13 +2795,7 @@ function OrderRow({
     order.status !== "Cancelled" &&
     isPaidPaymentStatus(order.paymentStatus);
   const isDelivery = order.orderType === "delivery";
-
-  const orderTypeLabel =
-    order.orderType === "dine-in"
-      ? "Dine In"
-      : order.orderType === "take-out"
-        ? "Take Out"
-        : order.orderType || "—";
+  const orderTypeLabel = formatOrderType(order.orderType);
 
   const paymentTone =
     paymentBadgeStyle[normalizePaymentMethod(order.paymentCategory)] ?? {
@@ -2963,7 +3000,7 @@ function OrderRow({
                               : f.label === "Subtotal"
                                 ? "#0f172a"
                                 : f.label === "Cashier"
-                                  ? "#4A1C1C"
+                                  ? "#4f46e5"
                                   : f.label === "Transaction ID"
                                     ? "#111"
                                     : f.label === "Order ID"
@@ -3106,7 +3143,6 @@ function OrderRow({
                         fontSize: 12,
                         fontWeight: 600,
                         cursor: "pointer",
-                        fontFamily: "'Poppins', sans-serif",
                       }}
                     >
                       <RotateCcw size={13} /> Refund Order
@@ -3122,7 +3158,7 @@ function OrderRow({
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Orders Tab Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Orders Tab ---
 
 const ORDER_STATUS_FILTERS: OrderStatusFilter[] = [
   "All",
@@ -3137,6 +3173,13 @@ const ORDER_PAYMENT_FILTERS: PaymentMethodFilter[] = [
   "Cash",
   "GCash",
   "Cash on Pickup",
+];
+
+const ORDER_TYPE_FILTERS: OrderTypeFilter[] = [
+  "All",
+  "Dine In",
+  "Take Out",
+  "Delivery",
 ];
 
 const statusActiveColor: Record<OrderStatusFilter, string> = {
@@ -3164,6 +3207,8 @@ function OrdersTab({
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>("All");
   const [paymentMethodFilter, setPaymentMethodFilter] =
     useState<PaymentMethodFilter>("All");
+  const [orderTypeFilter, setOrderTypeFilter] =
+    useState<OrderTypeFilter>("All");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<"from" | "to">("from");
   const [pickerInitial, setPickerInitial] = useState<Date>(now);
@@ -3212,11 +3257,17 @@ function OrdersTab({
     statusFilter === "All"
       ? dateFiltered
       : dateFiltered.filter((o) => o.status === statusFilter);
-  const filtered =
+  const paymentFiltered =
     paymentMethodFilter === "All"
       ? statusFiltered
       : statusFiltered.filter(
           (o) => normalizePaymentMethod(o.paymentCategory) === paymentMethodFilter,
+        );
+  const filtered =
+    orderTypeFilter === "All"
+      ? paymentFiltered
+      : paymentFiltered.filter(
+          (o) => formatOrderType(o.orderType) === orderTypeFilter,
         );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ORDER_PAGE_SIZE));
@@ -3240,16 +3291,11 @@ function OrdersTab({
     (o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus),
   ).length;
   const hasRange = !!(fromDate || toDate);
-
-  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1)
-    .filter(
-      (p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1,
-    )
-    .reduce<(number | "...")[]>((acc, p, idx, arr) => {
-      if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
-      acc.push(p);
-      return acc;
-    }, []);
+  const hasActiveFilters =
+    hasRange ||
+    statusFilter !== "All" ||
+    paymentMethodFilter !== "All" ||
+    orderTypeFilter !== "All";
 
   return (
     <>
@@ -3267,9 +3313,7 @@ function OrdersTab({
             <h3 className="text-base font-semibold text-gray-800">
               Order History
             </h3>
-            {(hasRange ||
-              statusFilter !== "All" ||
-              paymentMethodFilter !== "All") && (
+            {hasActiveFilters && (
               <p className="text-xs text-gray-400 mt-0.5">
                 {filtered.length} order{filtered.length !== 1 ? "s" : ""} ·{" "}
                 <span className="text-green-600 font-medium">
@@ -3288,7 +3332,7 @@ function OrdersTab({
               onClick={() => openDatePicker("from")}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
                 fromDate
-                  ? "border-[#4A1C1C] text-[#4A1C1C] bg-[#4A1C1C]/5"
+                  ? "border-[#4f46e5] text-[#4f46e5] bg-[#4f46e5]/5"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white"
               }`}
             >
@@ -3299,7 +3343,7 @@ function OrdersTab({
               onClick={() => openDatePicker("to")}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
                 toDate
-                  ? "border-[#4A1C1C] text-[#4A1C1C] bg-[#4A1C1C]/5"
+                  ? "border-[#4f46e5] text-[#4f46e5] bg-[#4f46e5]/5"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white"
               }`}
             >
@@ -3329,7 +3373,7 @@ function OrdersTab({
               onClick={() => applyQuick(r.key)}
               className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
                 activeQuick === r.key
-                  ? "bg-[#4A1C1C] text-white border-[#4A1C1C]"
+                  ? "bg-[#4f46e5] text-white border-[#4f46e5]"
                   : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
               }`}
             >
@@ -3339,54 +3383,35 @@ function OrdersTab({
           </div>
         </div>
 
-        <div className="grid gap-3 mb-5 md:grid-cols-2">
-          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-3">
-              Order Status
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              {ORDER_STATUS_FILTERS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => {
-                    setStatusFilter(s);
-                    setCurrentPage(1);
-                  }}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                    statusFilter === s
-                      ? statusActiveColor[s]
-                      : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-3">
-              Payment Method
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              {ORDER_PAYMENT_FILTERS.map((method) => (
-                <button
-                  key={method}
-                  onClick={() => {
-                    setPaymentMethodFilter(method);
-                    setCurrentPage(1);
-                  }}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                    paymentMethodFilter === method
-                      ? "bg-[#0f172a] text-white border-[#0f172a]"
-                      : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
-                  }`}
-                >
-                  {method}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-3">
+          <FilterChips
+            label="Order Status"
+            options={ORDER_STATUS_FILTERS}
+            active={statusFilter}
+            activeClass={(s) => statusActiveColor[s]}
+            onChange={(s) => {
+              setStatusFilter(s);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Payment Method"
+            options={ORDER_PAYMENT_FILTERS}
+            active={paymentMethodFilter}
+            onChange={(m) => {
+              setPaymentMethodFilter(m);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Order Type"
+            options={ORDER_TYPE_FILTERS}
+            active={orderTypeFilter}
+            onChange={(t) => {
+              setOrderTypeFilter(t);
+              setCurrentPage(1);
+            }}
+          />
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-gray-100">
@@ -3447,67 +3472,27 @@ function OrdersTab({
         </Table>
         </div>
 
-        {filtered.length > ORDER_PAGE_SIZE && (
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-            <span className="text-sm text-gray-500">
-              Showing {(currentPage - 1) * ORDER_PAGE_SIZE + 1}–
-              {Math.min(currentPage * ORDER_PAGE_SIZE, filtered.length)} of{" "}
-              {filtered.length} orders
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              {pageNumbers.map((p, idx) =>
-                p === "..." ? (
-                  <span key={`e-${idx}`} className="text-gray-400 text-sm px-1">
-                    ...
-                  </span>
-                ) : (
-                  <Button
-                    key={p}
-                    variant={currentPage === p ? "default" : "outline"}
-                    size="icon"
-                    className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#4A1C1C] hover:bg-[#3a1515] text-white border-0" : ""}`}
-                    onClick={() => setCurrentPage(p as number)}
-                  >
-                    {p}
-                  </Button>
-                ),
-              )}
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <LogPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={filtered.length}
+          pageSize={ORDER_PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="orders"
+        />
       </Card>
     </>
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Main Page Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// --- Main Page ---
 
 export default function SalesReports() {
   const now = new Date();
   const { width, isMobile, isTablet } = useViewport();
   const isNarrow = width < 980;
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Core state Ã¢â€â‚¬Ã¢â€â‚¬
+  // Core state
   const [logs, setLogs] = useState<SaleLog[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [restaurantSettings, setRestaurantSettings] =
@@ -3516,18 +3501,18 @@ export default function SalesReports() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [proofNotice, setProofNotice] = useState("");
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ UI state Ã¢â€â‚¬Ã¢â€â‚¬
+  // UI state
   const [activeTab, setActiveTab] = useState<TabKey>("logs");
   const [search, setSearch] = useState("");
   const [logPage, setLogPage] = useState(1);
   const [period, setPeriod] = useState<Period>("Today");
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Refund state Ã¢â€â‚¬Ã¢â€â‚¬
+  // Refund state
   const [refundLog, setRefundLog] = useState<SaleLog | null>(null);
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [refundLoading, setRefundLoading] = useState(false);
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Log date filter state Ã¢â€â‚¬Ã¢â€â‚¬
+  // Log date filter state
   const [logFromDate, setLogFromDate] = useState<Date | null>(null);
   const [logToDate, setLogToDate] = useState<Date | null>(null);
   const [activeLogQuick, setActiveLogQuick] = useState<QuickKey | null>("all");
@@ -3535,7 +3520,7 @@ export default function SalesReports() {
   const [logPickerTarget, setLogPickerTarget] = useState<"from" | "to">("from");
   const [logPickerInitial, setLogPickerInitial] = useState<Date>(now);
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Data fetching Ã¢â€â‚¬Ã¢â€â‚¬
+  // Data fetching
   const fetchSalesData = useCallback(async () => {
     try {
       if (!hasLoadedOnce) setIsLoading(true);
@@ -3591,7 +3576,7 @@ export default function SalesReports() {
     setLogPage(1);
   }, [search, logFromDate, logToDate]);
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Log date picker handlers Ã¢â€â‚¬Ã¢â€â‚¬
+  // Log date picker handlers
   function openLogDatePicker(target: "from" | "to") {
     setLogPickerTarget(target);
     setLogPickerInitial(
@@ -3633,7 +3618,7 @@ export default function SalesReports() {
     setLogPage(1);
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Refund handler Ã¢â€â‚¬Ã¢â€â‚¬
+  // Refund handler
   async function handleRefundConfirm() {
     const orderId = refundLog?.orderId ?? refundOrder?.id;
     if (orderId == null) return;
@@ -3651,7 +3636,7 @@ export default function SalesReports() {
     }
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Derived log data Ã¢â€â‚¬Ã¢â€â‚¬
+  // Derived log data
   const completedLogs = logs.filter(
     (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
   );
@@ -3795,7 +3780,7 @@ export default function SalesReports() {
       />
 
       <div style={{ padding: isMobile ? "78px 14px 24px" : isTablet ? "84px 18px 28px" : "40px 40px 40px 88px" }}>
-        {/* Ã¢â€â‚¬Ã¢â€â‚¬ Header Ã¢â€â‚¬Ã¢â€â‚¬ */}
+        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -3812,7 +3797,7 @@ export default function SalesReports() {
           <div>
             <p
               style={{
-                color: "#f97316",
+                color: "#4f46e5",
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: 2,
@@ -3846,7 +3831,7 @@ export default function SalesReports() {
           </div>
         </motion.div>
 
-        {/* Ã¢â€â‚¬Ã¢â€â‚¬ Summary Bar Ã¢â€â‚¬Ã¢â€â‚¬ */}
+        {/* Summary Bar */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -3855,7 +3840,7 @@ export default function SalesReports() {
           <SummaryBar logs={logs} />
         </motion.div>
 
-        {/* Ã¢â€â‚¬Ã¢â€â‚¬ Tabs Ã¢â€â‚¬Ã¢â€â‚¬ */}
+        {/* Tabs */}
         <div
           style={{
             display: "flex",
@@ -3884,7 +3869,6 @@ export default function SalesReports() {
                   border: "none",
                   background: active ? "#fff" : "transparent",
                   cursor: "pointer",
-                  fontFamily: "'Poppins', sans-serif",
                   fontSize: 13,
                   fontWeight: active ? 600 : 500,
                   color: active ? "#0f172a" : "#94a3b8",
@@ -3926,7 +3910,7 @@ export default function SalesReports() {
           })}
         </div>
 
-        {/* Ã¢â€â‚¬Ã¢â€â‚¬ Sales Logs Tab Ã¢â€â‚¬Ã¢â€â‚¬ */}
+        {/* Sales Logs Tab */}
         {activeTab === "logs" && (
           <>
             <motion.div
@@ -3970,7 +3954,6 @@ export default function SalesReports() {
                     fontSize: 13,
                     color: "#1e293b",
                     outline: "none",
-                    fontFamily: "'Poppins', sans-serif",
                     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
                   }}
                 />
@@ -3994,14 +3977,13 @@ export default function SalesReports() {
                     padding: "8px 12px",
                     borderRadius: 14,
                     border: logFromDate
-                      ? "1px solid #4A1C1C"
+                      ? "1px solid #4f46e5"
                       : "1px solid #e5e7eb",
-                    background: logFromDate ? "rgba(74,28,28,0.05)" : "#fff",
-                    color: logFromDate ? "#4A1C1C" : "#6b7280",
+                    background: logFromDate ? "rgba(79,70,229,0.08)" : "#fff",
+                    color: logFromDate ? "#4f46e5" : "#6b7280",
                     fontSize: 13,
                     fontWeight: 500,
                     cursor: "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                   }}
                 >
                   {logFromDate ? formatDisplayDate(logFromDate) : "Select date"}
@@ -4016,14 +3998,13 @@ export default function SalesReports() {
                     padding: "8px 12px",
                     borderRadius: 14,
                     border: logToDate
-                      ? "1px solid #4A1C1C"
+                      ? "1px solid #4f46e5"
                       : "1px solid #e5e7eb",
-                    background: logToDate ? "rgba(74,28,28,0.05)" : "#fff",
-                    color: logToDate ? "#4A1C1C" : "#6b7280",
+                    background: logToDate ? "rgba(79,70,229,0.08)" : "#fff",
+                    color: logToDate ? "#4f46e5" : "#6b7280",
                     fontSize: 13,
                     fontWeight: 500,
                     cursor: "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                   }}
                 >
                   {logToDate ? formatDisplayDate(logToDate) : "Select date"}
@@ -4087,13 +4068,12 @@ export default function SalesReports() {
                     borderRadius: 999,
                     border:
                       activeLogQuick === r.key
-                        ? "1px solid #4A1C1C"
+                        ? "1px solid #4f46e5"
                         : "1px solid #e5e7eb",
                     background:
-                      activeLogQuick === r.key ? "#4A1C1C" : "#f9fafb",
+                      activeLogQuick === r.key ? "#4f46e5" : "#f9fafb",
                     color: activeLogQuick === r.key ? "#fff" : "#6b7280",
                     cursor: "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                     transition: "all 0.2s",
                   }}
                 >
@@ -4238,7 +4218,7 @@ export default function SalesReports() {
           </>
         )}
 
-        {/* Ã¢â€â‚¬Ã¢â€â‚¬ Orders Tab Ã¢â€â‚¬Ã¢â€â‚¬ */}
+        {/* Orders Tab */}
         {activeTab === "orders" && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -4256,5 +4236,3 @@ export default function SalesReports() {
     </div>
   );
 }
-
-
