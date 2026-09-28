@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Search, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
   Pie,
 } from "recharts";
 import { api } from "@/lib/api";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import {
   fetchGeneralSettings,
   GENERAL_SETTINGS_DEFAULTS,
@@ -50,6 +51,7 @@ interface Order {
 
 interface RawOrderRow {
   id: number;
+  orderNumber?: string;
   total: number | string;
   date?: string;
   status?: string;
@@ -935,10 +937,14 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  useEffect(() => {
-    const fetchFromDB = async () => {
-      setIsLoadingOrders(true);
-      setOrdersError(null);
+  const settingsRef = useRef(restaurantSettings);
+  settingsRef.current = restaurantSettings;
+
+  const fetchFromDB = useCallback(async (initialLoad = false) => {
+      if (initialLoad) {
+        setIsLoadingOrders(true);
+        setOrdersError(null);
+      }
       try {
         const rows = await api.get<RawOrderRow[]>("/orders");
         if (!rows?.length) { setOrders([]); return; }
@@ -948,12 +954,12 @@ export default function AdminDashboard() {
           if (!grouped[r.id]) {
             grouped[r.id] = {
               id: r.id,
-              orderNumber: `#${r.id}`,
+              orderNumber: r.orderNumber || `#${r.id}`,
               items: [],
               total: Number(r.total) || 0,
               date: r.date ? new Date(r.date).toISOString() : "",
               time: r.date
-                ? formatInSettingsTimezone(new Date(r.date), restaurantSettings, {
+                ? formatInSettingsTimezone(new Date(r.date), settingsRef.current, {
                     hour: "2-digit",
                     minute: "2-digit",
                     hour12: true,
@@ -976,16 +982,17 @@ export default function AdminDashboard() {
       } catch (err) {
         console.error("Failed to fetch orders:", err);
         setOrdersError(err instanceof Error ? err.message : "Failed to load dashboard data.");
-        setOrders([]);
+        if (initialLoad) setOrders([]);
       } finally {
-        setIsLoadingOrders(false);
+        if (initialLoad) setIsLoadingOrders(false);
       }
-    };
-
-    fetchFromDB();
-    const interval = setInterval(fetchFromDB, 5000);
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => { void fetchFromDB(true); }, [fetchFromDB]);
+  useEventInvalidation({
+    topics: ["orders.changed", "payments.changed"],
+    onInvalidate: fetchFromDB,
+  });
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">

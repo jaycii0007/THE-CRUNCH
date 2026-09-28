@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../context/authcontext";
 import { useViewport } from "@/hooks/use-tablet";
 import { getEffectiveMaxQuantity } from "../lib/orderQuantity";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 
 /**
  * ── BACKEND / API NOTES (keep this page consistent with the rest of the app) ──
@@ -683,9 +684,13 @@ export default function Delicacy() {
 
   // deep link to item
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("showOrderModal")==="true") setOrderTypeOpen(true);
-    const itemSlug = params.get("item");
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("showOrderModal")==="true") {
+      setOrderTypeOpen(true);
+      url.searchParams.delete("showOrderModal");
+      window.history.replaceState(window.history.state,"",`${url.pathname}${url.search}${url.hash}`);
+    }
+    const itemSlug = url.searchParams.get("item");
     if (!itemSlug||!menuItems.length) return;
     const needle = decodeURIComponent(itemSlug).trim().toLowerCase();
     const match = menuItems.find(r=>r.name.trim().toLowerCase()===needle)??menuItems.find(r=>r.name.toLowerCase().includes(needle)||needle.includes(r.name.toLowerCase()));
@@ -698,13 +703,13 @@ export default function Delicacy() {
     try { const d=await api.get<{activeOrders:CustomerOrder[];historyOrders:CustomerOrder[]}>(`/orders/customer/${customerUserId}`); setActiveOrders(d.activeOrders??[]); setOrderHistory(d.historyOrders??[]); } catch(e){ console.error("Failed to load orders:",e); }
   }, [customerUserId]);
   useEffect(() => {
-    fetchOrders();
-    if (!customerUserId) return;
-    // Catch: don't poll a hidden/backgrounded tab, and stop entirely once
-    // there's nothing active to track.
-    const t = window.setInterval(() => { if (!document.hidden) fetchOrders(); }, 5000);
-    return () => window.clearInterval(t);
+    void fetchOrders();
   }, [fetchOrders,customerUserId]);
+  useEventInvalidation({
+    topics: ["orders.changed"],
+    onInvalidate: fetchOrders,
+    enabled: customerUserId > 0,
+  });
 
   const displayed = menuItems.filter(r=>(activeCategory==="All"||r.category===activeCategory)&&(r.mealTypes.length===0||r.mealTypes.includes(activeMeal)));
   const totalItems = cart.reduce((s,i)=>s+i.quantity,0);
@@ -772,7 +777,7 @@ export default function Delicacy() {
       const bypassed=d.bypassed===true;
       const paid=bypassed&&d.paid===true;
       setPaymentSession({checkoutSessionId:d.checkoutSessionId,checkoutUrl:d.checkoutUrl,status:d.status,paid,paymentReference:d.paymentReference??null,bypassed});
-      if (bypassed) { setPaymentMessage("Test payment completed. Click Place Order to continue. No real GCash charge was made."); return; }
+      if (bypassed) { setPaymentMessage("Test payment completed. just click the place order  wala pang gcash naka bypass pa to"); return; }
       if (!d.checkoutUrl) throw new Error("PayMongo checkout URL was not returned");
       setPaymentMessage("Redirecting to GCash checkout."); window.location.href=d.checkoutUrl;
     }

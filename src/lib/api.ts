@@ -72,7 +72,7 @@ export function resolveAssetUrl(value?: string | null): string {
   return "/img/placeholder.jpg";
 }
 
-function getStoredAuthToken(): string | null {
+export function getStoredAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   const token = localStorage.getItem("authToken");
   return token && token.trim() ? token : null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Clock,
   Bell,
@@ -23,6 +23,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { UserIdentityBanner } from "@/components/UserIdentityBanner";
 import { useNotifications } from "@/lib/NotificationContext";
 import { useViewport } from "@/hooks/use-tablet";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import {
   fetchGeneralSettings,
   GENERAL_SETTINGS_DEFAULTS,
@@ -115,6 +116,33 @@ interface OrderCard {
   timerUpdatedBy?: number | null;
   timerUpdatedAt?: number;
 }
+
+function isLocallyOverdue(order: OrderCard, nowMs: number): boolean {
+  return (
+    order.isPreparing === true &&
+    order.isReady !== true &&
+    typeof order.dueAt === "number" &&
+    Number.isFinite(order.dueAt) &&
+    nowMs >= order.dueAt
+  );
+}
+
+function getCookDisplayOrders(orders: OrderCard[], nowMs: number): OrderCard[] {
+  const overdueOrders: OrderCard[] = [];
+  const remainingOrders: OrderCard[] = [];
+
+  orders.forEach((order) => {
+    if (isLocallyOverdue(order, nowMs)) {
+      overdueOrders.push(order);
+    } else {
+      remainingOrders.push(order);
+    }
+  });
+
+  overdueOrders.sort((a, b) => (a.dueAt ?? 0) - (b.dueAt ?? 0));
+  return [...overdueOrders, ...remainingOrders];
+}
+
 interface OrderUpdateResponse {
   id: string | number;
   status: string;
@@ -363,7 +391,7 @@ export default function Order() {
   const { addNotification } = useNotifications();
   const { isMobile, isTablet } = useViewport();
 
-  const fetchAll = () => {
+  const fetchAll = useCallback(() => {
     if (fetchAllInFlight.current) return fetchAllInFlight.current;
 
     const request = (async () => {
@@ -409,7 +437,7 @@ export default function Order() {
       }
     });
     return request;
-  };
+  }, []);
 
   const fetchAllAfterCurrentRequest = async () => {
     if (fetchAllInFlight.current) {
@@ -453,7 +481,11 @@ export default function Order() {
     }
   };
 
-  useEffect(() => { fetchAll(); const i = setInterval(fetchAll, 3000); return () => clearInterval(i); }, []);
+  useEffect(() => { void fetchAll(); }, [fetchAll]);
+  useEventInvalidation({
+    topics: ["orders.changed", "payments.changed"],
+    onInvalidate: fetchAllAfterCurrentRequest,
+  });
   useEffect(() => { const t = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => {
     if (SHOW_LEGACY_USAGE_PANEL) {
@@ -840,6 +872,8 @@ export default function Order() {
     { label: "Completed", val: statusCounts.completed, icon: CheckCircle2, tint: C.muted, tintBg: C.borderSoft, dim: true },
     { label: "Refunded", val: statusCounts.refunded, icon: Ban, tint: C.muted, tintBg: C.borderSoft, dim: true },
   ];
+  const nowMs = currentTime.getTime();
+  const displayOrders = getCookDisplayOrders(orders, nowMs);
 
   return (
     <div style={{ minHeight: "100vh", background: C.canvas, fontFamily: F }}>
@@ -968,10 +1002,11 @@ export default function Order() {
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(224px, 1fr))", gap: 14 }}>
               <AnimatePresence mode="popLayout">
-                {orders.map((order) => {
+                {displayOrders.map((order) => {
                   const isNew = !order.isPreparing && !order.isReady;
                   const isPrep = order.isPreparing && !order.isReady;
                   const isReady = order.isReady;
+                  const locallyOverdue = isLocallyOverdue(order, nowMs);
                   const settlementAction = getSettlementAction(
                     order.currentStatus,
                     order.paymentStatus,
@@ -988,7 +1023,7 @@ export default function Order() {
                   const timerBase = order.prepStartedAt;
                   const estimatedPrepMinutes = Math.max(order.estimatedPrepMinutes ?? 10, 1);
 
-                  const accent = order.overdue ? C.red : isReady ? C.green : isPrep ? C.amber : C.mutedLight;
+                  const accent = locallyOverdue ? C.red : isReady ? C.green : isPrep ? C.amber : C.mutedLight;
 
                   return (
                     <motion.div
@@ -999,7 +1034,7 @@ export default function Order() {
                       whileHover={{ y: -2, transition: { duration: 0.12 } }}
                       style={{
                         background: C.surface, borderRadius: 18,
-                        border: `1px solid ${order.overdue ? C.redBorder : C.border}`,
+                        border: `1px solid ${locallyOverdue ? C.redBorder : C.border}`,
                         overflow: "hidden", display: "flex", flexDirection: "column",
                         boxShadow: shadowMd,
                       }}
@@ -1028,7 +1063,7 @@ export default function Order() {
                           />
                         )}
 
-                        {isPrep && order.overdue && (
+                        {locallyOverdue && (
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                             padding: "6px 10px", borderRadius: 8, marginBottom: 10,
                             background: C.redBg, color: C.red, fontSize: 11, fontWeight: 700 }}>

@@ -21,6 +21,8 @@ import { UserIdentityBanner } from "@/components/UserIdentityBanner";
 import { useViewport } from "@/hooks/use-tablet";
 import { useAuth } from "../context/authcontext";
 import { clampOrderItemQuantity, getEffectiveMaxQuantity } from "../lib/orderQuantity";
+import { buildReceiptHtml, type ReceiptDto } from "../lib/receipt";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 
 // ─── FONT ────────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("poppins-font")) {
@@ -52,14 +54,14 @@ interface CartItem extends MenuItem { quantity: number; note?: string; }
 interface TableItem { id: number; number: number; status: "available" | "occupied"; seats?: number; }
 
 interface OnlineNotif {
-  id: number; orderNumber: string; total: number; createdAt: string;
+  id: number; orderNumber: string; transactionId?: string | null; total: number; createdAt: string;
   orderType: string; trackingStatus: string; handoverTimestamp?: string | null;
   riderName?: string | null; paymentMethod?: string | null; paymentStatus?: string | null;
   items: { name: string; quantity: number }[];
 }
 
 interface ShiftOrder {
-  id: number; orderNumber: string; total: number; createdAt: string;
+  id: number; orderNumber: string; transactionId?: string | null; total: number; createdAt: string;
   orderType: string; paymentMethod: string; customerType: string;
   items: { name: string; quantity: number; price: number }[];
   status: string; paymentStatus?: string | null; discountAmount: number; taxAmount: number;
@@ -77,17 +79,8 @@ interface OrderPayload {
   payment_status?: "Paid"; proof_image_url?: string; customer_type: CustomerType;
   discount_name?: string; discount_rate?: number; discount_amount: number;
   vat_amount: number; vat_exempt_amount: number; cashierId: number | null;
-  table_id: number | null; cash_tendered?: number; change_amount?: number;
+  table_id: number | null; table_number?: number; cash_tendered?: number; change_amount?: number;
   order_note?: string;
-}
-
-interface ReceiptData {
-  orderNumber: string; date: string; time: string; items: CartItem[];
-  subtotal: number; discountName: string; discountAmount: number;
-  taxAmount: number; serviceChargeAmount: number; paidAmount: number;
-  cashTendered: number; changeAmount: number; orderType: string;
-  paymentMethod: string; customerType: CustomerType;
-  restaurantSettings: GeneralRestaurantSettings; orderNote?: string;
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -218,108 +211,6 @@ const formatPaymentMethodLabel = (paymentMethod?: string | null) => {
 };
 
 // ─── RECEIPT HTML BUILDER ────────────────────────────────────────────────────
-const buildReceiptHtml = ({
-  orderNumber, date, time, items, paidAmount, cashTendered, changeAmount,
-  orderType, paymentMethod, customerType, subtotal, discountName, discountAmount,
-  taxAmount, serviceChargeAmount, restaurantSettings, orderNote,
-}: ReceiptData) => {
-  const currency = restaurantSettings.currency || "PHP";
-  const paymentMethodLabel =
-    paymentMethod === "cash" ? "Cash"
-    : paymentMethod === "gcash_onsite" ? "Onsite E-Payment"
-    : paymentMethod;
-
-  const itemRows = items.map((item) => `
-    <tr>
-      <td>${escapeHtml(item.name)}${item.note ? `<br/><small style="color:#9ca3af">${escapeHtml(item.note)}</small>` : ""}</td>
-      <td class="qty">${item.quantity}</td>
-      <td class="amount">${currency} ${fmt(item.price)}</td>
-      <td class="amount">${currency} ${fmt(item.price * item.quantity)}</td>
-    </tr>
-  `).join("");
-
-  const pricingRows = `
-    <div class="line"><span>Subtotal</span><strong>${currency} ${fmt(subtotal)}</strong></div>
-    <div class="line"><span>Discount${discountName ? ` (${escapeHtml(discountName)})` : ""}</span><strong>-${currency} ${fmt(discountAmount)}</strong></div>
-    <div class="line"><span>Tax</span><strong>${currency} ${fmt(taxAmount)}</strong></div>
-    <div class="line"><span>Service Charge</span><strong>${currency} ${fmt(serviceChargeAmount)}</strong></div>
-  `;
-
-  const cashRows = paymentMethod === "cash"
-    ? `<div class="line"><span>Cash Tendered</span><strong>${currency} ${fmt(cashTendered)}</strong></div>
-       <div class="line"><span>Change</span><strong>${currency} ${fmt(changeAmount)}</strong></div>` : "";
-
-  const headerMeta = [restaurantSettings.tagline, restaurantSettings.address, restaurantSettings.phone, restaurantSettings.email]
-    .filter(Boolean).map((line) => `<p>${escapeHtml(line)}</p>`).join("");
-
-  const noteSection = orderNote
-    ? `<div style="margin:12px 0;padding:8px 12px;background:#f9fafb;border-radius:8px;border:1px dashed #e5e7eb;">
-        <p style="margin:0;font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Order Note</p>
-        <p style="margin:0;font-size:12px;color:#374151;">${escapeHtml(orderNote)}</p>
-       </div>` : "";
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Receipt ${escapeHtml(orderNumber)}</title>
-  <style>
-    body { font-family: ${F}; background: #f5f5f5; color: #111; margin: 0; padding: 24px; }
-    .receipt { max-width: 420px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 18px; padding: 24px; box-sizing: border-box; }
-    .header { text-align: center; padding-bottom: 16px; border-bottom: 1px dashed #d1d5db; margin-bottom: 16px; }
-    .header h1 { font-size: 22px; margin: 0 0 4px; }
-    .header p, .meta p, .footer p { margin: 0; color: #6b7280; font-size: 12px; line-height: 1.6; }
-    .txn-badge { display: inline-block; margin-top: 10px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px; padding: 4px 12px; }
-    .txn-badge .txn-label { font-size: 9px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.07em; display: block; }
-    .txn-badge .txn-value { font-size: 13px; font-weight: 700; color: #111; letter-spacing: 0.04em; }
-    .meta, .summary { display: grid; gap: 8px; margin-bottom: 16px; }
-    .line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    th, td { padding: 8px 0; border-bottom: 1px dashed #e5e7eb; font-size: 12px; text-align: left; vertical-align: top; }
-    .qty { text-align: center; width: 44px; }
-    .amount { text-align: right; white-space: nowrap; }
-    .total { padding-top: 12px; border-top: 1px solid #111; margin-top: 12px; font-size: 15px; }
-    .footer { margin-top: 20px; text-align: center; border-top: 1px dashed #d1d5db; padding-top: 16px; }
-    @media print { body { background: #fff; padding: 0; } .receipt { border: none; border-radius: 0; max-width: none; padding: 0; } }
-  </style>
-</head>
-<body>
-  <main class="receipt">
-    <section class="header">
-      <h1>${escapeHtml(restaurantSettings.restaurantName)}</h1>
-      <p>Official Sales Receipt</p>
-      ${headerMeta}
-      <div class="txn-badge">
-        <span class="txn-label">Transaction ID</span>
-        <span class="txn-value">${escapeHtml(orderNumber)}</span>
-      </div>
-    </section>
-    <section class="meta">
-      <div class="line"><span>Date</span><strong>${escapeHtml(date)}</strong></div>
-      <div class="line"><span>Time</span><strong>${escapeHtml(time)}</strong></div>
-      <div class="line"><span>Order Type</span><strong>${escapeHtml(orderType)}</strong></div>
-      <div class="line"><span>Payment</span><strong>${escapeHtml(paymentMethodLabel)}</strong></div>
-      <div class="line"><span>Discount Type</span><strong>${escapeHtml(customerType || discountName || "Regular customer")}</strong></div>
-    </section>
-    ${noteSection}
-    <table>
-      <thead><tr><th>Item</th><th class="qty">Qty</th><th class="amount">Price</th><th class="amount">Subtotal</th></tr></thead>
-      <tbody>${itemRows}</tbody>
-    </table>
-    <section class="summary">
-      ${pricingRows}
-      ${cashRows}
-      <div class="line total"><span>Total Paid</span><strong>${currency} ${fmt(paidAmount)}</strong></div>
-    </section>
-    <section class="footer">
-      <p>Thank you for your order.</p>
-      <p>Please keep this receipt for your records.</p>
-    </section>
-  </main>
-</body>
-</html>`;
-};
-
 // ─── KOT HTML BUILDER ────────────────────────────────────────────────────────
 const buildKOTHtml = (orderNumber: string, items: CartItem[], orderType: string, tableNumber?: string, orderNote?: string) => {
   const { date, time } = getNow();
@@ -814,22 +705,18 @@ function ShiftHistoryModal({ show, orders, loading, onClose, onSettleOrder, sett
   const totalRevenue = orders.filter((o) => o.status !== "Cancelled").reduce((s, o) => s + o.total, 0);
   const totalOrders = orders.filter((o) => o.status !== "Cancelled").length;
 
-  const handleReprintReceipt = (order: ShiftOrder) => {
-    const { date, time } = getNow();
-    const html = buildReceiptHtml({
-      orderNumber: order.orderNumber, date, time,
-      items: order.items.map((i) => ({ ...i, id: 0, category: "", itemType: "menu_item", remainingStock: 0, availabilityStatus: "Available", quantity: i.quantity })),
-      subtotal: order.total + order.discountAmount - order.taxAmount,
-      discountName: order.customerType, discountAmount: order.discountAmount,
-      taxAmount: order.taxAmount, serviceChargeAmount: 0,
-      paidAmount: order.total, cashTendered: order.total, changeAmount: 0,
-      orderType: order.orderType, paymentMethod: order.paymentMethod,
-      customerType: order.customerType, restaurantSettings,
-    });
-    const w = window.open("", "_blank", "width=420,height=760");
-    if (!w) return;
-    w.document.open(); w.document.write(html); w.document.close();
-    w.focus(); w.onload = () => w.print();
+  const handleReprintReceipt = async (order: ShiftOrder) => {
+    try {
+      const receipt = await api.get<ReceiptDto>(`/orders/${order.id}/receipt`);
+      const html = buildReceiptHtml(receipt);
+      const w = window.open("", "_blank", "width=420,height=760");
+      if (!w) return;
+      w.document.open(); w.document.write(html); w.document.close();
+      w.focus(); w.onload = () => w.print();
+    } catch (error) {
+      console.error("Receipt reprint failed:", error);
+      window.alert("Unable to load this receipt. Please try again.");
+    }
   };
 
   return (
@@ -1207,22 +1094,21 @@ function AmountEntryModal({ show, amountDue, paymentMethod, onConfirm, onCancel,
 
 // ─── SUCCESS MODAL ────────────────────────────────────────────────────────────
 function SuccessModal({
-  show, onClose, orderNumber, savedCart, paidAmount, cashTendered, changeAmount,
+  show, onClose, orderNumber, transactionId, receipt, savedCart, paidAmount, changeAmount,
   orderType, paymentMethod, customerType, subtotal, discountAmount, taxAmount,
   serviceChargeAmount, restaurantSettings, orderNote,
 }: {
-  show: boolean; onClose: () => void; orderNumber: string; savedCart: CartItem[];
-  paidAmount: number; cashTendered: number; changeAmount: number; orderType: string;
+  show: boolean; onClose: () => void; orderNumber: string; transactionId: string; receipt: ReceiptDto | null; savedCart: CartItem[];
+  paidAmount: number; changeAmount: number; orderType: string;
   paymentMethod: string; customerType: CustomerType; subtotal: number;
   discountAmount: number; taxAmount: number; serviceChargeAmount: number;
   restaurantSettings: GeneralRestaurantSettings; orderNote: string;
 }) {
   const { date, time } = getNow();
-  const receiptHtml = useMemo(() => buildReceiptHtml({
-    orderNumber, date, time, items: savedCart, subtotal, discountName: customerType,
-    discountAmount, taxAmount, serviceChargeAmount, paidAmount, cashTendered, changeAmount,
-    orderType, paymentMethod, customerType, restaurantSettings, orderNote,
-  }), [orderNumber, savedCart, subtotal, customerType, discountAmount, taxAmount, serviceChargeAmount, paidAmount, cashTendered, changeAmount, orderType, paymentMethod, restaurantSettings, orderNote]);
+  const receiptHtml = useMemo(
+    () => (receipt ? buildReceiptHtml(receipt) : ""),
+    [receipt],
+  );
 
   const handlePrintReceipt = () => {
     if (typeof window === "undefined") return;
@@ -1274,7 +1160,7 @@ function SuccessModal({
                     <p style={{ fontSize: 14, fontWeight: 600, color: "#111", marginBottom: 6 }}>Order placed successfully</p>
                     <p style={{ fontSize: 11, color: "#aaa", lineHeight: 1.65, fontWeight: 400, marginBottom: 10 }}>We'll start preparing right away!</p>
                     <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", background: "#f5f5f5", border: "1px solid #e5e7eb", borderRadius: 10, padding: "6px 14px" }}>
-                      <span style={{ fontSize: 9, fontWeight: 600, color: "#bbb", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>Transaction ID</span>
+                      <span style={{ fontSize: 9, fontWeight: 600, color: "#bbb", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>Order Number</span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: "#111", letterSpacing: "0.04em" }}>{orderNumber}</span>
                     </div>
                   </motion.div>
@@ -1282,7 +1168,7 @@ function SuccessModal({
                 <div style={{ borderTop: "1px solid #f5f5f5" }} />
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
                   {[
-                    { icon: <Hash style={{ width: 11, height: 11 }} />, label: "Txn ID", value: orderNumber },
+                    { icon: <Hash style={{ width: 11, height: 11 }} />, label: "Txn ID", value: transactionId || "—" },
                     { icon: <Calendar style={{ width: 11, height: 11 }} />, label: "Date", value: date },
                     { icon: <Clock style={{ width: 11, height: 11 }} />, label: "Time", value: time },
                   ].map(({ icon, label: l, value }, i) => (
@@ -1406,6 +1292,8 @@ export default function CashierView() {
   const [savedCash, setSavedCash] = useState({ tendered: 0, change: 0 });
   const [savedOrderNote, setSavedOrderNote] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
+  const [transactionId, setTransactionId] = useState("");
+  const [savedReceipt, setSavedReceipt] = useState<ReceiptDto | null>(null);
   const [placing, setPlacing] = useState(false);
   const placingRef = useRef(false);
 
@@ -1457,14 +1345,6 @@ export default function CashierView() {
     window.addEventListener("offline", handleOffline);
     return () => { window.removeEventListener("online", handleOnline); window.removeEventListener("offline", handleOffline); };
   }, [toast]);
-
-  // ── Pause polling when tab is hidden ──
-  const isPageVisible = useRef(true);
-  useEffect(() => {
-    const handleVisibility = () => { isPageVisible.current = document.visibilityState === "visible"; };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, []);
 
   // ── Load products ──
   const loadProducts = useCallback(async (): Promise<boolean> => {
@@ -1548,10 +1428,9 @@ export default function CashierView() {
     return () => { cancelled = true; };
   }, [orderType, tablesSupported]);
 
-  // ── Poll online orders (paused when tab hidden) ──
-  useEffect(() => {
-    const poll = async () => {
-      if (!isPageVisible.current) return;
+  // Initial order lists; later refreshes are driven by SSE invalidation.
+  const refreshOrderNotifications = useCallback(async () => {
+      if (document.hidden) return;
       try {
         const [reviewData, readyData, deliveryData] = await Promise.all([
           api.get<OnlineNotif[]>("/orders/new-online"),
@@ -1572,13 +1451,16 @@ export default function CashierView() {
           return next;
         });
       } catch (err) {
-        console.warn("[poll] online-order fetch failed:", err);
+        console.warn("Order notification refresh failed:", err);
       }
-    };
-    poll();
-    const interval = setInterval(poll, 15_000);
-    return () => clearInterval(interval);
   }, []);
+  useEffect(() => {
+    void refreshOrderNotifications();
+  }, [refreshOrderNotifications]);
+  useEventInvalidation({
+    topics: ["orders.changed", "payments.changed"],
+    onInvalidate: refreshOrderNotifications,
+  });
 
   // ── Load shift history when modal opens ──
   const loadShiftOrders = useCallback(async () => {
@@ -1870,19 +1752,22 @@ export default function CashierView() {
       customer_type: customerType, discount_name: customerType, discount_rate: discountRate,
       discount_amount: discountAmount, vat_amount: taxAmount, vat_exempt_amount: 0,
       cashierId: getCashierId(), table_id: orderType === "dine-in" ? selectedTable : null,
+      ...(orderType === "dine-in" && selectedTable !== null && {
+        table_number: tables.find((table) => table.id === selectedTable)?.number ?? selectedTable,
+      }),
       ...(paymentMethod === "cash" && { cash_tendered: tendered, change_amount: change }),
       ...(orderNote.trim() && { order_note: orderNote.trim() }),
     };
 
     const submitStartedAt = performance.now();
     try {
-      const res = await api.post<{ orderNumber?: string }>("/orders", payload);
+      const res = await api.post<{ orderId?: number; orderNumber?: string; transactionId?: string; receipt: ReceiptDto }>("/orders", payload);
       const backendConfirmedAt = performance.now();
-      const num = res?.orderNumber ?? `#${Math.floor(10000 + Math.random() * 90000)}`;
+      const num = res?.orderNumber ?? (res?.orderId ? `#${res.orderId}` : "");
       setSavedCart([...cart]); setSavedMeta({ orderType, paymentMethod, customerType });
       setSavedPricing({ subtotal, discountAmount, taxAmount, serviceChargeAmount, amountDue });
       setSavedCash({ tendered, change }); setSavedOrderNote(orderNote);
-      setOrderNumber(num); setShowSuccess(true);
+      setOrderNumber(num); setTransactionId(res?.transactionId ?? ""); setSavedReceipt(res.receipt); setShowSuccess(true);
       if (selectedTable !== null) setTables((prev) => prev.map((t) => t.id === selectedTable ? { ...t, status: "occupied" } : t));
 
       if (import.meta.env.DEV) {
@@ -1913,7 +1798,7 @@ export default function CashierView() {
     setOrderType("dine-in"); setPaymentMethod("cash");
     setCustomerType(discountTypes[0]?.name || "Regular customer");
     setSelectedTable(null); setSavedCash({ tendered: 0, change: 0 });
-    setOrderNote(""); setShowOrderNote(false);
+    setOrderNote(""); setShowOrderNote(false); setTransactionId(""); setSavedReceipt(null);
   };
 
   const onlineTotal = onlineOrderNotifs.length + readyPickupOrders.length;
@@ -2424,9 +2309,10 @@ export default function CashierView() {
         show={showSuccess}
         onClose={resetOrder}
         orderNumber={orderNumber}
+        transactionId={transactionId}
+        receipt={savedReceipt}
         savedCart={savedCart}
         paidAmount={savedPricing.amountDue}
-        cashTendered={savedCash.tendered}
         changeAmount={savedCash.change}
         orderType={savedMeta.orderType}
         paymentMethod={savedMeta.paymentMethod}

@@ -38,6 +38,9 @@ import {
   type GeneralRestaurantSettings,
 } from "@/lib/restaurantSettings";
 import { useViewport } from "@/hooks/use-tablet";
+import { ReceiptViewerModal } from "@/components/receipt-viewer-modal";
+import type { ReceiptDto } from "@/lib/receipt";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 
 // --- Types ---
 
@@ -143,8 +146,6 @@ interface RawOrderRow {
 const ORDER_PAGE_SIZE = 10;
 const LOG_PAGE_SIZE = 20;
 const ITEM_H = 36;
-const POLL_INTERVAL_MS = 5000;
-
 const MONTHS = [
   "January",
   "February",
@@ -538,13 +539,8 @@ function processRawRows(rows: RawOrderRow[]): {
           String(
             r.transactionId ??
               r.transaction_id ??
-              r.paymentReference ??
-              r.payment_reference ??
               "",
-          ).trim() ||
-          (Number(r.paymentId ?? r.payment_id) > 0
-            ? `PAY-${Number(r.paymentId ?? r.payment_id)}`
-            : ""),
+          ).trim(),
       };
     }
 
@@ -2764,9 +2760,11 @@ const paymentBadgeStyle: Record<string, { bg: string; text: string; border: stri
 function OrderRow({
   order,
   onRefund,
+  onViewReceipt,
 }: {
   order: Order;
   onRefund: (order: Order) => void;
+  onViewReceipt: (order: Order) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -2927,7 +2925,7 @@ function OrderRow({
                   >
                     {[
                       { label: "Transaction ID", value: order.transactionId },
-                      { label: "Order ID", value: order.orderNumber },
+                      { label: "Order Number", value: order.orderNumber },
                       { label: "Date", value: fmtDate(order.date) },
                       { label: "Time", value: fmtTime(order.date) },
                       { label: "Cashier", value: order.cashierName || "—" },
@@ -2991,7 +2989,7 @@ function OrderRow({
                               "Cashier",
                               "Subtotal",
                               "Transaction ID",
-                              "Order ID",
+                              "Order Number",
                             ].includes(f.label)
                               ? 700
                               : 500,
@@ -3003,17 +3001,17 @@ function OrderRow({
                                   ? "#4f46e5"
                                   : f.label === "Transaction ID"
                                     ? "#111"
-                                    : f.label === "Order ID"
+                                    : f.label === "Order Number"
                                     ? "#111"
                                     : "#334155",
                             fontFamily:
                               f.label === "Transaction ID" ||
-                              f.label === "Order ID"
+                              f.label === "Order Number"
                                 ? "'Poppins', monospace"
                                 : undefined,
                             letterSpacing:
                               f.label === "Transaction ID" ||
-                              f.label === "Order ID"
+                              f.label === "Order Number"
                                 ? "0.03em"
                                 : undefined,
                           }}
@@ -3022,6 +3020,43 @@ function OrderRow({
                         </p>
                       </div>
                     ))}
+                  </div>
+
+                  <div style={{ marginBottom: 16 }}>
+                    <p
+                      style={{
+                        color: "#94a3b8",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: 1.2,
+                        margin: "0 0 8px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Receipt
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onViewReceipt(order);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "9px 13px",
+                        borderRadius: 12,
+                        border: "1px solid #cbd5e1",
+                        background: "#fff",
+                        color: "#0f172a",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Printer size={14} /> View Receipt
+                    </button>
                   </div>
 
                   {order.proofImageUrl && (
@@ -3194,10 +3229,12 @@ function OrdersTab({
   orders,
   loading,
   onRefund,
+  onViewReceipt,
 }: {
   orders: Order[];
   loading: boolean;
   onRefund: (order: Order) => void;
+  onViewReceipt: (order: Order) => void;
 }) {
   const now = new Date();
   const [currentPage, setCurrentPage] = useState(1);
@@ -3291,11 +3328,6 @@ function OrdersTab({
     (o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus),
   ).length;
   const hasRange = !!(fromDate || toDate);
-  const hasActiveFilters =
-    hasRange ||
-    statusFilter !== "All" ||
-    paymentMethodFilter !== "All" ||
-    orderTypeFilter !== "All";
 
   return (
     <>
@@ -3313,18 +3345,16 @@ function OrdersTab({
             <h3 className="text-base font-semibold text-gray-800">
               Order History
             </h3>
-            {hasActiveFilters && (
-              <p className="text-xs text-gray-400 mt-0.5">
-                {filtered.length} order{filtered.length !== 1 ? "s" : ""} ·{" "}
-                <span className="text-green-600 font-medium">
-                  {completedCount} completed
-                </span>{" "}
-                ·{" "}
-                <span className="text-gray-600 font-medium">
-                  {formatReportCurrency(totalRevenue)} revenue
-                </span>
-              </p>
-            )}
+            <p className="text-xs text-gray-400 mt-0.5">
+              {filtered.length} order{filtered.length !== 1 ? "s" : ""} ·{" "}
+              <span className="text-green-600 font-medium">
+                {completedCount} completed
+              </span>{" "}
+              ·{" "}
+              <span className="text-gray-600 font-medium">
+                {formatReportCurrency(totalRevenue)} revenue
+              </span>
+            </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <CalendarDays className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -3420,7 +3450,7 @@ function OrdersTab({
             <TableRow className="border-gray-100 bg-slate-50 hover:bg-slate-50">
               {[
                 "Transaction ID",
-                "Order ID",
+                "Order Number",
                 "Date",
                 "Time",
                 "Order Type",
@@ -3465,6 +3495,7 @@ function OrdersTab({
                   key={order.id}
                   order={order}
                   onRefund={onRefund}
+                  onViewReceipt={onViewReceipt}
                 />
               ))
             )}
@@ -3498,7 +3529,7 @@ export default function SalesReports() {
   const [restaurantSettings, setRestaurantSettings] =
     useState<GeneralRestaurantSettings>(GENERAL_SETTINGS_DEFAULTS);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const hasLoadedOnce = useRef(false);
   const [proofNotice, setProofNotice] = useState("");
 
   // UI state
@@ -3511,6 +3542,10 @@ export default function SalesReports() {
   const [refundLog, setRefundLog] = useState<SaleLog | null>(null);
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [refundLoading, setRefundLoading] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+  const [receiptError, setReceiptError] = useState("");
+  const [receipt, setReceipt] = useState<ReceiptDto | null>(null);
 
   // Log date filter state
   const [logFromDate, setLogFromDate] = useState<Date | null>(null);
@@ -3523,7 +3558,7 @@ export default function SalesReports() {
   // Data fetching
   const fetchSalesData = useCallback(async () => {
     try {
-      if (!hasLoadedOnce) setIsLoading(true);
+      if (!hasLoadedOnce.current) setIsLoading(true);
       const rows = await api.get<RawOrderRow[]>("/orders");
       const { logs: l, orders: o } = processRawRows(rows ?? []);
       setLogs(l);
@@ -3532,15 +3567,15 @@ export default function SalesReports() {
       console.error("Failed to fetch sales data:", err);
     } finally {
       setIsLoading(false);
-      setHasLoadedOnce(true);
+      hasLoadedOnce.current = true;
     }
-  }, [hasLoadedOnce]);
+  }, []);
 
-  useEffect(() => {
-    fetchSalesData();
-    const interval = setInterval(fetchSalesData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchSalesData]);
+  useEffect(() => { void fetchSalesData(); }, [fetchSalesData]);
+  useEventInvalidation({
+    topics: ["orders.changed", "payments.changed"],
+    onInvalidate: fetchSalesData,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -3633,6 +3668,23 @@ export default function SalesReports() {
       setRefundLoading(false);
       setRefundLog(null);
       setRefundOrder(null);
+    }
+  }
+
+  async function handleViewReceipt(order: Order) {
+    setReceiptOpen(true);
+    setReceiptLoading(true);
+    setReceiptError("");
+    setReceipt(null);
+    try {
+      setReceipt(await api.get<ReceiptDto>(`/orders/${order.id}/receipt`));
+    } catch (error) {
+      console.error("Receipt load failed:", error);
+      setReceiptError(
+        error instanceof Error ? error.message : "Unable to load receipt.",
+      );
+    } finally {
+      setReceiptLoading(false);
     }
   }
 
@@ -3767,6 +3819,18 @@ export default function SalesReports() {
           }
         }}
         loading={refundLoading}
+      />
+
+      <ReceiptViewerModal
+        open={receiptOpen}
+        receipt={receipt}
+        loading={receiptLoading}
+        error={receiptError}
+        onClose={() => {
+          setReceiptOpen(false);
+          setReceipt(null);
+          setReceiptError("");
+        }}
       />
 
       <DrumDatePicker
@@ -4229,6 +4293,7 @@ export default function SalesReports() {
               orders={orders}
               loading={isLoading}
               onRefund={(order) => setRefundOrder(order)}
+              onViewReceipt={handleViewReceipt}
             />
           </motion.div>
         )}

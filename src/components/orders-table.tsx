@@ -261,7 +261,7 @@ export function OrdersTable({ orders = [] }: OrdersTableProps) {
       <Table>
         <TableHeader>
           <TableRow className="border-gray-200 hover:bg-transparent">
-            <TableHead className="text-gray-700 font-semibold">Order ID</TableHead>
+            <TableHead className="text-gray-700 font-semibold">Order Number</TableHead>
             <TableHead className="text-gray-700 font-semibold">Date</TableHead>
             <TableHead className="text-gray-700 font-semibold">Time</TableHead>
             <TableHead className="text-gray-700 font-semibold">Order Type</TableHead>
