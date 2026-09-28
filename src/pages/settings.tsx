@@ -1,4 +1,7 @@
-﻿import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+﻿import {
+  createContext, useCallback, useContext, useEffect, useState,
+  type CSSProperties, type ReactNode,
+} from "react";
 import { Lock, ChevronDown, ChevronUp, Star, MessageSquare } from "lucide-react";
 import { useAuth } from "../context/authcontext";
 import { api } from "../lib/api";
@@ -13,6 +16,12 @@ import { Sidebar } from "../components/Sidebar";
  * Only after that check passes does the page load its own data, so other roles
  * never trigger the settings or feedback requests. The API must still enforce
  * the same rule on its side, this check only controls what the UI shows.
+ *
+ * Responsive behaviour:
+ *   mobile  (< 640px)   settings menu becomes compact grouped lists on top,
+ *                       form rows stack (label above control), full-width controls
+ *   tablet  (< 1024px)  narrower side menu, tighter padding
+ *   desktop (>= 1024px) original layout
  */
 
 /* -------------------------------------------------------------------------- */
@@ -45,6 +54,45 @@ const TOAST_DURATION_OPTIONS = [2, 3, 4, 5].map((seconds) => ({
   value: String(seconds * 1000),
   label: `${seconds} seconds`,
 }));
+
+/* -------------------------------------------------------------------------- */
+/* Viewport (responsive) helpers                                              */
+/* -------------------------------------------------------------------------- */
+
+type Viewport = "mobile" | "tablet" | "desktop";
+
+const MOBILE_MAX = 640;
+const TABLET_MAX = 1024;
+
+const readViewport = (): Viewport => {
+  if (typeof window === "undefined") return "desktop";
+  const width = window.innerWidth;
+  if (width < MOBILE_MAX) return "mobile";
+  if (width < TABLET_MAX) return "tablet";
+  return "desktop";
+};
+
+// One resize listener for the whole page. Components read the result through context,
+// so exported primitives (FR, SI, SS...) still work anywhere and default to "desktop".
+const ViewportContext = createContext<Viewport>("desktop");
+const useViewport = () => useContext(ViewportContext);
+
+function useViewportWatcher(): Viewport {
+  const [viewport, setViewport] = useState<Viewport>(readViewport);
+
+  useEffect(() => {
+    const onResize = () => setViewport(readViewport());
+    onResize();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+
+  return viewport;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
@@ -229,8 +277,9 @@ const typo = (size: string, color = INK, weight = 500): CSSProperties => ({
 const S = {
   input: {
     fontFamily: FONT, fontSize: "0.85rem", color: INK, background: "#f7f6f5",
-    border: "1px solid #ececec", borderRadius: 8, padding: "9px 12px",
-    width: "100%", outline: "none", transition: "border-color .15s, box-shadow .15s",
+    border: "1px solid #e4e1dc", borderRadius: 10, padding: "10px 12px",
+    width: "100%", minWidth: 0, boxSizing: "border-box", outline: "none",
+    transition: "border-color .15s, box-shadow .15s",
   } as CSSProperties,
   pillSelect: {
     fontFamily: FONT, fontSize: "0.85rem", fontWeight: 500, color: INK,
@@ -238,19 +287,20 @@ const S = {
     cursor: "pointer", outline: "none", appearance: "none",
   } as CSSProperties,
   panel: {
-    background: "#fff", border: "1px solid #eae7e2", borderRadius: 10,
+    background: "#fff", border: "1px solid #eae7e2", borderRadius: 12,
   } as CSSProperties,
   // The large white card that holds the settings menu and content.
   card: {
-    display: "flex", width: "100%", maxWidth: 1100, margin: "0 auto",
-    background: "#fff", borderRadius: 24, overflow: "hidden", boxShadow: "0 4px 24px rgba(0,0,0,.05)",
+    display: "flex", width: "100%", minWidth: 0, maxWidth: 1100, margin: "0 auto",
+    background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #eae7e2",
+    boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04)",
   } as CSSProperties,
 };
 
 // Dark action button. Greyed out while disabled.
 const accentButton = (disabled = false): CSSProperties => ({
-  fontFamily: FONT, fontSize: "0.82rem", fontWeight: 500, borderRadius: 10,
-  padding: "10px 16px", border: "none", background: INK, color: "#fff",
+  fontFamily: FONT, fontSize: "0.82rem", fontWeight: 600, borderRadius: 10, letterSpacing: ".01em",
+  padding: "10px 18px", border: "none", background: INK, color: "#fff",
   textAlign: "center", transition: "all .15s",
   opacity: disabled ? 0.55 : 1,
   cursor: disabled ? "not-allowed" : "pointer",
@@ -277,10 +327,14 @@ export function SI({ value, onChange, type = "text", placeholder = "" }: {
   value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
 }) {
   const [focused, setFocused] = useState(false);
+  const isMobile = useViewport() === "mobile";
   return (
     <input
       style={{
         ...S.input,
+        // 16px on phones stops iOS Safari from zooming the page when an input is focused
+        fontSize: isMobile ? "1rem" : S.input.fontSize,
+        padding: isMobile ? "11px 12px" : S.input.padding,
         borderColor: focused ? ACCENT : "#ececec",
         boxShadow: focused ? "0 0 0 3px rgba(224,90,30,.1)" : "none",
       }}
@@ -294,19 +348,30 @@ export function SI({ value, onChange, type = "text", placeholder = "" }: {
   );
 }
 
-// Pill-shaped dropdown.
+// Pill-shaped dropdown. Full width on phones so it lines up with the inputs.
 export function SS<T extends string>({ value, onChange, options }: {
   value: T; onChange: (v: T) => void; options: readonly { value: T; label: string }[];
 }) {
+  const isMobile = useViewport() === "mobile";
   return (
-    <div style={{ position: "relative", display: "inline-block" }}>
-      <select style={S.pillSelect} value={value} onChange={(e) => onChange(e.target.value as T)}>
+    <div style={{ position: "relative", display: isMobile ? "block" : "inline-block", maxWidth: "100%" }}>
+      <select
+        style={{
+          ...S.pillSelect,
+          fontSize: isMobile ? "1rem" : S.pillSelect.fontSize,
+          width: isMobile ? "100%" : undefined,
+          maxWidth: "100%",
+          padding: isMobile ? "11px 38px 11px 16px" : S.pillSelect.padding,
+        }}
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+      >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       <ChevronDown
         size={14}
         color={MUTED}
-        style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+        style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
       />
     </div>
   );
@@ -336,17 +401,23 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (v: bool
   );
 }
 
-// Form row: label on the left, control on the right.
+// Form row: label on the left, control on the right. On phones the label sits above the control.
 export function FR({ label, last = false, children }: { label: string; last?: boolean; children: ReactNode }) {
+  const viewport = useViewport();
+  const stacked = viewport === "mobile";
   return (
     <div
       style={{
-        display: "grid", gridTemplateColumns: "175px minmax(0,1fr)", alignItems: "center",
-        gap: 16, padding: "20px 0", borderBottom: last ? "none" : "1px solid #ececec",
+        display: "grid",
+        gridTemplateColumns: stacked ? "minmax(0,1fr)" : `${viewport === "tablet" ? 150 : 175}px minmax(0,1fr)`,
+        alignItems: stacked ? "stretch" : "center",
+        gap: stacked ? 8 : 16,
+        padding: stacked ? "14px 0" : "20px 0",
+        borderBottom: last ? "none" : "1px solid #ececec",
       }}
     >
-      <p style={typo("0.85rem")}>{label}</p>
-      {children}
+      <p style={typo(stacked ? "0.8rem" : "0.85rem", stacked ? "#5a5652" : INK)}>{label}</p>
+      <div style={{ minWidth: 0 }}>{children}</div>
     </div>
   );
 }
@@ -355,14 +426,15 @@ export function FR({ label, last = false, children }: { label: string; last?: bo
 export function TR({ label, desc, value, onChange, last = false }: {
   label: string; desc?: string; value: boolean; onChange: (v: boolean) => void; last?: boolean;
 }) {
+  const isMobile = useViewport() === "mobile";
   return (
     <div
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "20px 0", borderBottom: last ? "none" : "1px solid #ececec", gap: 16,
+        padding: isMobile ? "14px 0" : "20px 0", borderBottom: last ? "none" : "1px solid #ececec", gap: 16,
       }}
     >
-      <div>
+      <div style={{ minWidth: 0 }}>
         <p style={typo("0.85rem")}>{label}</p>
         {desc && <p style={{ ...typo("0.74rem", MUTED, 400), margin: "3px 0 0", lineHeight: 1.6 }}>{desc}</p>}
       </div>
@@ -382,7 +454,11 @@ export function Hint({ children }: { children: ReactNode }) {
 
 // Read-only value shown inside a form row.
 function Value({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
-  return <span style={typo("0.8rem", muted ? "#5a5652" : INK, muted ? 400 : 600)}>{children}</span>;
+  return (
+    <span style={{ ...typo("0.8rem", muted ? "#5a5652" : INK, muted ? 400 : 600), overflowWrap: "anywhere" }}>
+      {children}
+    </span>
+  );
 }
 
 // Error message with a retry button.
@@ -397,8 +473,9 @@ function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void
 
 // Shown to users who are not administrators.
 export function LockedSection({ label }: { label: string }) {
+  const isMobile = useViewport() === "mobile";
   return (
-    <div style={{ background: "#f7f6f5", borderRadius: 16, padding: "48px 32px", textAlign: "center" }}>
+    <div style={{ background: "#f7f6f5", borderRadius: 16, padding: isMobile ? "36px 20px" : "48px 32px", textAlign: "center" }}>
       <div
         style={{
           width: 52, height: 52, borderRadius: 12, background: "#fff",
@@ -578,6 +655,7 @@ function usePermissionMatrix() {
 
 export function RolesTab() {
   const { matrix, error, reload } = usePermissionMatrix();
+  const isMobile = useViewport() === "mobile";
 
   if (error) return <ErrorPanel message={error} onRetry={reload} />;
   if (!matrix) return <div style={{ ...S.panel, height: 200, opacity: 0.6 }} />;
@@ -589,15 +667,18 @@ export function RolesTab() {
     return <p style={{ ...typo("0.78rem", MUTED, 400), padding: "24px 0" }}>No permissions have been configured yet.</p>;
   }
 
+  const cellX = isMobile ? 8 : 14;
+
   return (
     <Section>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT, fontSize: "0.78rem" }}>
+      {/* The table scrolls sideways inside its own box so the page never does. */}
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontFamily: FONT, fontSize: "0.78rem" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #f0ede8" }}>
-              <th style={{ padding: "11px 20px 11px 0", textAlign: "left", color: MUTED, fontWeight: 500 }}>Page</th>
+              <th style={{ padding: `11px ${isMobile ? 12 : 20}px 11px 0`, textAlign: "left", color: MUTED, fontWeight: 500 }}>Page</th>
               {ROLE_COLUMNS.map((role) => (
-                <th key={role} style={{ padding: "11px 14px", textAlign: "center", color: "#5a5652", fontWeight: 600 }}>
+                <th key={role} style={{ padding: `11px ${cellX}px`, textAlign: "center", color: "#5a5652", fontWeight: 600 }}>
                   {formatRoleLabel(role)}
                 </th>
               ))}
@@ -606,11 +687,11 @@ export function RolesTab() {
           <tbody>
             {pages.map((page, i) => (
               <tr key={page} style={{ borderBottom: i < pages.length - 1 ? "1px solid #f0ede8" : "none" }}>
-                <td style={{ padding: "10px 20px 10px 0", color: "#484340", fontWeight: 500 }}>{formatPermissionLabel(page)}</td>
+                <td style={{ padding: `10px ${isMobile ? 12 : 20}px 10px 0`, color: "#484340", fontWeight: 500 }}>{formatPermissionLabel(page)}</td>
                 {ROLE_COLUMNS.map((role) => {
                   const allowed = matrix[role]?.[page] === true;
                   return (
-                    <td key={role} style={{ padding: "10px 14px", textAlign: "center" }}>
+                    <td key={role} style={{ padding: `10px ${cellX}px`, textAlign: "center" }}>
                       <span
                         style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -676,11 +757,20 @@ function useFormAction() {
 }
 
 // Bottom row of a form: status message on the left, submit button on the right.
+// On phones the button takes the full width below the message.
 function FormFooter({ action, label, busyLabel, onSubmit }: {
   action: ReturnType<typeof useFormAction>; label: string; busyLabel: string; onSubmit: () => void;
 }) {
+  const isMobile = useViewport() === "mobile";
   return (
-    <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+    <div
+      style={{
+        padding: isMobile ? "14px 0" : "14px 20px",
+        display: "flex", alignItems: isMobile ? "stretch" : "center",
+        flexDirection: isMobile ? "column-reverse" : "row",
+        justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+      }}
+    >
       <span style={typo("0.72rem", action.result?.ok ? SUCCESS : ERROR, 400)}>{action.result?.text}</span>
       <button onClick={onSubmit} disabled={action.busy} style={accentButton(action.busy)}>
         {action.busy ? busyLabel : label}
@@ -788,6 +878,7 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
 }) {
   const [sort, setSort] = useState<SortKey>("newest");
   const [rating, setRating] = useState(0);
+  const isMobile = useViewport() === "mobile";
 
   // Loading placeholders
   if (loading) {
@@ -815,28 +906,47 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
 
   return (
     <>
-      {/* Rating filter and sorting */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-        {RATING_FILTERS.map((r) => (
-          <button
-            key={r}
-            onClick={() => setRating(r)}
-            style={{
-              fontFamily: FONT, fontSize: "0.69rem", fontWeight: rating === r ? 600 : 400,
-              padding: "4px 10px", borderRadius: 99, border: "1px solid #e4e1dc",
-              background: rating === r ? ACCENT : "#fafaf9", color: rating === r ? "#fff" : "#7a7470",
-              cursor: "pointer", transition: "all .15s",
-              boxShadow: rating === r ? "0 1px 4px rgba(224,90,30,.2)" : "0 1px 3px rgba(0,0,0,.06)",
-            }}
-          >
-            {r === 0 ? "All" : `${r}★`}
-          </button>
-        ))}
-        <div style={{ flex: 1 }} />
+      {/* Rating filter and sorting. On phones the filter chips scroll sideways and the sort sits below. */}
+      <div
+        style={{
+          display: "flex", alignItems: isMobile ? "stretch" : "center",
+          flexDirection: isMobile ? "column" : "row", gap: isMobile ? 10 : 6, marginBottom: 10,
+          flexWrap: isMobile ? "nowrap" : "wrap",
+        }}
+      >
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            flexWrap: isMobile ? "nowrap" : "wrap",
+            overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 2 : 0,
+          }}
+        >
+          {RATING_FILTERS.map((r) => (
+            <button
+              key={r}
+              onClick={() => setRating(r)}
+              style={{
+                fontFamily: FONT, fontSize: "0.69rem", fontWeight: rating === r ? 600 : 400,
+                padding: isMobile ? "7px 14px" : "4px 10px", borderRadius: 99, border: "1px solid #e4e1dc",
+                background: rating === r ? ACCENT : "#fafaf9", color: rating === r ? "#fff" : "#7a7470",
+                cursor: "pointer", transition: "all .15s", flexShrink: 0,
+                boxShadow: rating === r ? "0 1px 4px rgba(224,90,30,.2)" : "0 1px 3px rgba(0,0,0,.06)",
+              }}
+            >
+              {r === 0 ? "All" : `${r}★`}
+            </button>
+          ))}
+        </div>
+        {!isMobile && <div style={{ flex: 1 }} />}
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}
-          style={{ ...S.input, width: "auto", padding: "5px 10px" }}
+          style={{
+            ...S.input,
+            width: isMobile ? "100%" : "auto",
+            padding: isMobile ? "10px 12px" : "5px 10px",
+            fontSize: isMobile ? "1rem" : S.input.fontSize,
+          }}
         >
           {(Object.keys(SORT_OPTIONS) as SortKey[]).map((key) => (
             <option key={key} value={key}>{SORT_OPTIONS[key].label}</option>
@@ -864,7 +974,7 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
             </div>
             <StarDisplay rating={entry.rating} />
             {entry.message && (
-              <p style={{ ...typo("0.76rem", "#5a5652", 400), lineHeight: 1.7, margin: "6px 0 0" }}>{entry.message}</p>
+              <p style={{ ...typo("0.76rem", "#5a5652", 400), lineHeight: 1.7, margin: "6px 0 0", overflowWrap: "anywhere" }}>{entry.message}</p>
             )}
           </div>
         ))}
@@ -927,11 +1037,26 @@ export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
   feedback:      { title: "Customer Feedback",       desc: "Customer reviews and ratings from the menu page." },
 };
 
-// One collapsible group of tabs in the settings menu.
+// Small count bubble shown next to "Customer Feedback".
+function CountBadge({ count }: { count: number }) {
+  return (
+    <span
+      style={{
+        fontSize: "0.62rem", fontWeight: 700, background: ACCENT, color: "#fff",
+        borderRadius: 99, padding: "2px 6px", minWidth: 17, textAlign: "center",
+      }}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+// One collapsible group of tabs in the settings menu (tablet and desktop).
 export function SidebarGroup({ group, active, feedbackCount, onSelect }: {
   group: NavGroup; active: TabKey; feedbackCount: number; onSelect: (key: TabKey) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const isTablet = useViewport() === "tablet";
 
   return (
     <div style={{ marginBottom: 4 }}>
@@ -956,27 +1081,74 @@ export function SidebarGroup({ group, active, feedbackCount, onSelect }: {
             onClick={() => onSelect(key)}
             style={{
               width: "100%", display: "flex", alignItems: "center", gap: 10,
-              padding: "11px 14px", background: isActive ? "#f0eeec" : "none",
-              border: "none", borderRadius: 14, cursor: "pointer",
-              fontFamily: FONT, fontSize: "0.85rem", fontWeight: isActive ? 600 : 500,
+              padding: isTablet ? "10px 12px" : "11px 14px", background: isActive ? "#f0eeec" : "none",
+              border: "none", borderRadius: 10, cursor: "pointer",
+              fontFamily: FONT, fontSize: isTablet ? "0.8rem" : "0.85rem", fontWeight: isActive ? 600 : 500,
               color: isActive ? INK : "#5a5652",
               textAlign: "left", transition: "background .12s, color .12s", marginBottom: 2,
             }}
           >
             <span style={{ flex: 1 }}>{label}</span>
-            {key === "feedback" && feedbackCount > 0 && (
-              <span
-                style={{
-                  fontSize: "0.62rem", fontWeight: 700, background: ACCENT, color: "#fff",
-                  borderRadius: 99, padding: "2px 6px", minWidth: 17, textAlign: "center",
-                }}
-              >
-                {feedbackCount > 99 ? "99+" : feedbackCount}
-              </span>
-            )}
+            {key === "feedback" && feedbackCount > 0 && <CountBadge count={feedbackCount} />}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// Phone version of the settings menu: compact grouped lists, one card per group.
+function MobileTabs({ active, feedbackCount, onSelect }: {
+  active: TabKey; feedbackCount: number; onSelect: (key: TabKey) => void;
+}) {
+  return (
+    <div style={{ borderBottom: "1px solid #f0eeec", padding: "18px 14px 10px" }}>
+      <h2 style={{ ...typo("1.15rem", INK, 700), letterSpacing: "-0.01em", padding: "0 4px 10px" }}>Settings</h2>
+      <div role="tablist" aria-orientation="vertical">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} style={{ marginBottom: 10 }}>
+            <p
+              style={{
+                ...typo("0.62rem", "#b0aaa3", 600), letterSpacing: ".09em",
+                textTransform: "uppercase", padding: "0 4px 5px",
+              }}
+            >
+              {group.label}
+            </p>
+            <div
+              style={{
+                border: "1px solid #eae7e2", borderRadius: 12,
+                overflow: "hidden", background: "#fff",
+              }}
+            >
+              {group.items.map(({ key, label }, i) => {
+                const isActive = active === key;
+                return (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => onSelect(key)}
+                    style={{
+                      width: "100%", minHeight: 38, boxSizing: "border-box",
+                      display: "flex", alignItems: "center", gap: 8, textAlign: "left",
+                      padding: "9px 14px", cursor: "pointer", border: "none",
+                      borderTop: i === 0 ? "none" : "1px solid #f0eeec",
+                      background: isActive ? "#f0eeec" : "#fff",
+                      color: isActive ? INK : "#5a5652",
+                      fontFamily: FONT, fontSize: "0.83rem", fontWeight: isActive ? 600 : 500,
+                      transition: "background .12s, color .12s",
+                    }}
+                  >
+                    <span style={{ flex: 1 }}>{label}</span>
+                    {key === "feedback" && feedbackCount > 0 && <CountBadge count={feedbackCount} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1096,11 +1268,20 @@ function useFeedback() {
 
 // Outer page shell: main sidebar plus the grey background.
 function PageFrame({ children }: { children: ReactNode }) {
+  const viewport = useViewport();
+  const padding = viewport === "mobile" ? 12 : viewport === "tablet" ? 16 : 24;
+
   return (
     <div className="flex min-h-screen bg-gray-50" style={{ fontFamily: FONT }}>
       <Sidebar />
-      <main className="tablet-shell flex-1">
-        <div style={{ display: "flex", height: "100%", background: "#f0eeec", padding: 24, boxSizing: "border-box", minHeight: "100vh" }}>
+      {/* minWidth: 0 lets this flex child shrink instead of overflowing the screen */}
+      <main className="tablet-shell flex-1" style={{ minWidth: 0 }}>
+        <div
+          style={{
+            display: "flex", height: "100%", background: "#f0eeec", padding,
+            boxSizing: "border-box", minHeight: "100vh", alignItems: "flex-start",
+          }}
+        >
           {children}
         </div>
       </main>
@@ -1133,6 +1314,9 @@ function SettingsPanel({ account, onAccountChange }: {
   const [activeTab, setActiveTab] = useState<TabKey>("business");
   const settings = useSettings();
   const feedback = useFeedback();
+  const viewport = useViewport();
+  const isMobile = viewport === "mobile";
+  const isTablet = viewport === "tablet";
 
   const meta = TAB_META[activeTab];
   const tabProps: TabProps = { s: settings.values, set: settings.setField };
@@ -1169,58 +1353,103 @@ function SettingsPanel({ account, onAccountChange }: {
     }
   };
 
+  const contentPadding = isMobile ? "20px 16px 28px" : isTablet ? "28px 24px" : "32px 36px";
+
   return (
-    <div style={S.card}>
+    <div
+      style={{
+        ...S.card,
+        flexDirection: isMobile ? "column" : "row",
+        borderRadius: isMobile ? 14 : 16,
+      }}
+    >
       {/* Settings menu */}
-      <div style={{ width: 230, flexShrink: 0, background: "#fff", overflowY: "auto", padding: "24px 14px" }}>
-        <h2 style={{ ...typo("1.1rem", INK, 700), padding: "0 10px 18px" }}>Settings</h2>
-        {NAV_GROUPS.map((group) => (
-          <SidebarGroup
-            key={group.label}
-            group={group}
-            active={activeTab}
-            feedbackCount={feedback.feedback.length}
-            onSelect={setActiveTab}
-          />
-        ))}
-      </div>
+      {isMobile ? (
+        <MobileTabs active={activeTab} feedbackCount={feedback.feedback.length} onSelect={setActiveTab} />
+      ) : (
+        <div
+          style={{
+            width: isTablet ? 200 : 230, flexShrink: 0, background: "#fff", overflowY: "auto",
+            padding: isTablet ? "20px 10px" : "24px 14px",
+          }}
+        >
+          <h2 style={{ ...typo("1.1rem", INK, 700), letterSpacing: "-0.01em", padding: "0 10px 18px" }}>Settings</h2>
+          {NAV_GROUPS.map((group) => (
+            <SidebarGroup
+              key={group.label}
+              group={group}
+              active={activeTab}
+              feedbackCount={feedback.feedback.length}
+              onSelect={setActiveTab}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px", borderLeft: "1px solid #f0eeec" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-          <p style={typo("0.76rem", status?.color, 400)}>{status?.text}</p>
+      <div
+        style={{
+          flex: 1, minWidth: 0, padding: contentPadding,
+          overflowY: isMobile ? "visible" : "auto",
+          borderLeft: isMobile ? "none" : "1px solid #f0eeec",
+        }}
+      >
+        <div
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 12, flexWrap: "wrap", marginBottom: status || showSave ? 14 : 0,
+          }}
+        >
+          {status && <p style={{ ...typo("0.76rem", status.color, 400), flex: isMobile ? "1 1 100%" : "0 1 auto" }}>{status.text}</p>}
           {showSave && (
             <button
               onClick={settings.save}
               disabled={settings.saving || settings.loading}
-              style={accentButton(settings.saving || settings.loading)}
+              style={{
+                ...accentButton(settings.saving || settings.loading),
+                marginLeft: isMobile ? 0 : "auto",
+                flex: isMobile ? "1 1 100%" : "0 0 auto",
+                padding: isMobile ? "12px 16px" : "10px 16px",
+              }}
             >
               {settings.saving ? "Saving..." : "Save Settings"}
             </button>
           )}
         </div>
-        <h1 style={{ ...typo("1.4rem", INK, 700), marginBottom: 4 }}>{meta.title}</h1>
-        <p style={{ ...typo("0.82rem", MUTED, 400), marginBottom: 16 }}>{meta.desc}</p>
+        <h1 style={{ ...typo(isMobile ? "1.2rem" : "1.4rem", INK, 700), letterSpacing: "-0.015em", marginBottom: 4, overflowWrap: "anywhere" }}>{meta.title}</h1>
+        <p style={{ ...typo(isMobile ? "0.78rem" : "0.82rem", MUTED, 400), marginBottom: 16, lineHeight: 1.6 }}>{meta.desc}</p>
         {renderTab()}
       </div>
     </div>
   );
 }
 
-export default function Settings() {
+// Everything that depends on the screen size sits inside the provider.
+function SettingsView() {
   const { status, account, applyAccount, verify } = useAdminAccess();
+  const isMobile = useViewport() === "mobile";
 
   return (
     <PageFrame>
       {status === "allowed" && account ? (
         <SettingsPanel account={account} onAccountChange={applyAccount} />
       ) : (
-        <div style={{ ...S.card, alignItems: "center", padding: 32 }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ ...S.card, alignItems: "center", padding: isMobile ? 20 : 32 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <AccessMessage status={status} onRetry={verify} />
           </div>
         </div>
       )}
     </PageFrame>
+  );
+}
+
+export default function Settings() {
+  const viewport = useViewportWatcher();
+
+  return (
+    <ViewportContext.Provider value={viewport}>
+      <SettingsView />
+    </ViewportContext.Provider>
   );
 }

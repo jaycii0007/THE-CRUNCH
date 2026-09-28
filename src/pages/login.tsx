@@ -242,7 +242,8 @@ function TabSwitcher({ mode, onSwitch }: { mode: AuthMode; onSwitch: (m: AuthMod
 function BrandPanel({ mode }: { mode: AuthMode }) {
   const copy = BRAND_COPY[mode];
   return (
-    <div style={{ position: "relative", overflow: "hidden", minHeight: 580, background: "#0a0600", display: "flex", flexDirection: "column" }}>
+    // Size and layout come from the .auth-brand class so they can change per screen size
+    <div className="auth-brand" style={{ position: "relative", overflow: "hidden", background: "#0a0600", display: "flex", flexDirection: "column" }}>
       {/* Top bar: clickable logo (goes to the landing page) + eyebrow */}
       <div style={{ position: "relative", zIndex: 4, padding: "24px 24px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <Link to={LANDING_PATH} className="auth-brand-link" title="Back to home" aria-label="The Crunch – back to home">
@@ -264,12 +265,14 @@ function BrandPanel({ mode }: { mode: AuthMode }) {
         </AnimatePresence>
       </div>
 
-      {/* Hero image with a dark fade at the bottom so the text stays readable */}
+      {/* Hero image with a dark fade at the bottom so the text stays readable.
+          Its height comes from .auth-hero (fills the panel on desktop/tablet, fixed on phones). */}
       <motion.div
+        className="auth-hero"
         initial={{ opacity: 0, scale: 1.04 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
-        style={{ position: "relative", zIndex: 2, flex: 1, margin: "16px 16px 0", borderRadius: 18, overflow: "hidden", minHeight: 0 }}
+        style={{ position: "relative", zIndex: 2, margin: "16px 16px 0", borderRadius: 18, overflow: "hidden" }}
       >
         <img src={crunchImg} alt="Boneless Crunchy Savory" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", display: "block" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 55%, rgba(8,5,1,0.85) 100%)", pointerEvents: "none" }} />
@@ -329,7 +332,8 @@ function ModalShell({ open, zIndex, Icon, eyebrow, title, onClose, children }: {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          style={{ position: "fixed", inset: 0, zIndex, background: "rgba(0,0,0,0.82)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          // overflowY lets tall modals scroll on small screens instead of getting cut off
+          style={{ position: "fixed", inset: 0, zIndex, background: "rgba(0,0,0,0.82)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}
         >
           <motion.div
             role="dialog"
@@ -339,7 +343,7 @@ function ModalShell({ open, zIndex, Icon, eyebrow, title, onClose, children }: {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 320, damping: 28 }}
-            style={{ width: "min(460px, 100%)", background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 22, boxShadow: `0 30px 80px rgba(0,0,0,0.6), 0 0 60px ${Y}18`, padding: "28px 28px 24px" }}
+            style={{ width: "min(460px, 100%)", margin: "auto", background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 22, boxShadow: `0 30px 80px rgba(0,0,0,0.6), 0 0 60px ${Y}18`, padding: "28px 28px 24px" }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
               <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(245,197,24,0.15)", border: `1px solid ${Y}30`, display: "grid", placeItems: "center" }}>
@@ -681,7 +685,7 @@ export default function Login() {
     <div
       className="auth-root"
       style={{
-        minHeight: "100vh", display: "grid", placeItems: "center", padding: "24px 16px", position: "relative",
+        minHeight: "100vh", display: "grid", placeItems: "center", position: "relative",
         fontFamily: "'Poppins', sans-serif",
         background: "radial-gradient(ellipse at 20% 10%, rgba(245,197,24,0.05), transparent 40%), radial-gradient(ellipse at 80% 90%, rgba(245,197,24,0.03), transparent 40%), linear-gradient(135deg, #0a0600 0%, #060402 55%, #0c0802 100%)",
       }}
@@ -690,22 +694,53 @@ export default function Login() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap');
         .auth-root, .auth-root * { box-sizing: border-box; }
+        .auth-root { padding: 24px 16px; }
         .auth-root button, .auth-root input { font-family: inherit; }
         .auth-root input::placeholder { color: rgba(255,255,255,0.25); }
         .auth-brand-link { display: block; width: 44px; height: 44px; border-radius: 12px; outline: none; cursor: pointer; }
         .auth-brand-link:focus-visible { box-shadow: 0 0 0 2px ${Y}; }
         ::-webkit-scrollbar { display: none; }
+
+        /* ── Desktop (over 1024px): two columns side by side ── */
+        .auth-card { width: min(1000px, 100%); grid-template-columns: minmax(280px, 0.9fr) minmax(340px, 1fr); }
+        .auth-card > * { min-width: 0; }            /* lets grid children shrink instead of overflowing */
+        .auth-brand { min-height: 580px; }
+        .auth-hero { flex: 1; min-height: 0; }      /* image fills the leftover space in the panel */
+        .auth-form-pane { padding: 36px 32px; }
+
+        /* ── Tablet (641px to 1024px): still two columns, just a bit tighter ── */
+        @media (max-width: 1024px) {
+          .auth-card { width: min(900px, 100%); grid-template-columns: minmax(240px, 0.9fr) minmax(300px, 1fr); }
+          .auth-brand { min-height: 520px; }
+          .auth-form-pane { padding: 32px 24px; }
+        }
+
+        /* ── Phone (640px and below): stack the panels in one column ── */
+        @media (max-width: 640px) {
+          .auth-card { width: min(520px, 100%); grid-template-columns: minmax(0, 1fr); }
+          .auth-brand { min-height: 0; }
+          .auth-hero { flex: none; height: 220px; }  /* fixed height since the panel no longer stretches */
+          .auth-form-pane { padding: 28px 22px; }
+        }
+
+        /* ── Small phones (480px and below): tighten spacing further ── */
+        @media (max-width: 480px) {
+          .auth-root { padding: 12px 10px; }
+          .auth-hero { height: 170px; }
+          .auth-form-pane { padding: 24px 16px; }
+        }
       `}</style>
 
       <Orbs />
 
       <motion.div
+        className="auth-card"
         initial={{ opacity: 0, y: 30, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         style={{
-          width: "min(1000px, 100%)", position: "relative", zIndex: 1, display: "grid",
-          gridTemplateColumns: "minmax(280px, 0.9fr) minmax(340px, 1fr)", background: "rgba(16,10,3,0.82)",
+          position: "relative", zIndex: 1, display: "grid",
+          background: "rgba(16,10,3,0.82)",
           border: `1px solid ${BORDER}`, borderRadius: 28, overflow: "hidden", backdropFilter: "blur(24px)", perspective: 1200,
           boxShadow: "0 40px 100px rgba(0,0,0,0.55), 0 0 0 1px rgba(245,197,24,0.06), inset 0 1px 0 rgba(255,255,255,0.06)",
         }}
@@ -719,12 +754,13 @@ export default function Login() {
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={mode}
+              className="auth-form-pane"
               custom={direction}
               initial={{ rotateY: direction * -90, opacity: 0 }}
               animate={{ rotateY: 0, opacity: 1 }}
               exit={{ rotateY: direction * 90, opacity: 0 }}
               transition={{ type: "spring", stiffness: 220, damping: 26 }}
-              style={{ padding: "36px 32px", transformStyle: "preserve-3d", perspective: 1000 }}
+              style={{ transformStyle: "preserve-3d", perspective: 1000 }}
             >
               <TabSwitcher mode={mode} onSwitch={switchMode} />
 
