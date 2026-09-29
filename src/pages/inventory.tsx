@@ -356,7 +356,7 @@ interface MgmtProduct {
   id: number; rawProductId?: number; rawInventoryId?: number; menuCode: string; name: string;
   category: string; price: string; unit: string; stock: number; description?: string; image?: string;
   availabilityStatus: string; manualOverride: boolean; manualStatus: string; overrideMode: ManualOverrideMode;
-  availableServings?: number | null; isPromotional: boolean; promoPrice?: string; promoLabel?: string;
+  hasRecipe: boolean; availableServings?: number | null; isPromotional: boolean; promoPrice?: string; promoLabel?: string;
   ingredients: MenuIngredientInput[];
 }
 
@@ -418,6 +418,7 @@ function MenuAdminTab() {
 
   const [eName, setEName] = useState(""); const [eCat, setECat] = useState("");
   const [ePrice, setEPrice] = useState(""); const [eStock, setEStock] = useState("");
+  const [initialEQuantity, setInitialEQuantity] = useState(0);
   const [eDesc, setEDesc] = useState("");
   const [eOverrideMode, setEOverrideMode] = useState<ManualOverrideMode>(OVERRIDE_MODE_OPTIONS[0]);
   const [eIngredients, setEIngredients] = useState<MenuIngredientInput[]>([]);
@@ -550,6 +551,7 @@ function MenuAdminTab() {
   function renderProductForm(cfg: {
     name: string; setName: (v: string) => void; cat: string; setCat: (v: string) => void;
     price: string; setPrice: (v: string) => void; stock?: string; setStock?: (v: string) => void;
+    availableServings?: number;
     overrideMode: ManualOverrideMode; setOverrideMode: (m: ManualOverrideMode) => void;
     ingredients: MenuIngredientInput[]; setIngredients: Dispatch<SetStateAction<MenuIngredientInput[]>>;
     isPromotional: boolean; setIsPromotional: (v: boolean) => void;
@@ -570,6 +572,15 @@ function MenuAdminTab() {
           <div className="grid grid-cols-2 gap-2.5">
             <FormInput label="Price (P) *" type="number" min={1} step="0.01" placeholder="0.00" value={cfg.price} onChange={(e) => cfg.setPrice(e.target.value)} />
             <FormInput label="Stock Qty" type="number" min={0} step="0.01" placeholder="0" value={cfg.stock} onChange={(e) => cfg.setStock!(e.target.value)} />
+          </div>
+        ) : cfg.availableServings !== undefined ? (
+          <div className="grid grid-cols-2 gap-2.5">
+            <FormInput label="Price (P) *" type="number" min={1} step="0.01" placeholder="0.00" value={cfg.price} onChange={(e) => cfg.setPrice(e.target.value)} />
+            <FormGroup label="Available Servings">
+              <div className={inputClass} style={{ ...inputStyle, background: T.surfaceMuted }} aria-readonly="true">
+                {cfg.availableServings}
+              </div>
+            </FormGroup>
           </div>
         ) : (
           <FormInput label="Price (P) *" type="number" min={1} step="0.01" placeholder="0.00" value={cfg.price} onChange={(e) => cfg.setPrice(e.target.value)} />
@@ -662,6 +673,7 @@ function MenuAdminTab() {
           manualOverride: Boolean(Number(item.manual_override ?? 0)),
           manualStatus: String(item.manual_status ?? "Available"),
           overrideMode: toOverrideMode(item.manual_override, item.manual_status),
+          hasRecipe: Number(item.ingredient_count ?? 0) > 0,
           availableServings:
             item.available_servings === null || item.available_servings === undefined || String(item.available_servings) === ""
               ? null : Number(item.available_servings),
@@ -694,7 +706,7 @@ function MenuAdminTab() {
   function openEdit(product: MgmtProduct) {
     setEditProduct(product);
     setEName(product.name); setECat(product.category); setEPrice(product.price);
-    setEStock(String(product.stock)); setEDesc(product.description ?? "");
+    setEStock(String(product.stock)); setInitialEQuantity(product.stock); setEDesc(product.description ?? "");
     setEOverrideMode(product.overrideMode);
     setEIngredients(product.ingredients);
     setEIsPromotional(Boolean(product.isPromotional));
@@ -761,7 +773,7 @@ function MenuAdminTab() {
       return;
     }
     const parsedStock = Number(eStock || 0);
-    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+    if (!editProduct.hasRecipe && (!Number.isFinite(parsedStock) || parsedStock < 0)) {
       notify(addNotification, "Stock quantity cannot be negative.", "warning");
       return;
     }
@@ -780,16 +792,19 @@ function MenuAdminTab() {
       } else if (eImagePreview && eImagePreview !== "/img/placeholder.jpg") {
         editImageUrl = eImagePreview;
       }
+      const ingredients = buildIngredientPayload(eIngredients);
+      const isRecipeSave = editProduct.hasRecipe || ingredients.length > 0;
       const payload: Record<string, unknown> = {
         name: eName.trim(), category: eCat.trim(), item_type: "menu_item",
-        price: parsedPrice, unit: editProduct.unit || UNIT_OPTIONS[0], quantity: parsedStock,
+        price: parsedPrice, unit: editProduct.unit || UNIT_OPTIONS[0],
         description: eDesc.trim() || null,
         ...toOverridePayload(eOverrideMode), override_mode: eOverrideMode,
         is_promotional: eIsPromotional,
         promo_price: eIsPromotional && ePromoPrice.trim() ? Number(ePromoPrice) : null,
         promo_label: eIsPromotional ? ePromoLabel.trim() || null : null,
-        ingredients: buildIngredientPayload(eIngredients),
+        ingredients,
       };
+      if (!isRecipeSave && parsedStock !== initialEQuantity) payload.quantity = parsedStock;
       if (editImageUrl) payload.image = editImageUrl;
 
       await tryPut([`/products/${editProduct.rawProductId ?? editProduct.id}`], payload);
@@ -862,15 +877,18 @@ function MenuAdminTab() {
     );
   });
 
+  const getSellableQuantity = (product: MgmtProduct) =>
+    product.hasRecipe ? Number(product.availableServings ?? 0) : product.stock;
+
   const totalValue = products.reduce((sum, product) => {
     const price = parseFloat(String(product.price).replace(/[^0-9.]/g, "")) || 0;
-    return sum + price * product.stock;
+    return sum + price * getSellableQuantity(product);
   }, 0);
   const hiddenCount = products.filter((product) => product.availabilityStatus === "Out of Stock").length;
   const promoCount = products.filter((product) => product.isPromotional).length;
-  const outOfStockCount = products.filter((product) => product.stock === 0).length;
+  const outOfStockCount = products.filter((product) => getSellableQuantity(product) === 0).length;
   const attentionItems = products
-    .filter((product) => product.stock === 0 || product.availabilityStatus === "Out of Stock")
+    .filter((product) => getSellableQuantity(product) === 0 || product.availabilityStatus === "Out of Stock")
     .slice(0, 5);
 
   return (
@@ -925,7 +943,7 @@ function MenuAdminTab() {
               rows={filtered.map((product) => {
                 const priceNum = parseFloat(String(product.price).replace(/[^0-9.]/g, ""));
                 const promoNum = parseFloat(String(product.promoPrice ?? "").replace(/[^0-9.]/g, ""));
-                const autoNote = product.ingredients.length > 0 ? "Auto from ingredients (per serving)" : "Auto from stock fallback";
+                const autoNote = product.hasRecipe ? "Auto from ingredients (per serving)" : "Auto from stock fallback";
                 return (
                   <tr key={product.id} style={{ borderBottom: `1px solid ${T.line}` }} className="transition-colors last:border-b-0"
                     onMouseEnter={(e) => (e.currentTarget.style.background = T.surfaceMuted)}
@@ -962,6 +980,7 @@ function MenuAdminTab() {
                         <span className="text-[12px] font-medium" style={{ color: T.ink }}>{product.availabilityStatus}</span>
                       </div>
                       <div className="mt-1 text-[10px]" style={{ color: T.faint }}>{product.overrideMode === "Auto" ? autoNote : product.overrideMode}</div>
+                      {product.hasRecipe && <div className="mt-1 text-[10px]" style={{ color: T.muted }}>Available servings: {getSellableQuantity(product)}</div>}
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex gap-1">
@@ -994,18 +1013,22 @@ function MenuAdminTab() {
             ) : (
               <div className="flex flex-col gap-2.5">
                 {attentionItems.map((product) => {
-                  const maxStock = Math.max(1, ...products.map((p) => p.stock));
-                  const fillPct = Math.min(100, Math.round((product.stock / maxStock) * 100));
+                  const maxStock = Math.max(1, ...products.filter((entry) => !entry.hasRecipe).map((entry) => entry.stock));
+                  const fillPct = product.hasRecipe ? 0 : Math.min(100, Math.round((product.stock / maxStock) * 100));
                   return (
                     <div key={product.id} className="rounded-xl px-3 py-2.5" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate text-[12px] font-semibold" style={{ color: T.ink }}>{product.name}</span>
                         <StatusDot tone="bad" />
                       </div>
-                      <div className="mt-1 text-[10.5px]" style={{ color: T.muted }}>{product.stock} {product.unit} in stock</div>
-                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full" style={{ background: T.line }}>
-                        <div className="h-full rounded-full" style={{ width: `${fillPct}%`, background: T.bad }} />
+                      <div className="mt-1 text-[10.5px]" style={{ color: T.muted }}>
+                        {product.hasRecipe ? `Available servings: ${getSellableQuantity(product)}` : `${product.stock} ${product.unit} in stock`}
                       </div>
+                      {!product.hasRecipe && (
+                        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full" style={{ background: T.line }}>
+                          <div className="h-full rounded-full" style={{ width: `${fillPct}%`, background: T.bad }} />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1052,7 +1075,9 @@ function MenuAdminTab() {
         >
           {renderProductForm({
             name: eName, setName: setEName, cat: eCat, setCat: setECat, price: ePrice, setPrice: setEPrice,
-            stock: eStock, setStock: setEStock,
+            stock: editProduct.hasRecipe ? undefined : eStock,
+            setStock: editProduct.hasRecipe ? undefined : setEStock,
+            availableServings: editProduct.hasRecipe ? Number(editProduct.availableServings ?? 0) : undefined,
             overrideMode: eOverrideMode, setOverrideMode: setEOverrideMode,
             ingredients: eIngredients, setIngredients: setEIngredients,
             isPromotional: eIsPromotional, setIsPromotional: setEIsPromotional,
