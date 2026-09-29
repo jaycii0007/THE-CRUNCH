@@ -34,6 +34,8 @@ export interface ReceiptDto {
   tableNumber: string | null;
   orderNote: string | null;
   currency: string | null;
+  /** Name of the cashier who processed the order. Have the API send this; the UI can also supply it. */
+  cashierName?: string | null;
   merchant: {
     name: string | null;
     tagline: string | null;
@@ -47,175 +49,139 @@ export interface ReceiptDto {
   missingHistoricalFields: string[];
 }
 
-const escapeHtml = (value: unknown) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+export interface ReceiptOptions {
+  /** Used when the DTO has no cashierName (e.g. the logged-in user). */
+  cashier?: string | null;
+}
 
-const formatNumber = (value: number) => {
-  const [integer, decimal] = Number(value).toFixed(2).split(".");
-  return (decimal === "00" ? integer : `${integer}.${decimal}`).replace(
-    /\B(?=(\d{3})+(?!\d))/g,
-    ",",
-  );
+const esc = (v: unknown) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+const num = (v: number | null | undefined): v is number => v != null && Number.isFinite(Number(v));
+const fmtNum = (v: number) => Number(v).toFixed(2).replace(/\.00$/, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const money = (v: number | null | undefined, cur: string | null) => (num(v) ? `${cur ? `${cur} ` : ""}${fmtNum(v)}` : "—");
+const rate = (r: number | null) => (num(r) ? ` ${fmtNum(r)}%` : "");
+const cap = (s: string) => s.replace(/(^|[-\s_])\w/g, (m) => m.toUpperCase());
+
+const PAYMENT: Record<string, string> = {
+  cash: "Cash", gcash: "GCash", cash_on_pickup: "Cash on Pickup", gcash_onsite: "Onsite GCash / E-Payment",
 };
+const paymentLabel = (v: string | null) => (v ? PAYMENT[v.trim().toLowerCase()] ?? v : "");
 
-const formatMoney = (value: number | null, currency: string | null) => {
-  if (value === null || !Number.isFinite(Number(value))) return "Unavailable";
-  const prefix = currency ? `${escapeHtml(currency)} ` : "";
-  return `${prefix}${formatNumber(Number(value))}`;
-};
-
-const formatRate = (rate: number | null) =>
-  rate === null || !Number.isFinite(Number(rate))
-    ? ""
-    : ` (${formatNumber(Number(rate))}%)`;
-
-const formatPaymentMethod = (value: string | null) => {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return "Unavailable";
-  if (normalized === "cash") return "Cash";
-  if (normalized === "gcash") return "GCash";
-  if (normalized === "cash_on_pickup") return "Cash on Pickup";
-  if (normalized === "gcash_onsite") return "Onsite GCash / E-Payment";
-  return String(value);
-};
-
-function formatOrderDate(receipt: ReceiptDto) {
-  const parsed = new Date(receipt.orderDate);
-  if (Number.isNaN(parsed.getTime())) {
-    return { date: String(receipt.orderDate || "Unavailable"), time: "Unavailable" };
-  }
-  const timeZone = receipt.merchant.timezone || "Asia/Manila";
+export function formatReceiptDate(r: ReceiptDto): string {
+  const d = new Date(r.orderDate);
+  if (Number.isNaN(d.getTime())) return String(r.orderDate || "");
   try {
-    return {
-      date: new Intl.DateTimeFormat("en-PH", {
-        timeZone,
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }).format(parsed),
-      time: new Intl.DateTimeFormat("en-PH", {
-        timeZone,
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      }).format(parsed),
-    };
+    return new Intl.DateTimeFormat("en-PH", {
+      timeZone: r.merchant.timezone || "Asia/Manila",
+      year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
+    }).format(d);
   } catch {
-    return { date: parsed.toLocaleDateString(), time: parsed.toLocaleTimeString() };
+    return d.toLocaleString();
   }
 }
 
-export function buildReceiptHtml(receipt: ReceiptDto): string {
-  const { date, time } = formatOrderDate(receipt);
-  const merchantName = receipt.merchant.name || "The Crunch";
-  const headerMeta = [
-    receipt.merchant.tagline,
-    receipt.merchant.address,
-    receipt.merchant.phone,
-    receipt.merchant.email,
-  ]
-    .filter(Boolean)
-    .map((line) => `<p>${escapeHtml(line)}</p>`)
-    .join("");
-  const itemRows = receipt.items
-    .map(
-      (item) => `
-      <tr>
-        <td>${escapeHtml(item.productName)}${item.note ? `<br/><small>${escapeHtml(item.note)}</small>` : ""}</td>
-        <td class="qty">${escapeHtml(item.quantity)}</td>
-        <td class="amount">${formatMoney(item.unitPrice, receipt.currency)}</td>
-        <td class="amount">${formatMoney(item.subtotal, receipt.currency)}</td>
-      </tr>`,
-    )
-    .join("");
-  const currentStatus = receipt.currentStatus
-    ? `<div class="line"><span>Current Status</span><strong>${escapeHtml(receipt.currentStatus)}</strong></div>`
-    : "";
-  const legacyNotice = receipt.isLegacyReceipt
-    ? `<div class="legacy">Legacy transaction — some original receipt details are unavailable.${receipt.usesCurrentProductNameFallback ? " Product names shown are current catalog fallbacks." : ""}</div>`
-    : "";
-  const orderNote = receipt.orderNote
-    ? `<div class="note"><b>Order Note</b><p>${escapeHtml(receipt.orderNote)}</p></div>`
-    : "";
-  const tableRow = receipt.tableNumber
-    ? `<div class="line"><span>Table</span><strong>${escapeHtml(receipt.tableNumber)}</strong></div>`
-    : "";
-  const cashRows = receipt.paymentMethod === "cash"
-    ? `<div class="line"><span>Cash Tendered</span><strong>${formatMoney(receipt.cashTendered, receipt.currency)}</strong></div>
-       <div class="line"><span>Change</span><strong>${formatMoney(receipt.change, receipt.currency)}</strong></div>`
-    : "";
+const PAGE = (title: string, css: string, body: string) => `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><title>${esc(title)}</title><style>
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:#e5e5e5;font-family:'Courier New',ui-monospace,monospace;color:#000}
+.paper{width:302px;margin:0 auto;background:#fff;padding:20px 16px 26px;font-size:12px;line-height:1.45;box-shadow:0 2px 14px rgba(0,0,0,.18)}
+h1{font-size:18px;text-align:center;margin:0 0 2px;text-transform:uppercase;letter-spacing:.06em}
+p{margin:0}.c{text-align:center}.s{font-size:10px;color:#555}.b{font-weight:700}
+hr{border:0;border-top:1px dashed #000;margin:10px 0}hr.d{border-top:2px solid #000}
+table{width:100%;border-collapse:collapse}td,th{padding:2px 0;vertical-align:top;text-align:left}
+th{font-size:10px;letter-spacing:.05em;border-bottom:1px solid #000;padding-bottom:3px}
+.r{text-align:right;white-space:nowrap;padding-left:8px}.q{width:34px}
+.tot td{font-size:16px;font-weight:700;padding:4px 0}
+.legacy{margin-bottom:8px;padding:6px 8px;border:1px dashed #000;font-size:10px}
+${css}
+@media print{@page{size:80mm auto;margin:0}body{background:#fff;padding:0}.paper{width:auto;box-shadow:none}}
+</style></head><body><div class="paper">${body}</div></body></html>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Receipt ${escapeHtml(receipt.orderNumber)}</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: 'Poppins', Arial, sans-serif; background: #f5f5f5; color: #111; margin: 0; padding: 24px; }
-    .receipt { max-width: 420px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 18px; padding: 24px; }
-    .header { text-align: center; padding-bottom: 16px; border-bottom: 1px dashed #d1d5db; margin-bottom: 16px; }
-    .header h1 { font-size: 22px; margin: 0 0 4px; }
-    .header p, .footer p { margin: 0; color: #6b7280; font-size: 12px; line-height: 1.6; }
-    .txn-badge { display: inline-block; margin-top: 10px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px; padding: 4px 12px; }
-    .txn-label { display: block; font-size: 9px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: .07em; }
-    .txn-value { font-size: 13px; font-weight: 700; letter-spacing: .04em; }
-    .meta, .summary { display: grid; gap: 8px; margin-bottom: 16px; }
-    .line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    th, td { padding: 8px 0; border-bottom: 1px dashed #e5e7eb; font-size: 12px; text-align: left; vertical-align: top; }
-    small { color: #9ca3af; }
-    .qty { text-align: center; width: 44px; }
-    .amount { text-align: right; white-space: nowrap; }
-    .total { padding-top: 12px; border-top: 1px solid #111; margin-top: 12px; font-size: 15px; }
-    .legacy { margin: 0 0 14px; padding: 9px 11px; border: 1px solid #fde68a; border-radius: 9px; background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.5; }
-    .note { margin: 12px 0; padding: 8px 12px; background: #f9fafb; border-radius: 8px; border: 1px dashed #e5e7eb; font-size: 11px; color: #6b7280; }
-    .note b { text-transform: uppercase; letter-spacing: .06em; }
-    .note p { margin: 4px 0 0; font-size: 12px; color: #374151; }
-    .footer { margin-top: 20px; text-align: center; border-top: 1px dashed #d1d5db; padding-top: 16px; }
-    @media print { body { background: #fff; padding: 0; } .receipt { border: 0; border-radius: 0; max-width: none; padding: 0; } }
-  </style>
-</head>
-<body>
-  <main class="receipt">
-    <section class="header">
-      <h1>${escapeHtml(merchantName)}</h1>
-      <p>Official Sales Receipt</p>
-      ${headerMeta}
-      <div class="txn-badge"><span class="txn-label">Transaction ID</span><span class="txn-value">${escapeHtml(receipt.transactionId || "N/A")}</span></div>
-    </section>
-    ${legacyNotice}
-    <section class="meta">
-      <div class="line"><span>Order Number</span><strong>${escapeHtml(receipt.orderNumber)}</strong></div>
-      <div class="line"><span>Date</span><strong>${escapeHtml(date)}</strong></div>
-      <div class="line"><span>Time</span><strong>${escapeHtml(time)}</strong></div>
-      <div class="line"><span>Order Type</span><strong>${escapeHtml(receipt.orderType || "Unavailable")}</strong></div>
-      <div class="line"><span>Payment</span><strong>${escapeHtml(formatPaymentMethod(receipt.paymentMethod))}</strong></div>
-      <div class="line"><span>Customer Type</span><strong>${escapeHtml(receipt.customerType || receipt.discount.name || "Unavailable")}</strong></div>
-      ${tableRow}
-      ${currentStatus}
-    </section>
-    ${orderNote}
-    <table>
-      <thead><tr><th>Item</th><th class="qty">Qty</th><th class="amount">Price</th><th class="amount">Subtotal</th></tr></thead>
-      <tbody>${itemRows || `<tr><td colspan="4">No historical item rows available.</td></tr>`}</tbody>
-    </table>
-    <section class="summary">
-      <div class="line"><span>Subtotal</span><strong>${formatMoney(receipt.subtotal, receipt.currency)}</strong></div>
-      <div class="line"><span>Discount${receipt.discount.name ? ` (${escapeHtml(receipt.discount.name)})` : ""}${formatRate(receipt.discount.rate)}</span><strong>${receipt.discount.amount === null ? "Unavailable" : `-${formatMoney(receipt.discount.amount, receipt.currency)}`}</strong></div>
-      <div class="line"><span>Tax${formatRate(receipt.tax.rate)}</span><strong>${formatMoney(receipt.tax.amount, receipt.currency)}</strong></div>
-      <div class="line"><span>Service Charge${formatRate(receipt.serviceCharge.rate)}</span><strong>${formatMoney(receipt.serviceCharge.amount, receipt.currency)}</strong></div>
-      ${cashRows}
-      <div class="line total"><span>Total</span><strong>${formatMoney(receipt.total, receipt.currency)}</strong></div>
-      <div class="line"><span>Amount Paid</span><strong>${formatMoney(receipt.amountPaid, receipt.currency)}</strong></div>
-    </section>
-    <section class="footer"><p>Thank you for your order.</p><p>Please keep this receipt for your records.</p></section>
-  </main>
-</body>
-</html>`;
+const row = (l: string, v: string, cls = "") => `<tr class="${cls}"><td>${esc(l)}</td><td class="r">${esc(v)}</td></tr>`;
+
+export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): string {
+  const cur = r.currency;
+  const cashier = r.cashierName || opts.cashier || "";
+  const isCash = String(r.paymentMethod).toLowerCase() === "cash";
+  const m = r.merchant;
+
+  const info: [string, string][] = [
+    ["Order No.", r.orderNumber],
+    ["Txn ID", r.transactionId ?? ""],
+    ["Date", formatReceiptDate(r)],
+    ["Cashier", cashier],
+    ["Order Type", r.orderType ? cap(r.orderType) + (r.tableNumber ? ` / Table ${r.tableNumber}` : "") : ""],
+    ["Customer", r.customerType || r.discount.name || ""],
+    ["Payment", paymentLabel(r.paymentMethod)],
+    ["Status", r.currentStatus ?? ""],
+  ];
+
+  const items = r.items.length
+    ? r.items.map((i) => `<tr><td class="q">${esc(i.quantity)}x</td><td>${esc(i.productName)}<div class="s">@ ${esc(money(i.unitPrice, cur))}</div>${
+        i.note ? `<div class="s">* ${esc(i.note)}</div>` : ""}</td><td class="r">${esc(money(i.subtotal, cur))}</td></tr>`).join("")
+    : `<tr><td colspan="3">No historical item rows available.</td></tr>`;
+
+  const totals = [
+    row("Subtotal", money(r.subtotal, cur)),
+    num(r.discount.amount) && r.discount.amount > 0
+      ? row(`Discount${r.discount.name ? ` (${r.discount.name})` : ""}${rate(r.discount.rate)}`, `-${money(r.discount.amount, cur)}`) : "",
+    num(r.tax.amount) && r.tax.amount > 0 ? row(`Tax${rate(r.tax.rate)}`, money(r.tax.amount, cur)) : "",
+    num(r.serviceCharge.amount) && r.serviceCharge.amount > 0 ? row(`Service Charge${rate(r.serviceCharge.rate)}`, money(r.serviceCharge.amount, cur)) : "",
+  ].join("");
+
+  const paid = isCash && num(r.cashTendered)
+    ? row("Cash Tendered", money(r.cashTendered, cur)) + row("Change", money(r.change, cur))
+    : num(r.amountPaid) ? row("Amount Paid", money(r.amountPaid, cur)) : "";
+
+  return PAGE(`Receipt ${r.orderNumber}`, "", `
+<h1>${esc(m.name || "Receipt")}</h1>
+${[m.tagline, m.address, m.phone, m.email].filter(Boolean).map((l) => `<p class="c s">${esc(l)}</p>`).join("")}
+<p class="c b" style="margin-top:6px;letter-spacing:.12em">OFFICIAL RECEIPT</p>
+<hr/>
+${r.isLegacyReceipt ? `<div class="legacy">Legacy transaction: some original details are unavailable.${r.usesCurrentProductNameFallback ? " Product names are current catalog names." : ""}</div>` : ""}
+<table>${info.filter(([, v]) => v).map(([l, v]) => row(l, v)).join("")}</table>
+<hr/>
+<table><tr><th class="q">QTY</th><th>ITEM</th><th class="r">AMOUNT</th></tr>${items}</table>
+<hr/>
+<table>${totals}</table>
+<hr class="d"/>
+<table>${row("TOTAL", money(r.total, cur), "tot")}${paid}</table>
+${r.orderNote ? `<hr/><p><b>Order note:</b> ${esc(r.orderNote)}</p>` : ""}
+<hr/>
+<p class="c b">THANK YOU!</p>
+<p class="c s">Please keep this receipt for your records.</p>
+${cashier ? `<p class="c s" style="margin-top:6px">Served by ${esc(cashier)}</p>` : ""}`);
+}
+
+/** Kitchen order ticket: items, notes and table only. */
+export function buildKotHtml(r: ReceiptDto, opts: ReceiptOptions = {}): string {
+  const cashier = r.cashierName || opts.cashier || "";
+  return PAGE(`KOT ${r.orderNumber}`,
+    ".k td{font-size:16px;font-weight:700;border-bottom:1px dashed #999;padding:6px 0}.k .q{font-size:20px;font-weight:900}", `
+<h1 style="font-size:14px">Kitchen Order Ticket</h1>
+<p class="c b" style="font-size:22px;margin:6px 0">${esc(r.orderNumber)}</p>
+<p class="c s">${esc(formatReceiptDate(r))}</p>
+<p class="c b" style="margin-top:4px">${esc((r.orderType ?? "").toUpperCase())}${r.tableNumber ? ` / TABLE ${esc(r.tableNumber)}` : ""}</p>
+<hr class="d"/>
+<table class="k">${r.items.map((i) => `<tr><td class="q">${esc(i.quantity)}x</td><td>${esc(i.productName)}${i.note ? `<div class="s">Note: ${esc(i.note)}</div>` : ""}</td></tr>`).join("")}</table>
+${r.orderNote ? `<p style="margin-top:12px;padding:8px;border:2px dashed #000"><b>Note:</b> ${esc(r.orderNote)}</p>` : ""}
+${cashier ? `<p class="c s" style="margin-top:10px">Cashier: ${esc(cashier)}</p>` : ""}`);
+}
+
+/** Opens HTML in a popup and opens the print dialog. */
+export function printHtml(html: string, w = 420, h = 760) {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+  const win = window.open(url, "_blank", `width=${w},height=${h}`);
+  win?.addEventListener("load", () => win.print());
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export function downloadHtml(html: string, name: string) {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

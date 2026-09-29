@@ -1,23 +1,25 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Clock,
-  Bell,
-  ClipboardList,
-  XCircle,
-  CheckCircle2,
-  Utensils,
-  Play,
   AlertCircle,
+  Ban,
+  Bell,
+  CheckCircle2,
+  ChefHat,
+  ClipboardList,
+  Clock,
   CreditCard,
   Flame,
-  PackageCheck,
-  Ban,
   Minus,
+  PackageCheck,
+  Play,
   Plus,
+  Utensils,
+  XCircle,
+  type LucideIcon,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { api } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
 import { UserIdentityBanner } from "@/components/UserIdentityBanner";
@@ -26,121 +28,51 @@ import { useViewport } from "@/hooks/use-tablet";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import {
   fetchGeneralSettings,
-  GENERAL_SETTINGS_DEFAULTS,
   formatInSettingsTimezone,
+  GENERAL_SETTINGS_DEFAULTS,
 } from "@/lib/restaurantSettings";
 
-// ─── FONT ─────────────────────────────────────────────────────────────────────
+/* -------------------------------------------------------------------------- */
+/*                                    Font                                    */
+/* -------------------------------------------------------------------------- */
+
 if (typeof document !== "undefined" && !document.getElementById("dm-sans-font")) {
-  const l = document.createElement("link");
-  l.id = "dm-sans-font"; l.rel = "stylesheet";
-  l.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap";
-  document.head.appendChild(l);
+  const link = document.createElement("link");
+  link.id = "dm-sans-font";
+  link.rel = "stylesheet";
+  link.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap";
+  document.head.appendChild(link);
 }
-const F = "'DM Sans', sans-serif";
 
-// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
-const C = {
-  canvas: "#F7F8FA",
-  surface: "#FFFFFF",
-  border: "#E7EAF0",
-  borderSoft: "#EFF1F5",
-  ink: "#0F172A",
-  inkSoft: "#475569",
-  body: "#374151",
-  muted: "#94A3B8",
-  mutedLight: "#CBD5E1",
-  amber: "#D97706",
-  amberBg: "#FFFBEB",
-  amberBorder: "#FDE68A",
-  red: "#DC2626",
-  redBg: "#FEF2F2",
-  redBorder: "#FECACA",
-  green: "#059669",
-  greenBg: "#ECFDF5",
-  greenBorder: "#A7F3D0",
-  slate: "#64748B",
-  slateBg: "#F1F5F9",
-} as const;
+/* -------------------------------------------------------------------------- */
+/*                                    Types                                   */
+/* -------------------------------------------------------------------------- */
 
-const shadowSm = "0 1px 2px rgba(15, 23, 42, 0.04)";
-const shadowMd = "0 8px 24px rgba(15, 23, 42, 0.06)";
+type OrderType = "dine-in" | "take-out" | "delivery";
+type Stage = "new" | "preparing" | "ready";
+type SettlementAction = "refund" | "cancel" | null;
 
-const isPaidOrderStatus = (value?: string | null) =>
-  String(value || "").trim().toLowerCase() === "paid";
-const normalizeWorkflowStatus = (value?: string | null) =>
-  String(value || "").trim().toLowerCase();
-const getSettlementAction = (
-  currentStatus?: string | null,
-  paymentStatus?: string | null,
-) => {
-  const normalizedStatus = normalizeWorkflowStatus(currentStatus);
-  if (["refunded", "cancelled"].includes(normalizedStatus)) {
-    return null;
-  }
-  if (normalizedStatus === "completed") {
-    return isPaidOrderStatus(paymentStatus) ? "refund" : null;
-  }
-  if (
-    normalizedStatus === "queued" ||
-    normalizedStatus === "preparing" ||
-    normalizedStatus === "ready" ||
-    normalizedStatus === "ready for pickup"
-  ) {
-    return "refund";
-  }
-  if (normalizedStatus === "pending payment") {
-    return "cancel";
-  }
-  return isPaidOrderStatus(paymentStatus) ? "refund" : "cancel";
-};
+interface OrderItem {
+  quantity: number;
+  name: string;
+}
 
-// ─── TYPES ────────────────────────────────────────────────────────────────────
-interface OrderItem { quantity: number; name: string; }
 interface OrderCard {
-  id: string; orderNumber: string; tableNumber: number;
-  status: "dine-in" | "take-out" | "delivery";
-  orderType: "dine-in" | "take-out" | "delivery";
+  id: string;
+  orderNumber: string;
+  status: OrderType;
+  orderType: OrderType;
   isOnlinePickup?: boolean;
-  items: OrderItem[]; isPreparing: boolean; isReady: boolean;
-  isFinished: boolean; startedAt?: number;
-  createdAt?: number;
-  queuedAt?: number;
-  prepStartedAt?: number;
-  readyAt?: number;
+  items: OrderItem[];
+  isPreparing: boolean;
+  isReady: boolean;
+  isFinished: boolean;
   currentStatus?: string;
   paymentStatus?: string;
   estimatedPrepMinutes?: number;
+  prepStartedAt?: number;
+  readyAt?: number;
   dueAt?: number;
-  overdue?: boolean;
-  timerUpdatedBy?: number | null;
-  timerUpdatedAt?: number;
-}
-
-function isLocallyOverdue(order: OrderCard, nowMs: number): boolean {
-  return (
-    order.isPreparing === true &&
-    order.isReady !== true &&
-    typeof order.dueAt === "number" &&
-    Number.isFinite(order.dueAt) &&
-    nowMs >= order.dueAt
-  );
-}
-
-function getCookDisplayOrders(orders: OrderCard[], nowMs: number): OrderCard[] {
-  const overdueOrders: OrderCard[] = [];
-  const remainingOrders: OrderCard[] = [];
-
-  orders.forEach((order) => {
-    if (isLocallyOverdue(order, nowMs)) {
-      overdueOrders.push(order);
-    } else {
-      remainingOrders.push(order);
-    }
-  });
-
-  overdueOrders.sort((a, b) => (a.dueAt ?? 0) - (b.dueAt ?? 0));
-  return [...overdueOrders, ...remainingOrders];
 }
 
 interface OrderUpdateResponse {
@@ -151,35 +83,8 @@ interface OrderUpdateResponse {
   prepStartedAt?: number;
   readyAt?: number;
   dueAt?: number;
-  preparationStarted?: boolean;
-  inventoryRestored?: boolean | null;
 }
-interface KitchenUsageItem {
-  usage_item_id?: number;
-  product_id: number | null;
-  product_name: string;
-  category: string;
-  unit: string;
-  withdrawn_qty: number;
-  used_qty: number;
-  spoilage_qty: number;
-  returned_qty: number;
-  note: string;
-}
-interface KitchenUsageReport {
-  report_id: number;
-  report_date: string;
-  status: "pending" | "finalized";
-  prepared_by: number | null;
-  finalized_by: number | null;
-  finalized_at: string | null;
-  updated_at: string | null;
-}
-interface KitchenUsagePayload {
-  report: KitchenUsageReport;
-  items: KitchenUsageItem[];
-}
-const SHOW_LEGACY_USAGE_PANEL = false;
+
 interface OrderStatusCounts {
   pendingPayment: number;
   queued: number;
@@ -189,94 +94,84 @@ interface OrderStatusCounts {
   refunded: number;
 }
 
-interface UsageProductOption {
-  product_id: number;
-  product_name: string;
-  category: string;
-  unit: string;
-  dailyWithdrawn: number;
-  expiryDate?: string | null;
-  usableUntil?: string | null;
-  shelfLifeDays?: number | null;
-  shelfLifeHours?: number | null;
+type PendingAction = { orderId: string; action: "start" | "complete" } | null;
+
+/* -------------------------------------------------------------------------- */
+/*                                  Constants                                 */
+/* -------------------------------------------------------------------------- */
+
+const EMPTY_COUNTS: OrderStatusCounts = {
+  pendingPayment: 0,
+  queued: 0,
+  preparing: 0,
+  ready: 0,
+  completed: 0,
+  refunded: 0,
+};
+
+const STATUS_TO_COUNT: Record<string, keyof OrderStatusCounts> = {
+  "pending payment": "pendingPayment",
+  queued: "queued",
+  preparing: "preparing",
+  ready: "ready",
+  "ready for pickup": "ready",
+  completed: "completed",
+  "picked up": "completed",
+  refunded: "refunded",
+};
+
+const STATS: { key: keyof OrderStatusCounts; label: string; icon: LucideIcon; tone: string }[] = [
+  { key: "pendingPayment", label: "Pending payment", icon: CreditCard, tone: "bg-slate-100 text-slate-600" },
+  { key: "queued", label: "Queued", icon: ClipboardList, tone: "bg-slate-100 text-slate-600" },
+  { key: "preparing", label: "Preparing", icon: Flame, tone: "bg-amber-50 text-amber-600" },
+  { key: "ready", label: "Ready", icon: PackageCheck, tone: "bg-emerald-50 text-emerald-600" },
+  { key: "completed", label: "Completed", icon: CheckCircle2, tone: "bg-slate-100 text-slate-400" },
+  { key: "refunded", label: "Refunded", icon: Ban, tone: "bg-slate-100 text-slate-400" },
+];
+
+const COLUMNS: { stage: Stage; title: string; icon: LucideIcon; accent: string; badge: string; empty: string }[] = [
+  { stage: "new", title: "New orders", icon: ClipboardList, accent: "bg-slate-400", badge: "bg-slate-100 text-slate-600", empty: "No new orders" },
+  { stage: "preparing", title: "In preparation", icon: Flame, accent: "bg-amber-500", badge: "bg-amber-100 text-amber-700", empty: "Nothing on the line" },
+  { stage: "ready", title: "Ready", icon: PackageCheck, accent: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", empty: "Nothing waiting" },
+];
+
+const ORDER_TYPE_LABEL: Record<string, string> = {
+  "dine-in": "Dine in",
+  "take-out": "Take out",
+  delivery: "Delivery",
+};
+
+/* -------------------------------------------------------------------------- */
+/*                                   Helpers                                  */
+/* -------------------------------------------------------------------------- */
+
+const normalize = (value?: string | null) => String(value ?? "").trim().toLowerCase();
+const isPaid = (value?: string | null) => normalize(value) === "paid";
+const isTerminalStatus = (value?: string | null) => ["refunded", "cancelled"].includes(normalize(value));
+
+function getSettlementAction(currentStatus?: string | null, paymentStatus?: string | null): SettlementAction {
+  const status = normalize(currentStatus);
+  if (["refunded", "cancelled"].includes(status)) return null;
+  if (status === "completed") return isPaid(paymentStatus) ? "refund" : null;
+  if (["queued", "preparing", "ready", "ready for pickup"].includes(status)) return "refund";
+  if (status === "pending payment") return "cancel";
+  return isPaid(paymentStatus) ? "refund" : "cancel";
 }
 
-const isTerminalOrderStatus = (value?: string | null) =>
-  ["refunded", "cancelled"].includes(
-    String(value || "").trim().toLowerCase(),
-  );
+const getStage = (order: OrderCard): Stage => (order.isReady ? "ready" : order.isPreparing ? "preparing" : "new");
 
-function buildUsageItem(
-  product: UsageProductOption,
-  existing?: KitchenUsageItem,
-): KitchenUsageItem {
-  return {
-    usage_item_id: existing?.usage_item_id,
-    product_id: product.product_id,
-    product_name: product.product_name,
-    category: product.category,
-    unit: product.unit,
-    withdrawn_qty: product.dailyWithdrawn,
-    used_qty: existing?.used_qty ?? 0,
-    spoilage_qty: existing?.spoilage_qty ?? 0,
-    returned_qty: existing?.returned_qty ?? 0,
-    note: existing?.note ?? "",
-  };
-}
+const isOverdue = (order: OrderCard, nowMs: number) =>
+  order.isPreparing &&
+  !order.isReady &&
+  typeof order.dueAt === "number" &&
+  Number.isFinite(order.dueAt) &&
+  nowMs >= order.dueAt;
 
-function syncUsageItems(
-  products: UsageProductOption[],
-  existingItems: KitchenUsageItem[],
-): KitchenUsageItem[] {
-  const existingByProductId = new Map(
-    existingItems
-      .filter((item) => Number.isFinite(Number(item.product_id)))
-      .map((item) => [Number(item.product_id), item]),
-  );
-
-  return products
-    .filter((product) => product.dailyWithdrawn > 0)
-    .map((product) =>
-      buildUsageItem(product, existingByProductId.get(product.product_id)),
-    );
-}
-
-function getUsageTotals(item: KitchenUsageItem) {
-  const reported = item.used_qty + item.spoilage_qty + item.returned_qty;
-  const remaining = item.withdrawn_qty - reported;
-  return {
-    reported,
-    remaining,
-    invalid: reported > item.withdrawn_qty,
-  };
-}
-
-function getUsageTimingState(product: UsageProductOption): {
-  tone: "expired" | "warning";
-  label: string;
-} | null {
-  const targetDate = product.usableUntil || product.expiryDate;
-  if (!targetDate) return null;
-
-  const targetMs = new Date(targetDate).getTime();
-  if (!Number.isFinite(targetMs)) return null;
-
-  const remainingMs = targetMs - Date.now();
-  if (remainingMs <= 0) {
-    return {
-      tone: "expired",
-      label: product.usableUntil ? "Past Shelf Life" : "Expired",
-    };
-  }
-
-  if (remainingMs <= 24 * 60 * 60 * 1000) {
-    return {
-      tone: "warning",
-      label: product.usableUntil ? "Near End of Shelf Life" : "Near Expiry",
-    };
-  }
-
-  return null;
+/** Overdue orders always come first, oldest deadline first. */
+function sortForCook(orders: OrderCard[], nowMs: number): OrderCard[] {
+  const overdue = orders.filter((o) => isOverdue(o, nowMs)).sort((a, b) => (a.dueAt ?? 0) - (b.dueAt ?? 0));
+  const rest = orders.filter((o) => !isOverdue(o, nowMs));
+  return [...overdue, ...rest];
 }
 
 function playAlertSound() {
@@ -285,347 +180,381 @@ function playAlertSound() {
     [0, 0.25, 0.5].forEach((offset) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.value = 880; osc.type = "sine";
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = "sine";
       gain.gain.setValueAtTime(0.4, ctx.currentTime + offset);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.2);
       osc.start(ctx.currentTime + offset);
       osc.stop(ctx.currentTime + offset + 0.2);
     });
-  } catch {}
+  } catch {
+    /* Audio can be blocked until the user interacts with the page. */
+  }
 }
 
-// ─── TIMER ────────────────────────────────────────────────────────────────────
-function OrderTimer({
-  dueAt,
-  baseAt,
-  estimatedPrepMinutes,
-  orderNumber,
-}: {
-  dueAt: number;
+/* -------------------------------------------------------------------------- */
+/*                                 Prep timer                                 */
+/* -------------------------------------------------------------------------- */
+
+interface OrderTimerProps {
   baseAt: number;
+  dueAt: number;
   estimatedPrepMinutes: number;
   orderNumber: string;
-}) {
-  const [elapsed, setElapsed] = useState(0);
-  const notifiedRef = useRef(false);
-  const soundRef = useRef(false);
+}
+
+function OrderTimer({ baseAt, dueAt, estimatedPrepMinutes, orderNumber }: OrderTimerProps) {
+  const [now, setNow] = useState(Date.now());
+  const alerted = useRef(false);
 
   useEffect(() => {
-    const iv = setInterval(() => {
-      const s = Math.max(Math.floor((Date.now() - baseAt) / 1000), 0);
-      setElapsed(s);
-      if (Date.now() >= dueAt) {
-        if (!notifiedRef.current) {
-          notifiedRef.current = true;
-          if (Notification.permission === "granted")
-            new Notification("Order overdue", { body: `${orderNumber} needs attention in the cook queue.`, icon: "/favicon.ico" });
-        }
-        if (!soundRef.current) { soundRef.current = true; playAlertSound(); }
-      }
-    }, 1000);
-    return () => clearInterval(iv);
-  }, [baseAt, dueAt, orderNumber]);
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
-  const totalSeconds = Math.max(estimatedPrepMinutes * 60, 60);
-  const remaining = Math.floor((dueAt - Date.now()) / 1000);
+  // Alert once when the order becomes overdue (re-arms if the timer is extended).
+  useEffect(() => {
+    if (now < dueAt) {
+      alerted.current = false;
+      return;
+    }
+    if (alerted.current) return;
+    alerted.current = true;
+    playAlertSound();
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification("Order overdue", {
+        body: `${orderNumber} needs attention in the cook queue.`,
+        icon: "/favicon.ico",
+      });
+    }
+  }, [now, dueAt, orderNumber]);
+
+  const remaining = Math.floor((dueAt - now) / 1000);
   const overdue = remaining <= 0;
-  const display = overdue ? Math.abs(remaining) : remaining;
-  const mins = Math.floor(display / 60);
-  const secs = display % 60;
-  const timeStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-  const progress = Math.min(elapsed / totalSeconds, 1);
-  const warn = !overdue && elapsed > totalSeconds * 0.75;
+  const abs = Math.abs(remaining);
+  const clock = `${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+  const totalMs = Math.max(estimatedPrepMinutes * 60, 60) * 1000;
+  const progress = Math.min(Math.max((now - baseAt) / totalMs, 0), 1);
+  const warning = !overdue && progress > 0.75;
 
-  const tint = overdue ? C.red : warn ? C.amber : C.inkSoft;
-  const tintBg = overdue ? C.redBg : warn ? C.amberBg : C.slateBg;
+  const tone = overdue
+    ? { text: "text-red-600", bg: "bg-red-50", bar: "bg-red-500" }
+    : warning
+    ? { text: "text-amber-600", bg: "bg-amber-50", bar: "bg-amber-500" }
+    : { text: "text-slate-700", bg: "bg-slate-100", bar: "bg-slate-400" };
 
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-        padding: "6px 10px", borderRadius: 8, marginBottom: 6,
-        background: tintBg, color: tint,
-        fontSize: 12, fontWeight: 600, fontFamily: F, fontVariantNumeric: "tabular-nums",
-        letterSpacing: "0.01em",
-      }}>
-        {overdue ? <AlertCircle size={12} /> : <Clock size={12} />}
-        {overdue ? `+${timeStr}` : timeStr}
+    <div>
+      <div
+        className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-2xl font-bold tabular-nums ${tone.bg} ${tone.text}`}
+      >
+        {overdue ? <AlertCircle size={20} /> : <Clock size={20} />}
+        {overdue ? `+${clock}` : clock}
       </div>
-      <div style={{ height: 3, background: C.borderSoft, borderRadius: 99, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${progress * 100}%`, borderRadius: 99, transition: "width 1s linear",
-          background: overdue ? C.red : warn ? C.amber : C.mutedLight }} />
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className={`h-full rounded-full transition-[width] duration-1000 ease-linear ${tone.bar}`}
+          style={{ width: `${progress * 100}%` }}
+        />
       </div>
     </div>
   );
 }
 
-// ─── MAIN ─────────────────────────────────────────────────────────────────────
-export default function Order() {
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [restaurantSettings, setRestaurantSettings] = useState(
-    GENERAL_SETTINGS_DEFAULTS,
+/* -------------------------------------------------------------------------- */
+/*                                Order ticket                                */
+/* -------------------------------------------------------------------------- */
+
+interface TicketProps {
+  order: OrderCard;
+  nowMs: number;
+  pendingAction: PendingAction;
+  isSettling: boolean;
+  onStart: (id: string) => void;
+  onComplete: (order: OrderCard) => void;
+  onAdjustTimer: (order: OrderCard, deltaMinutes: number) => void;
+  onSettle: (order: OrderCard) => void;
+}
+
+function OrderTicket({ order, nowMs, pendingAction, isSettling, onStart, onComplete, onAdjustTimer, onSettle }: TicketProps) {
+  const stage = getStage(order);
+  const overdue = isOverdue(order, nowMs);
+  const orderType = order.orderType || order.status;
+  const needsPickup = orderType === "delivery" || !!order.isOnlinePickup;
+  const settlement = getSettlementAction(order.currentStatus, order.paymentStatus);
+  const prepMinutes = Math.max(order.estimatedPrepMinutes ?? 10, 1);
+
+  const thisAction = pendingAction?.orderId === order.id ? pendingAction.action : null;
+  const busy = thisAction !== null || isSettling;
+  const settleLocked = busy || isTerminalStatus(order.currentStatus);
+  const timerEditable = stage !== "ready";
+
+  const stripe = overdue ? "bg-red-500" : COLUMNS.find((c) => c.stage === stage)!.accent;
+  const primaryButton = "flex h-12 w-full items-center justify-center gap-2 rounded-xl text-base font-semibold transition disabled:cursor-not-allowed";
+
+  return (
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.2 }}
+      className={`flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm ${
+        overdue ? "border-red-300 ring-1 ring-red-200" : "border-slate-200"
+      }`}
+    >
+      <div className={`h-1.5 ${stripe}`} />
+
+      <div className="flex flex-1 flex-col gap-4 p-5">
+        <header className="flex items-center justify-between gap-3">
+          <h3 className="text-xl font-bold tracking-tight text-slate-900">{order.orderNumber}</h3>
+          <div className="flex items-center gap-2">
+            {overdue && (
+              <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-600">Overdue</span>
+            )}
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              {ORDER_TYPE_LABEL[orderType] ?? orderType}
+            </span>
+          </div>
+        </header>
+
+        {stage === "preparing" && order.prepStartedAt && order.dueAt && (
+          <OrderTimer
+            baseAt={order.prepStartedAt}
+            dueAt={order.dueAt}
+            estimatedPrepMinutes={prepMinutes}
+            orderNumber={order.orderNumber}
+          />
+        )}
+
+        {stage === "ready" && (
+          <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-700">
+            <CheckCircle2 size={18} />
+            {order.isOnlinePickup ? "Ready for pickup" : "Ready to serve"}
+          </div>
+        )}
+
+        <ul className="flex-1 space-y-2 border-y border-slate-100 py-4">
+          {order.items.map((item, i) => (
+            <li key={i} className="flex items-baseline gap-3">
+              <span className="w-9 text-base font-bold text-slate-900">{item.quantity}×</span>
+              <span className="flex-1 text-base text-slate-700">{item.name}</span>
+            </li>
+          ))}
+        </ul>
+
+        {timerEditable && (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+            <div>
+              <div className="text-xs font-semibold text-slate-400">Prep time</div>
+              <div className="text-base font-bold text-slate-900">{prepMinutes} min</div>
+            </div>
+            <div className="flex gap-2">
+              {[-1, 1].map((delta) => (
+                <button
+                  key={delta}
+                  onClick={() => onAdjustTimer(order, delta)}
+                  aria-label={`${delta > 0 ? "Add" : "Remove"} one minute`}
+                  className="flex h-10 w-16 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  {delta > 0 ? <Plus size={14} /> : <Minus size={14} />} 1m
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {stage === "new" && (
+            <button
+              onClick={() => onStart(order.id)}
+              disabled={busy}
+              className={`${primaryButton} bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400`}
+            >
+              <Play size={16} /> {thisAction === "start" ? "Starting..." : "Start preparing"}
+            </button>
+          )}
+
+          {stage === "preparing" && (
+            <button
+              onClick={() => onComplete(order)}
+              disabled={busy}
+              className={`${primaryButton} bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400`}
+            >
+              <CheckCircle2 size={16} />
+              {thisAction === "complete" ? "Completing..." : needsPickup ? "Ready for pickup" : "Complete order"}
+            </button>
+          )}
+
+          {stage === "ready" && orderType === "delivery" && (
+            <button disabled className={`${primaryButton} bg-slate-100 text-slate-400`}>
+              Awaiting cashier
+            </button>
+          )}
+
+          {settlement && (
+            <button
+              onClick={() => onSettle(order)}
+              disabled={settleLocked}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+            >
+              <XCircle size={15} />
+              {isSettling
+                ? settlement === "refund" ? "Refunding..." : "Cancelling..."
+                : settlement === "refund" ? "Refund order" : "Cancel order"}
+            </button>
+          )}
+        </div>
+      </div>
+    </motion.article>
   );
-  const [notifPermission, setNotifPermission] = useState(Notification.permission);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 Kitchen view                               */
+/* -------------------------------------------------------------------------- */
+
+export default function Order() {
+  const [now, setNow] = useState(new Date());
+  const [settings, setSettings] = useState(GENERAL_SETTINGS_DEFAULTS);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+  );
   const [orders, setOrders] = useState<OrderCard[]>([]);
-  const [statusCounts, setStatusCounts] = useState<OrderStatusCounts>({
-    pendingPayment: 0,
-    queued: 0,
-    preparing: 0,
-    ready: 0,
-    completed: 0,
-    refunded: 0,
-  });
+  const [counts, setCounts] = useState<OrderStatusCounts>(EMPTY_COUNTS);
   const [settlingId, setSettlingId] = useState<string | null>(null);
-  const [processingAction, setProcessingAction] = useState<{
-    orderId: string;
-    action: "start" | "complete";
-  } | null>(null);
-  const [usageOpen, setUsageOpen] = useState(false);
-  const [usageLoading, setUsageLoading] = useState(false);
-  const [usageSaving, setUsageSaving] = useState(false);
-  const [usageReport, setUsageReport] = useState<KitchenUsageReport | null>(null);
-  const [usageItems, setUsageItems] = useState<KitchenUsageItem[]>([]);
-  const [usageProducts, setUsageProducts] = useState<UsageProductOption[]>([]);
-  const fetchAllInFlight = useRef<Promise<void> | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+
+  const inFlight = useRef<Promise<void> | null>(null);
   const { addNotification } = useNotifications();
   const { isMobile, isTablet } = useViewport();
 
+  /* ---- Data ---- */
+
   const fetchAll = useCallback(() => {
-    if (fetchAllInFlight.current) return fetchAllInFlight.current;
+    if (inFlight.current) return inFlight.current;
 
     const request = (async () => {
       try {
         const [queue, all] = await Promise.all([
           api.get<OrderCard[]>("/orders/queue"),
-          api.get<{ id?: number | string; orderId?: number | string; status: string }[]>("/orders"),
+          api.get<{ status: string }[]>("/orders"),
         ]);
         setOrders((queue ?? []).filter((o) => !o.isFinished));
-        const nextCounts: OrderStatusCounts = {
-          pendingPayment: 0,
-          queued: 0,
-          preparing: 0,
-          ready: 0,
-          completed: 0,
-          refunded: 0,
-        };
-        for (const entry of all ?? []) {
-          const status = String(entry.status || "").trim().toLowerCase();
-          if (status === "pending payment") {
-            nextCounts.pendingPayment += 1;
-          } else if (status === "queued") {
-            nextCounts.queued += 1;
-          } else if (status === "preparing") {
-            nextCounts.preparing += 1;
-          } else if (status === "ready" || status === "ready for pickup") {
-            nextCounts.ready += 1;
-          } else if (status === "completed" || status === "picked up") {
-            nextCounts.completed += 1;
-          } else if (status === "refunded") {
-            nextCounts.refunded += 1;
-          }
-        }
-        setStatusCounts(nextCounts);
+
+        const next = { ...EMPTY_COUNTS };
+        (all ?? []).forEach((entry) => {
+          const key = STATUS_TO_COUNT[normalize(entry.status)];
+          if (key) next[key] += 1;
+        });
+        setCounts(next);
       } catch (error) {
-        console.error(error);
+        console.error("Failed to load kitchen orders:", error);
       }
     })();
-    fetchAllInFlight.current = request;
+
+    inFlight.current = request;
     void request.then(() => {
-      if (fetchAllInFlight.current === request) {
-        fetchAllInFlight.current = null;
-      }
+      if (inFlight.current === request) inFlight.current = null;
     });
     return request;
   }, []);
 
-  const fetchAllAfterCurrentRequest = async () => {
-    if (fetchAllInFlight.current) {
-      await fetchAllInFlight.current;
-    }
+  /** Waits for any running fetch, then fetches again so the latest change is included. */
+  const refresh = useCallback(async () => {
+    if (inFlight.current) await inFlight.current;
     await fetchAll();
-  };
+  }, [fetchAll]);
 
-  const fetchUsage = async () => {
-    try {
-      setUsageLoading(true);
-      const [data, inventory] = await Promise.all([
-        api.get<KitchenUsagePayload>("/inventory/daily-usage?status=pending"),
-        api.get<Array<Record<string, unknown>>>("/inventory"),
-      ]);
-      const nextProducts = (inventory ?? []).map((item) => ({
-        product_id: Number(item.product_id ?? item.id ?? 0),
-        product_name: String(item.product_name ?? item.name ?? ""),
-        category: String(item.category ?? ""),
-        unit: String(item.unit ?? "unit"),
-        dailyWithdrawn: Number(item.dailyWithdrawn ?? 0),
-        expiryDate: item.expiryDate ? String(item.expiryDate) : null,
-        usableUntil: item.usableUntil ? String(item.usableUntil) : null,
-        shelfLifeDays:
-          item.shelfLifeDays === undefined || item.shelfLifeDays === null
-            ? null
-            : Number(item.shelfLifeDays),
-        shelfLifeHours:
-          item.shelfLifeHours === undefined || item.shelfLifeHours === null
-            ? null
-            : Number(item.shelfLifeHours),
-      }));
-
-      setUsageReport(data.report);
-      setUsageProducts(nextProducts);
-      setUsageItems(syncUsageItems(nextProducts, data.items ?? []));
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setUsageLoading(false);
-    }
-  };
-
-  useEffect(() => { void fetchAll(); }, [fetchAll]);
-  useEventInvalidation({
-    topics: ["orders.changed", "payments.changed"],
-    onInvalidate: fetchAllAfterCurrentRequest,
-  });
-  useEffect(() => { const t = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => {
-    if (SHOW_LEGACY_USAGE_PANEL) {
-      void fetchUsage();
-    }
+    void fetchAll();
+  }, [fetchAll]);
+
+  useEventInvalidation({ topics: ["orders.changed", "payments.changed"], onInvalidate: refresh });
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
   }, []);
+
   useEffect(() => {
     let cancelled = false;
-    void fetchGeneralSettings().then((settings) => {
-      if (!cancelled) {
-        setRestaurantSettings(settings);
-      }
+    void fetchGeneralSettings().then((s) => {
+      if (!cancelled) setSettings(s);
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const applyConfirmedOrderUpdate = (update: OrderUpdateResponse) => {
-    const normalizedStatus = normalizeWorkflowStatus(update.status);
-    setOrders((current) => {
-      if (["completed", "refunded", "cancelled"].includes(normalizedStatus)) {
-        return current.filter((order) => order.id !== String(update.id));
-      }
-      return current.map((order) => {
-        if (order.id !== String(update.id)) return order;
-        return {
-          ...order,
-          currentStatus: update.status,
-          paymentStatus: update.paymentStatus ?? order.paymentStatus,
-          isPreparing: normalizedStatus === "preparing",
-          isReady:
-            normalizedStatus === "ready" ||
-            normalizedStatus === "ready for pickup",
-          isFinished: false,
-          prepStartedAt: update.prepStartedAt ?? order.prepStartedAt,
-          readyAt: update.readyAt ?? order.readyAt,
-          dueAt: update.dueAt ?? order.dueAt,
-          estimatedPrepMinutes:
-            update.estimatedPrepMinutes ?? order.estimatedPrepMinutes,
-        };
-      });
-    });
-  };
+  /* ---- Actions ---- */
 
-  const reconcileAfterAction = (
-    label: string,
-    actionStartedAt: number,
-    responseReceivedAt: number,
-    localUpdateScheduledAt: number,
-  ) => {
-    const refetchStartedAt = performance.now();
-    void fetchAllAfterCurrentRequest().then(() => {
-      if (import.meta.env.DEV) {
-        console.info("[TIMING CASHIER ACTION]", {
-          action: label,
-          responseMs: Number((responseReceivedAt - actionStartedAt).toFixed(1)),
-          responseToLocalStateMs: Number(
-            (localUpdateScheduledAt - responseReceivedAt).toFixed(1),
-          ),
-          reconciliationMs: Number((performance.now() - refetchStartedAt).toFixed(1)),
-          totalMs: Number((performance.now() - actionStartedAt).toFixed(1)),
-        });
+  const notifyError = (error: unknown, fallback: string) =>
+    addNotification({
+      id: crypto.randomUUID(),
+      label: error instanceof Error ? error.message : fallback,
+      type: "error",
+    });
+
+  /** Applies the server-confirmed order state immediately, before the refetch lands. */
+  const applyUpdate = (update: OrderUpdateResponse) => {
+    const status = normalize(update.status);
+    setOrders((current) => {
+      if (["completed", "refunded", "cancelled"].includes(status)) {
+        return current.filter((o) => o.id !== String(update.id));
       }
+      return current.map((o) =>
+        o.id !== String(update.id)
+          ? o
+          : {
+              ...o,
+              currentStatus: update.status,
+              paymentStatus: update.paymentStatus ?? o.paymentStatus,
+              isPreparing: status === "preparing",
+              isReady: status === "ready" || status === "ready for pickup",
+              isFinished: false,
+              prepStartedAt: update.prepStartedAt ?? o.prepStartedAt,
+              readyAt: update.readyAt ?? o.readyAt,
+              dueAt: update.dueAt ?? o.dueAt,
+              estimatedPrepMinutes: update.estimatedPrepMinutes ?? o.estimatedPrepMinutes,
+            },
+      );
     });
   };
 
   const handleStart = async (id: string) => {
-    if (processingAction?.orderId === id) return;
-    const actionStartedAt = performance.now();
-    setProcessingAction({ orderId: id, action: "start" });
+    if (pendingAction?.orderId === id) return;
+    setPendingAction({ orderId: id, action: "start" });
     try {
-      const update = await api.patch<OrderUpdateResponse>(`/orders/${id}`, {
-        status: "preparing",
-      });
-      const responseReceivedAt = performance.now();
-      applyConfirmedOrderUpdate(update);
-      reconcileAfterAction(
-        "start",
-        actionStartedAt,
-        responseReceivedAt,
-        performance.now(),
-      );
+      applyUpdate(await api.patch<OrderUpdateResponse>(`/orders/${id}`, { status: "preparing" }));
+      void refresh();
     } catch (error) {
-      addNotification({
-        id: crypto.randomUUID(),
-        label:
-          error instanceof Error
-            ? error.message
-            : "Failed to start order.",
-        type: "error",
-      });
+      notifyError(error, "Failed to start order.");
     } finally {
-      setProcessingAction(null);
+      setPendingAction(null);
     }
   };
-  const handleReady = async (order: OrderCard) => {
-    if (processingAction?.orderId === order.id) return;
-    const effectiveOrderType = order.orderType || order.status;
-    const actionStartedAt = performance.now();
-    let latestConfirmedUpdate: OrderUpdateResponse | null = null;
-    setProcessingAction({ orderId: order.id, action: "complete" });
+
+  const handleComplete = async (order: OrderCard) => {
+    if (pendingAction?.orderId === order.id) return;
+    const needsPickup = (order.orderType || order.status) === "delivery" || order.isOnlinePickup;
+    setPendingAction({ orderId: order.id, action: "complete" });
     try {
-      if (effectiveOrderType !== "delivery" && !order.isOnlinePickup) {
-        latestConfirmedUpdate = await api.patch<OrderUpdateResponse>(
-          `/orders/${order.id}`,
-          { status: "Completed", completeFromPreparing: true },
-        );
-      } else {
-        latestConfirmedUpdate = await api.patch<OrderUpdateResponse>(
-          `/orders/${order.id}`,
-          { status: "Ready for Pickup" },
-        );
-      }
-      const responseReceivedAt = performance.now();
-      applyConfirmedOrderUpdate(latestConfirmedUpdate);
-      reconcileAfterAction(
-        "complete",
-        actionStartedAt,
-        responseReceivedAt,
-        performance.now(),
-      );
+      const body = needsPickup
+        ? { status: "Ready for Pickup" }
+        : { status: "Completed", completeFromPreparing: true };
+      applyUpdate(await api.patch<OrderUpdateResponse>(`/orders/${order.id}`, body));
+      void refresh();
     } catch (error) {
-      if (latestConfirmedUpdate) {
-        applyConfirmedOrderUpdate(latestConfirmedUpdate);
-        void fetchAll();
-      }
-      addNotification({
-        id: crypto.randomUUID(),
-        label:
-          error instanceof Error
-            ? error.message
-            : "Failed to complete order.",
-        type: "error",
-      });
+      notifyError(error, "Failed to complete order.");
     } finally {
-      setProcessingAction(null);
+      setPendingAction(null);
     }
   };
-  const handleSettlementAction = async (order: OrderCard) => {
+
+  const handleSettle = async (order: OrderCard) => {
     const action = getSettlementAction(order.currentStatus, order.paymentStatus);
     if (!action) return;
     setSettlingId(order.id);
@@ -633,580 +562,137 @@ export default function Order() {
       const update = await api.patch<OrderUpdateResponse>(`/orders/${order.id}`, {
         status: action === "refund" ? "Refunded" : "Cancelled",
       });
-      applyConfirmedOrderUpdate(update);
+      applyUpdate(update);
       void fetchAll();
     } catch (error) {
-      addNotification({
-        id: crypto.randomUUID(),
-        label:
-          error instanceof Error
-            ? error.message
-            : "Failed to settle order.",
-        type: "error",
-      });
+      notifyError(error, "Failed to settle order.");
     } finally {
       setSettlingId(null);
     }
   };
-  const userId = (() => {
-    const raw = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
-  })();
-  const handleTimerAdjust = async (order: OrderCard, deltaMinutes: number) => {
+
+  const handleAdjustTimer = async (order: OrderCard, deltaMinutes: number) => {
     const current = Math.max(order.estimatedPrepMinutes ?? 10, 1);
-    const next = Math.max(current + deltaMinutes, 1);
+    const raw = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+    const userId = Number.isFinite(Number(raw)) ? Number(raw) : null;
     try {
       await api.patch(`/orders/${order.id}`, {
-        estimatedPrepMinutes: next,
+        estimatedPrepMinutes: Math.max(current + deltaMinutes, 1),
         timerUpdatedBy: userId,
       });
-      fetchAll();
+      void fetchAll();
     } catch (error) {
       console.error("Failed to update cook timer:", error);
     }
   };
-  const updateUsageItem = (
-    index: number,
-    field: "used_qty" | "spoilage_qty" | "returned_qty" | "note",
-    value: string,
-  ) => {
-    setUsageItems((prev) => prev.map((item, itemIndex) => {
-      if (itemIndex !== index) return item;
-      if (field === "note") {
-        return { ...item, [field]: value };
-      }
-      return { ...item, [field]: Math.max(0, Number(value) || 0) };
-    }));
-  };
-  const saveUsage = async () => {
-    try {
-      setUsageSaving(true);
-      const data = await api.post<KitchenUsagePayload>("/inventory/daily-usage", {
-        report_date: usageReport?.report_date,
-        created_by: userId,
-        items: usageItems.map((item) => ({
-          product_id: item.product_id,
-          used_qty: item.used_qty,
-          spoilage_qty: item.spoilage_qty,
-          returned_qty: item.returned_qty,
-          note: item.note,
-        })),
-      });
-      setUsageReport(data.report);
-      addNotification({
-        id: crypto.randomUUID(),
-        label: "Report submitted for review.",
-        type: "success",
-      });
-      await fetchUsage();
-    } catch (e) {
-      console.error(e);
-      addNotification({
-        id: crypto.randomUUID(),
-        label:
-          e instanceof Error
-            ? `Failed to save daily usage report: ${e.message}`
-            : "Failed to save daily usage report.",
-        type: "error",
-      });
-    } finally {
-      setUsageSaving(false);
-    }
-  };
 
-  const fmt = (d: Date) => {
-    return formatInSettingsTimezone(d, restaurantSettings, {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
-  const fmtDate = (d: Date) => {
-    return formatInSettingsTimezone(d, restaurantSettings, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-  };
+  /* ---- Render ---- */
 
-  const STATUS_LABEL: Record<string, string> = { "dine-in": "Dine In", "take-out": "Take Out", "delivery": "Delivery" };
-  const usageHasErrors = usageItems.some((item) => getUsageTotals(item).invalid);
-  const usageInputDisabled = usageReport?.status === "finalized";
-  const usageSubmitDisabled =
-    usageSaving || usageInputDisabled || usageHasErrors || usageItems.length === 0;
+  const formatTime = (d: Date) =>
+    formatInSettingsTimezone(d, settings, { hour: "numeric", minute: "2-digit", hour12: true });
+  const formatDate = (d: Date) =>
+    formatInSettingsTimezone(d, settings, { weekday: "long", month: "long", day: "numeric" });
 
-  const renderUsageForm = () => {
-    if (usageLoading) {
-      return <p style={{ fontSize: 12, color: C.muted, margin: 0 }}>Loading report...</p>;
-    }
-
-    if (usageItems.length === 0) {
-      return (
-        <div style={{ border: `1px dashed ${C.border}`, borderRadius: 14, padding: 20, textAlign: "center", color: C.muted, fontSize: 12 }}>
-          No kitchen stock has been withdrawn yet for today.
-        </div>
-      );
-    }
-
-    return (
-      <>
-        <div style={{ marginBottom: 12 }}>
-          <p style={{ fontSize: 12, color: C.inkSoft, margin: 0 }}>
-            Enter today&apos;s actual used, wasted, and returned quantities for each withdrawn stock item.
-          </p>
-        </div>
-
-        <div style={{ display: "grid", gap: 12 }}>
-          {usageItems.map((item, index) => {
-            const product = usageProducts.find((entry) => entry.product_id === item.product_id);
-            const timingState = product ? getUsageTimingState(product) : null;
-            const { remaining, invalid } = getUsageTotals(item);
-            const cardBorderColor =
-              timingState?.tone === "expired"
-                ? C.redBorder
-                : timingState?.tone === "warning"
-                  ? C.amberBorder
-                  : C.border;
-            const cardBackground =
-              timingState?.tone === "expired"
-                ? "#fff7f7"
-                : timingState?.tone === "warning"
-                  ? "#fffdf5"
-                  : "#fcfcfc";
-            const chipBackground =
-              timingState?.tone === "expired" ? C.redBg : C.amberBg;
-            const chipColor =
-              timingState?.tone === "expired" ? "#b91c1c" : "#b45309";
-
-            return (
-              <div
-                key={item.usage_item_id ?? item.product_id ?? `usage-${index}`}
-                style={{
-                  border: `1px solid ${cardBorderColor}`,
-                  borderRadius: 16,
-                  padding: 14,
-                  background: cardBackground,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 4 }}>
-                      {item.product_name}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 11, color: C.inkSoft }}>{item.category}</span>
-                      <span style={{ fontSize: 11, color: C.muted }}>•</span>
-                      <span style={{ fontSize: 11, color: C.inkSoft }}>{item.unit}</span>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <div style={{ borderRadius: 999, background: C.slateBg, color: C.body, fontSize: 11, fontWeight: 600, padding: "6px 10px" }}>
-                      Withdrawn: {item.withdrawn_qty} {item.unit}
-                    </div>
-                    {timingState && (
-                      <div style={{ borderRadius: 999, background: chipBackground, color: chipColor, fontSize: 11, fontWeight: 700, padding: "6px 10px" }}>
-                        {timingState.label}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Used</div>
-                    <input type="number" min="0" step="0.01" value={item.used_qty === 0 ? "" : item.used_qty} onChange={(e) => updateUsageItem(index, "used_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Wasted</div>
-                    <input type="number" min="0" step="0.01" value={item.spoilage_qty === 0 ? "" : item.spoilage_qty} onChange={(e) => updateUsageItem(index, "spoilage_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Returned</div>
-                    <input type="number" min="0" step="0.01" value={item.returned_qty === 0 ? "" : item.returned_qty} onChange={(e) => updateUsageItem(index, "returned_qty", e.target.value)} placeholder="0" disabled={usageInputDisabled} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Remaining</div>
-                    <div style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${invalid ? C.redBorder : C.border}`, fontSize: 12, fontFamily: F, background: invalid ? C.redBg : "#f8fafc", color: invalid ? "#b91c1c" : C.ink, fontWeight: 600 }}>
-                      {remaining} {item.unit}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: invalid ? 8 : 0 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: C.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Notes</div>
-                  <input value={item.note} onChange={(e) => updateUsageItem(index, "note", e.target.value)} placeholder="Optional notes for this item" disabled={usageInputDisabled} style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F, outline: "none", background: usageInputDisabled ? "#f8fafc" : "#fff" }} />
-                </div>
-
-                {invalid && (
-                  <div style={{ marginTop: 8, fontSize: 11, color: "#b91c1c", fontWeight: 600 }}>
-                    Total reported quantity cannot be greater than withdrawn stock.
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <button onClick={() => { void saveUsage(); }} disabled={usageSubmitDisabled} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${C.ink}`, background: usageSubmitDisabled ? C.muted : C.ink, color: "#fff", fontSize: 12, fontWeight: 600, cursor: usageSubmitDisabled ? "not-allowed" : "pointer", fontFamily: F }}>
-            {usageSaving ? "Submitting..." : "Submit for Review"}
-          </button>
-        </div>
-      </>
-    );
-  };
-
-  const statCards: Array<{
-    label: string;
-    val: number;
-    icon: typeof CreditCard;
-    tint: string;
-    tintBg: string;
-    dim?: boolean;
-  }> = [
-    { label: "Pending Payment", val: statusCounts.pendingPayment, icon: CreditCard, tint: C.slate, tintBg: C.slateBg },
-    { label: "Queued", val: statusCounts.queued, icon: ClipboardList, tint: C.slate, tintBg: C.slateBg },
-    { label: "Preparing", val: statusCounts.preparing, icon: Flame, tint: C.amber, tintBg: C.amberBg },
-    { label: "Ready", val: statusCounts.ready, icon: PackageCheck, tint: C.green, tintBg: C.greenBg },
-    { label: "Completed", val: statusCounts.completed, icon: CheckCircle2, tint: C.muted, tintBg: C.borderSoft, dim: true },
-    { label: "Refunded", val: statusCounts.refunded, icon: Ban, tint: C.muted, tintBg: C.borderSoft, dim: true },
-  ];
-  const nowMs = currentTime.getTime();
-  const displayOrders = getCookDisplayOrders(orders, nowMs);
+  const sortedOrders = sortForCook(orders, now.getTime());
+  const shellPadding = isMobile ? "pt-[72px]" : isTablet ? "pt-[76px]" : "pl-24";
 
   return (
-    <div style={{ minHeight: "100vh", background: C.canvas, fontFamily: F }}>
+    <div className="min-h-screen bg-slate-50 font-['DM_Sans',sans-serif]">
       <Sidebar />
 
-      <div style={{ paddingLeft: isTablet ? 0 : 96, paddingTop: isMobile ? 72 : isTablet ? 76 : 0 }}>
-
-        {/* ── Header ── */}
-        <div style={{ padding: isMobile ? "18px 14px 0" : isTablet ? "22px 18px 0" : "30px 32px 0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-
-          {/* Left: brand + clock */}
-          <div style={{ display: "flex", alignItems: isTablet ? "flex-start" : "center", flexDirection: isTablet ? "column" : "row", gap: isTablet ? 10 : 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: 9, background: C.ink,
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>
-                <ClipboardList size={14} color="#fff" />
+      <div className={shellPadding}>
+        <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          {/* Header */}
+          <header className="mb-6 flex flex-wrap items-center justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900">
+                <ChefHat size={24} className="text-white" />
               </div>
-              <span style={{ fontSize: 15, fontWeight: 700, color: C.ink, letterSpacing: "-0.01em" }}>Orders</span>
-            </div>
-            {!isTablet && <div style={{ width: 1, height: 26, background: C.border }} />}
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: C.ink, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{fmt(currentTime)}</div>
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{fmtDate(currentTime)}</div>
-            </div>
-          </div>
-
-          <UserIdentityBanner
-            className="order-3 w-full sm:order-2 sm:w-auto"
-          />
-
-          {/* Right: stats */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isTablet ? "100%" : "auto" }}>
-            {statCards.map(({ label, val, icon: Icon, tint, tintBg, dim }) => (
-              <div key={label} style={{
-                background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
-                padding: "10px 16px", minWidth: 92, flex: isTablet ? "1 1 120px" : "0 0 auto",
-                display: "flex", alignItems: "center", gap: 10, boxShadow: shadowSm,
-              }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: 9, background: tintBg,
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                }}>
-                  <Icon size={13} color={dim ? C.muted : tint} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: dim ? C.mutedLight : C.ink, lineHeight: 1 }}>{val}</div>
-                  <div style={{ fontSize: 10, fontWeight: 500, color: C.muted, marginTop: 3, whiteSpace: "nowrap" }}>{label}</div>
-                </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">Cook</h1>
+                <p className="text-sm text-slate-500">
+                  {formatDate(now)} · <span className="font-semibold tabular-nums text-slate-700">{formatTime(now)}</span>
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        {/* ── Notification banner ── */}
-        {notifPermission !== "granted" && (
-          <div style={{ padding: isMobile ? "14px 14px 0" : isTablet ? "14px 18px 0" : "16px 32px 0" }}>
-            <button onClick={() => Notification.requestPermission().then(setNotifPermission)}
-              style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, background: C.surface,
-                border: `1px solid ${C.border}`, color: C.inkSoft, padding: "9px 14px", borderRadius: 11,
-                cursor: "pointer", fontFamily: F, boxShadow: shadowSm, fontWeight: 500 }}>
-              <Bell size={13} color={C.amber} /> Enable notifications for order updates
-            </button>
-          </div>
-        )}
+            <UserIdentityBanner className="order-3 w-full sm:order-2 sm:w-auto" />
 
-        {/* ── Legacy usage panel (feature-flagged) ── */}
-        {SHOW_LEGACY_USAGE_PANEL && (
-          <div style={{ padding: isMobile ? "18px 14px 0" : isTablet ? "18px 18px 0" : "18px 32px 0" }}>
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-              style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, overflow: "hidden", boxShadow: shadowSm }}>
-              <button
-                onClick={() => setUsageOpen((v) => !v)}
-                style={{ width: "100%", background: "transparent", border: "none", padding: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", fontFamily: F }}
-              >
-                <div style={{ textAlign: "left" }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Daily Usage Report</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
-                    {usageReport ? `Status: ${usageReport.status}` : "Preparing today's kitchen usage sheet"}
+            <div className="order-2 grid w-full grid-cols-2 gap-3 sm:order-3 sm:grid-cols-3 lg:flex lg:w-auto">
+              {STATS.map(({ key, label, icon: Icon, tone }) => (
+                <div
+                  key={key}
+                  className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                >
+                  <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}>
+                    <Icon size={18} />
+                  </span>
+                  <div>
+                    <div className="text-2xl font-bold leading-none text-slate-900">{counts[key]}</div>
+                    <div className="mt-1 whitespace-nowrap text-xs font-medium text-slate-500">{label}</div>
                   </div>
                 </div>
-                <motion.div animate={{ rotate: usageOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                  <AlertCircle size={14} color={C.muted} />
-                </motion.div>
-              </button>
+              ))}
+            </div>
+          </header>
 
-              <AnimatePresence initial={false}>
-                {usageOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    style={{ overflow: "hidden", borderTop: `1px solid ${C.borderSoft}` }}
-                  >
-                    <div style={{ padding: 16 }}>
-                      {renderUsageForm()}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          </div>
-        )}
+          {notifPermission === "default" && (
+            <button
+              onClick={() => Notification.requestPermission().then(setNotifPermission)}
+              className="mb-6 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+            >
+              <Bell size={16} className="text-amber-500" />
+              Enable notifications for overdue orders
+            </button>
+          )}
 
-        <div style={{ padding: isMobile ? "20px 14px 28px" : isTablet ? "22px 18px 32px" : "26px 32px 40px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Active Orders</span>
-            {orders.length > 0 && (
-              <span style={{ background: C.slateBg, color: C.inkSoft, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99 }}>
-                {orders.length}
-              </span>
-            )}
-          </div>
-
+          {/* Board */}
           {orders.length === 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-              padding: "88px 0", gap: 12, background: C.surface, borderRadius: 20, border: `1px dashed ${C.border}` }}>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: C.slateBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Utensils size={22} color={C.mutedLight} />
-              </div>
-              <p style={{ fontSize: 13, color: C.muted, margin: 0, fontWeight: 500 }}>No pending orders</p>
-              <p style={{ fontSize: 12, color: C.mutedLight, margin: 0 }}>New orders will appear here as they come in.</p>
+            <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-300 bg-white py-28 text-center">
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
+                <Utensils size={28} className="text-slate-300" />
+              </span>
+              <p className="text-lg font-semibold text-slate-600">No pending orders</p>
+              <p className="text-sm text-slate-400">New orders will appear here as they come in.</p>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(224px, 1fr))", gap: 14 }}>
-              <AnimatePresence mode="popLayout">
-                {displayOrders.map((order) => {
-                  const isNew = !order.isPreparing && !order.isReady;
-                  const isPrep = order.isPreparing && !order.isReady;
-                  const isReady = order.isReady;
-                  const locallyOverdue = isLocallyOverdue(order, nowMs);
-                  const settlementAction = getSettlementAction(
-                    order.currentStatus,
-                    order.paymentStatus,
-                  );
-                  const isSettling = settlingId === order.id;
-                  const pendingAction =
-                    processingAction?.orderId === order.id
-                      ? processingAction.action
-                      : null;
-                  const isActionPending = pendingAction !== null;
-                  const isTerminal = isTerminalOrderStatus(order.currentStatus);
-                  const settlementLocked = isSettling || isActionPending || isTerminal;
-                  const timerEditable = isNew || isPrep;
-                  const timerBase = order.prepStartedAt;
-                  const estimatedPrepMinutes = Math.max(order.estimatedPrepMinutes ?? 10, 1);
+            <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
+              {COLUMNS.map(({ stage, title, icon: Icon, badge, empty }) => {
+                const column = sortedOrders.filter((o) => getStage(o) === stage);
+                return (
+                  <section key={stage} className="min-w-0">
+                    <div className="mb-4 flex items-center gap-2.5">
+                      <Icon size={18} className="text-slate-500" />
+                      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+                      <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${badge}`}>{column.length}</span>
+                    </div>
 
-                  const accent = locallyOverdue ? C.red : isReady ? C.green : isPrep ? C.amber : C.mutedLight;
-
-                  return (
-                    <motion.div
-                      key={order.id} layout
-                      initial={{ opacity: 0, y: 12, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 320, damping: 28 } }}
-                      exit={{ opacity: 0, scale: 0.94, y: -8, transition: { duration: 0.22 } }}
-                      whileHover={{ y: -2, transition: { duration: 0.12 } }}
-                      style={{
-                        background: C.surface, borderRadius: 18,
-                        border: `1px solid ${locallyOverdue ? C.redBorder : C.border}`,
-                        overflow: "hidden", display: "flex", flexDirection: "column",
-                        boxShadow: shadowMd,
-                      }}
-                    >
-                      {/* Status accent bar */}
-                      <div style={{ height: 3, background: accent }} />
-
-                      <div style={{ padding: "16px 16px 14px", flex: 1, display: "flex", flexDirection: "column" }}>
-
-                        {/* Order number + type */}
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, letterSpacing: "-0.01em" }}>{order.orderNumber}</span>
-                          <span style={{ fontSize: 10, fontWeight: 600, color: C.inkSoft, background: C.slateBg,
-                            padding: "3px 9px", borderRadius: 99 }}>
-                            {STATUS_LABEL[order.status] ?? order.status}
-                          </span>
-                        </div>
-
-                        {/* Timer */}
-                        {isPrep && timerBase && order.dueAt && (
-                          <OrderTimer
-                            baseAt={timerBase}
-                            dueAt={order.dueAt}
-                            estimatedPrepMinutes={estimatedPrepMinutes}
-                            orderNumber={order.orderNumber}
-                          />
-                        )}
-
-                        {locallyOverdue && (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                            padding: "6px 10px", borderRadius: 8, marginBottom: 10,
-                            background: C.redBg, color: C.red, fontSize: 11, fontWeight: 700 }}>
-                            <AlertCircle size={12} /> Overdue
-                          </div>
-                        )}
-
-                        {timerEditable && (
-                          <div style={{ marginBottom: 12, background: C.canvas, border: `1px solid ${C.borderSoft}`, borderRadius: 12, padding: 10 }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-                              <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                Prep Timer
-                              </span>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>
-                                {estimatedPrepMinutes} min
-                              </span>
-                            </div>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <button
-                                onClick={() => handleTimerAdjust(order, -1)}
-                                style={{
-                                  flex: 1, padding: "7px 0", borderRadius: 9, border: `1px solid ${C.border}`,
-                                  background: C.surface, color: C.body, fontSize: 11, fontWeight: 600,
-                                  cursor: "pointer", fontFamily: F,
-                                  display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                                }}>
-                                <Minus size={11} /> 1 min
-                              </button>
-                              <button
-                                onClick={() => handleTimerAdjust(order, 1)}
-                                style={{
-                                  flex: 1, padding: "7px 0", borderRadius: 9, border: `1px solid ${C.border}`,
-                                  background: C.surface, color: C.body, fontSize: 11, fontWeight: 600,
-                                  cursor: "pointer", fontFamily: F,
-                                  display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                                }}>
-                                <Plus size={11} /> 1 min
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Ready badge */}
-                        {isReady && (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                            padding: "6px 10px", borderRadius: 8, marginBottom: 10,
-                            background: C.greenBg, color: C.green, fontSize: 11, fontWeight: 700 }}>
-                            <CheckCircle2 size={12} /> {order.isOnlinePickup ? "Ready for Pickup" : "Ready to serve"}
-                          </div>
-                        )}
-
-                        {/* Items */}
-                        <div style={{ flex: 1, marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.borderSoft}` }}>
-                          {order.items.map((item, i) => (
-                            <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "baseline" }}>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: C.ink, minWidth: 20 }}>{item.quantity}×</span>
-                              <span style={{ fontSize: 12, color: C.inkSoft, flex: 1 }}>{item.name}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Actions */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {/* Start */}
-                            <button onClick={() => isNew && !isActionPending && handleStart(order.id)} disabled={!isNew || isActionPending}
-                              style={{
-                                flex: 1, padding: "8px 0", borderRadius: 10, fontSize: 11, fontWeight: 600,
-                                cursor: isNew && !isActionPending ? "pointer" : "not-allowed", fontFamily: F,
-                                border: "1px solid",
-                                borderColor: isNew && !isActionPending ? C.ink : C.borderSoft,
-                                background: isNew && !isActionPending ? C.ink : C.canvas,
-                                color: isNew && !isActionPending ? "#fff" : C.mutedLight,
-                                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                                transition: "all 0.12s",
-                              }}>
-                              <Play size={10} /> {pendingAction === "start" ? "Starting..." : "Start"}
-                            </button>
-
-                            {/* Ready / Served */}
-                            {!isReady ? (
-                              <button onClick={() => isPrep && !isActionPending && handleReady(order)} disabled={!isPrep || isActionPending}
-                                style={{
-                                  flex: 1, padding: "8px 0", borderRadius: 10, fontSize: 11, fontWeight: 600,
-                                  cursor: isPrep && !isActionPending ? "pointer" : "not-allowed", fontFamily: F,
-                                  border: "1px solid",
-                                  borderColor: isPrep && !isActionPending ? C.green : C.borderSoft,
-                                  background: isPrep && !isActionPending ? C.greenBg : C.canvas,
-                                  color: isPrep && !isActionPending ? C.green : C.mutedLight,
-                                  display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                                  transition: "all 0.12s",
-                                }}>
-                                {pendingAction !== "complete" && <CheckCircle2 size={10} />}
-                                {pendingAction === "complete"
-                                  ? "Completing..."
-                                  : ((order.orderType || order.status) === "delivery") || order.isOnlinePickup
-                                  ? "Ready for Pickup"
-                                  : "Complete"}
-                              </button>
-                            ) : (order.orderType || order.status) === "delivery" ? (
-                              <button
-                                disabled
-                                style={{
-                                  flex: 1, padding: "8px 0", borderRadius: 10, fontSize: 11, fontWeight: 600,
-                                  cursor: "not-allowed", fontFamily: F,
-                                  border: `1px solid ${C.borderSoft}`, background: C.canvas, color: C.mutedLight,
-                                  transition: "all 0.12s",
-                                }}>
-                                Awaiting Cashier
-                              </button>
-                            ) : null}
-                          </div>
-
-                          {/* Cancel / Refund */}
-                          {settlementAction && (
-                          <button onClick={() => !settlementLocked && handleSettlementAction(order)}
-                            disabled={settlementLocked}
-                            style={{
-                              width: "100%", padding: "7px 0", borderRadius: 10, fontSize: 11, fontWeight: 600,
-                              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                              cursor: settlementLocked ? "not-allowed" : "pointer", fontFamily: F,
-                              border: "1px solid",
-                              borderColor: settlementLocked ? C.borderSoft : "transparent",
-                              background: "transparent",
-                              color: settlementLocked ? C.mutedLight : C.red,
-                              transition: "all 0.12s",
-                            }}>
-                            <XCircle size={11} />
-                            {isSettling
-                              ? settlementAction === "refund"
-                                ? "Refunding..."
-                                : "Cancelling..."
-                              : settlementAction === "refund"
-                                ? "Refund Order"
-                                : "Cancel Order"}
-                          </button>
-                          )}
-                        </div>
+                    {column.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 py-12 text-center text-sm text-slate-400">
+                        {empty}
                       </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
+                    ) : (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+                        <AnimatePresence mode="popLayout">
+                          {column.map((order) => (
+                            <OrderTicket
+                              key={order.id}
+                              order={order}
+                              nowMs={now.getTime()}
+                              pendingAction={pendingAction}
+                              isSettling={settlingId === order.id}
+                              onStart={handleStart}
+                              onComplete={handleComplete}
+                              onAdjustTimer={handleAdjustTimer}
+                              onSettle={handleSettle}
+                            />
+                          ))}
+                        </AnimatePresence>
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
             </div>
           )}
         </div>
