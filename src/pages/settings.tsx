@@ -1,24 +1,151 @@
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, Star, RefreshCw, MessageSquare } from "lucide-react";
-import { cn } from "@/lib/utils";
+﻿import {
+  createContext, useCallback, useContext, useEffect, useState,
+  type CSSProperties, type ReactNode,
+} from "react";
+import { Lock, ChevronDown, ChevronUp, Star, MessageSquare } from "lucide-react";
 import { useAuth } from "../context/authcontext";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { api } from "../lib/api";
+import { normalizePermissionsMap, normalizeRole, type PermissionsMap } from "../lib/permissions";
+import { saveGeneralSettings, syncGeneralSettings } from "../lib/restaurantSettings";
+import { Sidebar } from "../components/Sidebar";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+/*
+ * Settings page (administrators only).
+ *
+ * Access is checked against the API (GET /users/me) before anything is shown.
+ * Only after that check passes does the page load its own data, so other roles
+ * never trigger the settings or feedback requests. The API must still enforce
+ * the same rule on its side, this check only controls what the UI shows.
+ *
+ * Responsive behaviour:
+ *   mobile  (< 640px)   settings menu becomes compact grouped lists on top,
+ *                       form rows stack (label above control), full-width controls
+ *   tablet  (< 1024px)  narrower side menu, tighter padding
+ *   desktop (>= 1024px) original layout
+ */
 
-interface RestaurantSettings {
-  restaurantName: string; tagline: string; email: string; phone: string; address: string;
-  currency: string; timezone: string; taxRate: string; serviceCharge: string;
-  openTime: string; closeTime: string; maxTableCapacity: string; reservationBuffer: string;
-  lowStockThreshold: string; autoReorderEnabled: boolean; emailNotifications: boolean;
-  smsNotifications: boolean; orderAlerts: boolean; staffAlerts: boolean;
-  dailyReportTime: string; receiptFooter: string; allowSplitBills: boolean;
-  requireTableNumber: boolean; enableLoyaltyPoints: boolean; maintenanceMode: boolean;
+/* -------------------------------------------------------------------------- */
+/* Constants                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export const FONT = "'Poppins', sans-serif";
+export const ACCENT = "#e05a1e";
+const INK = "#1c1a18";
+const MUTED = "#9e9891";
+const ERROR = "#b91c1c";
+const SUCCESS = "#15803d";
+
+// Dropdown options. The types below are derived from these lists,
+// so the allowed values are only written once.
+const STORE_MODE_OPTIONS = [
+  { value: "auto", label: "Auto (follow schedule)" },
+  { value: "manual_open", label: "Force Open" },
+  { value: "manual_closed", label: "Force Closed" },
+] as const;
+
+const TOAST_POSITION_OPTIONS = [
+  { value: "top-right", label: "Top Right" },
+  { value: "top-left", label: "Top Left" },
+  { value: "bottom-right", label: "Bottom Right" },
+  { value: "bottom-left", label: "Bottom Left" },
+] as const;
+
+const TOAST_DURATION_OPTIONS = [2, 3, 4, 5].map((seconds) => ({
+  value: String(seconds * 1000),
+  label: `${seconds} seconds`,
+}));
+
+/* -------------------------------------------------------------------------- */
+/* Viewport (responsive) helpers                                              */
+/* -------------------------------------------------------------------------- */
+
+type Viewport = "mobile" | "tablet" | "desktop";
+
+const MOBILE_MAX = 640;
+const TABLET_MAX = 1024;
+
+const readViewport = (): Viewport => {
+  if (typeof window === "undefined") return "desktop";
+  const width = window.innerWidth;
+  if (width < MOBILE_MAX) return "mobile";
+  if (width < TABLET_MAX) return "tablet";
+  return "desktop";
+};
+
+// One resize listener for the whole page. Components read the result through context,
+// so exported primitives (FR, SI, SS...) still work anywhere and default to "desktop".
+const ViewportContext = createContext<Viewport>("desktop");
+const useViewport = () => useContext(ViewportContext);
+
+function useViewportWatcher(): Viewport {
+  const [viewport, setViewport] = useState<Viewport>(readViewport);
+
+  useEffect(() => {
+    const onResize = () => setViewport(readViewport());
+    onResize();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+
+  return viewport;
 }
 
-interface FeedbackEntry {
+/* -------------------------------------------------------------------------- */
+/* Types                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export type TabKey =
+  | "business"
+  | "ordering"
+  | "inventory"
+  | "billing"
+  | "notifications"
+  | "roles"
+  | "security"
+  | "personal"
+  | "feedback";
+
+export interface RestaurantSettings {
+  // Fixed system identity (not editable)
+  restaurantName: string;
+  tagline: string;
+  currency: string;
+  timezone: string;
+  // Contact details
+  email: string;
+  phone: string;
+  address: string;
+  // Operating hours
+  weekdayOpenTime: string;
+  weekdayCloseTime: string;
+  weekendOpenTime: string;
+  weekendCloseTime: string;
+  storeStatusMode: (typeof STORE_MODE_OPTIONS)[number]["value"];
+  // Inventory
+  defaultLowStockThreshold: string;
+  defaultCriticalStockThreshold: string;
+  // Billing
+  taxRate: string;
+  serviceCharge: string;
+  // Notifications
+  enableToastNotifications: boolean;
+  toastPosition: (typeof TOAST_POSITION_OPTIONS)[number]["value"];
+  toastDuration: string;
+  enableConfirmDialogs: boolean;
+  newOrderAlertsEnabled: boolean;
+  lowStockAlertsEnabled: boolean;
+  // Ordering
+  acceptOnlineOrders: boolean;
+  minimumOrderAmount: string;
+  // Security
+  sessionTimeout: string;
+}
+
+export interface FeedbackEntry {
   id: string;
   reviewerName: string;
   productName: string;
@@ -27,615 +154,1302 @@ interface FeedbackEntry {
   createdAt: string;
 }
 
-interface FeedbackApiEntry {
-  feedback_id?: number | string;
-  product_id?: number | string;
-  customer_user_id?: number | string | null;
-  rating?: number | null;
-  comment?: string;
-  created_at?: string;
-  product_name?: string;
-  customer_name?: string;
+// The signed-in user's account, as returned by GET /users/me.
+interface OwnAccount {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
 }
 
-type TabKey = "general"|"operations"|"inventory"|"notifications"|"billing"|"system"|"feedback";
-type SaveStatus = "idle"|"saving"|"saved";
-type Role = "administrator"|"cashier"|"cook"|"inventory_manager"|"customer"|null;
+// Setter shared by every settings tab.
+type SetField = <K extends keyof RestaurantSettings>(key: K, value: RestaurantSettings[K]) => void;
+interface TabProps {
+  s: RestaurantSettings;
+  set: SetField;
+}
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
+// Keys whose value is a plain string / a boolean. Used by the bind helpers below.
+type TextKey = { [K in keyof RestaurantSettings]: string extends RestaurantSettings[K] ? K : never }[keyof RestaurantSettings];
+type FlagKey = { [K in keyof RestaurantSettings]: RestaurantSettings[K] extends boolean ? K : never }[keyof RestaurantSettings];
 
-const FONT = "'Poppins', sans-serif";
-const ACCENT = "#e8501a";
-const TOPBAR_H = 58;
+/* -------------------------------------------------------------------------- */
+/* Settings defaults & normalizing                                            */
+/* -------------------------------------------------------------------------- */
 
-const ROLE_LABELS: Record<Exclude<Role, null>, string> = {
-  administrator: "Administrator", cashier: "Cashier", cook: "Cook",
-  inventory_manager: "Inventory Manager", customer: "Customer",
+// Fixed identity values, and the initial form values shown until the API responds.
+export const DEFAULT: RestaurantSettings = {
+  restaurantName: "The Crunch",
+  tagline: "",
+  currency: "PHP",
+  timezone: "Asia/Manila",
+  email: "",
+  phone: "",
+  address: "",
+  weekdayOpenTime: "10:00",
+  weekdayCloseTime: "22:00",
+  weekendOpenTime: "11:00",
+  weekendCloseTime: "20:30",
+  storeStatusMode: "auto",
+  defaultLowStockThreshold: "",
+  defaultCriticalStockThreshold: "",
+  taxRate: "",
+  serviceCharge: "",
+  enableToastNotifications: true,
+  toastPosition: "top-right",
+  toastDuration: "4000",
+  enableConfirmDialogs: true,
+  newOrderAlertsEnabled: true,
+  lowStockAlertsEnabled: true,
+  acceptOnlineOrders: true,
+  minimumOrderAmount: "",
+  sessionTimeout: "30",
 };
 
-interface SidebarItem { label: string; path: string; roles: Exclude<Role, null>[]; }
+function readString(value: unknown, fallback = ""): string {
+  return String(value ?? "").trim() || fallback;
+}
 
-const SIDEBAR_ITEMS: SidebarItem[] = [
-  { label: "Overview",        path: "/dashboard",     roles: ["administrator","inventory_manager"] },
-  { label: "Order",           path: "/orders",        roles: ["administrator","cashier","cook"] },
-  { label: "Menu Management", path: "/inventory",     roles: ["administrator","inventory_manager"] },
-  { label: "Menus",           path: "/menu",          roles: ["administrator","cashier"] },
-  { label: "Stock Manager",   path: "/stockmanager",  roles: ["administrator","inventory_manager"] },
-  { label: "User Accounts",   path: "/users",         roles: ["administrator"] },
-  { label: "Sales & Reports", path: "/sales-reports", roles: ["administrator","cashier"] },
-  { label: "Settings",        path: "/settings",      roles: ["administrator","cashier"] },
-];
+function readBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === 1 || value === "1" || value === "true") return true;
+  if (value === 0 || value === "0" || value === "false") return false;
+  return fallback;
+}
 
-const CONFIG_TABS: { key: TabKey; label: string }[] = [
-  { key: "general",       label: "General" },
-  { key: "operations",    label: "Operations" },
-  { key: "inventory",     label: "Inventory" },
-  { key: "notifications", label: "Notifications" },
-  { key: "billing",       label: "Billing" },
-  { key: "system",        label: "System" },
-  { key: "feedback",      label: "Feedback" },
-];
+// Turns whatever the API returns into a complete, safe settings object.
+function normalizeSettings(src: Record<string, unknown> | null | undefined): RestaurantSettings {
+  const text = (key: string, fallback = "") => readString(src?.[key], fallback);
+  const flag = (key: string) => readBoolean(src?.[key], true);
+  const oneOf = <T extends string>(key: string, options: readonly { value: T }[], fallback: T): T =>
+    options.find((option) => option.value === src?.[key])?.value ?? fallback;
 
-// ── Field components ──────────────────────────────────────────────────────────
+  return {
+    // Fixed identity is never overwritten by the API
+    restaurantName: DEFAULT.restaurantName,
+    tagline: DEFAULT.tagline,
+    currency: DEFAULT.currency,
+    timezone: DEFAULT.timezone,
 
-function FieldRow({ label, last=false, children }: { label:string; last?:boolean; children:React.ReactNode }) {
+    email: text("email"),
+    phone: text("phone"),
+    address: text("address"),
+
+    weekdayOpenTime: text("weekdayOpenTime", DEFAULT.weekdayOpenTime),
+    weekdayCloseTime: text("weekdayCloseTime", DEFAULT.weekdayCloseTime),
+    weekendOpenTime: text("weekendOpenTime", DEFAULT.weekendOpenTime),
+    weekendCloseTime: text("weekendCloseTime", DEFAULT.weekendCloseTime),
+    storeStatusMode: oneOf("storeStatusMode", STORE_MODE_OPTIONS, "auto"),
+
+    defaultLowStockThreshold: text("defaultLowStockThreshold"),
+    defaultCriticalStockThreshold: text("defaultCriticalStockThreshold"),
+
+    taxRate: text("taxRate"),
+    serviceCharge: text("serviceCharge"),
+
+    enableToastNotifications: flag("enableToastNotifications"),
+    toastPosition: oneOf("toastPosition", TOAST_POSITION_OPTIONS, "top-right"),
+    toastDuration: text("toastDuration", DEFAULT.toastDuration),
+    enableConfirmDialogs: flag("enableConfirmDialogs"),
+    newOrderAlertsEnabled: flag("newOrderAlertsEnabled"),
+    lowStockAlertsEnabled: flag("lowStockAlertsEnabled"),
+
+    acceptOnlineOrders: flag("acceptOnlineOrders"),
+    minimumOrderAmount: text("minimumOrderAmount"),
+
+    sessionTimeout: text("sessionTimeout", DEFAULT.sessionTimeout),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Styles                                                                     */
+/* -------------------------------------------------------------------------- */
+
+// Text style shortcut: typo("0.85rem", color, weight)
+const typo = (size: string, color = INK, weight = 500): CSSProperties => ({
+  fontFamily: FONT,
+  fontSize: size,
+  color,
+  fontWeight: weight,
+  margin: 0,
+});
+
+const S = {
+  input: {
+    fontFamily: FONT, fontSize: "0.85rem", color: INK, background: "#f7f6f5",
+    border: "1px solid #e4e1dc", borderRadius: 10, padding: "10px 12px",
+    width: "100%", minWidth: 0, boxSizing: "border-box", outline: "none",
+    transition: "border-color .15s, box-shadow .15s",
+  } as CSSProperties,
+  pillSelect: {
+    fontFamily: FONT, fontSize: "0.85rem", fontWeight: 500, color: INK,
+    background: "#f0eeec", border: "none", borderRadius: 99, padding: "9px 34px 9px 16px",
+    cursor: "pointer", outline: "none", appearance: "none",
+  } as CSSProperties,
+  panel: {
+    background: "#fff", border: "1px solid #eae7e2", borderRadius: 12,
+  } as CSSProperties,
+  // The large white card that holds the settings menu and content.
+  card: {
+    display: "flex", width: "100%", minWidth: 0, maxWidth: 1100, margin: "0 auto",
+    background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #eae7e2",
+    boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04)",
+  } as CSSProperties,
+};
+
+// Dark action button. Greyed out while disabled.
+const accentButton = (disabled = false): CSSProperties => ({
+  fontFamily: FONT, fontSize: "0.82rem", fontWeight: 600, borderRadius: 10, letterSpacing: ".01em",
+  padding: "10px 18px", border: "none", background: INK, color: "#fff",
+  textAlign: "center", transition: "all .15s",
+  opacity: disabled ? 0.55 : 1,
+  cursor: disabled ? "not-allowed" : "pointer",
+});
+
+/* -------------------------------------------------------------------------- */
+/* Form primitives                                                            */
+/* -------------------------------------------------------------------------- */
+
+// Props for an input / dropdown bound to a string setting.
+const bindText = ({ s, set }: TabProps, key: TextKey) => ({
+  value: s[key],
+  onChange: (v: string) => set(key, v),
+});
+
+// Props for a toggle bound to a boolean setting.
+const bindFlag = ({ s, set }: TabProps, key: FlagKey) => ({
+  value: s[key],
+  onChange: (v: boolean) => set(key, v),
+});
+
+// Text input with an accent border while focused.
+export function SI({ value, onChange, type = "text", placeholder = "" }: {
+  value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const isMobile = useViewport() === "mobile";
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"188px 1fr", alignItems:"center", gap:20, padding:"12px 24px", borderBottom: last?"none":"1px solid #f0ede8" }}>
-      <p style={{ fontFamily:FONT, fontSize:"0.81rem", fontWeight:500, color:"#484340", margin:0 }}>{label}</p>
-      {children}
+    <input
+      style={{
+        ...S.input,
+        // 16px on phones stops iOS Safari from zooming the page when an input is focused
+        fontSize: isMobile ? "1rem" : S.input.fontSize,
+        padding: isMobile ? "11px 12px" : S.input.padding,
+        borderColor: focused ? ACCENT : "#ececec",
+        boxShadow: focused ? "0 0 0 3px rgba(224,90,30,.1)" : "none",
+      }}
+      type={type}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    />
+  );
+}
+
+// Pill-shaped dropdown. Full width on phones so it lines up with the inputs.
+export function SS<T extends string>({ value, onChange, options }: {
+  value: T; onChange: (v: T) => void; options: readonly { value: T; label: string }[];
+}) {
+  const isMobile = useViewport() === "mobile";
+  return (
+    <div style={{ position: "relative", display: isMobile ? "block" : "inline-block", maxWidth: "100%" }}>
+      <select
+        style={{
+          ...S.pillSelect,
+          fontSize: isMobile ? "1rem" : S.pillSelect.fontSize,
+          width: isMobile ? "100%" : undefined,
+          maxWidth: "100%",
+          padding: isMobile ? "11px 38px 11px 16px" : S.pillSelect.padding,
+        }}
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+      >
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <ChevronDown
+        size={14}
+        color={MUTED}
+        style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+      />
     </div>
   );
 }
 
-const inputBase: React.CSSProperties = {
-  fontFamily:FONT, fontSize:"0.81rem", color:"#1c1a18", background:"#fafaf9",
-  border:"1px solid #e4e1dc", borderRadius:8, padding:"8px 12px", width:"100%",
-  outline:"none", transition:"border-color 0.15s, box-shadow 0.15s, background 0.15s",
-};
-
-function StyledInput({ value, onChange, type="text", placeholder="" }: { value:string; onChange:(v:string)=>void; type?:string; placeholder?:string }) {
-  const [focused, setFocused] = useState(false);
+export function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <input style={{ ...inputBase, borderColor:focused?ACCENT:"#e4e1dc", boxShadow:focused?"0 0 0 3px rgba(232,80,26,0.09)":"none", background:focused?"#fff":"#fafaf9" }}
-      type={type} value={value} placeholder={placeholder}
-      onChange={(e)=>onChange(e.target.value)} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} />
-  );
-}
-
-function StyledSelect({ value, onChange, options }: { value:string; onChange:(v:string)=>void; options:{value:string;label:string}[] }) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <select style={{ ...inputBase, cursor:"pointer", borderColor:focused?ACCENT:"#e4e1dc", boxShadow:focused?"0 0 0 3px rgba(232,80,26,0.09)":"none", background:focused?"#fff":"#fafaf9" }}
-      value={value} onChange={(e)=>onChange(e.target.value)} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}>
-      {options.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
-}
-
-function Toggle({ value, onChange, danger=false }: { value:boolean; onChange:(v:boolean)=>void; danger?:boolean }) {
-  return (
-    <button onClick={()=>onChange(!value)} style={{ position:"relative", width:42, height:24, borderRadius:99, border:"none", cursor:"pointer", background:value?(danger?"#d94040":ACCENT):"#d8d4ce", padding:0, flexShrink:0, transition:"background 0.22s" }}>
-      <motion.span layout transition={{ type:"spring", stiffness:500, damping:35 }} style={{ position:"absolute", top:3, left:value?21:3, width:18, height:18, borderRadius:"50%", background:"#fff", boxShadow:"0 1px 4px rgba(0,0,0,0.18)" }} />
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
+      onClick={() => onChange(!value)}
+      style={{
+        position: "relative", width: 44, height: 24, borderRadius: 99, border: "none",
+        cursor: "pointer", background: value ? INK : "#e4e1dc", padding: 0, flexShrink: 0,
+        transition: "background .2s",
+      }}
+    >
+      <span
+        style={{
+          position: "absolute", top: 3, left: value ? 23 : 3, width: 18, height: 18,
+          borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.18)",
+          transition: "left .18s",
+        }}
+      />
     </button>
   );
 }
 
-function ToggleRow({ label, desc, value, onChange, last=false, danger=false }: { label:string; desc?:string; value:boolean; onChange:(v:boolean)=>void; last?:boolean; danger?:boolean }) {
+// Form row: label on the left, control on the right. On phones the label sits above the control.
+export function FR({ label, last = false, children }: { label: string; last?: boolean; children: ReactNode }) {
+  const viewport = useViewport();
+  const stacked = viewport === "mobile";
   return (
-    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"13px 24px", borderBottom:last?"none":"1px solid #f0ede8", gap:16 }}>
-      <div>
-        <p style={{ fontFamily:FONT, fontSize:"0.81rem", fontWeight:500, color:"#484340", margin:0 }}>{label}</p>
-        {desc && <p style={{ fontFamily:FONT, fontSize:"0.72rem", color:"#aea9a3", fontWeight:400, margin:"2px 0 0" }}>{desc}</p>}
-      </div>
-      <Toggle value={value} onChange={onChange} danger={danger} />
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: stacked ? "minmax(0,1fr)" : `${viewport === "tablet" ? 150 : 175}px minmax(0,1fr)`,
+        alignItems: stacked ? "stretch" : "center",
+        gap: stacked ? 8 : 16,
+        padding: stacked ? "14px 0" : "20px 0",
+        borderBottom: last ? "none" : "1px solid #ececec",
+      }}
+    >
+      <p style={typo(stacked ? "0.8rem" : "0.85rem", stacked ? "#5a5652" : INK)}>{label}</p>
+      <div style={{ minWidth: 0 }}>{children}</div>
     </div>
   );
 }
 
-function SettingsCard({ title, delay=0, children }: { title:string; delay?:number; children:React.ReactNode }) {
+// Toggle row: label and optional description on the left, switch on the right.
+export function TR({ label, desc, value, onChange, last = false }: {
+  label: string; desc?: string; value: boolean; onChange: (v: boolean) => void; last?: boolean;
+}) {
+  const isMobile = useViewport() === "mobile";
   return (
-    <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.24, ease:"easeOut", delay }}
-      style={{ background:"#fff", border:"1px solid #eae7e2", borderRadius:12, overflow:"hidden", marginBottom:14 }}>
-      <div style={{ padding:"12px 24px", borderBottom:"1px solid #f0ede8", background:"#faf8f5" }}>
-        <p style={{ fontFamily:FONT, fontSize:"0.68rem", fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"#aaa49d", margin:0 }}>{title}</p>
+    <div
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: isMobile ? "14px 0" : "20px 0", borderBottom: last ? "none" : "1px solid #ececec", gap: 16,
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <p style={typo("0.85rem")}>{label}</p>
+        {desc && <p style={{ ...typo("0.74rem", MUTED, 400), margin: "3px 0 0", lineHeight: 1.6 }}>{desc}</p>}
       </div>
-      {children}
-    </motion.div>
+      <Toggle value={value} onChange={onChange} />
+    </div>
   );
 }
 
-// ── Feedback components ───────────────────────────────────────────────────────
+// Groups related rows and adds spacing below them.
+export function Section({ children }: { children: ReactNode }) {
+  return <div style={{ marginBottom: 8 }}>{children}</div>;
+}
 
-function StarDisplay({ rating }: { rating:number }) {
+export function Hint({ children }: { children: ReactNode }) {
+  return <p style={{ ...typo("0.74rem", "#b0aaa3", 400), padding: "10px 0 18px", lineHeight: 1.6 }}>{children}</p>;
+}
+
+// Read-only value shown inside a form row.
+function Value({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   return (
-    <div style={{ display:"flex", gap:2 }}>
-      {[1,2,3,4,5].map((n)=>(
-        <Star key={n} size={13} fill={n<=rating?"#e8501a":"none"} color={n<=rating?"#e8501a":"#d8d4ce"} />
+    <span style={{ ...typo("0.8rem", muted ? "#5a5652" : INK, muted ? 400 : 600), overflowWrap: "anywhere" }}>
+      {children}
+    </span>
+  );
+}
+
+// Error message with a retry button.
+function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div style={{ ...S.panel, padding: "28px 20px", textAlign: "center" }}>
+      <p style={{ ...typo("0.8rem", ERROR, 400), marginBottom: 10 }}>{message}</p>
+      <button onClick={onRetry} style={accentButton()}>Try again</button>
+    </div>
+  );
+}
+
+// Shown to users who are not administrators.
+export function LockedSection({ label }: { label: string }) {
+  const isMobile = useViewport() === "mobile";
+  return (
+    <div style={{ background: "#f7f6f5", borderRadius: 16, padding: isMobile ? "36px 20px" : "48px 32px", textAlign: "center" }}>
+      <div
+        style={{
+          width: 52, height: 52, borderRadius: 12, background: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px",
+        }}
+      >
+        <Lock size={22} color={ACCENT} />
+      </div>
+      <p style={{ ...typo("0.9rem", INK, 600), margin: "0 0 8px" }}>Access Restricted</p>
+      <p style={{ ...typo("0.78rem", MUTED, 400), lineHeight: 1.7, maxWidth: 300, marginInline: "auto" }}>
+        Only administrators can access <strong style={{ color: "#5a5652" }}>{label}</strong>. Contact your administrator if you need access.
+      </p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Settings tabs                                                              */
+/* -------------------------------------------------------------------------- */
+
+const HOUR_FIELDS: [TextKey, string][] = [
+  ["weekdayOpenTime", "Weekday open"],
+  ["weekdayCloseTime", "Weekday close"],
+  ["weekendOpenTime", "Weekend open"],
+  ["weekendCloseTime", "Weekend close"],
+];
+
+export function BusinessTab(p: TabProps) {
+  const { s } = p;
+  return (
+    <>
+      <Section>
+        <FR label="System name"><Value>{s.restaurantName}</Value></FR>
+        <FR label="Currency"><Value>{s.currency}</Value></FR>
+        <FR label="Time zone" last><Value>{s.timezone}</Value></FR>
+        <Hint>Name, currency, and time zone are fixed system settings.</Hint>
+      </Section>
+      <Section>
+        <FR label="Email"><SI {...bindText(p, "email")} type="email" placeholder="Email address" /></FR>
+        <FR label="Phone"><SI {...bindText(p, "phone")} placeholder="Phone number" /></FR>
+        <FR label="Address" last><SI {...bindText(p, "address")} placeholder="Street address" /></FR>
+      </Section>
+      <Section>
+        {HOUR_FIELDS.map(([key, label], i) => (
+          <FR key={key} label={label} last={i === HOUR_FIELDS.length - 1}>
+            <SI {...bindText(p, key)} type="time" />
+          </FR>
+        ))}
+      </Section>
+    </>
+  );
+}
+
+export function InventoryTab(p: TabProps) {
+  return (
+    <Section>
+      <FR label="Low stock threshold">
+        <SI {...bindText(p, "defaultLowStockThreshold")} type="number" placeholder="e.g. 10" />
+      </FR>
+      <FR label="Critical threshold" last>
+        <SI {...bindText(p, "defaultCriticalStockThreshold")} type="number" placeholder="e.g. 5" />
+      </FR>
+    </Section>
+  );
+}
+
+export function OrderingTab(p: TabProps) {
+  return (
+    <>
+      <Section>
+        <TR
+          label="Accept online orders"
+          desc="Allow customers to place orders from your online menu."
+          {...bindFlag(p, "acceptOnlineOrders")}
+        />
+        <FR label="Minimum order (₱)" last>
+          <SI {...bindText(p, "minimumOrderAmount")} type="number" placeholder="e.g. 150" />
+        </FR>
+      </Section>
+      <Section>
+        <FR label="Store status" last>
+          <SS value={p.s.storeStatusMode} onChange={(v) => p.set("storeStatusMode", v)} options={STORE_MODE_OPTIONS} />
+        </FR>
+      </Section>
+    </>
+  );
+}
+
+export function BillingTab(p: TabProps) {
+  return (
+    <Section>
+      <FR label="VAT rate (%)"><SI {...bindText(p, "taxRate")} type="number" placeholder="e.g. 12" /></FR>
+      <FR label="Service charge (%)" last>
+        <SI {...bindText(p, "serviceCharge")} type="number" placeholder="e.g. 10" />
+      </FR>
+    </Section>
+  );
+}
+
+export function NotifTab(p: TabProps) {
+  return (
+    <>
+      <Section>
+        <TR label="Toast notifications" {...bindFlag(p, "enableToastNotifications")} />
+        <TR
+          label="New order alerts"
+          desc="Sound and visual alerts for incoming orders."
+          {...bindFlag(p, "newOrderAlertsEnabled")}
+        />
+        <TR
+          label="Low stock alerts"
+          desc="Notify when inventory falls below threshold."
+          {...bindFlag(p, "lowStockAlertsEnabled")}
+          last
+        />
+      </Section>
+      <Section>
+        <FR label="Position">
+          <SS value={p.s.toastPosition} onChange={(v) => p.set("toastPosition", v)} options={TOAST_POSITION_OPTIONS} />
+        </FR>
+        <FR label="Duration" last>
+          <SS {...bindText(p, "toastDuration")} options={TOAST_DURATION_OPTIONS} />
+        </FR>
+      </Section>
+    </>
+  );
+}
+
+export function SecurityTab(p: TabProps) {
+  return (
+    <Section>
+      <FR label="Session timeout (min)" last>
+        <SI {...bindText(p, "sessionTimeout")} type="number" placeholder="e.g. 30" />
+      </FR>
+    </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Roles & permissions tab (read-only)                                        */
+/* -------------------------------------------------------------------------- */
+
+// Roles shown as columns. The pages (rows) and every value come from the API.
+const ROLE_COLUMNS = ["administrator", "cashier", "inventory_manager"];
+
+type PermissionMatrix = Record<string, Record<string, boolean> | undefined>;
+
+// "menuManagement" -> "Menu Management"
+const formatPermissionLabel = (key: string) =>
+  key.replace(/([A-Z])/g, " $1").replace(/^./, (char) => char.toUpperCase());
+
+// Loads the role permissions from the same endpoint the main sidebar uses.
+function usePermissionMatrix() {
+  const [matrix, setMatrix] = useState<PermissionMatrix | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setMatrix(null);
+    setError(null);
+    api.get<Record<string, unknown>>("/settings/permissions")
+      .then((data) => {
+        if (!data || typeof data !== "object") throw new Error("Invalid permissions response");
+        // The API may return { permissions: {...} } or the map itself.
+        const raw = "permissions" in data ? data.permissions : data;
+        const map = normalizePermissionsMap((raw as Partial<PermissionsMap> | null | undefined) ?? null);
+        setMatrix(map as unknown as PermissionMatrix);
+      })
+      .catch(() => setError("Failed to load permissions. Please try again."));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { matrix, error, reload: load };
+}
+
+export function RolesTab() {
+  const { matrix, error, reload } = usePermissionMatrix();
+  const isMobile = useViewport() === "mobile";
+
+  if (error) return <ErrorPanel message={error} onRetry={reload} />;
+  if (!matrix) return <div style={{ ...S.panel, height: 200, opacity: 0.6 }} />;
+
+  // Every page any role has a setting for, in the order the API returns them.
+  const pages = Array.from(new Set(ROLE_COLUMNS.flatMap((role) => Object.keys(matrix[role] ?? {}))));
+
+  if (!pages.length) {
+    return <p style={{ ...typo("0.78rem", MUTED, 400), padding: "24px 0" }}>No permissions have been configured yet.</p>;
+  }
+
+  const cellX = isMobile ? 8 : 14;
+
+  return (
+    <Section>
+      {/* The table scrolls sideways inside its own box so the page never does. */}
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontFamily: FONT, fontSize: "0.78rem" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #f0ede8" }}>
+              <th style={{ padding: `11px ${isMobile ? 12 : 20}px 11px 0`, textAlign: "left", color: MUTED, fontWeight: 500 }}>Page</th>
+              {ROLE_COLUMNS.map((role) => (
+                <th key={role} style={{ padding: `11px ${cellX}px`, textAlign: "center", color: "#5a5652", fontWeight: 600 }}>
+                  {formatRoleLabel(role)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {pages.map((page, i) => (
+              <tr key={page} style={{ borderBottom: i < pages.length - 1 ? "1px solid #f0ede8" : "none" }}>
+                <td style={{ padding: `10px ${isMobile ? 12 : 20}px 10px 0`, color: "#484340", fontWeight: 500 }}>{formatPermissionLabel(page)}</td>
+                {ROLE_COLUMNS.map((role) => {
+                  const allowed = matrix[role]?.[page] === true;
+                  return (
+                    <td key={role} style={{ padding: `10px ${cellX}px`, textAlign: "center" }}>
+                      <span
+                        style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          width: 20, height: 20, borderRadius: 5, fontSize: "0.68rem", fontWeight: 700,
+                          background: allowed ? "rgba(224,90,30,.1)" : "#f5f4f2",
+                          color: allowed ? ACCENT : "#c8c4be",
+                        }}
+                        aria-label={allowed ? "Allowed" : "Not allowed"}
+                      >
+                        {allowed ? "✓" : "—"}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Hint>Shows which pages each role can open in the main menu, as currently saved in the system.</Hint>
+    </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Personal tab (own account + password)                                      */
+/* -------------------------------------------------------------------------- */
+
+// At least 8 characters, with one letter and one number.
+const STRONG_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
+const EMPTY_PASSWORDS = { current: "", next: "", confirm: "" };
+
+// "inventory_manager" -> "Inventory Manager"
+function formatRoleLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+// Tracks the busy state and the success / error message of one form.
+function useFormAction() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const fail = (text: string) => setResult({ ok: false, text });
+
+  // Runs the task. Its returned text is shown on success, the error message on failure.
+  const run = async (task: () => Promise<string>, fallbackError: string) => {
+    setBusy(true);
+    setResult(null);
+    try {
+      setResult({ ok: true, text: await task() });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : fallbackError);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return { busy, result, run, fail };
+}
+
+// Bottom row of a form: status message on the left, submit button on the right.
+// On phones the button takes the full width below the message.
+function FormFooter({ action, label, busyLabel, onSubmit }: {
+  action: ReturnType<typeof useFormAction>; label: string; busyLabel: string; onSubmit: () => void;
+}) {
+  const isMobile = useViewport() === "mobile";
+  return (
+    <div
+      style={{
+        padding: isMobile ? "14px 0" : "14px 20px",
+        display: "flex", alignItems: isMobile ? "stretch" : "center",
+        flexDirection: isMobile ? "column-reverse" : "row",
+        justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+      }}
+    >
+      <span style={typo("0.72rem", action.result?.ok ? SUCCESS : ERROR, 400)}>{action.result?.text}</span>
+      <button onClick={onSubmit} disabled={action.busy} style={accentButton(action.busy)}>
+        {action.busy ? busyLabel : label}
+      </button>
+    </div>
+  );
+}
+
+export function PersonalTab({ account, onAccountChange }: {
+  account: OwnAccount; onAccountChange: (account: OwnAccount) => void;
+}) {
+  const [displayName, setDisplayName] = useState(account.username);
+  const [passwords, setPasswords] = useState(EMPTY_PASSWORDS);
+  const profile = useFormAction();
+  const password = useFormAction();
+
+  const saveProfile = () => {
+    const username = displayName.trim();
+    if (username.length < 2 || username.length > 100) {
+      return profile.fail("Display name must be between 2 and 100 characters.");
+    }
+    void profile.run(async () => {
+      const saved = await api.put<OwnAccount>("/users/me", { username });
+      setDisplayName(saved.username);
+      onAccountChange(saved);
+      return "Account details updated.";
+    }, "Failed to update your account.");
+  };
+
+  const savePassword = () => {
+    const { current, next, confirm } = passwords;
+    if (!current || !next || !confirm) {
+      return password.fail("Current password, new password, and confirmation are required.");
+    }
+    if (next !== confirm) return password.fail("New passwords do not match.");
+    if (!STRONG_PASSWORD.test(next)) {
+      return password.fail("New password must be at least 8 characters with a letter and number.");
+    }
+    void password.run(async () => {
+      await api.put<{ message: string }>("/users/me/password", {
+        currentPassword: current,
+        newPassword: next,
+        confirmPassword: confirm,
+      });
+      setPasswords(EMPTY_PASSWORDS);
+      return "Password changed successfully.";
+    }, "Failed to change your password.");
+  };
+
+  const setPassword = (key: keyof typeof EMPTY_PASSWORDS) => (value: string) =>
+    setPasswords((prev) => ({ ...prev, [key]: value }));
+
+  return (
+    <>
+      <Section>
+        <FR label="Display name / username">
+          <SI value={displayName} onChange={setDisplayName} placeholder="Display name" />
+        </FR>
+        <FR label="Email"><Value muted>{account.email || "Not available"}</Value></FR>
+        <FR label="Role" last><Value muted>{formatRoleLabel(account.role) || "Not available"}</Value></FR>
+        <FormFooter action={profile} label="Save Account" busyLabel="Saving..." onSubmit={saveProfile} />
+      </Section>
+      <Section>
+        <FR label="Current password"><SI value={passwords.current} onChange={setPassword("current")} type="password" /></FR>
+        <FR label="New password"><SI value={passwords.next} onChange={setPassword("next")} type="password" /></FR>
+        <FR label="Confirm new password" last>
+          <SI value={passwords.confirm} onChange={setPassword("confirm")} type="password" />
+        </FR>
+        <FormFooter action={password} label="Change Password" busyLabel="Changing..." onSubmit={savePassword} />
+      </Section>
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Feedback tab                                                               */
+/* -------------------------------------------------------------------------- */
+
+type SortKey = "newest" | "oldest" | "highest" | "lowest";
+
+const timeOf = (entry: FeedbackEntry) => new Date(entry.createdAt).getTime();
+
+const SORT_OPTIONS: Record<SortKey, { label: string; compare: (a: FeedbackEntry, b: FeedbackEntry) => number }> = {
+  newest: { label: "Newest", compare: (a, b) => timeOf(b) - timeOf(a) },
+  oldest: { label: "Oldest", compare: (a, b) => timeOf(a) - timeOf(b) },
+  highest: { label: "Highest", compare: (a, b) => b.rating - a.rating },
+  lowest: { label: "Lowest", compare: (a, b) => a.rating - b.rating },
+};
+
+// 0 means "all ratings".
+const RATING_FILTERS = [0, 5, 4, 3, 2, 1];
+
+function StarDisplay({ rating }: { rating: number }) {
+  return (
+    <div style={{ display: "flex", gap: 2 }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star key={n} size={11} fill={n <= rating ? ACCENT : "none"} color={n <= rating ? ACCENT : "#d1cdc7"} />
       ))}
     </div>
   );
 }
 
-function RatingSummary({ entries }: { entries:FeedbackEntry[] }) {
-  if (entries.length===0) return null;
-  const avg = entries.reduce((s,e)=>s+e.rating,0)/entries.length;
-  const counts = [5,4,3,2,1].map((r)=>({
-    rating:r, count:entries.filter((e)=>e.rating===r).length,
-    pct:Math.round((entries.filter((e)=>e.rating===r).length/entries.length)*100),
-  }));
-  return (
-    <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }}
-      style={{ background:"#fff", border:"1px solid #eae7e2", borderRadius:12, padding:"20px 24px", marginBottom:14, display:"flex", gap:28, alignItems:"center", flexWrap:"wrap" }}>
-      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4, minWidth:80 }}>
-        <span style={{ fontFamily:FONT, fontSize:"2.6rem", fontWeight:800, color:"#1c1a18", lineHeight:1 }}>{avg.toFixed(1)}</span>
-        <StarDisplay rating={Math.round(avg)} />
-        <span style={{ fontFamily:FONT, fontSize:"0.68rem", color:"#b0aaa3", fontWeight:400 }}>{entries.length} review{entries.length!==1?"s":""}</span>
+export function FeedbackTab({ feedback, loading, error, onRetry }: {
+  feedback: FeedbackEntry[]; loading: boolean; error: string | null; onRetry: () => void;
+}) {
+  const [sort, setSort] = useState<SortKey>("newest");
+  const [rating, setRating] = useState(0);
+  const isMobile = useViewport() === "mobile";
+
+  // Loading placeholders
+  if (loading) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {[1, 2, 3].map((i) => <div key={i} style={{ ...S.panel, height: 88, opacity: 0.5 + i * 0.1 }} />)}
       </div>
-      <div style={{ flex:1, display:"flex", flexDirection:"column", gap:6, minWidth:160 }}>
-        {counts.map(({ rating, count, pct })=>(
-          <div key={rating} style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <span style={{ fontFamily:FONT, fontSize:"0.68rem", fontWeight:600, color:"#7a7470", width:8, textAlign:"right" }}>{rating}</span>
-            <Star size={10} fill="#e8501a" color="#e8501a" />
-            <div style={{ flex:1, height:6, background:"#f0ede8", borderRadius:99, overflow:"hidden" }}>
-              <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.6, ease:"easeOut", delay:0.1 }}
-                style={{ height:"100%", background:ACCENT, borderRadius:99 }} />
-            </div>
-            <span style={{ fontFamily:FONT, fontSize:"0.68rem", color:"#b0aaa3", width:28, textAlign:"right" }}>{count}</span>
-          </div>
-        ))}
+    );
+  }
+
+  if (error) return <ErrorPanel message={error} onRetry={onRetry} />;
+
+  if (!feedback.length) {
+    return (
+      <div style={{ ...S.panel, padding: "44px 20px", textAlign: "center" }}>
+        <MessageSquare size={26} color="#d1cdc7" style={{ marginBottom: 8 }} />
+        <p style={typo("0.82rem", "#b0aaa3")}>No feedback yet</p>
       </div>
-    </motion.div>
-  );
-}
+    );
+  }
 
-function FeedbackCard({ entry }: { entry:FeedbackEntry }) {
-  const date = new Date(entry.createdAt);
-  const formatted = date.toLocaleDateString("en-PH", { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
-  const ratingLabel = ["","Poor","Fair","Good","Great","Amazing"][entry.rating]??"";
-  return (
-    <motion.div layout initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, scale:0.96, y:-4 }} transition={{ duration:0.22, ease:"easeOut" }}
-      style={{ background:"#fff", border:"1px solid #eae7e2", borderRadius:12, padding:"16px 20px", position:"relative" }}>
-      <div style={{ position:"absolute", top:0, left:16, right:16, height:2, borderRadius:"0 0 2px 2px", background:`linear-gradient(90deg, ${ACCENT}66, transparent)` }} />
-      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, marginBottom:10 }}>
-        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-            <span style={{ fontFamily:FONT, fontSize:"0.82rem", fontWeight:600, color:"#1c1a18" }}>{entry.reviewerName}</span>
-            <span style={{ fontFamily:FONT, fontSize:"0.68rem", color:"#b0aaa3", fontWeight:400 }}>{formatted}</span>
-            <span style={{ fontFamily:FONT, fontSize:"0.65rem", fontWeight:600, color:"#7a7470", background:"#f7f4ef", border:"1px solid #ece6de", borderRadius:99, padding:"2px 8px" }}>
-              {entry.productName}
-            </span>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <StarDisplay rating={entry.rating} />
-            <span style={{ fontFamily:FONT, fontSize:"0.65rem", fontWeight:600, color:ACCENT, background:"rgba(232,80,26,0.07)", border:"1px solid rgba(232,80,26,0.15)", borderRadius:99, padding:"1px 8px", letterSpacing:"0.04em" }}>
-              {ratingLabel}
-            </span>
-          </div>
-        </div>
-      </div>
-      <p style={{ fontFamily:FONT, fontSize:"0.79rem", color:"#484340", lineHeight:1.7, margin:0 }}>{entry.message}</p>
-    </motion.div>
-  );
-}
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const CURRENCIES = [
-  { value:"PHP", label:"PHP — Philippine Peso" }, { value:"USD", label:"USD — US Dollar" },
-  { value:"EUR", label:"EUR — Euro" }, { value:"SGD", label:"SGD — Singapore Dollar" },
-];
-const TIMEZONES = [
-  { value:"Asia/Manila",      label:"Asia/Manila (PHT +08:00)" },
-  { value:"Asia/Singapore",   label:"Asia/Singapore (SGT +08:00)" },
-  { value:"America/New_York", label:"America/New_York (EST −05:00)" },
-  { value:"Europe/London",    label:"Europe/London (GMT +00:00)" },
-];
-const DEFAULT: RestaurantSettings = {
-  restaurantName:"", tagline:"", email:"", phone:"", address:"",
-  currency:"PHP", timezone:"Asia/Manila", taxRate:"", serviceCharge:"",
-  openTime:"08:00", closeTime:"22:00", maxTableCapacity:"", reservationBuffer:"",
-  lowStockThreshold:"", autoReorderEnabled:false, emailNotifications:true,
-  smsNotifications:false, orderAlerts:true, staffAlerts:false,
-  dailyReportTime:"08:00", receiptFooter:"", allowSplitBills:false,
-  requireTableNumber:true, enableLoyaltyPoints:false, maintenanceMode:false,
-};
-const TAB_META: Record<TabKey, { title:string; desc:string }> = {
-  general:       { title:"General",       desc:"Restaurant identity, contact details, and locale preferences." },
-  operations:    { title:"Operations",    desc:"Business hours, table settings, and service options." },
-  inventory:     { title:"Inventory",     desc:"Stock thresholds and automated reorder rules." },
-  notifications: { title:"Notifications", desc:"Alert channels and daily report scheduling." },
-  billing:       { title:"Billing",       desc:"Tax rates, service charges, and receipt customization." },
-  system:        { title:"System",        desc:"Maintenance controls and live configuration preview." },
-  feedback:      { title:"Feedback",      desc:"Customer reviews and ratings submitted from the menu page." },
-};
-
-// ── Main ──────────────────────────────────────────────────────────────────────
-
-export default function SettingsPage() {
-  const [tab, setTab]               = useState<TabKey>("general");
-  const [settings, setSettings]     = useState<RestaurantSettings>(DEFAULT);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const [unsaved, setUnsaved]       = useState(false);
-  const [initialized, setInitialized] = useState(false);
-  const [isOpen, setIsOpen]         = useState(false);
-
-  // Feedback
-  const [feedback, setFeedback]               = useState<FeedbackEntry[]>([]);
-  const [feedbackLoading, setFeedbackLoading] = useState(false);
-  const [feedbackError, setFeedbackError]     = useState<string|null>(null);
-  const [feedbackNotice, setFeedbackNotice]   = useState<string|null>(null);
-  const [fbSort, setFbSort]                   = useState<"newest"|"oldest"|"highest"|"lowest">("newest");
-  const [fbFilter, setFbFilter]               = useState<number>(0);
-
-  const navigate = useNavigate();
-  const { user, logout, isOnline } = useAuth();
-  const isMobile = useIsMobile();
-  const userRole   = user?.role as Role;
-  const visibleItems = SIDEBAR_ITEMS.filter((item)=>userRole&&item.roles.includes(userRole as Exclude<Role,null>));
-
-  useEffect(()=>{ if (!initialized){ setInitialized(true); return; } setUnsaved(true); }, [settings]);
-
-  const fetchFeedback = useCallback(async()=>{
-    setFeedbackLoading(true); setFeedbackError(null); setFeedbackNotice(null);
-    try {
-      const res = await fetch("/api/feedback");
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.message || `${res.status}`);
-      }
-      const data: FeedbackApiEntry[] = await res.json();
-      const normalized = Array.isArray(data)
-        ? data.map((entry, index) => ({
-            id: String(entry.feedback_id ?? `feedback-${index}`),
-            reviewerName:
-              String(entry.customer_name ?? "").trim() || "Anonymous",
-            productName:
-              String(entry.product_name ?? "").trim() || "Unknown product",
-            rating:
-              typeof entry.rating === "number" && Number.isFinite(entry.rating)
-                ? entry.rating
-                : 0,
-            message: String(entry.comment ?? "").trim(),
-            createdAt:
-              String(entry.created_at ?? "").trim() || new Date().toISOString(),
-          }))
-        : [];
-      setFeedback(normalized);
-      setFeedbackNotice(
-        normalized.length > 0
-          ? `Loaded ${normalized.length} feedback entr${normalized.length === 1 ? "y" : "ies"}.`
-          : "Feedback loaded successfully.",
-      );
-    } catch (error) {
-      setFeedbackError(
-        error instanceof Error && error.message
-          ? error.message
-          : "Could not load feedback. Please try again.",
-      );
-    }
-    finally { setFeedbackLoading(false); }
-  }, []);
-
-  useEffect(()=>{ if (tab==="feedback") fetchFeedback(); }, [tab, fetchFeedback]);
-
-  const setStr  = useCallback((field:keyof RestaurantSettings, v:string)=>setSettings((p)=>({...p,[field]:v})), []);
-  const setBool = useCallback((field:keyof RestaurantSettings, v:boolean)=>setSettings((p)=>({...p,[field]:v})), []);
-
-  const handleSave = async()=>{
-    setSaveStatus("saving");
-    await new Promise((r)=>setTimeout(r,800));
-    setSaveStatus("saved"); setUnsaved(false);
-    setTimeout(()=>setSaveStatus("idle"), 2200);
-  };
-
-  const sortedFeedback = [...feedback]
-    .filter((e)=>fbFilter===0||e.rating===fbFilter)
-    .sort((a,b)=>{
-      if (fbSort==="newest")  return new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime();
-      if (fbSort==="oldest")  return new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime();
-      if (fbSort==="highest") return b.rating-a.rating;
-      if (fbSort==="lowest")  return a.rating-b.rating;
-      return 0;
-    });
+  const visible = feedback
+    .filter((entry) => rating === 0 || entry.rating === rating)
+    .sort(SORT_OPTIONS[sort].compare);
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
-        *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-        @keyframes spin { to { transform:rotate(360deg); } }
-        @keyframes settings-spin { to { transform:rotate(360deg); } }
-        ::-webkit-scrollbar { width:4px; }
-        ::-webkit-scrollbar-thumb { background:#ddd8d2; border-radius:99px; }
-        select option { font-family:'Poppins',sans-serif; }
-        .hide-scroll::-webkit-scrollbar { display:none; }
-        .hide-scroll { scrollbar-width:none; -ms-overflow-style:none; }
-        .config-tab-btn { position:relative; background:transparent; border:none; cursor:pointer; font-family:'Poppins',sans-serif; font-size:0.82rem; font-weight:500; color:#9a9490; padding:10px 16px; border-radius:0; transition:color 0.18s; white-space:nowrap; }
-        .config-tab-btn:hover { color:#484340; }
-        .config-tab-btn.active { color:#1c1a18; font-weight:600; }
-        .fb-chip { font-family:'Poppins',sans-serif; font-size:0.72rem; font-weight:500; padding:5px 12px; border-radius:99px; border:1px solid #e4e1dc; background:#fafaf9; color:#7a7470; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
-        .fb-chip:hover, .fb-chip.active { background:#1c1a18; color:#fff; border-color:#1c1a18; }
-        .fb-chip.active { font-weight:600; }
-      `}</style>
-
-      <div style={{ fontFamily:FONT, background:"#f4f2ef", minHeight:"100vh", color:"#1c1a18" }}>
-
-        {/* Hamburger */}
-        <motion.button onClick={()=>setIsOpen(!isOpen)}
-          className={cn("fixed z-50 p-3 bg-white rounded-xl shadow-lg", isMobile?"top-4 left-4":"top-6 left-6")}
-          whileHover={{ scale:1.05 }} whileTap={{ scale:0.95 }}>
-          <AnimatePresence mode="wait">
-            {isOpen
-              ? <motion.div key="close" initial={{ rotate:-90,opacity:0 }} animate={{ rotate:0,opacity:1 }} exit={{ rotate:90,opacity:0 }} transition={{ duration:0.2 }}><X className={cn(isMobile?"w-5 h-5":"w-6 h-6","text-black")} /></motion.div>
-              : <motion.div key="menu"  initial={{ rotate:90,opacity:0 }} animate={{ rotate:0,opacity:1 }} exit={{ rotate:-90,opacity:0 }} transition={{ duration:0.2 }}><Menu className={cn(isMobile?"w-5 h-5":"w-6 h-6","text-black")} /></motion.div>}
-          </AnimatePresence>
-        </motion.button>
-
-        <AnimatePresence>
-          {isOpen && <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.2 }} className="fixed inset-0 backdrop-blur-sm bg-black/20 z-40" onClick={()=>setIsOpen(false)} />}
-        </AnimatePresence>
-
-        {/* Sidebar */}
-        <AnimatePresence>
-          {isOpen && (
-            <motion.aside initial={{ x:-288,opacity:0 }} animate={{ x:0,opacity:1 }} exit={{ x:-288,opacity:0 }} transition={{ type:"spring",damping:25,stiffness:200 }}
-              style={{ position:"fixed",top:0,left:0,height:"100%",background:"#fff",boxShadow:"4px 0 32px rgba(0,0,0,0.10)",zIndex:50,fontFamily:"Poppins,sans-serif",width:isMobile?"85vw":"288px",maxWidth:"85vw",display:"flex",flexDirection:"column",padding:"0" }}>
-              <motion.div initial={{ y:-20,opacity:0 }} animate={{ y:0,opacity:1 }} transition={{ delay:0.1 }} style={{ display:"flex",alignItems:"center",justifyContent:"center",padding:"28px 24px 20px" }}>
-                <span style={{ fontWeight:700,color:"#000",fontSize:isMobile?"1.2rem":"1.4rem",fontFamily:"Poppins,sans-serif" }}>The Crunch</span>
-              </motion.div>
-              {user && (
-                <motion.div initial={{ y:-10,opacity:0 }} animate={{ y:0,opacity:1 }} transition={{ delay:0.18 }} style={{ padding:"0 24px 16px" }}>
-                  <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                    <span style={{ width:10,height:10,borderRadius:"50%",flexShrink:0,background:isOnline?"#4ade80":"#d1d5db" }} />
-                    <span style={{ fontSize:"0.875rem",fontWeight:600,color:"#111827",fontFamily:"Poppins,sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{user.username}</span>
-                  </div>
-                  <span style={{ fontSize:"0.75rem",color:"#9ca3af",fontFamily:"Poppins,sans-serif",display:"block",paddingLeft:18,marginTop:2 }}>{ROLE_LABELS[user.role as Exclude<Role,null>]??user.role}</span>
-                </motion.div>
-              )}
-              <div style={{ height:1,background:"#f3f4f6",margin:"0 0 8px" }} />
-              <div style={{ flex:1,overflowY:"auto",display:"flex",flexDirection:"column",minHeight:0,padding:"0 16px" }} className="hide-scroll">
-                <p style={{ fontSize:"0.72rem",color:"#9ca3af",fontWeight:500,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"Poppins,sans-serif",margin:"8px 0 6px",padding:"0 8px" }}>Navigation</p>
-                <nav style={{ display:"flex",flexDirection:"column",gap:2 }}>
-                  {visibleItems.map((item,i)=>(
-                    <motion.div key={item.label} initial={{ x:-20,opacity:0 }} animate={{ x:0,opacity:1 }} transition={{ delay:0.15+i*0.04 }}>
-                      <NavLink to={item.path} end onClick={()=>setIsOpen(false)}>
-                        {({ isActive })=>(
-                          <div style={{ width:"100%",textAlign:"left",borderRadius:12,padding:isMobile?"12px 16px":"10px 16px",fontSize:isMobile?"1rem":"0.875rem",fontWeight:isActive?600:400,color:"#000",background:isActive?"#f3f4f6":"transparent",fontFamily:"Poppins,sans-serif",cursor:"pointer",transition:"background 0.15s",display:"block" }}
-                            onMouseEnter={(e)=>{ if (!isActive)(e.currentTarget as HTMLDivElement).style.background="#f9fafb"; }}
-                            onMouseLeave={(e)=>{ if (!isActive)(e.currentTarget as HTMLDivElement).style.background="transparent"; }}>
-                            {item.label}
-                          </div>
-                        )}
-                      </NavLink>
-                    </motion.div>
-                  ))}
-                </nav>
-              </div>
-              <div style={{ padding:"12px 16px 24px",borderTop:"1px solid #f3f4f6",flexShrink:0 }}>
-                <motion.div initial={{ x:-20,opacity:0 }} animate={{ x:0,opacity:1 }} transition={{ delay:0.45 }}>
-                  <div style={{ width:"100%",textAlign:"left",borderRadius:12,padding:isMobile?"12px 16px":"10px 16px",fontSize:isMobile?"1rem":"0.875rem",fontWeight:400,color:"#000",background:"transparent",fontFamily:"Poppins,sans-serif",cursor:"pointer",transition:"all 0.15s",display:"block" }}
-                    onClick={()=>{ logout(); setIsOpen(false); navigate("/login"); }}
-                    onMouseEnter={(e)=>{ (e.currentTarget as HTMLDivElement).style.background="#fef2f2"; (e.currentTarget as HTMLDivElement).style.color="#dc2626"; }}
-                    onMouseLeave={(e)=>{ (e.currentTarget as HTMLDivElement).style.background="transparent"; (e.currentTarget as HTMLDivElement).style.color="#000"; }}>
-                    Log Out
-                  </div>
-                </motion.div>
-              </div>
-            </motion.aside>
-          )}
-        </AnimatePresence>
-
-        {/* Topbar */}
-        <div style={{ position:"sticky",top:0,zIndex:30,height:TOPBAR_H,background:"#fff",borderBottom:"1px solid #eae7e2",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 28px 0 72px" }}>
-          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-            <span style={{ fontFamily:FONT,fontSize:"0.77rem",color:"#b0aaa3",fontWeight:400 }}>THE-CRUNCH</span>
-            <span style={{ color:"#d0ccc6",fontSize:"0.77rem" }}>›</span>
-            <span style={{ fontFamily:FONT,fontSize:"0.77rem",color:"#484340",fontWeight:600 }}>Settings</span>
-            <span style={{ color:"#d0ccc6",fontSize:"0.77rem" }}>›</span>
-            <span style={{ fontFamily:FONT,fontSize:"0.77rem",color:ACCENT,fontWeight:600 }}>{TAB_META[tab].title}</span>
-          </div>
-          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-            <AnimatePresence>
-              {unsaved && tab!=="feedback" && (
-                <motion.span initial={{ opacity:0,scale:0.8 }} animate={{ opacity:1,scale:1 }} exit={{ opacity:0,scale:0.8 }} transition={{ duration:0.16 }}
-                  style={{ fontFamily:FONT,fontSize:"0.68rem",fontWeight:600,color:ACCENT,background:"rgba(232,80,26,0.07)",border:"1px solid rgba(232,80,26,0.18)",borderRadius:99,padding:"3px 10px",letterSpacing:"0.04em",textTransform:"uppercase" }}>
-                  Unsaved
-                </motion.span>
-              )}
-            </AnimatePresence>
-            {tab!=="feedback" && (
-              <>
-                <button onClick={()=>{ setSettings(DEFAULT); setUnsaved(false); }}
-                  style={{ fontFamily:FONT,fontSize:"0.79rem",fontWeight:500,color:"#7a7470",background:"transparent",border:"1px solid #e0dcd6",borderRadius:8,padding:"7px 15px",cursor:"pointer",transition:"all 0.15s" }}
-                  onMouseEnter={(e)=>{ e.currentTarget.style.borderColor="#b8b4ae"; e.currentTarget.style.color="#484340"; }}
-                  onMouseLeave={(e)=>{ e.currentTarget.style.borderColor="#e0dcd6"; e.currentTarget.style.color="#7a7470"; }}>
-                  Reset
-                </button>
-                <motion.button whileTap={{ scale:0.97 }} onClick={handleSave} disabled={saveStatus==="saving"}
-                  style={{ fontFamily:FONT,fontSize:"0.79rem",fontWeight:600,color:"#fff",background:saveStatus==="saved"?"#3aaa60":ACCENT,border:"none",borderRadius:8,padding:"7px 20px",cursor:"pointer",minWidth:112,display:"flex",alignItems:"center",justifyContent:"center",gap:6,transition:"background 0.2s" }}>
-                  {saveStatus==="saving" && <span style={{ display:"inline-block",width:13,height:13,border:"2px solid #fff",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.7s linear infinite" }} />}
-                  {saveStatus==="saving"?"Saving…":saveStatus==="saved"?"✓  Saved":"Save Changes"}
-                </motion.button>
-              </>
-            )}
-            {tab==="feedback" && (
-              <motion.button whileHover={{ scale:1.05 }} whileTap={{ scale:0.95 }} onClick={fetchFeedback} disabled={feedbackLoading}
-                style={{ fontFamily:FONT,fontSize:"0.79rem",fontWeight:500,color:"#7a7470",background:"transparent",border:"1px solid #e0dcd6",borderRadius:8,padding:"7px 15px",cursor:"pointer",display:"flex",alignItems:"center",gap:6,transition:"all 0.15s" }}
-                onMouseEnter={(e)=>{ e.currentTarget.style.borderColor="#b8b4ae"; e.currentTarget.style.color="#484340"; }}
-                onMouseLeave={(e)=>{ e.currentTarget.style.borderColor="#e0dcd6"; e.currentTarget.style.color="#7a7470"; }}>
-                <motion.span animate={feedbackLoading?{ rotate:360 }:{ rotate:0 }} transition={{ duration:0.6,repeat:feedbackLoading?Infinity:0,ease:"linear" }}><RefreshCw size={13} /></motion.span>
-                Refresh
-              </motion.button>
-            )}
-          </div>
-        </div>
-
-        {/* Tab bar */}
-        <div style={{ position:"sticky",top:TOPBAR_H,zIndex:20,background:"#fff",borderBottom:"1px solid #eae7e2",padding:"0 42px 0 72px",display:"flex",alignItems:"flex-end",gap:0,overflowX:"auto" }} className="hide-scroll">
-          {CONFIG_TABS.map((t)=>(
-            <button key={t.key} className={`config-tab-btn${tab===t.key?" active":""}`} onClick={()=>setTab(t.key)}>
-              {t.key==="feedback" && feedback.length>0 && (
-                <span style={{ display:"inline-flex",alignItems:"center",justifyContent:"center",background:ACCENT,color:"#fff",borderRadius:99,fontSize:"0.55rem",fontWeight:700,width:15,height:15,marginRight:5 }}>
-                  {feedback.length>99?"99+":feedback.length}
-                </span>
-              )}
-              {t.label}
-              {tab===t.key && <motion.span layoutId="tab-indicator" transition={{ type:"spring",stiffness:400,damping:32 }} style={{ position:"absolute",bottom:0,left:10,right:10,height:2,borderRadius:"2px 2px 0 0",background:ACCENT }} />}
+      {/* Rating filter and sorting. On phones the filter chips scroll sideways and the sort sits below. */}
+      <div
+        style={{
+          display: "flex", alignItems: isMobile ? "stretch" : "center",
+          flexDirection: isMobile ? "column" : "row", gap: isMobile ? 10 : 6, marginBottom: 10,
+          flexWrap: isMobile ? "nowrap" : "wrap",
+        }}
+      >
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            flexWrap: isMobile ? "nowrap" : "wrap",
+            overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 2 : 0,
+          }}
+        >
+          {RATING_FILTERS.map((r) => (
+            <button
+              key={r}
+              onClick={() => setRating(r)}
+              style={{
+                fontFamily: FONT, fontSize: "0.69rem", fontWeight: rating === r ? 600 : 400,
+                padding: isMobile ? "7px 14px" : "4px 10px", borderRadius: 99, border: "1px solid #e4e1dc",
+                background: rating === r ? ACCENT : "#fafaf9", color: rating === r ? "#fff" : "#7a7470",
+                cursor: "pointer", transition: "all .15s", flexShrink: 0,
+                boxShadow: rating === r ? "0 1px 4px rgba(224,90,30,.2)" : "0 1px 3px rgba(0,0,0,.06)",
+              }}
+            >
+              {r === 0 ? "All" : `${r}★`}
             </button>
           ))}
         </div>
+        {!isMobile && <div style={{ flex: 1 }} />}
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          style={{
+            ...S.input,
+            width: isMobile ? "100%" : "auto",
+            padding: isMobile ? "10px 12px" : "5px 10px",
+            fontSize: isMobile ? "1rem" : S.input.fontSize,
+          }}
+        >
+          {(Object.keys(SORT_OPTIONS) as SortKey[]).map((key) => (
+            <option key={key} value={key}>{SORT_OPTIONS[key].label}</option>
+          ))}
+        </select>
+      </div>
 
-        {/* Content */}
-        <main style={{ padding:"32px 42px 48px 72px", maxWidth:820 }}>
-          <AnimatePresence mode="wait">
-            <motion.div key={`heading-${tab}`} initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }} exit={{ opacity:0,y:-4 }} transition={{ duration:0.16,ease:"easeOut" }} style={{ marginBottom:24 }}>
-              <p style={{ fontFamily:FONT,fontSize:"1.18rem",fontWeight:700,letterSpacing:"-0.02em",color:"#1c1a18",marginBottom:4 }}>{TAB_META[tab].title}</p>
-              <p style={{ fontFamily:FONT,fontSize:"0.78rem",color:"#a09a94",fontWeight:400 }}>{TAB_META[tab].desc}</p>
-            </motion.div>
-          </AnimatePresence>
-
-          <AnimatePresence mode="wait">
-            <motion.div key={`content-${tab}`} initial={{ opacity:0,y:10 }} animate={{ opacity:1,y:0 }} exit={{ opacity:0,y:-6 }} transition={{ duration:0.2,ease:"easeOut" }}>
-
-              {tab==="general" && (<>
-                <SettingsCard title="Restaurant Identity" delay={0}>
-                  <FieldRow label="Restaurant Name"><StyledInput value={settings.restaurantName} onChange={(v)=>setStr("restaurantName",v)} placeholder="e.g. The Crunch" /></FieldRow>
-                  <FieldRow label="Tagline" last><StyledInput value={settings.tagline} onChange={(v)=>setStr("tagline",v)} placeholder="e.g. Crunch into flavor" /></FieldRow>
-                </SettingsCard>
-                <SettingsCard title="Contact Information" delay={0.05}>
-                  <FieldRow label="Email"><StyledInput value={settings.email} onChange={(v)=>setStr("email",v)} type="email" placeholder="contact@thecrunch.com" /></FieldRow>
-                  <FieldRow label="Phone"><StyledInput value={settings.phone} onChange={(v)=>setStr("phone",v)} placeholder="+63 912 345 6789" /></FieldRow>
-                  <FieldRow label="Address" last><StyledInput value={settings.address} onChange={(v)=>setStr("address",v)} placeholder="123 Food St, Manila" /></FieldRow>
-                </SettingsCard>
-                <SettingsCard title="Locale" delay={0.1}>
-                  <FieldRow label="Currency"><StyledSelect value={settings.currency} onChange={(v)=>setStr("currency",v)} options={CURRENCIES} /></FieldRow>
-                  <FieldRow label="Timezone" last><StyledSelect value={settings.timezone} onChange={(v)=>setStr("timezone",v)} options={TIMEZONES} /></FieldRow>
-                </SettingsCard>
-              </>)}
-
-              {tab==="operations" && (<>
-                <SettingsCard title="Business Hours" delay={0}>
-                  <FieldRow label="Opening Time"><StyledInput value={settings.openTime} onChange={(v)=>setStr("openTime",v)} type="time" /></FieldRow>
-                  <FieldRow label="Closing Time" last><StyledInput value={settings.closeTime} onChange={(v)=>setStr("closeTime",v)} type="time" /></FieldRow>
-                </SettingsCard>
-                <SettingsCard title="Table Management" delay={0.05}>
-                  <FieldRow label="Max Capacity"><StyledInput value={settings.maxTableCapacity} onChange={(v)=>setStr("maxTableCapacity",v)} type="number" placeholder="e.g. 50 seats" /></FieldRow>
-                  <FieldRow label="Reservation Buffer (min)"><StyledInput value={settings.reservationBuffer} onChange={(v)=>setStr("reservationBuffer",v)} type="number" placeholder="e.g. 15" /></FieldRow>
-                  <ToggleRow label="Require Table Number" desc="Force table selection before order" value={settings.requireTableNumber} onChange={(v)=>setBool("requireTableNumber",v)} last />
-                </SettingsCard>
-                <SettingsCard title="Service Options" delay={0.1}>
-                  <ToggleRow label="Allow Split Bills" desc="Let customers divide their bill" value={settings.allowSplitBills} onChange={(v)=>setBool("allowSplitBills",v)} />
-                  <ToggleRow label="Enable Loyalty Points" desc="Reward repeat customers with points" value={settings.enableLoyaltyPoints} onChange={(v)=>setBool("enableLoyaltyPoints",v)} last />
-                </SettingsCard>
-              </>)}
-
-              {tab==="inventory" && (
-                <SettingsCard title="Stock Alerts" delay={0}>
-                  <FieldRow label="Low Stock Threshold"><StyledInput value={settings.lowStockThreshold} onChange={(v)=>setStr("lowStockThreshold",v)} type="number" placeholder="e.g. 10 units" /></FieldRow>
-                  <ToggleRow label="Auto-Reorder" desc="Trigger reorders automatically when stock is low" value={settings.autoReorderEnabled} onChange={(v)=>setBool("autoReorderEnabled",v)} last />
-                </SettingsCard>
-              )}
-
-              {tab==="notifications" && (<>
-                <SettingsCard title="Channels" delay={0}>
-                  <ToggleRow label="Email Notifications" desc="Receive alerts via email" value={settings.emailNotifications} onChange={(v)=>setBool("emailNotifications",v)} />
-                  <ToggleRow label="SMS Notifications" desc="Receive alerts via text message" value={settings.smsNotifications} onChange={(v)=>setBool("smsNotifications",v)} last />
-                </SettingsCard>
-                <SettingsCard title="Alert Types" delay={0.05}>
-                  <ToggleRow label="Order Alerts" desc="Notify on new or cancelled orders" value={settings.orderAlerts} onChange={(v)=>setBool("orderAlerts",v)} />
-                  <ToggleRow label="Staff Alerts" desc="Notify on staff clock-in and clock-out" value={settings.staffAlerts} onChange={(v)=>setBool("staffAlerts",v)} />
-                  <FieldRow label="Daily Report Time" last><StyledInput value={settings.dailyReportTime} onChange={(v)=>setStr("dailyReportTime",v)} type="time" /></FieldRow>
-                </SettingsCard>
-              </>)}
-
-              {tab==="billing" && (<>
-                <SettingsCard title="Tax & Charges" delay={0}>
-                  <FieldRow label="Tax Rate (%)"><StyledInput value={settings.taxRate} onChange={(v)=>setStr("taxRate",v)} type="number" placeholder="e.g. 12" /></FieldRow>
-                  <FieldRow label="Service Charge (%)" last><StyledInput value={settings.serviceCharge} onChange={(v)=>setStr("serviceCharge",v)} type="number" placeholder="e.g. 10" /></FieldRow>
-                </SettingsCard>
-                <SettingsCard title="Receipt" delay={0.05}>
-                  <FieldRow label="Footer Text" last><StyledInput value={settings.receiptFooter} onChange={(v)=>setStr("receiptFooter",v)} placeholder="e.g. Thank you for dining with us!" /></FieldRow>
-                </SettingsCard>
-              </>)}
-
-              {tab==="system" && (<>
-                <SettingsCard title="Maintenance" delay={0}>
-                  <ToggleRow label="Maintenance Mode" desc="Disable the system for customers during updates" value={settings.maintenanceMode} onChange={(v)=>setBool("maintenanceMode",v)} danger last />
-                </SettingsCard>
-                <SettingsCard title="Configuration Preview" delay={0.05}>
-                  <div style={{ padding:"14px 24px" }}>
-                    <pre style={{ fontFamily:"'Courier New',monospace",fontSize:"0.71rem",color:"#7a7268",background:"#f5f2ee",border:"1px solid #eae7e2",borderRadius:8,padding:"14px 16px",overflowX:"auto",lineHeight:1.65,margin:0 }}>
-                      {JSON.stringify(settings,null,2)}
-                    </pre>
-                  </div>
-                </SettingsCard>
-              </>)}
-
-              {tab==="feedback" && (<>
-                {feedbackLoading && (
-                  <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
-                    {[1,2,3].map((i)=>(
-                      <div key={i} style={{ height:110,background:"#fff",border:"1px solid #eae7e2",borderRadius:12,position:"relative",overflow:"hidden" }}>
-                        <motion.div animate={{ x:["-100%","200%"] }} transition={{ duration:1.4,repeat:Infinity,ease:"easeInOut",delay:i*0.15 }} style={{ position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(232,80,26,0.04),transparent)" }} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {!feedbackLoading && feedbackError && (
-                  <motion.div initial={{ opacity:0,y:8 }} animate={{ opacity:1,y:0 }} style={{ background:"#fff",border:"1px solid #f0ede8",borderRadius:12,padding:"28px 24px",textAlign:"center" }}>
-                    <p style={{ fontFamily:FONT,fontSize:"0.82rem",color:"#c0796c",fontWeight:500,marginBottom:12 }}>{feedbackError}</p>
-                    <button onClick={fetchFeedback} style={{ fontFamily:FONT,fontSize:"0.79rem",fontWeight:600,color:ACCENT,background:"rgba(232,80,26,0.07)",border:"1px solid rgba(232,80,26,0.18)",borderRadius:8,padding:"7px 18px",cursor:"pointer" }}>Try again</button>
-                  </motion.div>
-                )}
-                {!feedbackLoading && !feedbackError && feedbackNotice && (
-                  <motion.div initial={{ opacity:0,y:8 }} animate={{ opacity:1,y:0 }} style={{ background:"#fff",border:"1px solid #eae7e2",borderRadius:12,padding:"14px 18px",marginBottom:14 }}>
-                    <p style={{ fontFamily:FONT,fontSize:"0.78rem",color:"#6f6a65",fontWeight:500,margin:0 }}>{feedbackNotice}</p>
-                  </motion.div>
-                )}
-                {!feedbackLoading && !feedbackError && feedback.length===0 && (
-                  <motion.div initial={{ opacity:0,y:10 }} animate={{ opacity:1,y:0 }} style={{ background:"#fff",border:"1px solid #eae7e2",borderRadius:12,padding:"56px 24px",textAlign:"center" }}>
-                    <MessageSquare size={36} color="#d8d4ce" style={{ marginBottom:12 }} />
-                    <p style={{ fontFamily:FONT,fontSize:"0.92rem",fontWeight:600,color:"#b0aaa3",marginBottom:6 }}>No feedback yet</p>
-                    <p style={{ fontFamily:FONT,fontSize:"0.78rem",color:"#c8c4be",fontWeight:400 }}>Customer reviews will appear here once submitted from the menu page.</p>
-                  </motion.div>
-                )}
-                {!feedbackLoading && !feedbackError && feedback.length>0 && (<>
-                  <RatingSummary entries={feedback} />
-                  <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap" }}>
-                    <span style={{ fontFamily:FONT,fontSize:"0.72rem",fontWeight:600,color:"#b0aaa3",letterSpacing:"0.06em",textTransform:"uppercase",marginRight:4 }}>Filter</span>
-                    {[0,5,4,3,2,1].map((r)=>(
-                      <button key={r} className={`fb-chip${fbFilter===r?" active":""}`} onClick={()=>setFbFilter(r)}>
-                        {r===0?"All":`${r}★`}
-                      </button>
-                    ))}
-                    <div style={{ flex:1 }} />
-                    <select value={fbSort} onChange={(e)=>setFbSort(e.target.value as typeof fbSort)}
-                      style={{ fontFamily:FONT,fontSize:"0.72rem",fontWeight:500,color:"#484340",background:"#fafaf9",border:"1px solid #e4e1dc",borderRadius:8,padding:"5px 10px",cursor:"pointer",outline:"none" }}>
-                      <option value="newest">Newest first</option>
-                      <option value="oldest">Oldest first</option>
-                      <option value="highest">Highest rating</option>
-                      <option value="lowest">Lowest rating</option>
-                    </select>
-                  </div>
-                  <motion.div layout style={{ display:"flex",flexDirection:"column",gap:10 }}>
-                    <AnimatePresence mode="popLayout">
-                      {sortedFeedback.map((entry)=>(
-                        <FeedbackCard key={entry.id} entry={entry} />
-                      ))}
-                    </AnimatePresence>
-                    {sortedFeedback.length===0 && (
-                      <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} style={{ textAlign:"center",padding:"28px 0",color:"#b0aaa3",fontFamily:FONT,fontSize:"0.79rem" }}>
-                        No reviews match this filter.
-                      </motion.div>
-                    )}
-                  </motion.div>
-                </>)}
-              </>)}
-
-            </motion.div>
-          </AnimatePresence>
-        </main>
+      {/* Reviews */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {visible.map((entry) => (
+          <div key={entry.id} style={{ ...S.panel, padding: "12px 16px", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
+              <span style={typo("0.8rem", INK, 600)}>{entry.reviewerName}</span>
+              <span style={typo("0.66rem", "#b0aaa3", 400)}>
+                {new Date(entry.createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })}
+              </span>
+              <span
+                style={{
+                  ...typo("0.64rem", "#7a7470"), background: "#f5f2ee",
+                  border: "1px solid #ece6de", borderRadius: 99, padding: "2px 8px",
+                }}
+              >
+                {entry.productName}
+              </span>
+            </div>
+            <StarDisplay rating={entry.rating} />
+            {entry.message && (
+              <p style={{ ...typo("0.76rem", "#5a5652", 400), lineHeight: 1.7, margin: "6px 0 0", overflowWrap: "anywhere" }}>{entry.message}</p>
+            )}
+          </div>
+        ))}
+        {!visible.length && (
+          <p style={{ ...typo("0.78rem", "#b0aaa3", 400), textAlign: "center", padding: "24px 0" }}>
+            No reviews match this filter.
+          </p>
+        )}
       </div>
     </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Navigation                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export interface NavGroup {
+  label: string;
+  items: { key: TabKey; label: string }[];
+}
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Store",
+    items: [
+      { key: "business", label: "Business Info" },
+      { key: "ordering", label: "Online Ordering" },
+      { key: "inventory", label: "Inventory" },
+      { key: "billing", label: "Tax & Charges" },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { key: "roles", label: "Roles & Permissions" },
+      { key: "security", label: "Security" },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { key: "personal", label: "My Account" },
+      { key: "notifications", label: "Notifications" },
+      { key: "feedback", label: "Customer Feedback" },
+    ],
+  },
+];
+
+// Page title and description shown above each tab.
+export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
+  business:      { title: "Business Information",    desc: "Restaurant identity, contact details, and operating hours." },
+  ordering:      { title: "Online Ordering",         desc: "Accept online orders, set a minimum order, and control the store status." },
+  inventory:     { title: "Inventory Configuration", desc: "Low and critical stock thresholds." },
+  billing:       { title: "Tax & Charges",           desc: "VAT configuration and service charge rules." },
+  notifications: { title: "Notifications",           desc: "Alert channels and toast settings." },
+  roles:         { title: "Roles & Permissions",     desc: "Which pages each role can open, as saved in the system." },
+  security:      { title: "Security Settings",       desc: "Session timeout." },
+  personal:      { title: "My Account",              desc: "Manage your own display name and password securely." },
+  feedback:      { title: "Customer Feedback",       desc: "Customer reviews and ratings from the menu page." },
+};
+
+// Small count bubble shown next to "Customer Feedback".
+function CountBadge({ count }: { count: number }) {
+  return (
+    <span
+      style={{
+        fontSize: "0.62rem", fontWeight: 700, background: ACCENT, color: "#fff",
+        borderRadius: 99, padding: "2px 6px", minWidth: 17, textAlign: "center",
+      }}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+// One collapsible group of tabs in the settings menu (tablet and desktop).
+export function SidebarGroup({ group, active, feedbackCount, onSelect }: {
+  group: NavGroup; active: TabKey; feedbackCount: number; onSelect: (key: TabKey) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const isTablet = useViewport() === "tablet";
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <button
+        onClick={() => setOpen((prev) => !prev)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "8px 10px", background: "none", border: "none", cursor: "pointer",
+          fontFamily: FONT, fontSize: "0.62rem", fontWeight: 600, letterSpacing: ".09em",
+          textTransform: "uppercase", color: "#b0aaa3",
+        }}
+      >
+        {group.label}
+        {open ? <ChevronUp size={11} color="#c8c4be" /> : <ChevronDown size={11} color="#c8c4be" />}
+      </button>
+
+      {open && group.items.map(({ key, label }) => {
+        const isActive = active === key;
+        return (
+          <button
+            key={key}
+            onClick={() => onSelect(key)}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", gap: 10,
+              padding: isTablet ? "10px 12px" : "11px 14px", background: isActive ? "#f0eeec" : "none",
+              border: "none", borderRadius: 10, cursor: "pointer",
+              fontFamily: FONT, fontSize: isTablet ? "0.8rem" : "0.85rem", fontWeight: isActive ? 600 : 500,
+              color: isActive ? INK : "#5a5652",
+              textAlign: "left", transition: "background .12s, color .12s", marginBottom: 2,
+            }}
+          >
+            <span style={{ flex: 1 }}>{label}</span>
+            {key === "feedback" && feedbackCount > 0 && <CountBadge count={feedbackCount} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Phone version of the settings menu: compact grouped lists, one card per group.
+function MobileTabs({ active, feedbackCount, onSelect }: {
+  active: TabKey; feedbackCount: number; onSelect: (key: TabKey) => void;
+}) {
+  return (
+    <div style={{ borderBottom: "1px solid #f0eeec", padding: "18px 14px 10px" }}>
+      <h2 style={{ ...typo("1.15rem", INK, 700), letterSpacing: "-0.01em", padding: "0 4px 10px" }}>Settings</h2>
+      <div role="tablist" aria-orientation="vertical">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} style={{ marginBottom: 10 }}>
+            <p
+              style={{
+                ...typo("0.62rem", "#b0aaa3", 600), letterSpacing: ".09em",
+                textTransform: "uppercase", padding: "0 4px 5px",
+              }}
+            >
+              {group.label}
+            </p>
+            <div
+              style={{
+                border: "1px solid #eae7e2", borderRadius: 12,
+                overflow: "hidden", background: "#fff",
+              }}
+            >
+              {group.items.map(({ key, label }, i) => {
+                const isActive = active === key;
+                return (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => onSelect(key)}
+                    style={{
+                      width: "100%", minHeight: 38, boxSizing: "border-box",
+                      display: "flex", alignItems: "center", gap: 8, textAlign: "left",
+                      padding: "9px 14px", cursor: "pointer", border: "none",
+                      borderTop: i === 0 ? "none" : "1px solid #f0eeec",
+                      background: isActive ? "#f0eeec" : "#fff",
+                      color: isActive ? INK : "#5a5652",
+                      fontFamily: FONT, fontSize: "0.83rem", fontWeight: isActive ? 600 : 500,
+                      transition: "background .12s, color .12s",
+                    }}
+                  >
+                    <span style={{ flex: 1 }}>{label}</span>
+                    {key === "feedback" && feedbackCount > 0 && <CountBadge count={feedbackCount} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Data hooks                                                                 */
+/* -------------------------------------------------------------------------- */
+
+type AccessStatus = "checking" | "allowed" | "denied" | "error";
+
+const isAdministrator = (role: unknown) =>
+  normalizeRole(String(role ?? "").trim().toLowerCase()) === "administrator";
+
+// Checks the signed-in user's role with the API. If the check fails, access is denied.
+function useAdminAccess() {
+  const { updateUser } = useAuth();
+  const [account, setAccount] = useState<OwnAccount | null>(null);
+  const [status, setStatus] = useState<AccessStatus>("checking");
+
+  // Keeps this page and the auth context in sync with the account from the API.
+  const applyAccount = useCallback(
+    (data: OwnAccount) => {
+      setAccount(data);
+      updateUser({ username: data.username, email: data.email, role: data.role });
+    },
+    [updateUser],
+  );
+
+  const verify = useCallback(() => {
+    setStatus("checking");
+    api.get<OwnAccount>("/users/me")
+      .then((data) => {
+        applyAccount(data);
+        setStatus(isAdministrator(data.role) ? "allowed" : "denied");
+      })
+      .catch(() => setStatus("error"));
+  }, [applyAccount]);
+
+  useEffect(() => {
+    verify();
+  }, [verify]);
+
+  return { status, account, applyAccount, verify };
+}
+
+// Loads and saves the restaurant settings through the API.
+function useSettings() {
+  const [values, setValues] = useState<RestaurantSettings>(DEFAULT);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Load the saved settings once when the page opens.
+  useEffect(() => {
+    let cancelled = false;
+    api.get<Record<string, unknown>>("/settings")
+      .then((data) => {
+        if (cancelled) return;
+        setValues(normalizeSettings(data));
+        syncGeneralSettings(data);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Failed to load saved settings. Showing the current form values.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const setField: SetField = (key, value) => setValues((prev) => ({ ...prev, [key]: value }));
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const saved = await saveGeneralSettings(values as unknown as Record<string, unknown>);
+      setValues(normalizeSettings(saved as unknown as Record<string, unknown>));
+      setNotice("Settings saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return { values, loading, saving, error, notice, setField, save };
+}
+
+// Loads customer feedback through the API.
+function useFeedback() {
+  const [feedback, setFeedback] = useState<FeedbackEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    api.get<FeedbackEntry[]>("/feedback")
+      .then(setFeedback)
+      .catch(() => setError("Failed to load feedback. Please try again."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { feedback, loading, error, reload: load };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Page                                                                       */
+/* -------------------------------------------------------------------------- */
+
+// Outer page shell: main sidebar plus the grey background.
+function PageFrame({ children }: { children: ReactNode }) {
+  const viewport = useViewport();
+  const padding = viewport === "mobile" ? 12 : viewport === "tablet" ? 16 : 24;
+
+  return (
+    <div className="flex min-h-screen bg-gray-50" style={{ fontFamily: FONT }}>
+      <Sidebar />
+      {/* minWidth: 0 lets this flex child shrink instead of overflowing the screen */}
+      <main className="tablet-shell flex-1" style={{ minWidth: 0 }}>
+        <div
+          style={{
+            display: "flex", height: "100%", background: "#f0eeec", padding,
+            boxSizing: "border-box", minHeight: "100vh", alignItems: "flex-start",
+          }}
+        >
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// What non-administrators (and the checking / error states) see instead of the settings.
+function AccessMessage({ status, onRetry }: { status: AccessStatus; onRetry: () => void }) {
+  if (status === "denied") return <LockedSection label="Settings" />;
+
+  if (status === "error") {
+    return (
+      <div style={{ textAlign: "center" }}>
+        <p style={{ ...typo("0.8rem", ERROR, 400), marginBottom: 10 }}>
+          We could not verify your access. Please try again.
+        </p>
+        <button onClick={onRetry} style={accentButton()}>Try again</button>
+      </div>
+    );
+  }
+
+  return <p style={{ ...typo("0.8rem", MUTED, 400), textAlign: "center" }}>Verifying your access...</p>;
+}
+
+// The settings menu and the selected tab. Only mounted for administrators.
+function SettingsPanel({ account, onAccountChange }: {
+  account: OwnAccount; onAccountChange: (account: OwnAccount) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<TabKey>("business");
+  const settings = useSettings();
+  const feedback = useFeedback();
+  const viewport = useViewport();
+  const isMobile = viewport === "mobile";
+  const isTablet = viewport === "tablet";
+
+  const meta = TAB_META[activeTab];
+  const tabProps: TabProps = { s: settings.values, set: settings.setField };
+
+  // Tabs that do not edit restaurant settings have no save button.
+  const showSave = !["roles", "personal", "feedback"].includes(activeTab);
+
+  // One status line: error first, then loading, then the save confirmation.
+  const status = [
+    { text: settings.error, color: ERROR },
+    { text: settings.loading ? "Loading saved settings..." : null, color: MUTED },
+    { text: settings.notice, color: SUCCESS },
+  ].find((line) => line.text);
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case "business":      return <BusinessTab {...tabProps} />;
+      case "ordering":      return <OrderingTab {...tabProps} />;
+      case "inventory":     return <InventoryTab {...tabProps} />;
+      case "billing":       return <BillingTab {...tabProps} />;
+      case "notifications": return <NotifTab {...tabProps} />;
+      case "roles":         return <RolesTab />;
+      case "security":      return <SecurityTab {...tabProps} />;
+      case "personal":      return <PersonalTab account={account} onAccountChange={onAccountChange} />;
+      case "feedback":
+        return (
+          <FeedbackTab
+            feedback={feedback.feedback}
+            loading={feedback.loading}
+            error={feedback.error}
+            onRetry={feedback.reload}
+          />
+        );
+    }
+  };
+
+  const contentPadding = isMobile ? "20px 16px 28px" : isTablet ? "28px 24px" : "32px 36px";
+
+  return (
+    <div
+      style={{
+        ...S.card,
+        flexDirection: isMobile ? "column" : "row",
+        borderRadius: isMobile ? 14 : 16,
+      }}
+    >
+      {/* Settings menu */}
+      {isMobile ? (
+        <MobileTabs active={activeTab} feedbackCount={feedback.feedback.length} onSelect={setActiveTab} />
+      ) : (
+        <div
+          style={{
+            width: isTablet ? 200 : 230, flexShrink: 0, background: "#fff", overflowY: "auto",
+            padding: isTablet ? "20px 10px" : "24px 14px",
+          }}
+        >
+          <h2 style={{ ...typo("1.1rem", INK, 700), letterSpacing: "-0.01em", padding: "0 10px 18px" }}>Settings</h2>
+          {NAV_GROUPS.map((group) => (
+            <SidebarGroup
+              key={group.label}
+              group={group}
+              active={activeTab}
+              feedbackCount={feedback.feedback.length}
+              onSelect={setActiveTab}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Tab content */}
+      <div
+        style={{
+          flex: 1, minWidth: 0, padding: contentPadding,
+          overflowY: isMobile ? "visible" : "auto",
+          borderLeft: isMobile ? "none" : "1px solid #f0eeec",
+        }}
+      >
+        <div
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 12, flexWrap: "wrap", marginBottom: status || showSave ? 14 : 0,
+          }}
+        >
+          {status && <p style={{ ...typo("0.76rem", status.color, 400), flex: isMobile ? "1 1 100%" : "0 1 auto" }}>{status.text}</p>}
+          {showSave && (
+            <button
+              onClick={settings.save}
+              disabled={settings.saving || settings.loading}
+              style={{
+                ...accentButton(settings.saving || settings.loading),
+                marginLeft: isMobile ? 0 : "auto",
+                flex: isMobile ? "1 1 100%" : "0 0 auto",
+                padding: isMobile ? "12px 16px" : "10px 16px",
+              }}
+            >
+              {settings.saving ? "Saving..." : "Save Settings"}
+            </button>
+          )}
+        </div>
+        <h1 style={{ ...typo(isMobile ? "1.2rem" : "1.4rem", INK, 700), letterSpacing: "-0.015em", marginBottom: 4, overflowWrap: "anywhere" }}>{meta.title}</h1>
+        <p style={{ ...typo(isMobile ? "0.78rem" : "0.82rem", MUTED, 400), marginBottom: 16, lineHeight: 1.6 }}>{meta.desc}</p>
+        {renderTab()}
+      </div>
+    </div>
+  );
+}
+
+// Everything that depends on the screen size sits inside the provider.
+function SettingsView() {
+  const { status, account, applyAccount, verify } = useAdminAccess();
+  const isMobile = useViewport() === "mobile";
+
+  return (
+    <PageFrame>
+      {status === "allowed" && account ? (
+        <SettingsPanel account={account} onAccountChange={applyAccount} />
+      ) : (
+        <div style={{ ...S.card, alignItems: "center", padding: isMobile ? 20 : 32 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <AccessMessage status={status} onRetry={verify} />
+          </div>
+        </div>
+      )}
+    </PageFrame>
+  );
+}
+
+export default function Settings() {
+  const viewport = useViewportWatcher();
+
+  return (
+    <ViewportContext.Provider value={viewport}>
+      <SettingsView />
+    </ViewportContext.Provider>
   );
 }

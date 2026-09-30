@@ -2,38 +2,77 @@
 const RAW_API_URL = (import.meta as { env?: { VITE_API_URL?: string } }).env
   ?.VITE_API_URL;
 
-function isLocalHostname(hostname: string): boolean {
-  return (
-    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
-  );
+const DEFAULT_LOCAL_API_ORIGIN = "http://localhost:5000";
+
+function resolveApiOrigin(): string {
+  const trimmed = String(RAW_API_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+  if (!trimmed) return DEFAULT_LOCAL_API_ORIGIN;
+  return trimmed.replace(/\/api$/i, "");
 }
 
-function resolveApiBaseUrl(): string {
-  if (!RAW_API_URL) return "/api";
+function normalizeEndpoint(endpoint: string): string {
+  const clean = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return /^\/api(?:\/|$)/i.test(clean) ? clean : `/api${clean}`;
+}
 
-  const trimmed = RAW_API_URL.replace(/\/+$/, "");
-  const baseWithApi = /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
+const API_ORIGIN = resolveApiOrigin();
 
-  if (
-    typeof window !== "undefined" &&
-    window.location.protocol === "https:" &&
-    /^http:\/\//i.test(trimmed)
-  ) {
-    try {
-      const parsed = new URL(trimmed);
-      if (isLocalHostname(parsed.hostname)) return "/api";
-      return baseWithApi.replace(/^http:\/\//i, "https://");
-    } catch {
-      return "/api";
-    }
+export function resolveBackendUrl(value: string): string {
+  const normalized = String(value || "").trim();
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  const path = normalized.startsWith("/") ? normalized : `/${normalized}`;
+  return `${API_ORIGIN}${path}`;
+}
+
+export function isConfiguredBackendUrl(value: string): boolean {
+  try {
+    return new URL(resolveBackendUrl(value)).origin === new URL(API_ORIGIN).origin;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchAuthenticatedAsset(value: string): Promise<Blob> {
+  const resolvedUrl = resolveBackendUrl(value);
+  const headers: Record<string, string> = {};
+  if (isConfiguredBackendUrl(resolvedUrl)) {
+    const token = getStoredAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
   }
 
-  return baseWithApi;
+  const response = await fetch(resolvedUrl, { method: "GET", headers });
+  if (!response.ok) {
+    const error = new Error(
+      response.status === 404
+        ? "Proof image is no longer available."
+        : `Unable to load proof image (HTTP ${response.status}).`,
+    ) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+
+  const blob = await response.blob();
+  if (!String(blob.type || "").toLowerCase().startsWith("image/")) {
+    throw new Error("The proof response was not a valid image.");
+  }
+  return blob;
 }
 
-const API_BASE_URL = resolveApiBaseUrl();
+export function resolveAssetUrl(value?: string | null): string {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "/img/placeholder.jpg";
+  if (/^data:image\//i.test(normalized)) return normalized;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (normalized.startsWith("/uploads")) {
+    return resolveBackendUrl(normalized);
+  }
+  if (normalized.startsWith("/img")) return normalized;
+  return "/img/placeholder.jpg";
+}
 
-function getStoredAuthToken(): string | null {
+export function getStoredAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   const token = localStorage.getItem("authToken");
   return token && token.trim() ? token : null;
@@ -50,6 +89,7 @@ interface FetchOptions extends Omit<RequestInit, "body"> {
 
 interface ApiErrorData {
   message?: string;
+  error?: string;
   [key: string]: unknown;
 }
 
@@ -64,6 +104,24 @@ interface LoginResponse {
   username: string;
   email: string;
   role: "administrator" | "cashier" | "cook" | "inventory_manager" | "customer";
+  email_verified: boolean;
+}
+
+interface RegisterResponse {
+  message: string;
+  userId?: number;
+  role: "customer";
+  requiresEmailVerification: boolean;
+  emailDeliveryFailed?: boolean;
+}
+
+interface VerifyEmailResponse {
+  message: string;
+  email_verified: boolean;
+}
+
+interface ForgotPasswordResponse {
+  message: string;
 }
 
 // ─── Attendance Record type ───────────────────────────────────────────────────
@@ -100,11 +158,9 @@ export const apiCall = async <T = unknown>(
   } = options;
 
   const isAbsoluteUrl = /^https?:\/\//i.test(endpoint);
-  const endpointWithoutApiPrefix = endpoint.replace(/^\/?api(?=\/)/i, "");
-  const normalizedEndpoint = endpointWithoutApiPrefix.startsWith("/")
-    ? endpointWithoutApiPrefix
-    : `/${endpointWithoutApiPrefix}`;
-  const url = isAbsoluteUrl ? endpoint : `${API_BASE_URL}${normalizedEndpoint}`;
+  const url = isAbsoluteUrl
+    ? endpoint
+    : `${API_ORIGIN}${normalizeEndpoint(endpoint)}`;
 
   const headers: Record<string, string> = {
     ...((fetchOptions.headers as Record<string, string>) || {}),
@@ -152,7 +208,11 @@ export const apiCall = async <T = unknown>(
       }
       const message =
         typeof errData === "object" && errData !== null
-          ? (errData.message ?? `HTTP ${response.status}`)
+          ? ((errData.message === "DB error" || errData.message === "Internal Server Error") &&
+            typeof errData.error === "string" &&
+            errData.error.trim()
+              ? errData.error
+              : (errData.message ?? `HTTP ${response.status}`))
           : `HTTP ${response.status}`;
       const err = new Error(message) as ApiError;
       err.status = response.status;
@@ -214,10 +274,41 @@ export const authApi = {
     }),
 
   register: (name: string, email: string, password: string) =>
-    apiCall<void>("/auth/register", {
+    apiCall<RegisterResponse>("/auth/register", {
       method: "POST",
       skipAuth: true,
       body: { name, email, password },
+    }),
+
+  verifyEmail: (email: string, code: string) =>
+    apiCall<VerifyEmailResponse>("/auth/verify-email", {
+      method: "POST",
+      skipAuth: true,
+      body: { email, code },
+    }),
+
+  resendVerification: (email: string) =>
+    apiCall<{ message: string; requiresEmailVerification: boolean }>(
+      "/auth/resend-verification",
+      {
+        method: "POST",
+        skipAuth: true,
+        body: { email },
+      },
+    ),
+
+  forgotPassword: (email: string) =>
+    apiCall<ForgotPasswordResponse>("/auth/forgot-password", {
+      method: "POST",
+      skipAuth: true,
+      body: { email },
+    }),
+
+  resetPassword: (email: string, code: string, newPassword: string) =>
+    apiCall<ForgotPasswordResponse>("/auth/reset-password", {
+      method: "POST",
+      skipAuth: true,
+      body: { email, code, newPassword },
     }),
 
   logout: (token: string) =>
@@ -285,5 +376,6 @@ export interface StaffMember {
   username: string;
   email: string;
   role: string;
+  is_active?: boolean;
   created_at: string;
 }

@@ -1,123 +1,219 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ElementType } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Menu, X } from "lucide-react";
+import {
+  Menu,
+  X,
+  LayoutDashboard,
+  ShoppingCart,
+  UtensilsCrossed,
+  BookOpen,
+  Package,
+  Users,
+  BarChart2,
+  Settings,
+  LogOut,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/authcontext";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useViewport } from "@/hooks/use-tablet";
+import {
+  fetchPermissions,
+  hasPagePermission,
+  normalizeRole,
+  readCachedPermissions,
+  type NonNullRole,
+  type PermissionKey,
+  type PermissionsMap,
+} from "@/lib/permissions";
+import { fetchGeneralSettings, GENERAL_SETTINGS_EVENT } from "@/lib/restaurantSettings";
 
-type Role =
-  | "administrator"
-  | "cashier"
-  | "cook"
-  | "inventory_manager"
-  | "customer"
-  | null;
+/*
+ * Slide-in navigation menu for staff users.
+ * Which links appear depends on the permissions the API returns for the
+ * signed-in role. The menu shows right away from the last loaded permissions
+ * (kept in memory) or the defaults, then updates when the API responds.
+ * Nothing is stored in the browser.
+ */
+
+/* -------------------------------------------------------------------------- */
+/* Types & constants                                                          */
+/* -------------------------------------------------------------------------- */
+
+type Role = NonNullRole | "customer";
 
 interface SidebarItem {
   label: string;
   path: string;
-  roles: Exclude<Role, null>[];
+  permissionKey: PermissionKey;
+  icon: ElementType;
 }
 
-const ROLE_LABELS: Record<Exclude<Role, null>, string> = {
+const TABLET_BREAKPOINT = 1100;
+
+const ROLE_LABELS: Record<Role, string> = {
   administrator: "Administrator",
   cashier: "Cashier",
-  cook: "Cook",
   inventory_manager: "Inventory Manager",
   customer: "Customer",
 };
 
+// Every link the sidebar can show.
 const SIDEBAR_ITEMS: SidebarItem[] = [
-  {
-    label: "Overview",
-    path: "/dashboard",
-    roles: ["administrator", "inventory_manager"],
-  },
-  {
-    label: "Order",
-    path: "/orders",
-    roles: ["administrator", "cashier", "cook"],
-  },
-  {
-    label: "Menu Management",
-    path: "/inventory",
-    roles: ["administrator", "inventory_manager"],
-  },
-  { label: "Menus", path: "/menu", roles: ["administrator", "cashier"] },
-  {
-    label: "Stock Manager",
-    path: "/stockmanager",
-    roles: ["administrator", "inventory_manager"],
-  },
-  { label: "User Accounts", path: "/users", roles: ["administrator"] },
-  {
-    label: "Sales & Reports",
-    path: "/sales-reports",
-    roles: ["administrator", "cashier"],
-  },
-
-  {
-    label: "Settings",
-    path: "/settings",
-    roles: ["administrator", "cashier"],
-  },
+  { label: "Orders View", path: "/orders", permissionKey: "orders", icon: ShoppingCart },
+  { label: "Overview", path: "/dashboard", permissionKey: "overview", icon: LayoutDashboard },
+  { label: "Menu Management", path: "/inventory", permissionKey: "menuManagement", icon: UtensilsCrossed },
+  { label: "Menu View", path: "/menu", permissionKey: "menus", icon: BookOpen },
+  { label: "Stock Manager", path: "/stockmanager", permissionKey: "stockManager", icon: Package },
+  { label: "User Accounts", path: "/users", permissionKey: "userAccounts", icon: Users },
+  { label: "Sales & Reports", path: "/sales-reports", permissionKey: "salesReports", icon: BarChart2 },
+  { label: "Settings", path: "/settings", permissionKey: "settings", icon: Settings },
 ];
+
+/* -------------------------------------------------------------------------- */
+/* Data hooks                                                                 */
+/* -------------------------------------------------------------------------- */
+
+// Role permissions. Starts from the last loaded copy (kept in memory) or the defaults,
+// so the menu shows right away, then updates when the API responds.
+function usePermissions(enabled: boolean) {
+  const [permissions, setPermissions] = useState<PermissionsMap>(readCachedPermissions);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let cancelled = false;
+    fetchPermissions()
+      .then((next) => {
+        if (cancelled) return;
+        setPermissions(next);
+      })
+      .catch(() => {
+        // Keep showing the current menu if the request fails.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+
+  return permissions;
+}
+
+// Last restaurant name loaded from the API. Kept in memory so it shows
+// immediately when moving between pages.
+let lastRestaurantName = "";
+
+// Loads the restaurant name and reloads it whenever the general settings change.
+function useRestaurantName() {
+  const [name, setName] = useState(lastRestaurantName);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = () => {
+      fetchGeneralSettings()
+        .then((settings) => {
+          lastRestaurantName = settings.restaurantName;
+          if (!cancelled) setName(settings.restaurantName);
+        })
+        .catch(() => {
+          // Keep the current name if the request fails.
+        });
+    };
+
+    const syncFromEvent = (event: Event) => {
+      const settings = (event as CustomEvent).detail;
+      if (!settings || typeof settings !== "object") return;
+      lastRestaurantName = String(settings.restaurantName || "");
+      if (!cancelled) setName(lastRestaurantName);
+    };
+
+    load();
+    window.addEventListener(GENERAL_SETTINGS_EVENT, syncFromEvent);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(GENERAL_SETTINGS_EVENT, syncFromEvent);
+    };
+  }, []);
+
+  return name;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const { user, logout, isOnline } = useAuth();
   const isMobile = useIsMobile();
+  const { width } = useViewport();
+  const isTablet = width < TABLET_BREAKPOINT;
 
-  const userRole = user?.role as Role;
+  // Picks a value based on screen size: mobile, tablet or desktop.
+  const byScreen = <T,>(mobile: T, tablet: T, desktop: T) =>
+    isMobile ? mobile : isTablet ? tablet : desktop;
 
+  const role = normalizeRole(String(user?.role || "").trim().toLowerCase());
+  const staffRole = role && role !== "customer" ? role : null;
+
+  const permissions = usePermissions(staffRole !== null);
+  const restaurantName = useRestaurantName();
+
+  // Only show the links this role is allowed to open.
   const visibleItems = useMemo(() => {
-    if (!userRole) return [];
+    if (!staffRole) return [];
     return SIDEBAR_ITEMS.filter((item) =>
-      item.roles.includes(userRole as Exclude<Role, null>),
+      hasPagePermission(staffRole, item.permissionKey, permissions),
     );
-  }, [userRole]);
+  }, [permissions, staffRole]);
+
+  const closeSidebar = () => setIsOpen(false);
+
+  const handleLogout = () => {
+    logout();
+    closeSidebar();
+    navigate("/login");
+  };
+
+  const iconSize = isMobile ? "w-5 h-5" : "w-4 h-4";
 
   return (
     <>
-      {/* Toggle button */}
+      {/* Menu / close toggle */}
       <motion.button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen((open) => !open)}
         className={cn(
           "fixed z-50 p-3 bg-white rounded-xl shadow-lg",
-          isMobile ? "top-4 left-4" : "top-6 left-6"
+          byScreen("top-4 left-4", "top-5 left-5", "top-6 left-6"),
         )}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
+        aria-label={isOpen ? "Close menu" : "Open menu"}
       >
         <AnimatePresence mode="wait">
-          {isOpen ? (
-            <motion.div
-              key="close"
-              initial={{ rotate: -90, opacity: 0 }}
-              animate={{ rotate: 0, opacity: 1 }}
-              exit={{ rotate: 90, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
+          <motion.div
+            key={isOpen ? "close" : "menu"}
+            initial={{ rotate: isOpen ? -90 : 90, opacity: 0 }}
+            animate={{ rotate: 0, opacity: 1 }}
+            exit={{ rotate: isOpen ? 90 : -90, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {isOpen ? (
               <X className={cn(isMobile ? "w-5 h-5" : "w-6 h-6", "text-black")} />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="menu"
-              initial={{ rotate: 90, opacity: 0 }}
-              animate={{ rotate: 0, opacity: 1 }}
-              exit={{ rotate: -90, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
+            ) : (
               <Menu className={cn(isMobile ? "w-5 h-5" : "w-6 h-6", "text-black")} />
-            </motion.div>
-          )}
+            )}
+          </motion.div>
         </AnimatePresence>
       </motion.button>
 
-      {/* Backdrop */}
+      {/* Dimmed backdrop, click to close */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -126,7 +222,7 @@ export function Sidebar() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="fixed inset-0 backdrop-blur-sm bg-black/20 z-40"
-            onClick={() => setIsOpen(false)}
+            onClick={closeSidebar}
           />
         )}
       </AnimatePresence>
@@ -141,26 +237,23 @@ export function Sidebar() {
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
             className={cn(
               "fixed top-0 left-0 h-full bg-white p-6 flex flex-col shadow-2xl z-50",
-              isMobile ? "w-full max-w-[85vw]" : "w-72"
+              byScreen("w-full max-w-[85vw]", "w-[22rem] max-w-[78vw]", "w-72"),
             )}
             style={{ fontFamily: "Poppins, sans-serif" }}
           >
-            {/* Business name */}
+            {/* Restaurant name */}
             <motion.div
               className="flex items-center justify-center mb-6 mt-8"
               initial={{ y: -20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.1 }}
             >
-              <span className={cn(
-                "font-bold text-black",
-                isMobile ? "text-xl" : "text-2xl"
-              )}>
-                The Crunch
+              <span className={cn("font-bold text-black", isMobile ? "text-xl" : "text-2xl")}>
+                {restaurantName}
               </span>
             </motion.div>
 
-            {/* Profile card */}
+            {/* Signed-in user: online status, name and role */}
             {user && (
               <motion.div
                 className="flex flex-col gap-1 mb-6 px-2"
@@ -180,7 +273,7 @@ export function Sidebar() {
                   </span>
                 </div>
                 <span className="text-xs text-gray-400 pl-[18px]">
-                  {ROLE_LABELS[user.role as Exclude<Role, null>] ?? user.role}
+                  {role ? ROLE_LABELS[role] : user.role}
                 </span>
               </motion.div>
             )}
@@ -191,65 +284,66 @@ export function Sidebar() {
               Navigation
             </div>
 
-            {/* Nav links — scrollbar hidden across all browsers */}
+            {/* Navigation links (scrollable, scrollbar hidden) */}
             <nav
               className={cn(
-                "flex-1 space-y-1.5 overflow-y-auto",
-                // Webkit (Chrome, Safari, Edge)
-                "[&::-webkit-scrollbar]:hidden",
-                // Firefox
-                "[scrollbar-width:none]",
-                // IE / old Edge
-                "[-ms-overflow-style:none]",
+                "flex-1 space-y-1 overflow-y-auto",
+                "[&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]",
               )}
             >
-              {visibleItems.map((item) => (
-                <NavLink
-                  key={item.label}
-                  to={item.path}
-                  end
-                  onClick={() => setIsOpen(false)}
-                >
+              {visibleItems.map(({ label, path, icon: Icon }, index) => (
+                <NavLink key={path} to={path} end onClick={closeSidebar}>
                   {({ isActive }) => (
-                    <Button
-                      variant="ghost"
-                      className={cn(
-                        "w-full justify-start rounded-xl text-sm transition-all duration-300 px-4 py-2.5",
-                        "text-black hover:bg-gray-50 hover:shadow-sm hover:scale-[1.02] active:scale-95",
-                        isActive && "bg-gray-100 text-black font-semibold",
-                        isMobile && "py-3 text-base"
-                      )}
+                    <motion.div
+                      initial={{ x: -16, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: 0.1 + index * 0.045 }}
                     >
-                      {item.label}
-                    </Button>
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5 gap-3 h-auto",
+                          isActive
+                            ? "bg-gray-100 text-black font-semibold"
+                            : "text-gray-500 hover:text-black hover:bg-gray-50",
+                          isMobile && "py-3 text-base",
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            "flex-shrink-0 transition-colors duration-200",
+                            iconSize,
+                            isActive ? "text-black" : "text-gray-400",
+                          )}
+                          strokeWidth={isActive ? 2.2 : 1.8}
+                        />
+                        <span className="truncate">{label}</span>
+                      </Button>
+                    </motion.div>
                   )}
                 </NavLink>
               ))}
             </nav>
 
-            {/* Logout */}
-            <div className="mt-6 pt-6 border-t border-gray-100">
-              <motion.div
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.45 }}
+            {/* Log out */}
+            <motion.div
+              className="mt-6 pt-6 border-t border-gray-100"
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.45 }}
+            >
+              <Button
+                variant="ghost"
+                className={cn(
+                  "w-full justify-start rounded-xl text-sm text-gray-500 transition-all duration-200 px-4 py-2.5 gap-3 h-auto hover:bg-red-50 hover:text-red-500",
+                  isMobile && "py-3 text-base",
+                )}
+                onClick={handleLogout}
               >
-                <Button
-                  variant="ghost"
-                  className={cn(
-                    "w-full justify-start rounded-xl text-sm text-black mt-6 transition-all duration-200 px-4 py-2.5 hover:bg-red-50 hover:text-red-600",
-                    isMobile && "py-3 text-base"
-                  )}
-                  onClick={() => {
-                    logout();
-                    setIsOpen(false);
-                    navigate("/login");
-                  }}
-                >
-                  Log Out
-                </Button>
-              </motion.div>
-            </div>
+                <LogOut className={cn("flex-shrink-0 text-gray-400", iconSize)} strokeWidth={1.8} />
+                <span>Log Out</span>
+              </Button>
+            </motion.div>
           </motion.aside>
         )}
       </AnimatePresence>

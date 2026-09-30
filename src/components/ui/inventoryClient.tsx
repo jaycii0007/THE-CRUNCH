@@ -1,4 +1,8 @@
 import React, { useState, useMemo } from "react";
+import {
+  formatCurrencyAmount,
+  formatInSettingsTimezone,
+} from "@/lib/restaurantSettings";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -55,7 +59,10 @@ interface InventoryClientProps {
   onDeleteProduct?: (productId: number) => void;
 }
 
-// ─── Delete Confirmation Modal ────────────────────────────────────────────────
+const formatPeso = (value: number | string) =>
+  formatCurrencyAmount(Number(value || 0));
+
+// â”€â”€â”€ Delete Confirmation Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function DeleteConfirmModal({
   productName,
@@ -108,7 +115,7 @@ function DeleteConfirmModal({
   );
 }
 
-// ─── Unit Badge ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Unit Badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const unitStyles: Record<UnitType, { bg: string; text: string; label: string }> = {
   box:    { bg: "bg-amber-100",  text: "text-amber-700",  label: "Box"    },
@@ -127,7 +134,7 @@ function UnitBadge({ unit }: { unit: UnitType }) {
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function InventoryClient({ items, onAddProduct, onDeleteProduct }: InventoryClientProps) {
   const { addNotification } = useNotifications();
@@ -196,7 +203,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
     return "bg-orange-50 border-orange-200";
   };
 
-  // ── Add product (replaces alert) ──────────────────────────────────────────
+  // â”€â”€ Add product (replaces alert) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleAddProductClick = () => {
     if (!newProductData.name || !newProductData.price) {
       addNotification({ id: `${Date.now()}`, label: "Please enter a product name and price.", type: "warning" });
@@ -213,7 +220,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
     setShowAddProductModal(false);
   };
 
-  // ── Delete (replaces confirm) — opens custom modal ────────────────────────
+  // â”€â”€ Delete (replaces confirm) â€” opens custom modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleDeleteClick = (productId: number, productName: string) => {
     setDeleteTarget({ id: productId, name: productName });
   };
@@ -227,7 +234,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
 
   return (
     <>
-      {/* ── FILTERS ── */}
+      {/* â”€â”€ FILTERS â”€â”€ */}
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <div className="relative flex-1 min-w-[220px]">
           <Input
@@ -295,7 +302,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
         </motion.div>
       </div>
 
-      {/* ── TABLE ── */}
+      {/* â”€â”€ TABLE â”€â”€ */}
       <Card className="bg-white rounded-2xl overflow-hidden shadow-md border-0">
         <Table>
           <TableHeader>
@@ -363,11 +370,13 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
                       {item.stock > 0 ? (
                         <span className="font-bold text-indigo-600">{item.stock}</span>
                       ) : (
-                        <span className="text-gray-300">—</span>
+                        <span className="text-gray-300">{"\u2014"}</span>
                       )}
                     </TableCell>
 
-                    <TableCell className="text-center font-medium">{item.price}</TableCell>
+                    <TableCell className="text-center font-medium">
+                      {formatPeso(item.price)}
+                    </TableCell>
 
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-2">
@@ -384,7 +393,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
                     </TableCell>
                   </TableRow>
 
-                  {/* ── BATCH DETAILS ── */}
+                  {/* â”€â”€ BATCH DETAILS â”€â”€ */}
                   {expandedBatches.includes(item.id) && (item.batches?.length || 0) > 0 && (
                     <TableRow className="bg-gray-50 hover:bg-gray-50">
                       <TableCell colSpan={9}>
@@ -404,9 +413,26 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
                                     <span className="font-semibold text-sm bg-white px-2 py-1 rounded">#{idx + 1}</span>
                                     <div>
                                       <p className="text-sm font-medium text-gray-700">{batch.quantity} {batch.unit}</p>
-                                      <p className="text-xs text-gray-500">Received: {batch.receivedAt.toLocaleString()}</p>
+                                      <p className="text-xs text-gray-500">
+                                        Received:{" "}
+                                        {formatInSettingsTimezone(batch.receivedAt, undefined, {
+                                          month: "short",
+                                          day: "numeric",
+                                          year: "numeric",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                          hour12: true,
+                                        })}
+                                      </p>
                                       {batch.expiresAt && (
-                                        <p className="text-xs text-gray-500">Expires: {batch.expiresAt.toLocaleDateString()}</p>
+                                        <p className="text-xs text-gray-500">
+                                          Expires:{" "}
+                                          {formatInSettingsTimezone(batch.expiresAt, undefined, {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric",
+                                          })}
+                                        </p>
                                       )}
                                     </div>
                                   </div>
@@ -428,7 +454,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
           </TableBody>
         </Table>
 
-        {/* ── PAGINATION ── */}
+        {/* â”€â”€ PAGINATION â”€â”€ */}
         <div className="flex items-center justify-between p-4 border-t border-gray-200">
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Show</span>
@@ -445,7 +471,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
           </div>
           <span className="text-sm text-gray-600">
             {totalItems === 0 ? "No results" : (
-              <>{startIndex + 1}–<span className="font-bold text-black">{endIndex}</span> of <span className="font-bold text-black">{totalItems}</span> Results</>
+              <>{startIndex + 1}{"\u2013"}<span className="font-bold text-black">{endIndex}</span> of <span className="font-bold text-black">{totalItems}</span> Results</>
             )}
           </span>
           <div className="flex items-center gap-2">
@@ -459,7 +485,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
         </div>
       </Card>
 
-      {/* ── ADD PRODUCT MODAL ── */}
+      {/* â”€â”€ ADD PRODUCT MODAL â”€â”€ */}
       {showAddProductModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <motion.div
@@ -546,7 +572,7 @@ export function InventoryClient({ items, onAddProduct, onDeleteProduct }: Invent
         </div>
       )}
 
-      {/* ── DELETE CONFIRM MODAL ── */}
+      {/* â”€â”€ DELETE CONFIRM MODAL â”€â”€ */}
       <AnimatePresence>
         {deleteTarget && (
           <DeleteConfirmModal

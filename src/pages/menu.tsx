@@ -1,4374 +1,1166 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-  import {
-    Search,
-    Minus,
-    Plus,
-    Trash2,
-    UtensilsCrossed,
-    Check,
-    Clock,
-    Calendar,
-    Hash,
-    ChevronDown,
-    Delete,
-  } from "lucide-react";
-  import { motion, AnimatePresence } from "framer-motion";
-  import { api, apiCall } from "../lib/api";
-  import { Sidebar } from "@/components/Sidebar";
-  import { useIsMobile } from "@/hooks/use-mobile";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  AlertCircle, AlertTriangle, Ban, Check, CheckCircle2, ChevronDown, ChevronRight, Delete, FileText,
+  History, Info, Minus, Plus, Printer, Receipt, RotateCcw, Search, Trash2, UtensilsCrossed, Wifi, WifiOff,
+  MessageSquare, X,
+} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { api, apiCall, resolveAssetUrl } from "../lib/api";
+import {
+  fetchGeneralSettings, GENERAL_SETTINGS_DEFAULTS, type GeneralRestaurantSettings,
+  getCurrencySymbol, formatCurrencyAmount, formatInSettingsTimezone,
+} from "../lib/restaurantSettings";
+import { Sidebar } from "@/components/Sidebar";
+import { UserIdentityBanner } from "@/components/UserIdentityBanner";
+import { useViewport } from "@/hooks/use-tablet";
+import { useAuth } from "../context/authcontext";
+import { clampOrderItemQuantity, getEffectiveMaxQuantity } from "../lib/orderQuantity";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
+import { buildKotHtml, buildReceiptHtml, downloadHtml, printHtml, type ReceiptDto } from "../lib/receipt";
 
-  // ─── FONT ─────────────────────────────────────────────────────────────────────
-  if (
-    typeof document !== "undefined" &&
-    !document.getElementById("poppins-font")
-  ) {
-    const l = document.createElement("link");
-    l.id = "poppins-font";
-    l.rel = "stylesheet";
-    l.href =
-      "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap";
-    document.head.appendChild(l);
+/* ───────────────────────── setup ───────────────────────── */
+
+if (typeof document !== "undefined" && !document.getElementById("poppins-font")) {
+  document.head.appendChild(Object.assign(document.createElement("link"), {
+    id: "poppins-font", rel: "stylesheet",
+    href: "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap",
+  }));
+}
+
+const SP = { type: "spring" as const, stiffness: 400, damping: 28 };
+const TIME: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hour12: true };
+const DATETIME: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric", ...TIME };
+
+type PaymentMethod = "cash" | "gcash_onsite";
+type OrderTypeVal = "dine-in" | "take-out" | "delivery";
+type ToastType = "success" | "error" | "info" | "warning";
+type Settle = "refund" | "cancel";
+
+interface Billing { taxRate: number; serviceCharge: number }
+interface DiscountType { discount_id: number; name: string; percentage: number }
+interface MenuItem { id: number; name: string; price: number; category: string; remainingStock: number; availabilityStatus: string; image?: string | null }
+interface CartItem extends MenuItem { quantity: number; note?: string }
+interface TableItem { id: number; number: number; status: "available" | "occupied" }
+interface OnlineOrder {
+  id: number; orderNumber: string; total: number; createdAt: string; orderType: string; trackingStatus: string;
+  handoverTimestamp?: string | null; riderName?: string | null; paymentMethod?: string | null; paymentStatus?: string | null;
+  items: { name: string; quantity: number }[];
+}
+interface ShiftOrder {
+  id: number; orderNumber: string; total: number; createdAt: string; orderType: string; paymentMethod: string;
+  status: string; paymentStatus?: string | null; items: { name: string; quantity: number; price: number }[];
+}
+interface HeldOrder {
+  id: string; cart: CartItem[]; orderType: OrderTypeVal; paymentMethod: PaymentMethod;
+  customerType: string; selectedTable: number | null; note: string; savedAt: string;
+}
+
+/* ───────────────────────── helpers ───────────────────────── */
+
+const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
+const isPaid = (v?: string | null) => norm(v) === "paid";
+const isUnavailable = (v: unknown) => ["unavailable", "out of stock", "hidden", "not configured"].includes(norm(v));
+const pct = (n: number) => String(Number(n.toFixed(2)));
+
+const getSettlementAction = (status?: string | null, payment?: string | null): Settle | null => {
+  const s = norm(status);
+  if (["completed", "refunded", "cancelled"].includes(s)) return null;
+  if (["queued", "preparing", "ready", "ready for pickup"].includes(s)) return "refund";
+  if (s === "pending payment") return "cancel";
+  return isPaid(payment) ? "refund" : "cancel";
+};
+
+const paymentLabel = (m?: string | null) => {
+  const n = norm(m);
+  if (!n) return "—";
+  if (n === "cash") return "Cash";
+  if (n === "gcash") return "GCash";
+  if (["cash on pickup", "cash_on_pickup"].includes(n)) return "Cash on Pickup";
+  if (["gcash_onsite", "onsite gcash / e-payment", "onsite e-payment"].includes(n)) return "Onsite GCash / E-Payment";
+  return m ?? "—";
+};
+
+const computePricing = (subtotal: number, b: Billing, discountRate: number) => {
+  const discountAmount = subtotal * (Math.max(0, discountRate) / 100);
+  const taxAmount = subtotal * (b.taxRate / 100);
+  const serviceChargeAmount = subtotal * (b.serviceCharge / 100);
+  return { subtotal, discountAmount, taxAmount, serviceChargeAmount, amountDue: subtotal - discountAmount + taxAmount + serviceChargeAmount };
+};
+
+const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
+  const latest = new Map<string, Record<string, any>>();
+  for (const p of data) {
+    if (norm(p.item_type ?? "menu_item") !== "menu_item") continue;
+    const key = norm(p.product_name ?? p.name);
+    const prev = latest.get(key);
+    if (!prev || Number(p.product_id ?? p.id) > Number(prev.product_id ?? prev.id)) latest.set(key, p);
   }
-  const F = "'Poppins', sans-serif";
-  const SP = { type: "spring" as const, stiffness: 400, damping: 28 };
+  return [...latest.values()].map((p) => ({
+    id: Number(p.product_id ?? p.id),
+    name: String(p.product_name ?? p.name ?? `Product #${p.id}`),
+    price: Number(p.price ?? 0),
+    category: String(p.category ?? "UNCATEGORIZED").toUpperCase(),
+    remainingStock: Math.max(0, Math.floor(Number(p.available_servings ?? p.remainingStock ?? p.stock ?? p.quantity ?? 0)) || 0),
+    availabilityStatus: String(p.availability_status ?? "Available"),
+    image: p.image ? resolveAssetUrl(String(p.image)) : null,
+  }));
+};
 
-  // ─── CONSTANTS & TYPES ────────────────────────────────────────────────────────
-  const VAT_RATE = 0.12;
-  const DISCOUNT_RATE = 0.2;
-  type CustomerType = "regular" | "pwd" | "senior";
-  type PaymentMethod = "cash" | "gcash_onsite";
+const mapTables = (data: Record<string, any>[]): TableItem[] =>
+  data.map((t) => ({
+    id: Number(t.id ?? t.table_id),
+    number: Number(t.number ?? t.table_number ?? t.id),
+    status: t.status === "occupied" ? "occupied" : "available",
+  }));
 
-  interface MenuItem {
-    id: number;
-    name: string;
-    price: number;
-    category: string;
-    remainingStock: number;
-    availabilityStatus: string;
-    image?: string | null;
-  }
-  interface CartItem extends MenuItem {
-    quantity: number;
-  }
-  interface TableItem {
-    id: number;
-    number: number;
-    status: "available" | "occupied";
-    seats?: number;
-  }
-  interface OnlineNotif {
-    id: number;
-    orderNumber: string;
-    total: number;
-    createdAt: string;
-    orderType: string;
-    trackingStatus: string;
-    handoverTimestamp?: string | null;
-    riderName?: string | null;
-    paymentMethod?: string | null;
-    paymentStatus?: string | null;
-    items: { name: string; quantity: number }[];
-  }
-  interface OrderPayload {
-    items: {
-      product_id: number;
-      qty: number;
-      subtotal: number;
-      name: string;
-      price: number;
-    }[];
-    total: number;
-    order_type: "dine-in" | "take-out" | "delivery";
-    payment_method: PaymentMethod;
-    payment_status?: "Paid";
-    proof_image_url?: string;
-    customer_type: CustomerType;
-    discount_amount: number;
-    vat_amount: number;
-    vat_exempt_amount: number;
-    cashierId: number | null;
-    table_id: number | null;
-    cash_tendered?: number;
-    change_amount?: number;
-  }
-  interface ReceiptData {
-    orderNumber: string;
-    date: string;
-    time: string;
-    items: CartItem[];
-    paidAmount: number;
-    cashTendered: number;
-    changeAmount: number;
-    orderType: string;
-    paymentMethod: string;
-    customerType: CustomerType;
-    discountAmount: number;
-    vatAmount: number;
-  }
+/* ───────────────────────── shared UI ───────────────────────── */
 
-  // ─── HELPERS ──────────────────────────────────────────────────────────────────
-  const isFood = (item: MenuItem) =>
-    item.category.toUpperCase().includes("MENU FOOD");
+const Ctx = createContext<{ s: GeneralRestaurantSettings; money: (n: number) => string; time: (v: string) => string; dateTime: (v: string) => string }>(null!);
+const useFmt = () => useContext(Ctx);
 
-  const isUnavailableStatus = (value: unknown) =>
-    ["unavailable", "out of stock", "hidden"].includes(
-      String(value ?? "")
-        .trim()
-        .toLowerCase(),
-    );
+const btn = "w-full rounded-xl py-3.5 text-sm font-semibold transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-40";
+const B = {
+  dark: `${btn} bg-neutral-900 text-white hover:bg-neutral-800`,
+  green: `${btn} bg-green-600 text-white hover:bg-green-700`,
+  blue: `${btn} bg-sky-600 text-white hover:bg-sky-700`,
+  red: `${btn} bg-red-600 text-white hover:bg-red-700`,
+  ghost: `${btn} bg-neutral-100 text-neutral-600 hover:bg-neutral-200`,
+  slate: `${btn} bg-slate-700 text-white hover:bg-slate-800`,
+};
+const act = "flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-50";
+const ACT = {
+  green: `${act} border-green-600 bg-green-600 text-white`,
+  dark: `${act} border-neutral-900 bg-neutral-900 text-white`,
+  red: `${act} border-red-200 bg-red-50 text-red-600`,
+};
+const eyebrow = "text-xs font-semibold uppercase tracking-wider text-neutral-400";
 
-  const fmt = (n: number) => {
-    const [int, dec] = n.toFixed(2).split(".");
-    return (dec === "00" ? int : `${int}.${dec}`).replace(
-      /\B(?=(\d{3})+(?!\d))/g,
-      ",",
-    );
-  };
+const Spinner = ({ size = 16, light = false }) => (
+  <span className={`inline-block shrink-0 animate-spin rounded-full border-2 ${light ? "border-white/30 border-t-white" : "border-neutral-200 border-t-neutral-600"}`} style={{ width: size, height: size }} />
+);
 
-  const escapeHtml = (value: string) =>
-    value
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+function Modal({ show, onClose, max = "max-w-md", children }: { show: boolean; onClose?: () => void; max?: string; children: ReactNode }) {
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
+          className="fixed inset-0 z-[99998] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <motion.div onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: 0.97, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, y: 12 }} transition={SP}
+            className={`max-h-[92vh] w-full ${max} overflow-y-auto rounded-2xl border border-neutral-200 bg-white shadow-2xl`}>
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
-  const getNow = () => {
-    const d = new Date();
-    return {
-      date: d.toLocaleDateString("en-PH", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }),
-      time: d.toLocaleTimeString("en-PH", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      }),
-    };
-  };
+const ModalHead = ({ eyebrow: e, title, tone = "text-green-600", onClose }: { eyebrow: string; title: string; tone?: string; onClose?: () => void }) => (
+  <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-5">
+    <div>
+      <p className={`text-xs font-semibold uppercase tracking-wider ${tone}`}>{e}</p>
+      <p className="text-xl font-bold text-neutral-900">{title}</p>
+    </div>
+    {onClose && <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-neutral-100"><X className="h-5 w-5 text-neutral-400" /></button>}
+  </div>
+);
 
-  const computePricing = (gross: number, ct: CustomerType) => {
-    if (ct === "regular") {
-      const vatAmount = gross * (VAT_RATE / (1 + VAT_RATE));
-      return {
-        gross,
-        vatExemptAmount: 0,
-        vatAmount,
-        discountAmount: 0,
-        amountDue: gross,
-      };
-    }
-    const base = gross / (1 + VAT_RATE);
-    const disc = base * DISCOUNT_RATE;
-    return {
-      gross,
-      vatExemptAmount: base,
-      vatAmount: 0,
-      discountAmount: disc,
-      amountDue: base - disc,
-    };
-  };
+const TOAST = {
+  success: { c: "border-green-200 bg-green-50 text-green-600", I: CheckCircle2 },
+  error: { c: "border-red-200 bg-red-50 text-red-600", I: AlertCircle },
+  info: { c: "border-blue-200 bg-blue-50 text-blue-600", I: Info },
+  warning: { c: "border-amber-200 bg-amber-50 text-amber-600", I: AlertTriangle },
+};
 
-  const mapProducts = (data: Record<string, unknown>[]): MenuItem[] => {
-    const map = new Map<string, Record<string, unknown>>();
-    for (const p of data ?? []) {
-      if (p.isRawMaterial) continue;
-      const key = String(p.product_name ?? p.name ?? "")
-        .trim()
-        .toLowerCase();
-      const ex = map.get(key);
-      if (
-        !ex ||
-        Number(p.product_id ?? p.id ?? 0) > Number(ex.product_id ?? ex.id ?? 0)
-      ) {
-        map.set(key, p);
-      }
-    }
-    return Array.from(map.values()).map((p) => ({
-      id: Number(p.product_id ?? p.id),
-      name: String(p.product_name ?? p.name ?? `Product #${p.id}`),
-      price: Number(p.price ?? 0),
-      category: String(p.category ?? "UNCATEGORIZED").toUpperCase(),
-      remainingStock: Number(p.stock ?? p.quantity ?? p.dailyWithdrawn ?? 0),
-      availabilityStatus: String(p.availability_status ?? "Available"),
-      image: p.image ? String(p.image) : null,
-    }));
-  };
+function useToast() {
+  const [toasts, setToasts] = useState<{ id: string; type: ToastType; message: string }[]>([]);
+  const dismiss = useCallback((id: string) => setToasts((p) => p.filter((t) => t.id !== id)), []);
+  const toast = useCallback((type: ToastType, message: string) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((p) => [...p, { id, type, message }]);
+    setTimeout(() => dismiss(id), 4000);
+  }, [dismiss]);
+  return { toasts, toast, dismiss };
+}
 
-  const mapTables = (data: Record<string, unknown>[]): TableItem[] =>
-    (data ?? []).map((t) => ({
-      id: Number(t.id ?? t.table_id),
-      number: Number(t.number ?? t.table_number ?? t.id),
-      status: (t.status as "available" | "occupied") ?? "available",
-      seats: t.seats ? Number(t.seats) : undefined,
-    }));
+const TONE = {
+  idle: "border-neutral-200 bg-neutral-50 text-neutral-500",
+  green: "border-green-600 bg-green-50 text-green-700",
+  dark: "border-neutral-900 bg-neutral-50 text-neutral-900",
+  amber: "border-amber-400 bg-amber-50 text-amber-700",
+  red: "border-red-200 bg-red-50 text-red-600",
+};
+const BADGE = { idle: "bg-neutral-400", green: "bg-green-600", dark: "bg-neutral-900", amber: "bg-amber-500", red: "bg-red-600" };
 
-  const formatOrderTimestamp = (value?: string | null) => {
-    if (!value) return "";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString("en-PH", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
+function Pill({ tone = "idle", count = 0, pulse, open, onClick, children }: {
+  tone?: keyof typeof TONE; count?: number; pulse?: boolean; open?: boolean; onClick?: () => void; children: ReactNode;
+}) {
+  return (
+    <button onClick={onClick} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${TONE[tone]}`}>
+      {pulse && <span className="h-2 w-2 animate-pulse rounded-full bg-current" />}
+      {children}
+      {count > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold text-white ${BADGE[tone]}`}>{count}</span>}
+      {open !== undefined && <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />}
+    </button>
+  );
+}
 
-const buildReceiptHtml = ({
-  orderNumber,
-  date,
-  time,
-  items,
-  paidAmount,
-  cashTendered,
-  changeAmount,
-  orderType,
-  paymentMethod,
-  customerType,
-  discountAmount,
-  vatAmount,
-}: ReceiptData) => {
-  const paymentMethodLabel =
-    paymentMethod === "cash"
-      ? "Cash"
-      : paymentMethod === "gcash_onsite"
-        ? "Onsite E-Payment"
-        : paymentMethod;
-  const customerLabel: Record<CustomerType, string> = {
-    regular: "Regular",
-    pwd: "PWD",
-    senior: "Senior Citizen",
-  };
+const Chip = ({ children, className = "bg-neutral-100 text-neutral-600" }: { children: ReactNode; className?: string }) => (
+  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${className}`}>{children}</span>
+);
 
-    const itemRows = items
-      .map(
-        (item) => `
-      <tr>
-        <td>${escapeHtml(item.name)}</td>
-        <td class="qty">${item.quantity}</td>
-        <td class="amount">PHP ${fmt(item.price)}</td>
-        <td class="amount">PHP ${fmt(item.price * item.quantity)}</td>
-      </tr>
-    `,
-      )
-      .join("");
+const PayBadge = ({ status }: { status?: string | null }) =>
+  isPaid(status)
+    ? <Chip className="border border-green-200 bg-green-100 text-green-700">Paid</Chip>
+    : <Chip className="border border-amber-200 bg-amber-100 text-amber-700">{!status || norm(status) === "pending payment" ? "Unpaid" : status}</Chip>;
 
-    const pricingRows =
-      customerType !== "regular"
-        ? `
-        <div class="line"><span>Discount</span><strong>-PHP ${fmt(discountAmount)}</strong></div>
-        <div class="line"><span>VAT Exempt</span><strong>PHP ${fmt(vatAmount)}</strong></div>
-      `
-        : `
-        <div class="line"><span>VAT (12% incl.)</span><strong>PHP ${fmt(vatAmount)}</strong></div>
-      `;
+const Select = ({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) => (
+  <div className="relative">
+    <select value={value} onChange={(e) => onChange(e.target.value)}
+      className="w-full appearance-none rounded-xl border border-neutral-200 bg-neutral-50 py-2.5 pl-3.5 pr-9 text-sm text-neutral-700 outline-none focus:border-neutral-900">
+      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+  </div>
+);
 
-    const cashRows =
-      paymentMethod === "cash"
-        ? `
-        <div class="line"><span>Cash Tendered</span><strong>PHP ${fmt(cashTendered)}</strong></div>
-        <div class="line"><span>Change</span><strong>PHP ${fmt(changeAmount)}</strong></div>
-      `
-        : "";
+const Collapse = ({ open, children }: { open: boolean; children: ReactNode }) => (
+  <AnimatePresence initial={false}>
+    {open && (
+      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-4 overflow-hidden">
+        {children}
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
 
-    return `<!DOCTYPE html>
-  <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Receipt ${escapeHtml(orderNumber)}</title>
-    <style>
-      body {
-        font-family: ${F};
-        background: #f5f5f5;
-        color: #111;
-        margin: 0;
-        padding: 24px;
-      }
-      .receipt {
-        max-width: 420px;
-        margin: 0 auto;
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 18px;
-        padding: 24px;
-        box-sizing: border-box;
-      }
-      .header {
-        text-align: center;
-        padding-bottom: 16px;
-        border-bottom: 1px dashed #d1d5db;
-        margin-bottom: 16px;
-      }
-      .header h1 {
-        font-size: 22px;
-        margin: 0 0 4px;
-      }
-      .header p,
-      .meta p,
-      .footer p {
-        margin: 0;
-        color: #6b7280;
-        font-size: 12px;
-        line-height: 1.6;
-      }
-      .txn-badge {
-        display: inline-block;
-        margin-top: 10px;
-        background: #f3f4f6;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 4px 12px;
-      }
-      .txn-badge .txn-label {
-        font-size: 9px;
-        font-weight: 600;
-        color: #9ca3af;
-        text-transform: uppercase;
-        letter-spacing: 0.07em;
-        display: block;
-      }
-      .txn-badge .txn-value {
-        font-size: 13px;
-        font-weight: 700;
-        color: #111;
-        letter-spacing: 0.04em;
-      }
-      .meta,
-      .summary {
-        display: grid;
-        gap: 8px;
-        margin-bottom: 16px;
-      }
-      .line {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        font-size: 13px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 16px;
-      }
-      th,
-      td {
-        padding: 8px 0;
-        border-bottom: 1px dashed #e5e7eb;
-        font-size: 12px;
-        text-align: left;
-        vertical-align: top;
-      }
-      .qty {
-        text-align: center;
-        width: 44px;
-      }
-      .amount {
-        text-align: right;
-        white-space: nowrap;
-      }
-      .total {
-        padding-top: 12px;
-        border-top: 1px solid #111;
-        margin-top: 12px;
-        font-size: 15px;
-      }
-      .footer {
-        margin-top: 20px;
-        text-align: center;
-        border-top: 1px dashed #d1d5db;
-        padding-top: 16px;
-      }
-      @media print {
-        body {
-          background: #fff;
-          padding: 0;
-        }
-        .receipt {
-          border: none;
-          border-radius: 0;
-          max-width: none;
-          padding: 0;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="receipt">
-      <section class="header">
-        <h1>The Crunch</h1>
-        <p>Official Sales Receipt</p>
-        <div class="txn-badge">
-          <span class="txn-label">Transaction ID</span>
-          <span class="txn-value">${escapeHtml(orderNumber)}</span>
-        </div>
-      </section>
+const Empty = ({ icon, children }: { icon?: ReactNode; children: ReactNode }) => (
+  <div className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-neutral-400">{icon}{children}</div>
+);
 
-      <section class="meta">
-        <div class="line"><span>Date</span><strong>${escapeHtml(date)}</strong></div>
-        <div class="line"><span>Time</span><strong>${escapeHtml(time)}</strong></div>
-        <div class="line"><span>Order Type</span><strong>${escapeHtml(orderType)}</strong></div>
-        <div class="line"><span>Payment</span><strong>${escapeHtml(paymentMethodLabel)}</strong></div>
-        <div class="line"><span>Customer</span><strong>${escapeHtml(customerLabel[customerType])}</strong></div>
-      </section>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th class="qty">Qty</th>
-            <th class="amount">Price</th>
-            <th class="amount">Subtotal</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemRows}
-        </tbody>
-      </table>
-
-      <section class="summary">
-        ${pricingRows}
-        ${cashRows}
-        <div class="line total"><span>Total Paid</span><strong>PHP ${fmt(paidAmount)}</strong></div>
-      </section>
-
-      <section class="footer">
-        <p>Thank you for your order.</p>
-        <p>Please keep this receipt for your records.</p>
-      </section>
-    </main>
-  </body>
-  </html>`;
-  };
-
-  // ─── SHARED STYLES ────────────────────────────────────────────────────────────
-  const btn = (bg: string, color: string, extra?: object) => ({
-    width: "100%",
-    padding: "13px",
-    background: bg,
-    color,
-    border: "none",
-    borderRadius: 12,
-    fontSize: 13,
-    fontWeight: 500,
-    fontFamily: F,
-    cursor: "pointer",
-    ...extra,
-  });
-
-  // ─── PAYMENT STATUS BADGE ─────────────────────────────────────────────────────
-  function PaymentStatusBadge({
-    paymentStatus,
-    paymentMethod,
-  }: {
-    paymentStatus?: string | null;
-    paymentMethod?: string | null;
-  }) {
-    const isPaid = paymentStatus?.toLowerCase() === "paid";
-
-  const methodLabel = isPaid
-    ? paymentMethod === "cash"
-      ? " · Cash"
-      : paymentMethod === "gcash_onsite"
-        ? " · E-Payment"
-        : paymentMethod
-          ? ` · ${paymentMethod}`
-          : ""
-    : "";
-
-    return isPaid ? (
-      <span
-        style={{
-          fontSize: 9,
-          fontWeight: 700,
-          padding: "2px 8px",
-          borderRadius: 99,
-          background: "#dcfce7",
-          color: "#15803d",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 3,
-          border: "1px solid #bbf7d0",
-          whiteSpace: "nowrap",
-        }}
-      >
-        ✓ Paid{methodLabel}
-      </span>
-    ) : (
-      <span
-        style={{
-          fontSize: 9,
-          fontWeight: 600,
-          padding: "2px 8px",
-          borderRadius: 99,
-          background: "#fef9c3",
-          color: "#a16207",
-          border: "1px solid #fde68a",
-          whiteSpace: "nowrap",
-        }}
-      >
-        Unpaid
-      </span>
-    );
-  }
-
-  // ─── PRODUCT CARD ─────────────────────────────────────────────────────────────
-  function ProductCard({
-    item,
-    onAdd,
-    inCart,
-  }: {
-    item: MenuItem;
-    onAdd: (i: MenuItem) => void;
-    inCart: boolean;
-  }) {
-    const out = isUnavailableStatus(item.availabilityStatus);
-    return (
-      <motion.button
-        layout
-        onClick={() => !out && onAdd(item)}
-        disabled={out}
-        whileHover={
-          !out ? { y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.07)" } : {}
-        }
-        whileTap={!out ? { scale: 0.96 } : {}}
-        transition={SP}
-        style={{
-          position: "relative",
-          width: "100%",
-          textAlign: "left",
-          overflow: "hidden",
-          borderRadius: 14,
-          background: "#fff",
-          border: `1px solid ${inCart ? "#111" : "#efefef"}`,
-          opacity: out ? 0.4 : 1,
-          cursor: out ? "not-allowed" : "pointer",
-          fontFamily: F,
-          padding: 0,
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            aspectRatio: "1",
-            background: "#f7f7f7",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-          }}
-        >
-          {item.image ? (
-            <img
-              src={item.image}
-              alt={item.name}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
-            <UtensilsCrossed style={{ width: 22, height: 22, color: "#ddd" }} />
-          )}
-        </div>
-        <div style={{ padding: "9px 10px 10px" }}>
-          <p
-            style={{
-              fontSize: 11,
-              fontWeight: 500,
-              color: "#222",
-              lineHeight: 1.35,
-              marginBottom: 7,
-            }}
-          >
-            {item.name}
+/** One order card, shared by review / pickup / delivery panels. */
+function OrderRow({ o, showPay, actions }: { o: OnlineOrder; showPay?: boolean; actions?: ReactNode }) {
+  const { money, time } = useFmt();
+  return (
+    <div className="grid gap-2 border-t border-neutral-200/70 p-4 first:border-t-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-bold text-neutral-900">{o.orderNumber}</span>
+            <Chip className="bg-green-100 text-green-800">{o.trackingStatus}</Chip>
+          </div>
+          <p className="flex flex-wrap items-center gap-x-3 text-sm text-neutral-500">
+            <span className="capitalize">{o.orderType}</span><span>{time(o.createdAt)}</span>
+            <b className="text-neutral-900">{money(o.total)}</b>
           </p>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <span style={{ fontSize: 12, fontWeight: 600, color: "#111" }}>
-              ₱{fmt(item.price)}
-            </span>
-            {!isFood(item) && (
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 500,
-                  padding: "2px 6px",
-                  borderRadius: 5,
-                  background: out ? "#fff0f0" : "#f5f5f5",
-                  color: out ? "#f87171" : "#bbb",
-                }}
-              >
-                {out ? "Out" : item.remainingStock}
-              </span>
+          {showPay && <p className="flex items-center gap-2 text-sm text-neutral-700">Payment: {paymentLabel(o.paymentMethod)} <PayBadge status={o.paymentStatus} /></p>}
+        </div>
+        <div className="flex shrink-0 gap-2">{actions}</div>
+      </div>
+      <p className="text-sm text-neutral-600">{o.items.map((i) => `${i.quantity}× ${i.name}`).join("  ·  ")}</p>
+    </div>
+  );
+}
+
+const PanelTitle = ({ children }: { children: ReactNode }) => (
+  <p className="border-t border-neutral-200/70 px-4 pb-1 pt-3 text-xs font-bold uppercase tracking-wider text-neutral-700 first:border-t-0">{children}</p>
+);
+
+/* ───────────────────────── menu + cart ───────────────────────── */
+
+const ProductCard = memo(({ item, onAdd, inCart }: { item: MenuItem; onAdd: (i: MenuItem) => void; inCart: boolean }) => {
+  const { money } = useFmt();
+  const out = isUnavailable(item.availabilityStatus) || getEffectiveMaxQuantity(item.remainingStock) === 0;
+  return (
+    <motion.button layout disabled={out} onClick={() => onAdd(item)} whileHover={out ? {} : { y: -3 }} whileTap={out ? {} : { scale: 0.97 }} transition={SP}
+      className={`relative overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-shadow hover:shadow-md ${inCart ? "border-neutral-900 ring-1 ring-neutral-900" : "border-neutral-200"} ${out ? "cursor-not-allowed opacity-50" : ""}`}>
+      <div className="flex aspect-square w-full items-center justify-center overflow-hidden bg-neutral-100">
+        {item.image ? <img src={item.image} alt={item.name} className="h-full w-full object-cover" /> : <UtensilsCrossed className="h-8 w-8 text-neutral-300" />}
+      </div>
+      {out && <span className="absolute left-2.5 top-2.5 rounded-full bg-red-800 px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-white">OUT OF STOCK</span>}
+      {inCart && <span className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900"><Check className="h-3.5 w-3.5 text-white" strokeWidth={3} /></span>}
+      <div className="p-4">
+        <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-snug text-neutral-800">{item.name}</p>
+        <p className="mt-2 text-base font-semibold text-neutral-900">{money(item.price)}</p>
+      </div>
+    </motion.button>
+  );
+});
+
+const CartRow = memo(({ item, onRemove, onQty, onNote }: {
+  item: CartItem; onRemove: (id: number) => void; onQty: (id: number, d: number) => void; onNote: (id: number, n: string) => void;
+}) => {
+  const { money } = useFmt();
+  const [showNote, setShowNote] = useState(false);
+  const max = getEffectiveMaxQuantity(item.remainingStock);
+  const step = "flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
+  return (
+    <motion.div layout initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={SP} className="border-b border-neutral-100 py-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100">
+          {item.image ? <img src={item.image} alt={item.name} className="h-full w-full object-cover" /> : <UtensilsCrossed className="h-5 w-5 text-neutral-300" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-neutral-800">{item.name}</p>
+          <p className="text-xs text-neutral-400">{money(item.price)} each</p>
+        </div>
+        <span className="text-sm font-semibold text-neutral-900">{money(item.price * item.quantity)}</span>
+      </div>
+      <div className="mt-3 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <button className={step} onClick={() => onQty(item.id, -1)}><Minus className="h-3.5 w-3.5 text-neutral-600" /></button>
+          <input type="number" min={1} max={max} value={item.quantity}
+            onChange={(e) => { const v = clampOrderItemQuantity(e.target.value, item.remainingStock); if (v > 0) onQty(item.id, v - item.quantity); }}
+            className="h-8 w-12 rounded-lg border border-neutral-200 text-center text-sm font-semibold outline-none focus:border-neutral-900" />
+          <button className={step} disabled={item.quantity >= max} onClick={() => onQty(item.id, 1)}><Plus className="h-3.5 w-3.5 text-neutral-600" /></button>
+        </div>
+        <div className="flex gap-1">
+          <button title="Add note" onClick={() => setShowNote((p) => !p)} className={`flex h-8 w-8 items-center justify-center rounded-lg ${item.note ? "bg-blue-50" : "hover:bg-neutral-100"}`}>
+            <MessageSquare className={`h-4 w-4 ${item.note ? "text-blue-600" : "text-neutral-300"}`} />
+          </button>
+          <button title="Remove" onClick={() => onRemove(item.id)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-50">
+            <Trash2 className="h-4 w-4 text-neutral-300 hover:text-red-500" />
+          </button>
+        </div>
+      </div>
+      <Collapse open={showNote}>
+        <input value={item.note ?? ""} onChange={(e) => onNote(item.id, e.target.value)} maxLength={120} placeholder="Special instruction (e.g. no onions)…"
+          className="mt-3 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none focus:border-neutral-900" />
+      </Collapse>
+    </motion.div>
+  );
+});
+
+function HeldOrders({ held, onRestore, onDiscard }: { held: HeldOrder[]; onRestore: (h: HeldOrder) => void; onDiscard: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  if (!held.length) return null;
+  return (
+    <div className="relative">
+      <Pill tone="amber" count={held.length} open={open} onClick={() => setOpen((p) => !p)}><RotateCcw className="h-4 w-4" />Held</Pill>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+            className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
+            {held.map((h) => (
+              <div key={h.id} className="flex items-start justify-between gap-3 border-b border-neutral-100 p-4 last:border-0">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold capitalize">{h.cart.length} item{h.cart.length !== 1 && "s"} · {h.orderType}</p>
+                  <p className="text-xs text-neutral-400">{h.savedAt}</p>
+                  <p className="truncate text-xs text-neutral-500">{h.cart.map((c) => `${c.name}×${c.quantity}`).join(", ")}</p>
+                </div>
+                <div className="flex gap-1.5">
+                  <button onClick={() => { onRestore(h); setOpen(false); }} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white">Restore</button>
+                  <button onClick={() => onDiscard(h.id)} className="rounded-lg border border-red-200 bg-red-50 px-2 text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ───────────────────────── modals ───────────────────────── */
+
+function ConfirmModal({ show, title, message, confirmLabel, busy, onConfirm, onCancel }: {
+  show: boolean; title: string; message: string; confirmLabel: string; busy: boolean; onConfirm: () => void; onCancel: () => void;
+}) {
+  return (
+    <Modal show={show} max="max-w-sm" onClose={busy ? undefined : onCancel}>
+      <div className="p-6">
+        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-red-50"><Ban className="h-5 w-5 text-red-600" /></div>
+        <p className="mb-1.5 text-lg font-semibold">{title}</p>
+        <p className="text-sm leading-relaxed text-neutral-500">{message}</p>
+      </div>
+      <div className="space-y-2 px-6 pb-6">
+        <button className={`${B.red} flex items-center justify-center gap-2`} disabled={busy} onClick={onConfirm}>{busy && <Spinner size={14} light />}{confirmLabel}</button>
+        <button className={B.ghost} disabled={busy} onClick={onCancel}>Keep Order</button>
+      </div>
+    </Modal>
+  );
+}
+
+function ProceedModal({ order, busy, onConfirm, onCancel }: { order: OnlineOrder | null; busy: boolean; onConfirm: () => void; onCancel: () => void }) {
+  const { money, time } = useFmt();
+  const paid = order ? isPaid(order.paymentStatus) : false;
+  return (
+    <Modal show={!!order} onClose={busy ? undefined : onCancel}>
+      {order && (
+        <>
+          <ModalHead eyebrow="Confirm order" title={order.orderNumber} onClose={busy ? undefined : onCancel} />
+          <div className="grid grid-cols-2 gap-2.5 border-b border-neutral-100 p-6">
+            {[["Order type", <span className="capitalize">{order.orderType}</span>], ["Placed at", time(order.createdAt)], ["Payment", paymentLabel(order.paymentMethod)], ["Pay status", <PayBadge status={order.paymentStatus} />]].map(([l, v], i) => (
+              <div key={i} className="rounded-xl border border-neutral-100 bg-neutral-50 p-3">
+                <p className={`${eyebrow} mb-1`}>{l}</p><div className="text-sm font-semibold">{v}</div>
+              </div>
+            ))}
+          </div>
+          <div className="max-h-44 space-y-2 overflow-y-auto border-b border-neutral-100 p-6">
+            <p className={eyebrow}>Order items</p>
+            {order.items.map((i, k) => <p key={k} className="text-sm text-neutral-700"><b className="mr-2">{i.quantity}×</b>{i.name}</p>)}
+          </div>
+          <div className="space-y-3 p-6">
+            <div className="flex items-center justify-between"><span className="text-sm text-neutral-500">Order total</span><span className="text-2xl font-bold">{money(order.total)}</span></div>
+            <p className={`rounded-xl border p-3 text-sm ${paid ? "border-green-200 bg-green-50 text-green-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+              {paid ? "Payment confirmed. Proceeding will queue this order for kitchen preparation."
+                : "Payment is still unpaid. Proceeding will mark it as paid and queue it. Verify with the customer first."}
+            </p>
+            <button className={`${B.green} flex items-center justify-center gap-2`} disabled={busy} onClick={onConfirm}>{busy ? <><Spinner size={14} light />Processing…</> : "Confirm & proceed to queue"}</button>
+            <button className={B.ghost} disabled={busy} onClick={onCancel}>Cancel</button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function HandoverModal({ order, rider, setRider, saving, onConfirm, onCancel }: {
+  order: OnlineOrder | null; rider: string; setRider: (v: string) => void; saving: boolean; onConfirm: () => void; onCancel: () => void;
+}) {
+  const { money, time } = useFmt();
+  return (
+    <Modal show={!!order} max="max-w-sm" onClose={saving ? undefined : onCancel}>
+      {order && (
+        <>
+          <ModalHead eyebrow="Delivery handover" title={order.orderNumber} onClose={saving ? undefined : onCancel} />
+          <div className="space-y-4 p-6">
+            <div>
+              <p className={`${eyebrow} mb-1.5`}>Rider name</p>
+              <input autoFocus value={rider} onChange={(e) => setRider(e.target.value)} disabled={saving} placeholder="Enter rider name"
+                className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-3 text-sm outline-none focus:border-neutral-900" />
+            </div>
+            <div className="space-y-1.5 rounded-xl border border-neutral-100 bg-neutral-50 p-3.5 text-sm">
+              <p className="flex justify-between"><span className="text-neutral-500">Handover time</span><b>{time(new Date().toISOString())}</b></p>
+              <p className="flex justify-between"><span className="text-neutral-500">Amount</span><b>{money(order.total)}</b></p>
+            </div>
+            <button className={B.dark} disabled={saving || !rider.trim()} onClick={onConfirm}>{saving ? "Saving…" : "Confirm handover"}</button>
+            <button className={B.ghost} disabled={saving} onClick={onCancel}>Cancel</button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function AmountModal({ show, amountDue, method, onConfirm, onCancel }: {
+  show: boolean; amountDue: number; method: PaymentMethod; onConfirm: (p: { tendered: number; file?: File }) => void; onCancel: () => void;
+}) {
+  const { money, s } = useFmt();
+  const [input, setInput] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [err, setErr] = useState("");
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  useEffect(() => { if (show) { setInput(""); setFile(null); setErr(""); } }, [show]);
+
+  const tendered = parseFloat(input) || 0;
+  const enough = tendered >= amountDue;
+  const quick = [50, 100, 200, 500, 1000].filter((d) => d >= amountDue);
+  const press = (k: string) => setInput((p) => (k === "⌫" ? p.slice(0, -1) : p.length > 8 ? p : k === "00" ? (p ? p + "00" : p) : p + k));
+  const onFile = (f?: File) => {
+    const e = !f ? "" : !f.type.startsWith("image/") ? "Please upload an image file." : f.size > 5 * 1024 * 1024 ? "Proof image must be 5 MB or smaller." : "";
+    setErr(e); setFile(f && !e ? f : null);
+  };
+
+  return (
+    <Modal show={show} max="max-w-sm" onClose={onCancel}>
+      <div className="border-b border-neutral-100 px-6 py-5">
+        <p className={eyebrow}>Amount due</p>
+        <p className="text-3xl font-semibold">{money(amountDue)}</p>
+      </div>
+      <div className="p-6">
+        {method === "cash" ? (
+          <>
+            <p className={`${eyebrow} mb-1.5`}>Cash tendered</p>
+            <div className={`mb-3 flex min-h-[52px] items-center gap-2 rounded-xl border-2 bg-neutral-50 px-4 ${input ? "border-neutral-900" : "border-neutral-200"}`}>
+              <span className="text-neutral-400">{getCurrencySymbol(s)}</span>
+              <span className={`flex-1 text-2xl font-semibold ${input ? "" : "text-neutral-300"}`}>{input || "0"}</span>
+            </div>
+            {quick.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {quick.map((a) => <button key={a} onClick={() => setInput(String(a))} className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-medium text-neutral-600">{money(a)}</button>)}
+              </div>
+            )}
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-neutral-100 bg-neutral-50 p-3"><p className="text-xs text-neutral-400">Change</p><p className={`text-lg font-semibold ${enough && input ? "text-green-600" : "text-neutral-300"}`}>{enough && input ? money(tendered - amountDue) : "—"}</p></div>
+              <div className="rounded-xl border border-neutral-100 bg-neutral-50 p-3"><p className="text-xs text-neutral-400">Tendered</p><p className={`text-lg font-semibold ${input ? "" : "text-neutral-300"}`}>{input ? money(tendered) : "—"}</p></div>
+            </div>
+            {input && !enough && <p className="mb-2 text-sm font-medium text-red-500">{money(amountDue - tendered)} short</p>}
+            <div className="mb-4 grid grid-cols-3 gap-2">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "00"].map((k) => (
+                <button key={k} onClick={() => press(k)} className="flex h-14 items-center justify-center rounded-xl border border-neutral-200 bg-white text-lg font-medium transition active:scale-90">
+                  {k === "⌫" ? <Delete className="h-5 w-5 text-neutral-400" /> : k}
+                </button>
+              ))}
+            </div>
+            <button className={`${B.green} mb-2`} disabled={!input || !enough} onClick={() => onConfirm({ tendered })}>Confirm payment</button>
+          </>
+        ) : (
+          <>
+            <div className="mb-4 flex flex-col items-center rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="mb-3 text-sm font-semibold text-sky-700">Onsite GCash / E-Payment</p>
+              <img src="/gcashQR1.png" alt="GCash QR" className="h-44 w-44 rounded-xl border border-neutral-200 bg-white object-contain" />
+              <p className="mt-3 text-center text-xs text-neutral-400">Ask the customer to scan, then upload the proof below.</p>
+            </div>
+            <div className="mb-4 rounded-xl border border-neutral-200 p-3">
+              <p className={`${eyebrow} mb-2`}>Proof image</p>
+              <input type="file" accept="image/*" capture="environment" onChange={(e) => onFile(e.currentTarget.files?.[0])} className="w-full text-sm" />
+              {err && <p className="mt-2 text-sm font-medium text-red-600">{err}</p>}
+              {preview && (
+                <>
+                  <img src={preview} alt="Payment proof" className="mt-3 max-h-52 w-full rounded-lg border border-neutral-200 object-contain" />
+                  <button onClick={() => onFile()} className="ml-auto mt-2 block rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600">Remove image</button>
+                </>
+              )}
+            </div>
+            <button className={`${B.blue} mb-2`} disabled={!file} onClick={() => onConfirm({ tendered: amountDue, file: file ?? undefined })}>Confirm payment</button>
+          </>
+        )}
+        <button className={B.ghost} onClick={onCancel}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
+function SuccessModal({ receipt: r, cashier, onClose }: { receipt: ReceiptDto | null; cashier: string; onClose: () => void }) {
+  const { money, dateTime } = useFmt();
+  const m = (v: number | null) => (v == null ? "—" : money(v));
+  const rows: [string, number | null][] = r
+    ? [["Subtotal", r.subtotal], ["Discount", r.discount.amount ? -r.discount.amount : 0], ["Tax", r.tax.amount], ["Service charge", r.serviceCharge.amount]]
+    : [];
+  const isCash = r?.paymentMethod === "cash" && r.cashTendered != null;
+  return (
+    <Modal show={!!r} max="max-w-sm">
+      {r && (
+        <>
+          <div className="flex flex-col items-center px-6 pb-5 pt-8 text-center">
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ ...SP, delay: 0.08 }} className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-green-200 bg-green-50">
+              <Check className="h-6 w-6 text-green-500" strokeWidth={2.5} />
+            </motion.div>
+            <p className="text-lg font-semibold">Order placed successfully</p>
+            <p className="mb-3 text-sm text-neutral-400">The kitchen can start preparing.</p>
+            <div className="rounded-xl border border-neutral-200 bg-neutral-100 px-5 py-2"><p className={eyebrow}>Order number</p><p className="text-lg font-bold">{r.orderNumber}</p></div>
+          </div>
+          <div className="grid grid-cols-2 gap-px border-y border-neutral-100 bg-neutral-100 text-center">
+            {[["Txn ID", r.transactionId || "—"], ["Cashier", r.cashierName || cashier || "—"], ["Date", dateTime(r.orderDate)], ["Type", [r.orderType, r.tableNumber && `Table ${r.tableNumber}`, paymentLabel(r.paymentMethod)].filter(Boolean).join(" · ")]].map(([l, v]) => (
+              <div key={l} className="bg-white px-3 py-3"><p className={eyebrow}>{l}</p><p className="break-words text-sm font-medium capitalize text-neutral-700">{v}</p></div>
+            ))}
+          </div>
+          <div className="max-h-36 space-y-2 overflow-y-auto px-6 py-4">
+            {r.items.map((i, k) => (
+              <div key={k} className="flex justify-between text-sm"><span className="text-neutral-600">{i.productName} <span className="text-neutral-400">×{i.quantity}</span>{i.note && <em className="block text-xs text-neutral-400">{i.note}</em>}</span><span className="font-medium">{m(i.subtotal)}</span></div>
+            ))}
+          </div>
+          {r.orderNote && <p className="mx-6 mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><b>Note:</b> {r.orderNote}</p>}
+          <div className="mx-6 mb-4 overflow-hidden rounded-xl border border-neutral-100 text-sm">
+            {rows.filter(([l, v]) => l === "Subtotal" || v).map(([l, v]) => <p key={l} className="flex justify-between border-b border-dashed border-neutral-100 px-4 py-2 text-neutral-400"><span>{l}</span><span>{m(v)}</span></p>)}
+            <p className="flex items-center justify-between bg-neutral-50 px-4 py-3"><span className="font-medium text-neutral-600">Total paid</span><span className="text-xl font-semibold">{m(r.total)}</span></p>
+            {isCash && (
+              <>
+                <p className="flex justify-between border-t border-dashed border-neutral-100 px-4 py-2 text-neutral-500"><span>Cash tendered</span><span>{m(r.cashTendered)}</span></p>
+                <p className="flex justify-between bg-green-50 px-4 py-2.5 font-semibold text-green-600"><span>Change</span><span>{m(r.change)}</span></p>
+              </>
             )}
           </div>
-        </div>
-        <AnimatePresence>
-          {inCart && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.5 }}
-              transition={SP}
-              style={{
-                position: "absolute",
-                top: 8,
-                right: 8,
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                background: "#111",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Check
-                style={{ width: 9, height: 9, color: "#fff" }}
-                strokeWidth={3}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.button>
-    );
-  }
+          <div className="space-y-2 border-t border-neutral-100 p-6">
+            <div className="grid grid-cols-2 gap-2">
+              <button className={`${B.dark} flex items-center justify-center gap-2`} onClick={() => printHtml(buildReceiptHtml(r, { cashier }))}><Printer className="h-4 w-4" />Receipt</button>
+              <button className={`${B.slate} flex items-center justify-center gap-2`} onClick={() => printHtml(buildKotHtml(r, { cashier }), 320, 520)}><FileText className="h-4 w-4" />KOT</button>
+            </div>
+            <button className={B.ghost} onClick={() => downloadHtml(buildReceiptHtml(r, { cashier }), `receipt-${r.orderNumber.replace(/[^\w-]/g, "") || "order"}.html`)}>Download receipt</button>
+            <button className={B.green} onClick={onClose}>New order</button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
 
-  // ─── CART ROW ─────────────────────────────────────────────────────────────────
-  function CartRow({
-    item,
-    onRemove,
-    onQty,
-  }: {
-    item: CartItem;
-    onRemove: (id: number) => void;
-    onQty: (id: number, d: number) => void;
-  }) {
-    const qtyBtn = (delta: number, icon: React.ReactNode) => (
-      <motion.button
-        whileTap={{ scale: 0.85 }}
-        onClick={() => onQty(item.id, delta)}
-        style={{
-          width: 22,
-          height: 22,
-          borderRadius: 7,
-          border: "1px solid #eee",
-          background: "#fff",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {icon}
-      </motion.button>
-    );
-    return (
-      <motion.div
-        layout
-        initial={{ opacity: 0, x: 12 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: 12 }}
-        transition={SP}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "11px 0",
-          borderBottom: "1px solid #f5f5f5",
-          fontFamily: F,
-        }}
-      >
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 9,
-            background: "#f7f7f7",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-            overflow: "hidden",
-          }}
-        >
-          {item.image ? (
-            <img
-              src={item.image}
-              alt={item.name}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
-            <UtensilsCrossed style={{ width: 13, height: 13, color: "#ddd" }} />
-          )}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p
-            style={{
-              fontSize: 11,
-              fontWeight: 500,
-              color: "#222",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {item.name}
-          </p>
-          <p style={{ fontSize: 10, color: "#bbb", marginTop: 1 }}>
-            ₱{fmt(item.price)}
-          </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          {qtyBtn(-1, <Minus style={{ width: 10, height: 10, color: "#666" }} />)}
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: "#111",
-              minWidth: 16,
-              textAlign: "center",
-            }}
-          >
-            {item.quantity}
-          </span>
-          {qtyBtn(1, <Plus style={{ width: 10, height: 10, color: "#666" }} />)}
-        </div>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: "#111",
-            minWidth: 40,
-            textAlign: "right",
-          }}
-        >
-          ₱{fmt(item.price * item.quantity)}
-        </span>
-        <motion.button
-          whileTap={{ scale: 0.85 }}
-          onClick={() => onRemove(item.id)}
-          style={{
-            width: 22,
-            height: 22,
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: 6,
-          }}
-        >
-          <Trash2 style={{ width: 12, height: 12, color: "#ccc" }} />
-        </motion.button>
-      </motion.div>
-    );
-  }
+function HistoryModal({ show, orders, loading, settlingId, onClose, onSettle, onReprint }: {
+  show: boolean; orders: ShiftOrder[]; loading: boolean; settlingId: number | null;
+  onClose: () => void; onSettle: (o: ShiftOrder) => void; onReprint: (o: ShiftOrder) => void;
+}) {
+  const { money, time } = useFmt();
+  const [open, setOpen] = useState<number | null>(null);
+  const valid = orders.filter((o) => o.status !== "Cancelled");
+  const stats = [["Orders", String(valid.length), ""], ["Revenue", money(valid.reduce((s, o) => s + o.total, 0)), "text-green-600"], ["Voided", String(orders.length - valid.length), "text-red-600"]];
+  const iconBtn = "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 transition active:scale-95";
 
-  // ─── CUSTOM SELECT ────────────────────────────────────────────────────────────
-  function CustomSelect({
-    value,
-    onChange,
-    options,
-  }: {
-    value: string;
-    onChange: (v: string) => void;
-    options: { value: string; label: string }[];
-  }) {
-    return (
-      <div style={{ position: "relative" }}>
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          style={{
-            width: "100%",
-            padding: "7px 24px 7px 10px",
-            fontSize: 11,
-            fontFamily: F,
-            border: "1px solid #efefef",
-            borderRadius: 9,
-            background: "#fafafa",
-            color: "#444",
-            outline: "none",
-            appearance: "none",
-            cursor: "pointer",
-          }}
-        >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          style={{
-            position: "absolute",
-            right: 8,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 10,
-            height: 10,
-            color: "#bbb",
-            pointerEvents: "none",
-          }}
-        />
+  return (
+    <Modal show={show} max="max-w-xl" onClose={onClose}>
+      <ModalHead eyebrow="Shift summary" title="Today's orders" tone="text-blue-600" onClose={onClose} />
+      <div className="grid grid-cols-3 gap-3 border-b border-neutral-100 p-5">
+        {stats.map(([l, v, c]) => <div key={l} className="rounded-xl border border-neutral-100 bg-neutral-50 p-3 text-center"><p className={eyebrow}>{l}</p><p className={`text-xl font-bold ${c}`}>{v}</p></div>)}
       </div>
-    );
-  }
-
-  // ─── RIDER HANDOVER MODAL ─────────────────────────────────────────────────────
-  function RiderHandoverModal({
-    show,
-    order,
-    riderName,
-    saving,
-    onChange,
-    onConfirm,
-    onCancel,
-  }: {
-    show: boolean;
-    order: OnlineNotif | null;
-    riderName: string;
-    saving: boolean;
-    onChange: (value: string) => void;
-    onConfirm: () => void;
-    onCancel: () => void;
-  }) {
-    return (
-      <AnimatePresence>
-        {show && order && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              onClick={saving ? undefined : onCancel}
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 65,
-                backdropFilter: "blur(3px)",
-                background: "rgba(0,0,0,0.35)",
-              }}
-            />
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 66,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 16,
-                pointerEvents: "none",
-              }}
-            >
-              <motion.div
-                initial={{ opacity: 0, scale: 0.96, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                style={{
-                  background: "#fff",
-                  width: "100%",
-                  maxWidth: 336,
-                  borderRadius: 20,
-                  overflow: "hidden",
-                  border: "1px solid #ebebeb",
-                  pointerEvents: "auto",
-                  fontFamily: F,
-                }}
-              >
-                <div
-                  style={{
-                    padding: "20px 20px 14px",
-                    borderBottom: "1px solid #f5f5f5",
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      color: "#16a34a",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.07em",
-                      marginBottom: 5,
-                    }}
-                  >
-                    Delivery Handover
-                  </p>
-                  <p
-                    style={{
-                      fontSize: 16,
-                      fontWeight: 600,
-                      color: "#111",
-                      margin: 0,
-                    }}
-                  >
-                    {order.orderNumber}
-                  </p>
-                  <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 5 }}>
-                    Record the rider before marking this delivery as handed over.
-                  </p>
-                </div>
-
-                <div style={{ padding: "16px 18px 18px" }}>
-                  <div style={{ marginBottom: 12 }}>
-                    <p
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: "#bbb",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.07em",
-                        marginBottom: 6,
-                      }}
-                    >
-                      Rider Name
-                    </p>
-                    <input
-                      value={riderName}
-                      onChange={(e) => onChange(e.target.value)}
-                      placeholder="Enter rider name"
-                      disabled={saving}
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        fontSize: 12,
-                        fontFamily: F,
-                        border: `1px solid ${riderName.trim() ? "#111" : "#efefef"}`,
-                        borderRadius: 10,
-                        background: "#fafafa",
-                        color: "#333",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
+      {loading ? <div className="flex h-32 items-center justify-center"><Spinner size={22} /></div>
+        : !orders.length ? <Empty icon={<Receipt className="h-8 w-8 text-neutral-200" />}>No orders placed yet this shift</Empty>
+        : orders.map((o) => {
+          const cancelled = o.status === "Cancelled";
+          const action = getSettlementAction(o.status, o.paymentStatus);
+          return (
+            <div key={o.id} className="border-b border-neutral-100 last:border-0">
+              <div className="flex items-center gap-3 px-6 py-4">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className={`font-bold ${cancelled ? "text-neutral-400 line-through" : ""}`}>{o.orderNumber}</span>
+                    <Chip className={cancelled ? "bg-red-100 text-red-600" : "bg-green-100 text-green-700"}>{o.status}</Chip><Chip>{o.orderType}</Chip>
                   </div>
-
-                  <div
-                    style={{
-                      background: "#fafafa",
-                      border: "1px solid #f0f0f0",
-                      borderRadius: 12,
-                      padding: "10px 12px",
-                      marginBottom: 14,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        marginBottom: 6,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "#9ca3af",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
-                        }}
-                      >
-                        Order Type
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: "#065f46",
-                          textTransform: "capitalize",
-                        }}
-                      >
-                        {order.orderType}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "#9ca3af",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
-                        }}
-                      >
-                        Amount
-                      </span>
-                      <span
-                        style={{ fontSize: 11, fontWeight: 700, color: "#111" }}
-                      >
-                        ₱{Number(order.total).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <motion.button
-                    whileHover={{ opacity: 0.88 }}
-                    whileTap={{ scale: 0.98 }}
-                    disabled={saving || !riderName.trim()}
-                    onClick={onConfirm}
-                    style={{
-                      ...btn("#111", "#fff", { marginBottom: 6 }),
-                      cursor:
-                        saving || !riderName.trim() ? "not-allowed" : "pointer",
-                      opacity: saving || !riderName.trim() ? 0.45 : 1,
-                    }}
-                  >
-                    {saving ? "Saving..." : "Confirm Handover"}
-                  </motion.button>
-                  <motion.button
-                    whileTap={{ scale: 0.97 }}
-                    onClick={onCancel}
-                    disabled={saving}
-                    style={{
-                      ...btn("transparent", "#bbb"),
-                      padding: "9px",
-                      fontSize: 12,
-                      cursor: saving ? "not-allowed" : "pointer",
-                      opacity: saving ? 0.5 : 1,
-                    }}
-                  >
-                    Cancel
-                  </motion.button>
+                  <p className="text-sm text-neutral-500">{time(o.createdAt)} · <b className="text-neutral-900">{money(o.total)}</b> · {paymentLabel(o.paymentMethod)}</p>
                 </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
-    );
-  }
-
-  // ─── AMOUNT ENTRY MODAL ───────────────────────────────────────────────────────
-  function AmountEntryModal({
-    show,
-    amountDue,
-    paymentMethod,
-    onConfirm,
-    onCancel,
-  }: {
-    show: boolean;
-    amountDue: number;
-    paymentMethod: PaymentMethod;
-    onConfirm: (payload: {
-      tendered: number;
-      selectedImage?: File;
-      proofFileName?: string;
-    }) => void;
-    onCancel: () => void;
-  }) {
-    const [input, setInput] = useState("");
-    const [selectedImage, setSelectedImage] = useState<File | null>(null);
-    const [previewURL, setPreviewURL] = useState("");
-    const [proofFileName, setProofFileName] = useState("");
-    const [proofError, setProofError] = useState("");
-
-    useEffect(() => {
-      if (show) {
-        setInput("");
-        setSelectedImage(null);
-        setPreviewURL("");
-        setProofFileName("");
-        setProofError("");
-      }
-    }, [show]);
-
-    useEffect(() => {
-      return () => {
-        if (previewURL) URL.revokeObjectURL(previewURL);
-      };
-    }, [previewURL]);
-
-    const tendered = parseFloat(input) || 0;
-    const change = tendered - amountDue;
-    const enough = tendered >= amountDue;
-    const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "00"];
-    const QUICK = [50, 100, 200, 500, 1000].filter((d) => d >= amountDue);
-
-    const handleKey = (k: string) => {
-      if (k === "⌫") return setInput((p) => p.slice(0, -1));
-      if (k === "00") return setInput((p) => (p === "" ? "" : p + "00"));
-      if (k === "." && input.includes(".")) return;
-      const di = input.indexOf(".");
-      if (di !== -1 && input.length - di > 2) return;
-      setInput((p) => p + k);
-    };
-
-    const handleProofSelected = (file?: File | null) => {
-      if (!file) {
-        if (previewURL) URL.revokeObjectURL(previewURL);
-        setSelectedImage(null);
-        setPreviewURL("");
-        setProofFileName("");
-        setProofError("");
-        return;
-      }
-
-      if (!file.type.startsWith("image/")) {
-        setProofError("Please upload an image file for the payment proof.");
-        if (previewURL) URL.revokeObjectURL(previewURL);
-        setSelectedImage(null);
-        setPreviewURL("");
-        setProofFileName("");
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        setProofError("Payment proof image must be 5 MB or smaller.");
-        if (previewURL) URL.revokeObjectURL(previewURL);
-        setSelectedImage(null);
-        setPreviewURL("");
-        setProofFileName("");
-        return;
-      }
-
-      if (previewURL) URL.revokeObjectURL(previewURL);
-      setSelectedImage(file);
-      setPreviewURL(URL.createObjectURL(file));
-      setProofFileName(file.name || `payment-proof-${Date.now()}.jpg`);
-      setProofError("");
-    };
-
-    const gcashDone = false;
-    const handleGcash = () => {};
-
-    return (
-      <AnimatePresence>
-        {show && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              onClick={onCancel}
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 60,
-                backdropFilter: "blur(3px)",
-                background: "rgba(0,0,0,0.35)",
-              }}
-            />
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 61,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 16,
-                pointerEvents: "none",
-              }}
-            >
-              <motion.div
-                initial={{ opacity: 0, scale: 0.96, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                style={{
-                  background: "#fff",
-                  width: "100%",
-                  maxWidth: 320,
-                  borderRadius: 20,
-                  overflow: "hidden",
-                  border: "1px solid #ebebeb",
-                  pointerEvents: "auto",
-                  fontFamily: F,
-                }}
-              >
-                <div
-                  style={{
-                    padding: "22px 22px 16px",
-                    borderBottom: "1px solid #f5f5f5",
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      color: "#bbb",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.07em",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Amount due
-                  </p>
-                  <p
-                    style={{
-                      fontSize: 28,
-                      fontWeight: 600,
-                      color: "#111",
-                      margin: 0,
-                    }}
-                  >
-                    ₱{fmt(amountDue)}
-                  </p>
-                </div>
-
-                <div style={{ padding: "14px 18px 18px" }}>
-                  {paymentMethod === "cash" ? (
-                    <>
-                      <p
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          color: "#bbb",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.07em",
-                          marginBottom: 6,
-                        }}
-                      >
-                        Cash tendered
-                      </p>
-                      <div
-                        style={{
-                          background: "#fafafa",
-                          border: `1.5px solid ${input ? "#111" : "#e5e5e5"}`,
-                          borderRadius: 10,
-                          padding: "10px 14px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          marginBottom: 10,
-                          minHeight: 44,
-                        }}
-                      >
-                        <span style={{ fontSize: 14, color: "#aaa" }}>₱</span>
-                        <span
-                          style={{
-                            fontSize: 20,
-                            fontWeight: 600,
-                            color: input ? "#111" : "#ccc",
-                            flex: 1,
-                          }}
-                        >
-                          {input || "0"}
-                        </span>
-                      </div>
-
-                      {QUICK.length > 0 && (
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 5,
-                            marginBottom: 10,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {QUICK.slice(0, 5).map((a) => (
-                            <motion.button
-                              key={a}
-                              whileTap={{ scale: 0.94 }}
-                              onClick={() => setInput(String(a))}
-                              style={{
-                                padding: "4px 10px",
-                                borderRadius: 7,
-                                border: "1px solid #efefef",
-                                background: "#f7f7f7",
-                                fontSize: 11,
-                                fontWeight: 500,
-                                color: "#555",
-                                cursor: "pointer",
-                                fontFamily: F,
-                              }}
-                            >
-                              ₱{a}
-                            </motion.button>
-                          ))}
-                        </div>
-                      )}
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 8,
-                          marginBottom: 12,
-                        }}
-                      >
-                        {[
-                          {
-                            label: "Change",
-                            val: enough && input ? `₱${fmt(change)}` : "—",
-                            color: enough && input ? "#16a34a" : "#ddd",
-                          },
-                          {
-                            label: "Tendered",
-                            val: input ? `₱${fmt(tendered)}` : "—",
-                            color: input ? "#111" : "#ddd",
-                          },
-                        ].map(({ label, val, color }) => (
-                          <div
-                            key={label}
-                            style={{
-                              background: "#fafafa",
-                              border: "1px solid #f0f0f0",
-                              borderRadius: 10,
-                              padding: "10px 12px",
-                            }}
-                          >
-                            <p
-                              style={{
-                                fontSize: 10,
-                                color: "#bbb",
-                                marginBottom: 3,
-                              }}
-                            >
-                              {label}
-                            </p>
-                            <p
-                              style={{
-                                fontSize: 16,
-                                fontWeight: 600,
-                                color,
-                                margin: 0,
-                              }}
-                            >
-                              {val}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-
-                      <AnimatePresence>
-                        {input && !enough && (
-                          <motion.p
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            style={{
-                              fontSize: 11,
-                              color: "#f87171",
-                              marginBottom: 8,
-                              fontWeight: 500,
-                            }}
-                          >
-                            ₱{fmt(amountDue - tendered)} short
-                          </motion.p>
-                        )}
-                      </AnimatePresence>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(3, 1fr)",
-                          gap: 6,
-                          marginBottom: 10,
-                        }}
-                      >
-                        {KEYS.map((k) => (
-                          <motion.button
-                            key={k}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => handleKey(k)}
-                            style={{
-                              padding: "12px",
-                              borderRadius: 9,
-                              border: "1px solid #eee",
-                              background: k === "⌫" ? "#fafafa" : "#fff",
-                              fontSize: k === "⌫" ? 13 : 15,
-                              fontWeight: 500,
-                              color: k === "⌫" ? "#999" : "#222",
-                              cursor: "pointer",
-                              fontFamily: F,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            {k === "⌫" ? (
-                              <Delete
-                                style={{ width: 14, height: 14, color: "#999" }}
-                              />
-                            ) : (
-                              k
-                            )}
-                          </motion.button>
-                        ))}
-                      </div>
-
-                    <motion.button
-                      whileHover={{ opacity: 0.88 }}
-                      whileTap={{ scale: 0.98 }}
-                      disabled={!input || !enough}
-                      onClick={() => onConfirm({ tendered })}
-                      style={{
-                        ...btn("#16a34a", "#fff", { marginBottom: 6 }),
-                        cursor: !input || !enough ? "not-allowed" : "pointer",
-                        opacity: !input || !enough ? 0.4 : 1,
-                      }}
-                    >
-                      Confirm Payment
-                    </motion.button>
-                    <motion.button
-                      whileTap={{ scale: 0.97 }}
-                      onClick={onCancel}
-                      style={{
-                        ...btn("transparent", "#bbb"),
-                        padding: "9px",
-                        fontSize: 12,
-                      }}
-                    >
-                      Cancel
-                    </motion.button>
-                  </>
-                ) : paymentMethod === "gcash_onsite" ? (
-                  <div>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        background: "#fafafa",
-                        border: "1px solid #f0f0f0",
-                        borderRadius: 14,
-                        padding: "16px 16px 12px",
-                        marginBottom: 14,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          marginBottom: 12,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: 7,
-                            background: "#0070BA",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          <span
-                            style={{
-                              color: "#fff",
-                              fontSize: 12,
-                              fontWeight: 700,
-                            }}
-                          >
-                            G
-                          </span>
-                        </div>
-                        <span
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 600,
-                            color: "#0070BA",
-                          }}
-                        >
-                          Onsite GCash / E-Payment
-                        </span>
-                      </div>
-                      <img
-                        src="/gcashQR1.png"
-                        alt="GCash QR"
-                        style={{
-                          width: 164,
-                          height: 164,
-                          borderRadius: 10,
-                          objectFit: "contain",
-                          background: "#fff",
-                          border: "1px solid #efefef",
-                        }}
-                      />
-                      <p
-                        style={{
-                          fontSize: 10,
-                          color: "#aaa",
-                          marginTop: 10,
-                          textAlign: "center",
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        Ask the customer to scan, then upload or capture the proof below.
-                      </p>
-                      <p
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 600,
-                          color: "#111",
-                          marginTop: 2,
-                        }}
-                      >
-                        ₱{fmt(amountDue)}
-                      </p>
-                    </div>
-
-                      <div
-                        style={{
-                          background: previewURL ? "#eff6ff" : "#fffbeb",
-                          border: `1px solid ${previewURL ? "#bfdbfe" : "#fde68a"}`,
-                          borderRadius: 10,
-                          padding: "9px 12px",
-                          marginBottom: 14,
-                        }}
-                      >
-                        <p
-                          style={{
-                            fontSize: 11,
-                            color: previewURL ? "#1d4ed8" : "#92400e",
-                            lineHeight: 1.55,
-                            margin: 0,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {previewURL
-                            ? "Payment status: Pending Verification. Review the proof image, then click Confirm Payment."
-                            : "Upload or capture the payment proof first. Payment will stay pending until the cashier confirms it."}
-                        </p>
-                      </div>
-
-                      <div
-                        style={{
-                          marginBottom: 14,
-                          border: "1px solid #f0f0f0",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "#fff",
-                        }}
-                      >
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: 10,
-                            fontWeight: 600,
-                            color: "#888",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.07em",
-                            marginBottom: 8,
-                          }}
-                        >
-                          Proof Image
-                        </label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          onChange={(e) =>
-                            handleProofSelected(e.currentTarget.files?.[0] ?? null)
-                          }
-                          style={{
-                            width: "100%",
-                            fontFamily: F,
-                            fontSize: 12,
-                            color: "#444",
-                            marginBottom: previewURL ? 12 : 0,
-                          }}
-                        />
-
-                        {proofError && (
-                          <p
-                            style={{
-                              fontSize: 11,
-                              color: "#dc2626",
-                              margin: "8px 0 0",
-                              fontWeight: 500,
-                            }}
-                          >
-                            {proofError}
-                          </p>
-                        )}
-
-                        {previewURL && (
-                          <div>
-                            <div
-                              style={{
-                                borderRadius: 10,
-                                overflow: "hidden",
-                                border: "1px solid #e5e7eb",
-                                background: "#fafafa",
-                                marginBottom: 8,
-                              }}
-                            >
-                              <img
-                                src={previewURL}
-                                alt="Payment proof preview"
-                                style={{
-                                  width: "100%",
-                                  maxHeight: 220,
-                                  objectFit: "contain",
-                                  display: "block",
-                                  background: "#fff",
-                                }}
-                              />
-                            </div>
-                            <p
-                              style={{
-                                fontSize: 11,
-                                color: "#666",
-                                margin: "0 0 8px",
-                                wordBreak: "break-word",
-                              }}
-                            >
-                              {proofFileName}
-                            </p>
-                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                              <button
-                                type="button"
-                                onClick={() => handleProofSelected(null)}
-                                style={{
-                                  padding: "6px 10px",
-                                  borderRadius: 8,
-                                  border: "1px solid #e5e7eb",
-                                  background: "#fff",
-                                  color: "#555",
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  cursor: "pointer",
-                                  fontFamily: F,
-                                }}
-                              >
-                                Remove Image
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <motion.button
-                        whileHover={{ opacity: 0.88 }}
-                        whileTap={{ scale: 0.98 }}
-                        disabled={!selectedImage}
-                        onClick={() =>
-                          onConfirm({
-                            tendered: amountDue,
-                            selectedImage: selectedImage ?? undefined,
-                            proofFileName,
-                          })
-                        }
-                        style={{
-                          ...btn("#0070BA", "#fff", { marginBottom: 6 }),
-                          cursor: !selectedImage ? "not-allowed" : "pointer",
-                          opacity: !selectedImage ? 0.45 : 1,
-                        }}
-                      >
-                        Confirm Payment
-                      </motion.button>
-                      <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={onCancel}
-                        style={{
-                          ...btn("transparent", "#bbb"),
-                          padding: "9px",
-                          fontSize: 12,
-                        }}
-                      >
-                        Cancel
-                      </motion.button>
-                    </div>
-                  ) : (
-                    <AnimatePresence mode="wait">
-                      {!gcashDone ? (
-                        <motion.div
-                          key="idle"
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          transition={{ duration: 0.18 }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              background: "#fafafa",
-                              border: "1px solid #f0f0f0",
-                              borderRadius: 14,
-                              padding: "16px 16px 12px",
-                              marginBottom: 14,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                                marginBottom: 12,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: 24,
-                                  height: 24,
-                                  borderRadius: 7,
-                                  background: "#0070BA",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    color: "#fff",
-                                    fontSize: 12,
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  G
-                                </span>
-                              </div>
-                              <span
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: 600,
-                                  color: "#0070BA",
-                                }}
-                              >
-                                GCash
-                              </span>
-                            </div>
-                            <img
-                              src="/gcashQR1.png"
-                              alt="GCash QR"
-                              style={{
-                                width: 164,
-                                height: 164,
-                                borderRadius: 10,
-                                objectFit: "contain",
-                                background: "#fff",
-                                border: "1px solid #efefef",
-                              }}
-                            />
-                            <p
-                              style={{
-                                fontSize: 10,
-                                color: "#aaa",
-                                marginTop: 10,
-                                textAlign: "center",
-                                lineHeight: 1.6,
-                              }}
-                            >
-                              Ask customer to scan with GCash app
-                            </p>
-                            <p
-                              style={{
-                                fontSize: 14,
-                                fontWeight: 600,
-                                color: "#111",
-                                marginTop: 2,
-                              }}
-                            >
-                              ₱{fmt(amountDue)}
-                            </p>
-                          </div>
-                          <div
-                            style={{
-                              background: "#fffbeb",
-                              border: "1px solid #fde68a",
-                              borderRadius: 10,
-                              padding: "9px 12px",
-                              marginBottom: 14,
-                              display: "flex",
-                              alignItems: "flex-start",
-                              gap: 8,
-                            }}
-                          >
-                            <span style={{ fontSize: 13, marginTop: 1 }}>💡</span>
-                            <p
-                              style={{
-                                fontSize: 11,
-                                color: "#92400e",
-                                lineHeight: 1.55,
-                                margin: 0,
-                              }}
-                            >
-                              Check your GCash app to confirm you received{" "}
-                              <strong>₱{fmt(amountDue)}</strong>, then tap below.
-                            </p>
-                          </div>
-                          <motion.button
-                            whileHover={{ opacity: 0.88 }}
-                            whileTap={{ scale: 0.98 }}
-                            onClick={handleGcash}
-                            style={{
-                              ...btn("#0070BA", "#fff", { marginBottom: 6 }),
-                            }}
-                          >
-                            Payment Received
-                          </motion.button>
-                          <motion.button
-                            whileTap={{ scale: 0.97 }}
-                            onClick={onCancel}
-                            style={{
-                              ...btn("transparent", "#bbb"),
-                              padding: "9px",
-                              fontSize: 12,
-                            }}
-                          >
-                            Cancel
-                          </motion.button>
-                        </motion.div>
-                      ) : (
-                        <motion.div
-                          key="done"
-                          initial={{ opacity: 0, scale: 0.92 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 420,
-                            damping: 26,
-                          }}
-                          style={{ textAlign: "center", padding: "32px 0 28px" }}
-                        >
-                          <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 500,
-                              damping: 24,
-                              delay: 0.05,
-                            }}
-                            style={{
-                              width: 56,
-                              height: 56,
-                              borderRadius: "50%",
-                              background: "#f0fdf4",
-                              border: "1px solid #bbf7d0",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              margin: "0 auto 14px",
-                            }}
-                          >
-                            <Check
-                              style={{ width: 22, height: 22, color: "#22c55e" }}
-                              strokeWidth={2.5}
-                            />
-                          </motion.div>
-                          <p
-                            style={{
-                              fontSize: 14,
-                              fontWeight: 600,
-                              color: "#111",
-                              marginBottom: 4,
-                            }}
-                          >
-                            Payment confirmed!
-                          </p>
-                          <p style={{ fontSize: 11, color: "#bbb" }}>
-                            Opening receipt…
-                          </p>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  )}
-                </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
-    );
-  }
-
-  // ─── SUCCESS MODAL ────────────────────────────────────────────────────────────
-  function SuccessModal({
-    show,
-    onClose,
-    orderNumber,
-    savedCart,
-    paidAmount,
-    cashTendered,
-    changeAmount,
-    orderType,
-    paymentMethod,
-    customerType,
-    discountAmount,
-    vatAmount,
-  }: {
-    show: boolean;
-    onClose: () => void;
-    orderNumber: string;
-    savedCart: CartItem[];
-    paidAmount: number;
-    cashTendered: number;
-    changeAmount: number;
-    orderType: string;
-    paymentMethod: string;
-    customerType: CustomerType;
-    discountAmount: number;
-    vatAmount: number;
-  }) {
-    const { date, time } = getNow();
-    const label: Record<CustomerType, string> = {
-      regular: "Regular",
-      pwd: "PWD",
-      senior: "Senior Citizen",
-    };
-    const receiptHtml = buildReceiptHtml({
-      orderNumber,
-      date,
-      time,
-      items: savedCart,
-      paidAmount,
-      cashTendered,
-      changeAmount,
-      orderType,
-      paymentMethod,
-      customerType,
-      discountAmount,
-      vatAmount,
-    });
-
-    const handlePrintReceipt = () => {
-      if (typeof window === "undefined") return;
-      const receiptWindow = window.open("", "_blank", "width=420,height=760");
-      if (!receiptWindow) return;
-      receiptWindow.document.open();
-      receiptWindow.document.write(receiptHtml);
-      receiptWindow.document.close();
-      receiptWindow.focus();
-      receiptWindow.onload = () => {
-        receiptWindow.print();
-      };
-    };
-
-    const handleDownloadReceipt = () => {
-      if (typeof window === "undefined" || typeof document === "undefined")
-        return;
-      const blob = new Blob([receiptHtml], { type: "text/html;charset=utf-8" });
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `receipt-${orderNumber.replace(/[^a-zA-Z0-9-_]/g, "") || "order"}.html`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      window.URL.revokeObjectURL(url);
-    };
-
-    return (
-      <AnimatePresence>
-        {show && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={onClose}
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 70,
-                backdropFilter: "blur(2px)",
-                background: "rgba(144,142,142,0.6)",
-              }}
-            />
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 71,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 16,
-                pointerEvents: "none",
-              }}
-            >
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 12 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 12 }}
-                transition={{ type: "spring", stiffness: 360, damping: 30 }}
-                style={{
-                  background: "#fff",
-                  width: "100%",
-                  maxWidth: 320,
-                  borderRadius: 20,
-                  overflow: "hidden",
-                  border: "1px solid #ebebeb",
-                  pointerEvents: "auto",
-                  fontFamily: F,
-                }}
-              >
-                {/* Header */}
-                <div
-                  style={{
-                    padding: "28px 22px 18px",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    textAlign: "center",
-                  }}
-                >
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 460,
-                      damping: 24,
-                      delay: 0.08,
-                    }}
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: "50%",
-                      background: "#f0fdf4",
-                      border: "1px solid #bbf7d0",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginBottom: 14,
-                    }}
-                  >
-                    <Check
-                      style={{ width: 20, height: 20, color: "#22c55e" }}
-                      strokeWidth={2.5}
-                    />
-                  </motion.div>
-                  <motion.div
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.16 }}
-                  >
-                    <p
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: "#111",
-                        marginBottom: 6,
-                      }}
-                    >
-                      Order placed successfully
-                    </p>
-                    <p
-                      style={{
-                        fontSize: 11,
-                        color: "#aaa",
-                        lineHeight: 1.65,
-                        fontWeight: 400,
-                        marginBottom: 10,
-                      }}
-                    >
-                      We'll start preparing right away!
-                    </p>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        background: "#f5f5f5",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 10,
-                        padding: "6px 14px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 9,
-                          fontWeight: 600,
-                          color: "#bbb",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.08em",
-                          marginBottom: 2,
-                        }}
-                      >
-                        Transaction ID
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: "#111",
-                          letterSpacing: "0.04em",
-                          fontFamily: "'Poppins', monospace",
-                        }}
-                      >
-                        {orderNumber}
-                      </span>
-                    </div>
-                  </motion.div>
-                  <motion.div
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ delay: 0.28, duration: 0.35 }}
-                    style={{
-                      width: 24,
-                      height: 2,
-                      background: "#6ee7b7",
-                      borderRadius: 2,
-                      marginTop: 14,
-                      transformOrigin: "center",
-                    }}
-                  />
-                </div>
-
-                <div style={{ borderTop: "1px solid #f5f5f5" }} />
-
-                {/* Meta */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.22 }}
-                  style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}
-                >
-                  {[
-                    {
-                      icon: <Hash style={{ width: 11, height: 11 }} />,
-                      label: "Txn ID",
-                      value: orderNumber,
-                    },
-                    {
-                      icon: <Calendar style={{ width: 11, height: 11 }} />,
-                      label: "Date",
-                      value: date,
-                    },
-                    {
-                      icon: <Clock style={{ width: 11, height: 11 }} />,
-                      label: "Time",
-                      value: time,
-                    },
-                  ].map(({ icon, label: l, value }, i) => (
-                    <div
-                      key={l}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        padding: "12px 6px",
-                        borderRight: i < 2 ? "1px solid #f5f5f5" : "none",
-                        textAlign: "center",
-                      }}
-                    >
-                      <span style={{ color: "#ddd", marginBottom: 3 }}>
-                        {icon}
-                      </span>
-                      <p
-                        style={{
-                          fontSize: 9,
-                          fontWeight: 600,
-                          color: "#bbb",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          marginBottom: 2,
-                        }}
-                      >
-                        {l}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 500,
-                          color: "#374151",
-                          lineHeight: 1.3,
-                          wordBreak: "break-all",
-                        }}
-                      >
-                        {value}
-                      </p>
-                    </div>
-                  ))}
-                </motion.div>
-
-                <div style={{ borderTop: "1px solid #f5f5f5" }} />
-
-                {/* Badges */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.28 }}
-                  style={{
-                    padding: "10px 16px 4px",
-                    display: "flex",
-                    gap: 5,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {[
-                    orderType,
-                    paymentMethod,
-                    ...(customerType !== "regular" ? [label[customerType]] : []),
-                  ].map((b) => (
-                    <span
-                      key={b}
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 500,
-                        padding: "3px 10px",
-                        borderRadius: 20,
-                        background: "#f5f5f5",
-                        color: "#777",
-                        textTransform: "capitalize",
-                      }}
-                    >
-                      {b}
-                    </span>
-                  ))}
-                </motion.div>
-
-                {/* Items */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  style={{
-                    padding: "4px 16px 10px",
-                    maxHeight: 120,
-                    overflowY: "auto",
-                  }}
-                >
-                  {savedCart.map((item) => (
-                    <div
-                      key={item.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "6px 0",
-                        borderBottom: "1px dashed #f5f5f5",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center" }}>
-                        <span style={{ fontSize: 11, color: "#777" }}>
-                          {item.name}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 500,
-                            background: "#f5f5f5",
-                            color: "#aaa",
-                            padding: "1px 5px",
-                            borderRadius: 4,
-                            marginLeft: 5,
-                          }}
-                        >
-                          ×{item.quantity}
-                        </span>
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: "#374151",
-                        }}
-                      >
-                        ₱{fmt(item.price * item.quantity)}
-                      </span>
-                    </div>
-                  ))}
-                </motion.div>
-
-                {/* Pricing */}
-                <div
-                  style={{
-                    margin: "0 16px 14px",
-                    border: "1px solid #f5f5f5",
-                    borderRadius: 12,
-                    overflow: "hidden",
-                  }}
-                >
-                  {customerType !== "regular" ? (
-                    <>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          padding: "8px 14px",
-                          borderBottom: "1px dashed #f5f5f5",
-                        }}
-                      >
-                        <span style={{ fontSize: 11, color: "#bbb" }}>
-                          VAT exempt
-                        </span>
-                        <span
-                          style={{ fontSize: 11, fontWeight: 500, color: "#bbb" }}
-                        >
-                          ₱{fmt(vatAmount)} exempt
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          padding: "8px 14px",
-                          borderBottom: "1px dashed #f5f5f5",
-                        }}
-                      >
-                        <span style={{ fontSize: 11, color: "#bbb" }}>
-                          Discount (20% {label[customerType]})
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 500,
-                            color: "#22c55e",
-                          }}
-                        >
-                          −₱{fmt(discountAmount)}
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        padding: "8px 14px",
-                        borderBottom: "1px dashed #f5f5f5",
-                      }}
-                    >
-                      <span style={{ fontSize: 11, color: "#bbb" }}>
-                        VAT (12% incl.)
-                      </span>
-                      <span
-                        style={{ fontSize: 11, fontWeight: 500, color: "#bbb" }}
-                      >
-                        ₱{fmt(vatAmount)}
-                      </span>
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "10px 14px",
-                      background: "#f9f9f9",
-                    }}
-                  >
-                    <span
-                      style={{ fontSize: 12, fontWeight: 500, color: "#777" }}
-                    >
-                      Total Paid
-                    </span>
-                    <span
-                      style={{ fontSize: 18, fontWeight: 600, color: "#111" }}
-                    >
-                      ₱{fmt(paidAmount)}
-                    </span>
-                  </div>
-                  {paymentMethod === "cash" && changeAmount > 0 && (
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "8px 14px",
-                        background: "#f0fdf4",
-                        borderTop: "1px dashed #bbf7d0",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: "#16a34a",
-                        }}
-                      >
-                        Change
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 600,
-                          color: "#16a34a",
-                        }}
-                      >
-                        ₱{fmt(changeAmount)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div
-                  style={{
-                    padding: "0 16px 20px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                  }}
-                >
-                  <motion.button
-                    whileHover={{ opacity: 0.88 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handlePrintReceipt}
-                    style={{ ...btn("#111", "#fff"), fontSize: 12 }}
-                  >
-                    Print Receipt
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ opacity: 0.88 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handleDownloadReceipt}
-                    style={{ ...btn("#f3f4f6", "#374151"), fontSize: 12 }}
-                  >
-                    Download Receipt
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ opacity: 0.88 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={onClose}
-                    style={{ ...btn("#16a34a", "#fff"), fontSize: 12 }}
-                  >
-                    New Order
-                  </motion.button>
-                  <button
-                    onClick={onClose}
-                    style={{
-                      ...btn("transparent", "#bbb"),
-                      padding: "9px",
-                      fontSize: 12,
-                    }}
-                  >
-                    Close
+                <button className={iconBtn} onClick={() => setOpen(open === o.id ? null : o.id)}><ChevronRight className={`h-4 w-4 text-neutral-500 transition ${open === o.id ? "rotate-90" : ""}`} /></button>
+                {!cancelled && <button className={iconBtn} title="Reprint receipt" onClick={() => onReprint(o)}><Printer className="h-4 w-4 text-neutral-500" /></button>}
+                {!cancelled && action && (
+                  <button className={`${iconBtn} !border-red-200 !bg-red-50`} disabled={settlingId === o.id} title={action === "refund" ? "Refund order" : "Cancel order"} onClick={() => onSettle(o)}>
+                    {settlingId === o.id ? <Spinner size={14} /> : action === "refund" ? <RotateCcw className="h-4 w-4 text-red-600" /> : <Ban className="h-4 w-4 text-red-600" />}
                   </button>
+                )}
+              </div>
+              <Collapse open={open === o.id}>
+                <div className="mx-6 -mt-3 mb-4 space-y-1 rounded-xl border border-neutral-100 bg-neutral-50 p-4 text-sm">
+                  {o.items.map((i, k) => <p key={k} className="flex justify-between"><span>{i.name} ×{i.quantity}</span><span className="font-medium">{money(i.price * i.quantity)}</span></p>)}
+                  <p className="flex justify-between border-t border-neutral-200 pt-2 font-bold"><span>Total</span><span>{money(o.total)}</span></p>
                 </div>
-              </motion.div>
+              </Collapse>
             </div>
-          </>
-        )}
-      </AnimatePresence>
-    );
-  }
+          );
+        })}
+    </Modal>
+  );
+}
 
-  // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
-  export default function CashierView() {
-    const [products, setProducts] = useState<MenuItem[]>([]);
-    const isMobile = useIsMobile();
-    const isFirstPoll = useRef(true);
-    const [loadingProducts, setLoadingProducts] = useState(false);
-    const [productsError, setProductsError] = useState("");
-    const [selectedCategory, setSelectedCategory] = useState("ALL");
-    const [searchQuery, setSearchQuery] = useState("");
-    const [cart, setCart] = useState<CartItem[]>([]);
-    const [orderType, setOrderType] = useState<
-      "dine-in" | "take-out" | "delivery"
-    >("dine-in");
-    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
-    const [customerType, setCustomerType] = useState<CustomerType>("regular");
-    const [tables, setTables] = useState<TableItem[]>([]);
-    const [selectedTable, setSelectedTable] = useState<number | null>(null);
-    const [showAmountEntry, setShowAmountEntry] = useState(false);
-    const [showSuccess, setShowSuccess] = useState(false);
-    const [savedCart, setSavedCart] = useState<CartItem[]>([]);
-    const [savedMeta, setSavedMeta] = useState({
-      orderType: "dine-in",
-      paymentMethod: "cash",
-      customerType: "regular" as CustomerType,
-    });
-    const [savedPricing, setSavedPricing] = useState({
-      amountDue: 0,
-      discountAmount: 0,
-      vatAmount: 0,
-    });
-    const [savedCash, setSavedCash] = useState({ tendered: 0, change: 0 });
-    const [orderNumber, setOrderNumber] = useState("");
-    const [placing, setPlacing] = useState(false);
-    const [onlineOrderNotifs, setOnlineOrderNotifs] = useState<OnlineNotif[]>([]);
-    const [readyPickupOrders, setReadyPickupOrders] = useState<OnlineNotif[]>([]);
-    const [deliveryHandoverOrders, setDeliveryHandoverOrders] = useState<
-      OnlineNotif[]
-    >([]);
-    const [handedToRiderOrders, setHandedToRiderOrders] = useState<OnlineNotif[]>(
-      [],
-    );
-    const [handoverOrder, setHandoverOrder] = useState<OnlineNotif | null>(null);
-    const [riderNameInput, setRiderNameInput] = useState("");
-    const [savingHandover, setSavingHandover] = useState(false);
-    const [notifOpen, setNotifOpen] = useState(false);
-    const [deliveryHandoverOpen, setDeliveryHandoverOpen] = useState(false);
-    const [tablesSupported, setTablesSupported] = useState<boolean>(() => {
-      if (typeof window === "undefined") return true;
-      return localStorage.getItem("tablesRouteUnsupported") !== "1";
-    });
+/* ───────────────────────── page ───────────────────────── */
 
-    const TABS = [
-      { key: "ALL", label: "All items", match: [] as string[] },
-      {
-        key: "WHOLE_HALF",
-        label: "Whole & Half Chicken",
-        match: ["WHOLE & HALF CHICKEN", "WHOLE AND HALF CHICKEN", "CHICKEN"],
-      },
-      {
-        key: "RICE_MEALS",
-        label: "Rice Meals",
-        match: ["RICE MEALS", "RICE MEAL", "MENU FOOD"],
-      },
-      {
-        key: "SIDES",
-        label: "Sides",
-        match: ["SIDES", "SIDE DISH", "SIDE DISHES", "SUPPLIES"],
-      },
-      {
-        key: "FRUIT_SODA",
-        label: "Fruit Soda",
-        match: ["FRUIT SODA", "FRUIT SODAS", "DRINKS", "BEVERAGES"],
-      },
-    ];
+export default function CashierView() {
+  const { width } = useViewport();
+  const compact = width < 1100;
+  const { user } = useAuth();
+  const { toasts, toast, dismiss } = useToast();
+  const firstPoll = useRef(true);
+  const placingRef = useRef(false);
 
-    useEffect(() => {
-      setLoadingProducts(true);
-      api
-        .get<Record<string, unknown>[]>("/inventory")
-        .then((d) => {
-          setProducts(mapProducts(d ?? []));
-          setProductsError("");
-        })
-        .catch(() => setProductsError("Failed to load menu items."))
-        .finally(() => setLoadingProducts(false));
-    }, []);
+  const u = user as Record<string, unknown> | null;
+  const cashierId = Number(u?.userId) > 0 ? Number(u?.userId) : null;
+  const cashierName = String(
+    u?.fullName ?? u?.full_name ?? u?.name ?? ([u?.firstName, u?.lastName].filter(Boolean).join(" ") || (u?.username ?? u?.email ?? "Cashier")),
+  );
 
-    useEffect(() => {
-      if (orderType !== "dine-in") {
-        setSelectedTable(null);
-        return;
-      }
-      if (!tablesSupported) {
-        setTables([]);
-        return;
-      }
-      let cancelled = false;
+  // menu + order
+  const [products, setProducts] = useState<MenuItem[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [productsError, setProductsError] = useState("");
+  const [category, setCategory] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [orderType, setOrderType] = useState<OrderTypeVal>("dine-in");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [customerType, setCustomerType] = useState("");
+  const [orderNote, setOrderNote] = useState("");
+  const [showNote, setShowNote] = useState(false);
+  const [billing, setBilling] = useState<Billing>({ taxRate: 0, serviceCharge: 0 });
+  const [discountTypes, setDiscountTypes] = useState<DiscountType[]>([]);
+  const [settings, setSettings] = useState<GeneralRestaurantSettings>(GENERAL_SETTINGS_DEFAULTS);
+  const [tables, setTables] = useState<TableItem[]>([]);
+  const [tablesSupported, setTablesSupported] = useState(true);
+  const [selectedTable, setSelectedTable] = useState<number | null>(null);
+  const [held, setHeld] = useState<HeldOrder[]>([]);
+  const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" || navigator.onLine);
 
-      (async () => {
-        try {
-          const data = await apiCall<Record<string, unknown>[]>("/tables", {
-            method: "GET",
-            suppressErrorStatuses: [404],
-          });
-          if (cancelled) return;
-          setTables(mapTables(data ?? []));
-        } catch (error) {
-          if (cancelled) return;
-          const status =
-            typeof error === "object" &&
-            error !== null &&
-            "status" in error &&
-            typeof (error as { status?: unknown }).status === "number"
-              ? (error as { status: number }).status
-              : null;
+  // modals
+  const [showAmount, setShowAmount] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const [done, setDone] = useState<ReceiptDto | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [shiftOrders, setShiftOrders] = useState<ShiftOrder[]>([]);
+  const [shiftLoading, setShiftLoading] = useState(false);
+  const [settlingId, setSettlingId] = useState<number | null>(null);
 
-          if (status !== 404) {
-            console.warn("Failed to load tables:", error);
-          } else {
-            setTablesSupported(false);
-            if (typeof window !== "undefined") {
-              localStorage.setItem("tablesRouteUnsupported", "1");
-            }
-          }
-          setTables([]);
-        }
-      })();
+  // online orders
+  const [review, setReview] = useState<OnlineOrder[]>([]);
+  const [ready, setReady] = useState<OnlineOrder[]>([]);
+  const [delivery, setDelivery] = useState<OnlineOrder[]>([]);
+  const [handed, setHanded] = useState<OnlineOrder[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [proceedOrder, setProceedOrder] = useState<OnlineOrder | null>(null);
+  const [proceeding, setProceeding] = useState(false);
+  const [cancelId, setCancelId] = useState<number | null>(null);
+  const [handoverOrder, setHandoverOrder] = useState<OnlineOrder | null>(null);
+  const [rider, setRider] = useState("");
+  const [savingHandover, setSavingHandover] = useState(false);
 
-      return () => {
-        cancelled = true;
-      };
-    }, [orderType]);
+  const fmt = useMemo(() => ({
+    s: settings,
+    money: (n: number) => formatCurrencyAmount(n, settings),
+    time: (v: string) => formatInSettingsTimezone(v, settings, TIME),
+    dateTime: (v: string) => formatInSettingsTimezone(v, settings, DATETIME),
+  }), [settings]);
 
-    useEffect(() => {
-      const poll = async () => {
+  /* ── data loading ── */
+  useEffect(() => {
+    const on = () => { setIsOnline(true); toast("success", "Connection restored."); };
+    const off = () => { setIsOnline(false); toast("error", "Lost connection. Orders cannot be placed until reconnected."); };
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, [toast]);
+
+  const loadProducts = useCallback(async () => {
+    setLoadingProducts(true);
     try {
-      const [reviewData, readyData, deliveryData] = await Promise.all([
-        api.get<OnlineNotif[]>("/orders/new-online"),
-        api.get<OnlineNotif[]>("/orders/ready-pickup"),
-        api.get<OnlineNotif[]>("/orders/delivery-handover"),
+      const next = mapProducts((await api.get<Record<string, any>[]>("/products?item_type=menu_item")) ?? []);
+      setProducts(next);
+      setProductsError("");
+      // keep the cart in sync with live stock
+      setCart((prev) => prev.flatMap((item) => {
+        const cur = next.find((p) => p.id === item.id);
+        const max = cur ? getEffectiveMaxQuantity(cur.remainingStock) : 0;
+        return cur && max > 0 ? [{ ...item, ...cur, quantity: Math.min(item.quantity, max) }] : [];
+      }));
+    } catch {
+      setProductsError("Failed to load menu items.");
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadProducts(); }, [loadProducts]);
+
+  useEffect(() => {
+    let off = false;
+    api.get<Record<string, any>>("/settings").then((d) => !off && setBilling({ taxRate: Math.max(0, Number(d?.taxRate || 0)), serviceCharge: Math.max(0, Number(d?.serviceCharge || 0)) })).catch(() => {});
+    api.get<DiscountType[]>("/settings/discount-types").then((d) => {
+      if (off || !Array.isArray(d) || !d.length) return;
+      setDiscountTypes(d);
+      setCustomerType((p) => (d.some((x) => x.name === p) ? p : d[0].name));
+    }).catch(() => !off && toast("error", "Could not load discount types."));
+    fetchGeneralSettings().then((d) => !off && setSettings(d));
+    return () => { off = true; };
+  }, [toast]);
+
+  useEffect(() => {
+    if (orderType !== "dine-in") { setSelectedTable(null); return; }
+    if (!tablesSupported) return;
+    let off = false;
+    apiCall<Record<string, any>[]>("/tables", { method: "GET", suppressErrorStatuses: [404] })
+      .then((d) => !off && setTables(mapTables(d ?? [])))
+      .catch((e) => {
+        if (off) return;
+        if (e?.status === 404) setTablesSupported(false);
+        else toast("warning", "Could not load tables. Table selection unavailable.");
+        setTables([]);
+      });
+    return () => { off = true; };
+  }, [orderType, tablesSupported, toast]);
+
+  const refreshOrders = useCallback(async () => {
+    if (document.hidden) return;
+    try {
+      const [r, p, d] = await Promise.all([
+        api.get<OnlineOrder[]>("/orders/new-online"),
+        api.get<OnlineOrder[]>("/orders/ready-pickup"),
+        api.get<OnlineOrder[]>("/orders/delivery-handover"),
       ]);
+      const first = firstPoll.current;
+      firstPoll.current = false;
+      const paid = (d ?? []).filter((o) => isPaid(o.paymentStatus));
+      setReview((prev) => { if (!first && (r ?? []).length > prev.length) setNotifOpen(true); return r ?? []; });
+      setReady((p ?? []).filter((o) => isPaid(o.paymentStatus)));
+      setDelivery((prev) => { if (!first && paid.length > prev.length) setDeliveryOpen(true); return paid; });
+    } catch (e) {
+      console.warn("Order notification refresh failed:", e);
+    }
+  }, []);
 
-      const isFirst = isFirstPoll.current;
-      if (isFirst) isFirstPoll.current = false;
+  useEffect(() => { void refreshOrders(); }, [refreshOrders]);
+  useEventInvalidation({ topics: ["orders.changed", "payments.changed"], onInvalidate: refreshOrders });
 
-      setOnlineOrderNotifs((prev) => {
-        const next = reviewData ?? [];
-        // Only auto-open if it's NOT the first poll and count increased
-        if (
-          !isFirst &&
-          (next.length > prev.length || (readyData ?? []).length > 0) &&
-          (next.length > 0 || (readyData ?? []).length > 0)
-        ) {
-          setNotifOpen(true);
-        }
-        return next;
-      });
+  const loadShift = useCallback(async () => {
+    setShiftLoading(true);
+    try {
+      const d = await api.get<ShiftOrder[]>(`/orders/shift?cashierId=${cashierId}`);
+      setShiftOrders(Array.isArray(d) ? d : []);
+    } catch {
+      toast("error", "Could not load shift orders.");
+      setShiftOrders([]);
+    } finally {
+      setShiftLoading(false);
+    }
+  }, [cashierId, toast]);
 
-      setReadyPickupOrders(readyData ?? []);
+  useEffect(() => { if (showHistory) void loadShift(); }, [showHistory, loadShift]);
 
-      setDeliveryHandoverOrders((prev) => {
-        const next = deliveryData ?? [];
-        // Only auto-open if it's NOT the first poll and count increased
-        if (!isFirst && next.length > prev.length && next.length > 0) {
-          setDeliveryHandoverOpen(true);
-        }
-        return next;
-      });
-    } catch (err) {
-      console.warn("[poll] online-order fetch failed:", err);
+  /* ── online-order actions ── */
+  const patchOrder = (id: number, body: Record<string, unknown>) => api.patch(`/orders/${id}`, { cashierId, ...body });
+
+  const settle = async (id: number, action: Settle, label: string, onDone: (status: string) => void) => {
+    const status = action === "refund" ? "Refunded" : "Cancelled";
+    setSettlingId(id);
+    try {
+      await patchOrder(id, { status });
+      onDone(status);
+      toast("info", `${label} ${status.toLowerCase()}.`);
+    } catch {
+      toast("error", `Failed to ${action} order. Please try again.`);
+    } finally {
+      setSettlingId(null);
     }
   };
 
-  poll();
-  const interval = setInterval(poll, 15_000);
-  return () => clearInterval(interval);
-}, []);
+  const cancelOrder = review.find((o) => o.id === cancelId);
+  const cancelAction = cancelOrder ? getSettlementAction(cancelOrder.trackingStatus, cancelOrder.paymentStatus) : null;
 
-    const getCashierId = () => {
-      const raw = localStorage.getItem("userId");
-      return raw ? Number(raw) : null;
-    };
+  const confirmCancel = async () => {
+    if (!cancelOrder || !cancelAction) return setCancelId(null);
+    await settle(cancelOrder.id, cancelAction, "Order", () => setReview((p) => p.filter((o) => o.id !== cancelOrder.id)));
+    setCancelId(null);
+  };
 
-    const updateQueueOrder = async (
-      id: number,
-      payload: Record<string, unknown>,
-    ) => {
-      await api.patch(`/orders/${id}`, payload);
-    };
+  const settleShiftOrder = (o: ShiftOrder) => {
+    const action = getSettlementAction(o.status, o.paymentStatus);
+    if (!action) return toast("warning", "Completed, refunded, or cancelled orders cannot be changed.");
+    return settle(o.id, action, `Order ${o.orderNumber}`, (status) => setShiftOrders((p) => p.map((e) => (e.id === o.id ? { ...e, status } : e))));
+  };
 
-    const openRiderHandover = (order: OnlineNotif) => {
-      setHandoverOrder(order);
-      setRiderNameInput(order.riderName ?? "");
-    };
+  const confirmProceed = async () => {
+    const o = proceedOrder;
+    if (!o) return;
+    setProceeding(true);
+    try {
+      await patchOrder(o.id, { status: "Queued", paymentStatus: "Paid" });
+      setReview((p) => p.filter((x) => x.id !== o.id));
+      setProceedOrder(null);
+      toast("success", `Order ${o.orderNumber} confirmed and moved to cook queue.`);
+    } catch {
+      toast("error", "Failed to confirm order. Please try again.");
+    } finally {
+      setProceeding(false);
+    }
+  };
 
-    const closeRiderHandover = () => {
-      if (savingHandover) return;
-      setHandoverOrder(null);
-      setRiderNameInput("");
-    };
+  const confirmPickup = async (id: number) => {
+    try {
+      await patchOrder(id, { status: "Completed" });
+      setReady((p) => p.filter((o) => o.id !== id));
+      toast("success", "Customer pickup confirmed successfully.");
+    } catch {
+      toast("error", "Failed to confirm customer pickup. Please try again.");
+    }
+  };
 
-    const handleProceedOnlineOrder = async (id: number) => {
-      try {
-        await updateQueueOrder(id, {
-          status: "Queued",
-          paymentStatus: "Paid",
-          cashierId: getCashierId(),
-        });
-        setOnlineOrderNotifs((prev) => prev.filter((o) => o.id !== id));
-      } catch (err) {
-        console.error("Failed to proceed online order:", err);
-        alert("Failed to confirm payment and move the online order to the cook queue.");
-      }
-    };
+  const confirmHandover = async () => {
+    const o = handoverOrder, name = rider.trim();
+    if (!o || !name) return;
+    const handoverTimestamp = new Date().toISOString();
+    setSavingHandover(true);
+    try {
+      await patchOrder(o.id, { status: "Completed", handoverTimestamp, riderName: name });
+      setDelivery((p) => p.filter((x) => x.id !== o.id));
+      setHanded((p) => [{ ...o, trackingStatus: "Completed", handoverTimestamp, riderName: name }, ...p.filter((x) => x.id !== o.id)]);
+      setHandoverOrder(null); setRider("");
+      toast("success", `Order handed to rider ${name}.`);
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "Failed to record rider handover.");
+    } finally {
+      setSavingHandover(false);
+    }
+  };
 
-    const handleCancelOnlineOrder = async (id: number) => {
-      try {
-        await updateQueueOrder(id, {
-          status: "Cancelled",
-          cashierId: getCashierId(),
-        });
-        setOnlineOrderNotifs((prev) => prev.filter((o) => o.id !== id));
-      } catch (err) {
-        console.error("Failed to cancel online order:", err);
-        alert("Failed to cancel online order.");
-      }
-    };
+  const reprint = async (o: ShiftOrder) => {
+    try {
+      const dto = await api.get<ReceiptDto>(`/orders/${o.id}/receipt`);
+      printHtml(buildReceiptHtml(dto, { cashier: cashierName }));
+    } catch {
+      toast("error", "Unable to load this receipt. Please try again.");
+    }
+  };
 
-    const handleConfirmPickup = async (id: number) => {
-      try {
-        await updateQueueOrder(id, {
-          status: "Completed",
-          cashierId: getCashierId(),
-        });
-        setReadyPickupOrders((prev) => prev.filter((o) => o.id !== id));
-      } catch (err) {
-        console.error("Failed to confirm pickup:", err);
-        alert("Failed to confirm customer pickup.");
-      }
-    };
+  /* ── cart ── */
+  const categories = useMemo(() => ["ALL", ...[...new Set(products.map((p) => p.category))].sort()], [products]);
+  const filtered = useMemo(
+    () => products.filter((p) => (category === "ALL" || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())),
+    [products, category, search],
+  );
+  const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
+  const gross = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const discount = discountTypes.find((d) => d.name === customerType);
+  const discountRate = Number(discount?.percentage || 0);
+  const pricing = useMemo(() => computePricing(gross, billing, discountRate), [gross, billing, discountRate]);
 
-    const handleRiderHandover = async () => {
-      if (!handoverOrder || !riderNameInput.trim()) return;
-      const handoverTimestamp = new Date().toISOString();
-      try {
-        setSavingHandover(true);
-        await updateQueueOrder(handoverOrder.id, {
-          status: "Completed",
-          paymentStatus: "Paid",
-          cashierId: getCashierId(),
-          handoverTimestamp,
-          riderName: riderNameInput.trim(),
-        });
-        setDeliveryHandoverOrders((prev) =>
-          prev.filter((o) => o.id !== handoverOrder.id),
-        );
-        setHandedToRiderOrders((prev) => [
-          {
-            ...handoverOrder,
-            trackingStatus: "Completed",
-            handoverTimestamp,
-            riderName: riderNameInput.trim(),
-          },
-          ...prev.filter((o) => o.id !== handoverOrder.id),
-        ]);
-        setHandoverOrder(null);
-        setRiderNameInput("");
-      } catch (err) {
-        console.error("Failed to hand order to rider:", err);
-        const message =
-          typeof err === "object" &&
-          err !== null &&
-          "data" in err &&
-          typeof (err as { data?: unknown }).data === "object" &&
-          (err as { data?: { error?: string; message?: string } }).data
-            ? (err as { data?: { error?: string; message?: string } }).data?.error ||
-              (err as { data?: { error?: string; message?: string } }).data?.message ||
-              (err instanceof Error ? err.message : "")
-            : err instanceof Error && err.message
-              ? err.message
-            : "Failed to record rider handover.";
-        alert(message);
-      } finally {
-        setSavingHandover(false);
-      }
-    };
-
-    const filtered = products.filter((p) => {
-      const cu = p.category.toUpperCase();
-      const tabOk =
-        selectedCategory === "ALL" ||
-        (TABS.find((t) => t.key === selectedCategory)?.match ?? []).some((m) =>
-          cu.includes(m),
-        );
-      return tabOk && p.name.toLowerCase().includes(searchQuery.toLowerCase());
+  const addToCart = useCallback((item: MenuItem) => {
+    const max = getEffectiveMaxQuantity(item.remainingStock);
+    if (isUnavailable(item.availabilityStatus) || max === 0) return;
+    setCart((prev) => {
+      const ex = prev.find((c) => c.id === item.id);
+      if (!ex) return [...prev, { ...item, quantity: 1 }];
+      return ex.quantity >= max ? prev : prev.map((c) => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
     });
+  }, []);
 
-    const readyForPickupOrders = readyPickupOrders;
-    const readyForDeliveryOrders = deliveryHandoverOrders.filter(
-      (order) =>
-        !order.handoverTimestamp &&
-        order.trackingStatus.toLowerCase() !== "handed to rider" &&
-        order.trackingStatus.toLowerCase() !== "out for delivery",
-    );
-    const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
-    const gross = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-    const pricing = computePricing(gross, customerType);
+  const removeFromCart = useCallback((id: number) => setCart((p) => p.filter((c) => c.id !== id)), []);
+  const setItemNote = useCallback((id: number, note: string) => setCart((p) => p.map((c) => (c.id === id ? { ...c, note } : c))), []);
+  const updateQty = useCallback((id: number, delta: number) => {
+    setCart((prev) => prev.flatMap((item) => {
+      if (item.id !== id) return [item];
+      const max = getEffectiveMaxQuantity(products.find((p) => p.id === id)?.remainingStock ?? item.remainingStock);
+      const quantity = Math.min(Math.max(0, item.quantity + delta), max);
+      return quantity > 0 ? [{ ...item, quantity }] : [];
+    }));
+  }, [products]);
 
-    const addToCart = useCallback((item: MenuItem) => {
-      if (isUnavailableStatus(item.availabilityStatus)) return;
-      setCart((prev) => {
-        const ex = prev.find((c) => c.id === item.id);
-        if (ex) {
-          const next = ex.quantity + 1;
-          if (
-            item.remainingStock > 0 &&
-            next > item.remainingStock &&
-            !isFood(item)
-          ) {
-            return prev;
-          }
-          return prev.map((c) =>
-            c.id === item.id ? { ...c, quantity: next } : c,
-          );
-        }
-        return [...prev, { ...item, quantity: 1 }];
-      });
-    }, []);
+  const holdOrder = () => {
+    if (!cart.length) return;
+    setHeld((p) => [...p, { id: String(Date.now()), cart, orderType, paymentMethod, customerType, selectedTable, note: orderNote, savedAt: fmt.time(new Date().toISOString()) }]);
+    setCart([]); setOrderNote(""); setShowNote(false);
+    toast("info", "Order held. Restore it anytime from the Held button.");
+  };
 
-    const removeFromCart = (id: number) =>
-      setCart((p) => p.filter((c) => c.id !== id));
+  const restoreHeld = (h: HeldOrder) => {
+    if (cart.length) return toast("warning", "Clear the current cart before restoring a held order.");
+    setCart(h.cart.flatMap((item) => {
+      const cur = products.find((p) => p.id === item.id);
+      const max = cur ? getEffectiveMaxQuantity(cur.remainingStock) : 0;
+      return cur && max > 0 ? [{ ...item, ...cur, quantity: Math.min(item.quantity, max) }] : [];
+    }));
+    setOrderType(h.orderType); setPaymentMethod(h.paymentMethod); setCustomerType(h.customerType);
+    setSelectedTable(h.selectedTable); setOrderNote(h.note); setShowNote(!!h.note);
+    setHeld((p) => p.filter((o) => o.id !== h.id));
+  };
 
-    const updateQty = (id: number, delta: number) => {
-      const prod = products.find((p) => p.id === id);
-      setCart((prev) =>
-        prev
-          .map((item) => {
-            if (item.id !== id) return item;
-            const next = Math.max(0, item.quantity + delta);
-            if (
-              (prod?.remainingStock ?? 0) > 0 &&
-              next > (prod?.remainingStock ?? 0) &&
-              !isFood(item)
-            ) {
-              return item;
-            }
-            return { ...item, quantity: next };
-          })
-          .filter((i) => i.quantity > 0),
-      );
-    };
+  /* ── place order ── */
+  const placeOrder = async ({ tendered, file }: { tendered: number; file?: File }) => {
+    if (placingRef.current) return;
+    if (!isOnline) return toast("error", "No connection. Cannot place order.");
+    placingRef.current = true;
+    setShowAmount(false);
+    setPlacing(true);
+    const { discountAmount, taxAmount, amountDue } = pricing;
+    const change = Math.max(0, tendered - amountDue);
+    const isCash = paymentMethod === "cash";
+    const table = orderType === "dine-in" ? tables.find((t) => t.id === selectedTable) : undefined;
 
-    const handleAmountConfirmed = async ({
-      tendered,
-      selectedImage,
-      proofFileName,
-    }: {
-      tendered: number;
-      selectedImage?: File;
-      proofFileName?: string;
-    }) => {
-      setShowAmountEntry(false);
-      setPlacing(true);
-      const { vatExemptAmount, vatAmount, discountAmount, amountDue } =
-        computePricing(gross, customerType);
-      const change = Math.max(0, tendered - amountDue);
+    try {
       let proofImageUrl: string | undefined;
-
-      if (paymentMethod === "gcash_onsite") {
-        if (!selectedImage) {
-          alert("Please upload or capture the onsite e-payment proof first.");
-          setPlacing(false);
-          return;
-        }
-
-        try {
-          const formData = new FormData();
-          formData.append(
-            "proof",
-            selectedImage,
-            proofFileName || selectedImage.name || `payment-proof-${Date.now()}.jpg`,
-          );
-          const upload = await api.post<{ fileUrl: string }>(
-            "/upload-proof",
-            formData,
-          );
-          proofImageUrl = upload.fileUrl;
-        } catch (error) {
-          console.error("Failed to upload payment proof:", error);
-          alert("Failed to upload the payment proof. Please try again.");
-          setPlacing(false);
-          return;
-        }
+      if (!isCash) {
+        if (!file) throw new Error("Please upload the onsite e-payment proof first.");
+        const form = new FormData();
+        form.append("proof", file, file.name || `payment-proof-${Date.now()}.jpg`);
+        try { proofImageUrl = (await api.post<{ fileUrl: string }>("/upload-proof", form)).fileUrl; }
+        catch { throw new Error("Failed to upload the payment proof. Please try again."); }
       }
 
-      const payload: OrderPayload = {
-        items: cart.map((i) => ({
-          product_id: i.id,
-          qty: i.quantity,
-          subtotal: i.price * i.quantity,
-          name: i.name,
-          price: i.price,
-        })),
-        total: amountDue,
-        order_type: orderType,
-        payment_method: paymentMethod,
-        ...(paymentMethod === "gcash_onsite" && {
-          payment_status: "Paid" as const,
-          proof_image_url: proofImageUrl,
-        }),
-        customer_type: customerType,
-        discount_amount: discountAmount,
-        vat_amount: vatAmount,
-        vat_exempt_amount: vatExemptAmount,
-        cashierId: getCashierId(),
-        table_id: orderType === "dine-in" ? selectedTable : null,
-        ...(paymentMethod === "cash" && {
-          cash_tendered: tendered,
-          change_amount: change,
-        }),
-      };
+      const res = await api.post<{ orderId?: number; orderNumber?: string; transactionId?: string; receipt: ReceiptDto }>("/orders", {
+        items: cart.map((i) => ({ product_id: i.id, qty: i.quantity, subtotal: i.price * i.quantity, name: i.name, price: i.price, ...(i.note && { note: i.note }) })),
+        total: amountDue, order_type: orderType, payment_method: paymentMethod,
+        ...(!isCash && { payment_status: "Paid", proof_image_url: proofImageUrl }),
+        customer_type: customerType, discount_name: customerType, discount_rate: discountRate,
+        discount_amount: discountAmount, vat_amount: taxAmount, vat_exempt_amount: 0,
+        cashierId, table_id: table?.id ?? null, ...(table && { table_number: table.number }),
+        ...(isCash && { cash_tendered: tendered, change_amount: change }),
+        ...(orderNote.trim() && { order_note: orderNote.trim() }),
+      });
 
-      try {
-        const res = await api.post<{ orderNumber?: string }>("/orders", payload);
-        const num =
-          res?.orderNumber ?? `#${Math.floor(10000 + Math.random() * 90000)}`;
-        setSavedCart([...cart]);
-        setSavedMeta({ orderType, paymentMethod, customerType });
-        setSavedPricing({ amountDue, discountAmount, vatAmount });
-        setSavedCash({ tendered, change });
-        setOrderNumber(num);
-        setShowSuccess(true);
-        if (selectedTable !== null) {
-          setTables((prev) =>
-            prev.map((t) =>
-              t.id === selectedTable ? { ...t, status: "occupied" } : t,
-            ),
-          );
-        }
-      } catch (err) {
-        console.error("Order failed:", err);
-        alert("Failed to submit order. Please try again.");
-      } finally {
-        setPlacing(false);
-      }
-    };
+      setDone(res.receipt);
+      if (table) setTables((p) => p.map((t) => (t.id === table.id ? { ...t, status: "occupied" } : t)));
+      void loadProducts();
+    } catch (e) {
+      console.error("Order failed:", e);
+      toast("error", e instanceof Error ? e.message : "Failed to submit order. Please try again.");
+    } finally {
+      placingRef.current = false;
+      setPlacing(false);
+    }
+  };
 
-    const resetOrder = () => {
-      setShowSuccess(false);
-      setCart([]);
-      setSavedCart([]);
-      setOrderType("dine-in");
-      setPaymentMethod("cash");
-      setCustomerType("regular");
-      setSelectedTable(null);
-      setSavedCash({ tendered: 0, change: 0 });
-    };
+  const resetOrder = () => {
+    setDone(null); setCart([]); setOrderType("dine-in"); setPaymentMethod("cash");
+    setCustomerType(discountTypes[0]?.name ?? ""); setSelectedTable(null); setOrderNote(""); setShowNote(false);
+  };
 
-    const Spinner = ({
-      size = 20,
-      light = false,
-    }: {
-      size?: number;
-      light?: boolean;
-    }) => (
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: "50%",
-          border: `2px solid ${light ? "rgba(255,255,255,0.3)" : "#eee"}`,
-          borderTopColor: light ? "#fff" : "#555",
-        }}
-      />
-    );
+  const onlineCount = review.length + ready.length;
+  const pendingDelivery = delivery.filter((o) => !o.handoverTimestamp && !["handed to rider", "out for delivery"].includes(norm(o.trackingStatus)));
+  const deliveryCount = pendingDelivery.length + handed.length;
+  const payBtnLabel = placing ? "Processing…" : !isOnline ? "Offline — cannot place order" : `Pay ${fmt.money(pricing.amountDue)}`;
 
-    return (
-      <>
-        <Sidebar />
+  return (
+    <Ctx.Provider value={fmt}>
+      <Sidebar />
+      {!isOnline && (
+        <div className="fixed left-1/2 top-3 z-[99999] flex -translate-x-1/2 items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-lg">
+          <WifiOff className="h-4 w-4" />No connection — orders cannot be placed
+        </div>
+      )}
 
-        <div
-          style={{
-            display: "flex",
-            flexDirection: isMobile ? "column" : "row",
-            height: isMobile ? "auto" : "100vh",
-            minHeight: "100vh",
-            overflow: isMobile ? "auto" : "hidden",
-            fontFamily: F,
-            background: "#fff",
-            paddingLeft: isMobile ? 0 : 80,
-            paddingTop: isMobile ? 64 : 0,
-          }}
-        >
-          {/* ── LEFT: Menu ── */}
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              overflow: isMobile ? "visible" : "hidden",
-              minWidth: 0,
-            }}
-          >
-            <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 14,
-                }}
-              >
-                <h1
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 600,
-                    color: "#111",
-                    fontFamily: F,
-                  }}
-                >
-                  Menu
-                </h1>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <motion.button
-                    onClick={() => setNotifOpen((p) => !p)}
-                    whileTap={{ scale: 0.95 }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 10px 5px 8px",
-                      borderRadius: 20,
-                      border: `1px solid ${onlineOrderNotifs.length + readyPickupOrders.length > 0 ? "#16a34a" : "#efefef"}`,
-                      background:
-                        onlineOrderNotifs.length + readyPickupOrders.length > 0
-                          ? notifOpen
-                            ? "#e8f9ef"
-                            : "#f0fdf4"
-                          : "#fafafa",
-                      cursor: "pointer",
-                      fontFamily: F,
-                      boxShadow:
-                        onlineOrderNotifs.length + readyPickupOrders.length > 0
-                          ? "0 0 0 3px rgba(22,163,74,0.08)"
-                          : "none",
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    {onlineOrderNotifs.length + readyPickupOrders.length > 0 && (
-                      <motion.div
-                        animate={{ scale: [1, 1.5, 1], opacity: [1, 0.4, 1] }}
-                        transition={{ repeat: Infinity, duration: 1.4 }}
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: "50%",
-                          background: "#16a34a",
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color:
-                          onlineOrderNotifs.length + readyPickupOrders.length > 0
-                            ? "#16a34a"
-                            : "#bbb",
-                      }}
-                    >
-                      Online Orders
-                    </span>
-                    {onlineOrderNotifs.length + readyPickupOrders.length > 0 && (
-                      <motion.span
-                        key={onlineOrderNotifs.length + readyPickupOrders.length}
-                        initial={{ scale: 0.6, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={SP}
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          background: "#16a34a",
-                          color: "#fff",
-                          borderRadius: 99,
-                          padding: "1px 6px",
-                          minWidth: 16,
-                          textAlign: "center",
-                        }}
-                      >
-                        {onlineOrderNotifs.length + readyPickupOrders.length}
-                      </motion.span>
-                    )}
-                    <motion.div
-                      animate={{ rotate: notifOpen ? 180 : 0 }}
-                      transition={{ duration: 0.2 }}
-                      style={{ display: "flex", alignItems: "center" }}
-                    >
-                      <ChevronDown
-                        style={{
-                          width: 11,
-                          height: 11,
-                          color:
-                            onlineOrderNotifs.length + readyPickupOrders.length >
-                            0
-                              ? "#16a34a"
-                              : "#ccc",
-                        }}
-                      />
-                    </motion.div>
-                  </motion.button>
-                  <motion.button
-                    onClick={() => setDeliveryHandoverOpen((p) => !p)}
-                    whileTap={{ scale: 0.95 }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 10px 5px 8px",
-                      borderRadius: 20,
-                      border: `1px solid ${readyForDeliveryOrders.length + handedToRiderOrders.length > 0 ? "#111" : "#efefef"}`,
-                      background:
-                        readyForDeliveryOrders.length +
-                          handedToRiderOrders.length >
-                        0
-                          ? deliveryHandoverOpen
-                            ? "#f3f4f6"
-                            : "#fafafa"
-                          : "#fafafa",
-                      cursor: "pointer",
-                      fontFamily: F,
-                      boxShadow:
-                        readyForDeliveryOrders.length +
-                          handedToRiderOrders.length >
-                        0
-                          ? "0 0 0 3px rgba(17,17,17,0.06)"
-                          : "none",
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    {readyForDeliveryOrders.length + handedToRiderOrders.length >
-                      0 && (
-                      <motion.div
-                        animate={{ scale: [1, 1.4, 1], opacity: [1, 0.45, 1] }}
-                        transition={{ repeat: Infinity, duration: 1.4 }}
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: "50%",
-                          background: "#111",
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color:
-                          readyForDeliveryOrders.length +
-                            handedToRiderOrders.length >
-                          0
-                            ? "#111"
-                            : "#bbb",
-                      }}
-                    >
-                      Delivery Handover
-                    </span>
-                    {readyForDeliveryOrders.length + handedToRiderOrders.length >
-                      0 && (
-                      <motion.span
-                        key={
-                          readyForDeliveryOrders.length +
-                          handedToRiderOrders.length
-                        }
-                        initial={{ scale: 0.6, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={SP}
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          background: "#111",
-                          color: "#fff",
-                          borderRadius: 99,
-                          padding: "1px 6px",
-                          minWidth: 16,
-                          textAlign: "center",
-                        }}
-                      >
-                        {readyForDeliveryOrders.length +
-                          handedToRiderOrders.length}
-                      </motion.span>
-                    )}
-                    <motion.div
-                      animate={{ rotate: deliveryHandoverOpen ? 180 : 0 }}
-                      transition={{ duration: 0.2 }}
-                      style={{ display: "flex", alignItems: "center" }}
-                    >
-                      <ChevronDown
-                        style={{
-                          width: 11,
-                          height: 11,
-                          color:
-                            readyForDeliveryOrders.length +
-                              handedToRiderOrders.length >
-                            0
-                              ? "#111"
-                              : "#ccc",
-                        }}
-                      />
-                    </motion.div>
-                  </motion.button>
-                </div>
+      <div className={`flex bg-white text-neutral-900 ${compact ? "min-h-screen flex-col pt-[72px]" : "h-screen overflow-hidden pl-20"}`} style={{ fontFamily: "'Poppins', sans-serif" }}>
+        {/* ── Menu ── */}
+        <section className={`flex min-w-0 flex-1 flex-col ${compact ? "" : "overflow-hidden"}`}>
+          <div className="shrink-0 px-8 pt-7">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <h1 className="text-2xl font-semibold">Menu</h1>
+              <UserIdentityBanner className="order-3 w-full sm:order-2 sm:w-auto" />
+              <div className="flex flex-wrap items-center gap-2">
+                <Pill tone={isOnline ? "green" : "red"}>{isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}{isOnline ? "Online" : "Offline"}</Pill>
+                <HeldOrders held={held} onRestore={restoreHeld} onDiscard={(id) => { setHeld((p) => p.filter((o) => o.id !== id)); toast("info", "Held order discarded."); }} />
+                <Pill onClick={() => setShowHistory(true)}><History className="h-4 w-4" />History</Pill>
+                <Pill tone={onlineCount ? "green" : "idle"} pulse={!!onlineCount} count={onlineCount} open={notifOpen} onClick={() => setNotifOpen((p) => !p)}>Online Orders</Pill>
+                <Pill tone={deliveryCount ? "dark" : "idle"} pulse={!!deliveryCount} count={deliveryCount} open={deliveryOpen} onClick={() => setDeliveryOpen((p) => !p)}>Delivery Handover</Pill>
               </div>
+            </div>
 
-              {/* Online Orders Panel */}
-              <AnimatePresence>
-                {notifOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.22, ease: "easeInOut" }}
-                    style={{ overflow: "hidden", marginBottom: 14 }}
-                  >
-                    <div
-                      style={{
-                        border: "1px solid #d1fae5",
-                        borderRadius: 12,
-                        background: "#f9fef9",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {onlineOrderNotifs.length === 0 &&
-                      readyForPickupOrders.length === 0 ? (
-                        <div style={{ padding: "16px", textAlign: "center" }}>
-                          <p
-                            style={{
-                              fontSize: 11,
-                              color: "#bbb",
-                              fontFamily: F,
-                              margin: 0,
-                            }}
-                          >
-                            No online pickup orders waiting for cashier action
-                          </p>
-                        </div>
-                      ) : (
-                        <div>
-                          {onlineOrderNotifs.length > 0 && (
-                            <div
-                              style={{
-                                padding: "10px 14px 8px",
-                                borderBottom:
-                                  readyForPickupOrders.length > 0
-                                    ? "1px solid #d1fae5"
-                                    : "none",
-                              }}
-                            >
-                              <p
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  color: "#166534",
-                                  letterSpacing: "0.08em",
-                                  textTransform: "uppercase",
-                                  margin: 0,
-                                }}
-                              >
-                                Awaiting Cashier Review
-                              </p>
-                            </div>
-                          )}
-                          <AnimatePresence>
-                            {onlineOrderNotifs.map((notif, idx) => (
-                              <motion.div
-                                key={notif.id}
-                                layout
-                                initial={{ opacity: 0, x: -8 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
-                                transition={{ delay: idx * 0.04, ...SP }}
-                                style={{
-                                  display: "grid",
-                                  gap: 10,
-                                  padding: "12px 14px",
-                                  borderBottom:
-                                    idx < onlineOrderNotifs.length - 1
-                                      ? "1px solid #d1fae5"
-                                      : "none",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "flex-start",
-                                    justifyContent: "space-between",
-                                    gap: 10,
-                                  }}
-                                >
-                                  <div style={{ minWidth: 0, flex: 1 }}>
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 6,
-                                        marginBottom: 4,
-                                        flexWrap: "wrap",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontSize: 12,
-                                          fontWeight: 700,
-                                          color: "#111",
-                                          fontFamily: F,
-                                        }}
-                                      >
-                                        {notif.orderNumber}
-                                      </span>
-                                      <span
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 600,
-                                          padding: "2px 7px",
-                                          borderRadius: 99,
-                                          background: "#dcfce7",
-                                          color: "#166534",
-                                        }}
-                                      >
-                                        {notif.trackingStatus}
-                                      </span>
-                                    </div>
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 6,
-                                        flexWrap: "wrap",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 500,
-                                          padding: "1px 7px",
-                                          borderRadius: 99,
-                                          background: "#d1fae5",
-                                          color: "#065f46",
-                                          textTransform: "capitalize",
-                                        }}
-                                      >
-                                        {notif.orderType}
-                                      </span>
-                                      <span
-                                        style={{ fontSize: 9, color: "#6b7280" }}
-                                      >
-                                        {new Date(
-                                          notif.createdAt,
-                                        ).toLocaleTimeString("en-PH", {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                          hour12: true,
-                                        })}
-                                      </span>
-                                      <span
-                                        style={{
-                                          fontSize: 11,
-                                          fontWeight: 700,
-                                          color: "#111",
-                                        }}
-                                      >
-                                        ₱{Number(notif.total).toFixed(2)}
-                                      </span>
-                                      {/* ── PAYMENT STATUS BADGE ── */}
-                                      <PaymentStatusBadge
-                                        paymentStatus={notif.paymentStatus}
-                                        paymentMethod={notif.paymentMethod}
-                                      />
-                                    </div>
-                                  </div>
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      gap: 6,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    <motion.button
-                                      whileTap={{ scale: 0.95 }}
-                                      onClick={() =>
-                                        handleCancelOnlineOrder(notif.id)
-                                      }
-                                      style={{
-                                        padding: "7px 11px",
-                                        borderRadius: 9,
-                                        border: "1px solid #fecaca",
-                                        background: "#fff1f2",
-                                        color: "#dc2626",
-                                        cursor: "pointer",
-                                        fontSize: 10.5,
-                                        fontWeight: 600,
-                                        fontFamily: F,
-                                      }}
-                                    >
-                                      Cancel
-                                    </motion.button>
-                                    <motion.button
-                                      whileTap={{ scale: 0.95 }}
-                                      onClick={() =>
-                                        handleProceedOnlineOrder(notif.id)
-                                      }
-                                      style={{
-                                        padding: "7px 11px",
-                                        borderRadius: 9,
-                                        border: "1px solid #16a34a",
-                                        background: "#16a34a",
-                                        color: "#fff",
-                                        cursor: "pointer",
-                                        fontSize: 10.5,
-                                        fontWeight: 600,
-                                        fontFamily: F,
-                                      }}
-                                    >
-                                      Proceed to Order
-                                    </motion.button>
-                                  </div>
-                                </div>
-                                <div style={{ display: "grid", gap: 5 }}>
-                                  {notif.items.map((item, itemIndex) => (
-                                    <span
-                                      key={`${notif.id}-${itemIndex}`}
-                                      style={{
-                                        fontSize: 10.5,
-                                        color: "#374151",
-                                        fontFamily: F,
-                                      }}
-                                    >
-                                      {item.quantity}x {item.name}
-                                    </span>
-                                  ))}
-                                </div>
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                          {readyForPickupOrders.length > 0 && (
-                            <div
-                              style={{
-                                padding: "10px 14px 8px",
-                                borderTop:
-                                  onlineOrderNotifs.length > 0
-                                    ? "1px solid #d1fae5"
-                                    : "none",
-                              }}
-                            >
-                              <p
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  color: "#166534",
-                                  letterSpacing: "0.08em",
-                                  textTransform: "uppercase",
-                                  margin: 0,
-                                }}
-                              >
-                                Ready for Pickup
-                              </p>
-                            </div>
-                          )}
-                          <AnimatePresence>
-                            {readyForPickupOrders.map((notif, idx) => (
-                              <motion.div
-                                key={`ready-${notif.id}`}
-                                layout
-                                initial={{ opacity: 0, x: -8 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
-                                transition={{ delay: idx * 0.04, ...SP }}
-                                style={{
-                                  display: "grid",
-                                  gap: 10,
-                                  padding: "12px 14px",
-                                  borderTop:
-                                    idx > 0 ? "1px solid #d1fae5" : "none",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "flex-start",
-                                    justifyContent: "space-between",
-                                    gap: 10,
-                                  }}
-                                >
-                                  <div style={{ minWidth: 0, flex: 1 }}>
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 6,
-                                        marginBottom: 4,
-                                        flexWrap: "wrap",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontSize: 12,
-                                          fontWeight: 700,
-                                          color: "#111",
-                                          fontFamily: F,
-                                        }}
-                                      >
-                                        {notif.orderNumber}
-                                      </span>
-                                      <span
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 600,
-                                          padding: "2px 7px",
-                                          borderRadius: 99,
-                                          background: "#dcfce7",
-                                          color: "#166534",
-                                        }}
-                                      >
-                                        {notif.trackingStatus}
-                                      </span>
-                                    </div>
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 6,
-                                        flexWrap: "wrap",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 500,
-                                          padding: "1px 7px",
-                                          borderRadius: 99,
-                                          background: "#d1fae5",
-                                          color: "#065f46",
-                                          textTransform: "capitalize",
-                                        }}
-                                      >
-                                        {notif.orderType}
-                                      </span>
-                                      <span
-                                        style={{ fontSize: 9, color: "#6b7280" }}
-                                      >
-                                        {new Date(
-                                          notif.createdAt,
-                                        ).toLocaleTimeString("en-PH", {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                          hour12: true,
-                                        })}
-                                      </span>
-                                      <span
-                                        style={{
-                                          fontSize: 11,
-                                          fontWeight: 700,
-                                          color: "#111",
-                                        }}
-                                      >
-                                        ₱{Number(notif.total).toFixed(2)}
-                                      </span>
-                                      {/* ── PAYMENT STATUS BADGE ── */}
-                                      <PaymentStatusBadge
-                                        paymentStatus={notif.paymentStatus}
-                                        paymentMethod={notif.paymentMethod}
-                                      />
-                                    </div>
-                                  </div>
-                                  <motion.button
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={() => handleConfirmPickup(notif.id)}
-                                    style={{
-                                      padding: "7px 11px",
-                                      borderRadius: 9,
-                                      border: "1px solid #111",
-                                      background: "#111",
-                                      color: "#fff",
-                                      cursor: "pointer",
-                                      fontSize: 10.5,
-                                      fontWeight: 600,
-                                      fontFamily: F,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    Confirm Pickup
-                                  </motion.button>
-                                </div>
-                                <div style={{ display: "grid", gap: 5 }}>
-                                  {notif.items.map((item, itemIndex) => (
-                                    <span
-                                      key={`ready-${notif.id}-${itemIndex}`}
-                                      style={{
-                                        fontSize: 10.5,
-                                        color: "#374151",
-                                        fontFamily: F,
-                                      }}
-                                    >
-                                      {item.quantity}x {item.name}
-                                    </span>
-                                  ))}
-                                </div>
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Delivery Handover Panel */}
-              <AnimatePresence>
-                {deliveryHandoverOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.22, ease: "easeInOut" }}
-                    style={{ overflow: "hidden", marginBottom: 14 }}
-                  >
-                    <div
-                      style={{
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 12,
-                        background: "#fcfcfc",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {readyForDeliveryOrders.length === 0 &&
-                      handedToRiderOrders.length === 0 ? (
-                        <div style={{ padding: "16px", textAlign: "center" }}>
-                          <p
-                            style={{
-                              fontSize: 11,
-                              color: "#bbb",
-                              fontFamily: F,
-                              margin: 0,
-                            }}
-                          >
-                            No delivery orders waiting for rider handover
-                          </p>
-                        </div>
-                      ) : (
-                        <div>
-                          {readyForDeliveryOrders.length > 0 && (
-                            <div
-                              style={{
-                                padding: "10px 14px 8px",
-                                borderBottom:
-                                  handedToRiderOrders.length > 0
-                                    ? "1px solid #e5e7eb"
-                                    : "none",
-                              }}
-                            >
-                              <p
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  color: "#111",
-                                  letterSpacing: "0.08em",
-                                  textTransform: "uppercase",
-                                  margin: 0,
-                                }}
-                              >
-                                Ready for Rider Handover
-                              </p>
-                            </div>
-                          )}
-                          <AnimatePresence>
-                            {readyForDeliveryOrders.map((notif, idx) => (
-                              <motion.div
-                                key={`delivery-${notif.id}`}
-                                layout
-                                initial={{ opacity: 0, x: -8 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
-                                transition={{ delay: idx * 0.04, ...SP }}
-                                style={{
-                                  display: "grid",
-                                  gap: 10,
-                                  padding: "12px 14px",
-                                  borderTop:
-                                    idx > 0 ? "1px solid #e5e7eb" : "none",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "flex-start",
-                                    justifyContent: "space-between",
-                                    gap: 10,
-                                  }}
-                                >
-                                  <div style={{ minWidth: 0, flex: 1 }}>
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 6,
-                                        marginBottom: 4,
-                                        flexWrap: "wrap",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontSize: 12,
-                                          fontWeight: 700,
-                                          color: "#111",
-                                          fontFamily: F,
-                                        }}
-                                      >
-                                        {notif.orderNumber}
-                                      </span>
-                                      <span
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 600,
-                                          padding: "2px 7px",
-                                          borderRadius: 99,
-                                          background: "#f3f4f6",
-                                          color: "#111",
-                                        }}
-                                      >
-                                        {notif.trackingStatus}
-                                      </span>
-                                    </div>
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 6,
-                                        flexWrap: "wrap",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 500,
-                                          padding: "1px 7px",
-                                          borderRadius: 99,
-                                          background: "#f3f4f6",
-                                          color: "#4b5563",
-                                          textTransform: "capitalize",
-                                        }}
-                                      >
-                                        {notif.orderType}
-                                      </span>
-                                      <span
-                                        style={{ fontSize: 9, color: "#6b7280" }}
-                                      >
-                                        {new Date(
-                                          notif.createdAt,
-                                        ).toLocaleTimeString("en-PH", {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                          hour12: true,
-                                        })}
-                                      </span>
-                                      <span
-                                        style={{
-                                          fontSize: 11,
-                                          fontWeight: 700,
-                                          color: "#111",
-                                        }}
-                                      >
-                                        ₱{Number(notif.total).toFixed(2)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <motion.button
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={() => openRiderHandover(notif)}
-                                    style={{
-                                      padding: "7px 11px",
-                                      borderRadius: 9,
-                                      border: "1px solid #111",
-                                      background: "#111",
-                                      color: "#fff",
-                                      cursor: "pointer",
-                                      fontSize: 10.5,
-                                      fontWeight: 600,
-                                      fontFamily: F,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    Handed to Rider
-                                  </motion.button>
-                                </div>
-                                <div style={{ display: "grid", gap: 5 }}>
-                                  {notif.items.map((item, itemIndex) => (
-                                    <span
-                                      key={`delivery-handover-${notif.id}-${itemIndex}`}
-                                      style={{
-                                        fontSize: 10.5,
-                                        color: "#374151",
-                                        fontFamily: F,
-                                      }}
-                                    >
-                                      {item.quantity}x {item.name}
-                                    </span>
-                                  ))}
-                                </div>
-                                <span
-                                  style={{
-                                    fontSize: 10,
-                                    color: "#9ca3af",
-                                    fontFamily: F,
-                                  }}
-                                >
-                                  Record this once the rider physically collects
-                                  the order
-                                </span>
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                          {handedToRiderOrders.length > 0 && (
-                            <div
-                              style={{
-                                padding: "10px 14px 8px",
-                                borderTop:
-                                  readyForDeliveryOrders.length > 0
-                                    ? "1px solid #e5e7eb"
-                                    : "none",
-                              }}
-                            >
-                              <p
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  color: "#111",
-                                  letterSpacing: "0.08em",
-                                  textTransform: "uppercase",
-                                  margin: 0,
-                                }}
-                              >
-                                Handed to Rider
-                              </p>
-                            </div>
-                          )}
-                          <AnimatePresence>
-                            {handedToRiderOrders.map((notif, idx) => (
-                              <motion.div
-                                key={`handover-${notif.id}`}
-                                layout
-                                initial={{ opacity: 0, x: -8 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 8, height: 0, padding: 0 }}
-                                transition={{ delay: idx * 0.04, ...SP }}
-                                style={{
-                                  display: "grid",
-                                  gap: 10,
-                                  padding: "12px 14px",
-                                  borderTop:
-                                    idx > 0 ? "1px solid #e5e7eb" : "none",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                    gap: 10,
-                                  }}
-                                >
-                                  <div>
-                                    <span
-                                      style={{
-                                        fontSize: 12,
-                                        fontWeight: 700,
-                                        color: "#111",
-                                        fontFamily: F,
-                                      }}
-                                    >
-                                      {notif.orderNumber}
-                                    </span>
-                                    {notif.riderName && (
-                                      <p
-                                        style={{
-                                          fontSize: 10,
-                                          color: "#6b7280",
-                                          margin: "2px 0 0",
-                                        }}
-                                      >
-                                        Rider: {notif.riderName}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <span
-                                    style={{
-                                      fontSize: 10,
-                                      color: "#9ca3af",
-                                      fontFamily: F,
-                                      textAlign: "right",
-                                    }}
-                                  >
-                                    {formatOrderTimestamp(
-                                      notif.handoverTimestamp,
-                                    )}
-                                  </span>
-                                </div>
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Search */}
-              <div style={{ position: "relative", marginBottom: 14 }}>
-                <Search
-                  style={{
-                    position: "absolute",
-                    left: 11,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    width: 13,
-                    height: 13,
-                    color: "#bbb",
-                  }}
-                />
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search items…"
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px 9px 32px",
-                    fontSize: 12,
-                    fontFamily: F,
-                    border: "1px solid #efefef",
-                    borderRadius: 10,
-                    background: "#fafafa",
-                    color: "#333",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                />
+            <Collapse open={notifOpen}>
+              <div className="rounded-2xl border border-green-200 bg-green-50/40">
+                {!onlineCount && <Empty>No online pickup orders waiting for cashier action</Empty>}
+                {review.length > 0 && <PanelTitle>Awaiting cashier review</PanelTitle>}
+                {review.map((o) => {
+                  const action = getSettlementAction(o.trackingStatus, o.paymentStatus);
+                  return (
+                    <OrderRow key={o.id} o={o} showPay actions={<>
+                      {action && <button className={ACT.red} disabled={settlingId === o.id} onClick={() => setCancelId(o.id)}>{settlingId === o.id && <Spinner size={12} />}{action === "refund" ? "Refund order" : "Cancel order"}</button>}
+                      <button className={ACT.green} onClick={() => setProceedOrder(o)}>Proceed to order</button>
+                    </>} />
+                  );
+                })}
+                {ready.length > 0 && <PanelTitle>Ready for pickup</PanelTitle>}
+                {ready.map((o) => <OrderRow key={`r${o.id}`} o={o} showPay actions={<button className={ACT.dark} onClick={() => void confirmPickup(o.id)}>Confirm pickup</button>} />)}
               </div>
+            </Collapse>
 
-              {/* Category Tabs */}
-              <div
-                style={{
-                  display: "flex",
-                  gap: 6,
-                  overflowX: "auto",
-                  paddingBottom: 14,
-                  scrollbarWidth: "none",
-                }}
-              >
-                {TABS.map((tab) => (
-                  <motion.button
-                    key={tab.key}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => setSelectedCategory(tab.key)}
-                    style={{
-                      padding: "6px 14px",
-                      borderRadius: 20,
-                      border: "1px solid",
-                      borderColor:
-                        selectedCategory === tab.key ? "#111" : "#efefef",
-                      background: selectedCategory === tab.key ? "#111" : "#fff",
-                      color: selectedCategory === tab.key ? "#fff" : "#888",
-                      fontSize: 11,
-                      fontWeight: 500,
-                      fontFamily: F,
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {tab.label}
-                  </motion.button>
+            <Collapse open={deliveryOpen}>
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50/60">
+                {!deliveryCount && <Empty>No delivery orders waiting for rider handover</Empty>}
+                {pendingDelivery.length > 0 && <PanelTitle>Ready for rider handover</PanelTitle>}
+                {pendingDelivery.map((o) => <OrderRow key={`d${o.id}`} o={o} actions={<button className={ACT.dark} onClick={() => { setHandoverOrder(o); setRider(o.riderName ?? ""); }}>Handed to rider</button>} />)}
+                {handed.length > 0 && <PanelTitle>Handed to rider</PanelTitle>}
+                {handed.map((o) => (
+                  <div key={`h${o.id}`} className="flex items-center justify-between border-t border-neutral-200/70 p-4 first:border-t-0">
+                    <div><p className="font-bold">{o.orderNumber}</p>{o.riderName && <p className="text-sm text-neutral-500">Rider: {o.riderName}</p>}</div>
+                    <span className="text-sm text-neutral-400">{o.handoverTimestamp && fmt.dateTime(o.handoverTimestamp)}</span>
+                  </div>
                 ))}
               </div>
-            </div>
+            </Collapse>
 
-            {/* Product Grid */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 24px 24px" }}>
-              {loadingProducts ? (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    height: 200,
-                  }}
-                >
-                  <Spinner />
-                </div>
-              ) : productsError ? (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    height: 200,
-                  }}
-                >
-                  <p style={{ fontSize: 12, color: "#f87171", fontFamily: F }}>
-                    {productsError}
-                  </p>
-                </div>
-              ) : filtered.length === 0 ? (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    height: 200,
-                    gap: 8,
-                  }}
-                >
-                  <UtensilsCrossed
-                    style={{ width: 28, height: 28, color: "#ddd" }}
-                  />
-                  <p style={{ fontSize: 12, color: "#ccc", fontFamily: F }}>
-                    No items found
-                  </p>
-                </div>
-              ) : (
-                <motion.div
-                  layout
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  {filtered.map((item) => (
-                    <ProductCard
-                      key={item.id}
-                      item={item}
-                      onAdd={addToCart}
-                      inCart={cart.some((c) => c.id === item.id)}
-                    />
-                  ))}
-                </motion.div>
-              )}
+            <div className="relative mb-4">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search items…"
+                className="w-full rounded-xl border border-neutral-200 bg-neutral-50 py-3 pl-11 pr-4 text-sm outline-none focus:border-neutral-900" />
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-4 [scrollbar-width:none]">
+              {categories.map((c) => (
+                <button key={c} onClick={() => setCategory(c)}
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-5 py-2 text-sm font-medium capitalize transition ${category === c ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:border-neutral-400"}`}>
+                  {c === "ALL" ? "All items" : c.toLowerCase()}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* ── RIGHT: Cart ── */}
-          <div
-            style={{
-              width: isMobile ? "100%" : 268,
-              flexShrink: 0,
-              borderLeft: isMobile ? "none" : "1px solid #f0f0f0",
-              borderTop: isMobile ? "1px solid #f0f0f0" : "none",
-              display: "flex",
-              flexDirection: "column",
-              background: "#fff",
-            }}
-          >
-            <div
-              style={{
-                padding: "20px 18px 14px",
-                borderBottom: "1px solid #f5f5f5",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexShrink: 0,
-              }}
-            >
-              <div>
-                <h2
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: "#111",
-                    fontFamily: F,
-                  }}
-                >
-                  Current Order
-                </h2>
-                <p
-                  style={{
-                    fontSize: 11,
-                    color: "#bbb",
-                    marginTop: 1,
-                    fontFamily: F,
-                  }}
-                >
-                  {totalQty === 0
-                    ? "No items yet"
-                    : `${totalQty} item${totalQty > 1 ? "s" : ""}`}
-                </p>
+          <div className="flex-1 overflow-y-auto px-8 pb-8">
+            {loadingProducts && !products.length ? <div className="flex h-52 items-center justify-center"><Spinner size={24} /></div>
+              : productsError ? (
+                <Empty>
+                  <p className="text-red-400">{productsError}</p>
+                  <button onClick={() => void loadProducts()} className="mt-1 flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-600"><RotateCcw className="h-4 w-4" />Retry</button>
+                </Empty>
+              ) : !filtered.length ? <Empty icon={<UtensilsCrossed className="h-8 w-8 text-neutral-300" />}>No items found</Empty>
+              : (
+                <motion.div layout className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4">
+                  {filtered.map((item) => <ProductCard key={item.id} item={item} onAdd={addToCart} inCart={cart.some((c) => c.id === item.id)} />)}
+                </motion.div>
+              )}
+          </div>
+        </section>
+
+        {/* ── Cart ── */}
+        <aside className={`flex shrink-0 flex-col bg-white ${compact ? "w-full border-t" : "w-[400px] border-l"} border-neutral-100`}>
+          <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-6">
+            <div>
+              <h2 className="text-lg font-semibold">Current order</h2>
+              <p className="text-sm text-neutral-400">{totalQty ? `${totalQty} item${totalQty > 1 ? "s" : ""}` : "No items yet"}</p>
+            </div>
+            {cart.length > 0 && (
+              <button onClick={holdOrder} title="Hold order" className="flex h-9 items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-3 text-sm font-semibold text-amber-700">
+                <RotateCcw className="h-4 w-4" />Hold
+              </button>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6">
+            {cart.length === 0
+              ? <Empty icon={<UtensilsCrossed className="h-8 w-8 text-neutral-300" />}>Add items to start</Empty>
+              : <AnimatePresence>{cart.map((item) => <CartRow key={item.id} item={item} onRemove={removeFromCart} onQty={updateQty} onNote={setItemNote} />)}</AnimatePresence>}
+          </div>
+
+          {cart.length > 0 && (
+            <div className="shrink-0 border-t border-neutral-100 p-6">
+              <div className="mb-4 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 text-sm">
+                {[
+                  ["Subtotal", fmt.money(gross), "text-neutral-500"],
+                  [`Discount (${pct(discountRate)}%)`, `-${fmt.money(pricing.discountAmount)}`, "text-green-600"],
+                  [`Tax (${pct(billing.taxRate)}%)`, fmt.money(pricing.taxAmount), "text-neutral-500"],
+                  [`Service charge (${pct(billing.serviceCharge)}%)`, fmt.money(pricing.serviceChargeAmount), "text-neutral-500"],
+                ].map(([l, v, c]) => <p key={l} className="flex justify-between border-b border-dashed border-neutral-200 px-4 py-2.5"><span className="text-neutral-400">{l}</span><span className={`font-medium ${c}`}>{v}</span></p>)}
+                <p className="flex items-center justify-between bg-neutral-100 px-4 py-3.5"><span className="font-medium text-neutral-600">Total</span><span className="text-2xl font-semibold">{fmt.money(pricing.amountDue)}</span></p>
               </div>
-              <AnimatePresence>
-                {totalQty > 0 && (
-                  <motion.span
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0, opacity: 0 }}
-                    transition={SP}
-                    style={{
-                      background: "#111",
-                      color: "#fff",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      borderRadius: 20,
-                      padding: "2px 8px",
-                      fontFamily: F,
-                    }}
-                  >
-                    {totalQty}
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 18px" }}>
-              <AnimatePresence>
-                {cart.length === 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    style={{
-                      height: "100%",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      paddingBottom: 40,
-                    }}
-                  >
-                    <UtensilsCrossed
-                      style={{ width: 28, height: 28, color: "#ddd" }}
-                    />
-                    <p style={{ fontSize: 12, color: "#ccc", fontFamily: F }}>
-                      Add items to start
-                    </p>
-                  </motion.div>
-                ) : (
-                  cart.map((item) => (
-                    <CartRow
-                      key={item.id}
-                      item={item}
-                      onRemove={removeFromCart}
-                      onQty={updateQty}
-                    />
-                  ))
-                )}
-              </AnimatePresence>
-            </div>
-
-            <AnimatePresence>
-              {cart.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  transition={SP}
-                  style={{
-                    padding: "14px 18px 18px",
-                    borderTop: "1px solid #f5f5f5",
-                    flexShrink: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      background: "#fafafa",
-                      border: "1px solid #f0f0f0",
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      marginBottom: 10,
-                    }}
-                  >
-                    {[
-                      { label: "Subtotal", val: fmt(gross), color: "#999" },
-                      customerType === "regular"
-                        ? {
-                            label: "VAT (12% incl.)",
-                            val: fmt(pricing.vatAmount),
-                            color: "#999",
-                          }
-                        : {
-                            label: "VAT exempt",
-                            val: `-₱${fmt(gross - pricing.vatExemptAmount)}`,
-                            color: "#999",
-                          },
-                    ].map(({ label, val, color }) => (
-                      <div
-                        key={label}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          padding: "8px 12px",
-                          borderBottom: "1px dashed #f0f0f0",
-                        }}
-                      >
-                        <span style={{ fontSize: 11, color: "#bbb" }}>
-                          {label}
-                        </span>
-                        <span style={{ fontSize: 11, fontWeight: 500, color }}>
-                          ₱{val}
-                        </span>
-                      </div>
-                    ))}
-                    <AnimatePresence>
-                      {customerType !== "regular" && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          transition={{ duration: 0.18 }}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            padding: "8px 12px",
-                            borderBottom: "1px dashed #f0f0f0",
-                            overflow: "hidden",
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 11,
-                              color: "#22c55e",
-                              fontWeight: 500,
-                            }}
-                          >
-                            20% discount
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: "#22c55e",
-                            }}
-                          >
-                            −₱{fmt(pricing.discountAmount)}
-                          </span>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "10px 12px",
-                        background: "#f5f5f5",
-                      }}
-                    >
-                      <span
-                        style={{ fontSize: 12, fontWeight: 500, color: "#777" }}
-                      >
-                        Total
-                      </span>
-                      <motion.span
-                        key={pricing.amountDue}
-                        initial={{ scale: 0.95, opacity: 0.6 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ duration: 0.15 }}
-                        style={{
-                          fontSize: 19,
-                          fontWeight: 600,
-                          color: "#111",
-                          fontFamily: F,
-                        }}
-                      >
-                        ₱{fmt(pricing.amountDue)}
-                      </motion.span>
-                    </div>
-                  </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 6,
-                    marginBottom: 6,
-                  }}
-                >
-                  <CustomSelect
-                    value={orderType}
-                    onChange={(v) => setOrderType(v as typeof orderType)}
-                    options={[
-                      { value: "dine-in", label: "Dine in" },
-                      { value: "take-out", label: "Take out" },
-                      { value: "delivery", label: "Delivery" },
-                    ]}
-                  />
-                  <CustomSelect
-                    value={paymentMethod}
-                    onChange={(v) =>
-                      setPaymentMethod(v as typeof paymentMethod)
-                    }
-                    options={[
-                      { value: "cash", label: "Cash" },
-                      {
-                        value: "gcash_onsite",
-                        label: "Onsite GCash / E-Payment",
-                      },
-                    ]}
-                  />
+              <div className="mb-2 grid grid-cols-2 gap-2">
+                <Select value={orderType} onChange={(v) => setOrderType(v as OrderTypeVal)} options={[{ value: "dine-in", label: "Dine in" }, { value: "take-out", label: "Take out" }, { value: "delivery", label: "Delivery" }]} />
+                <Select value={paymentMethod} onChange={(v) => setPaymentMethod(v as PaymentMethod)} options={[{ value: "cash", label: "Cash" }, { value: "gcash_onsite", label: "Onsite GCash / E-Payment" }]} />
+              </div>
+              <div className="mb-2"><Select value={customerType} onChange={setCustomerType} options={discountTypes.map((d) => ({ value: d.name, label: `${d.name} (${pct(Number(d.percentage || 0))}%)` }))} /></div>
+              {orderType === "dine-in" && tables.length > 0 && (
+                <div className="mb-2">
+                  <Select value={selectedTable === null ? "" : String(selectedTable)} onChange={(v) => setSelectedTable(v ? Number(v) : null)}
+                    options={[{ value: "", label: "Select table…" }, ...tables.map((t) => ({ value: String(t.id), label: `Table ${t.number}${t.status === "occupied" ? " (occupied)" : ""}` }))]} />
                 </div>
-                <div style={{ marginBottom: 8 }}>
-                  <CustomSelect
-                    value={customerType}
-                    onChange={(v) => setCustomerType(v as CustomerType)}
-                    options={[
-                      { value: "regular", label: "Regular customer" },
-                      { value: "pwd", label: "PWD (20% off, VAT exempt)" },
-                      {
-                        value: "senior",
-                        label: "Senior Citizen (20% off, VAT exempt)",
-                      },
-                    ]}
-                  />
-                </div>
-
-                  {orderType === "dine-in" && tables.length > 0 && (
-                    <div style={{ marginBottom: 8 }}>
-                      <CustomSelect
-                        value={
-                          selectedTable !== null ? String(selectedTable) : ""
-                        }
-                        onChange={(v) => setSelectedTable(v ? Number(v) : null)}
-                        options={[
-                          { value: "", label: "Select table…" },
-                          ...tables.map((t) => ({
-                            value: String(t.id),
-                            label: `Table ${t.number}${t.status === "occupied" ? " (occupied)" : ""}`,
-                          })),
-                        ]}
-                      />
-                    </div>
-                  )}
-
-                  <motion.button
-                    onClick={() => {
-                      if (!placing && cart.length > 0) setShowAmountEntry(true);
-                    }}
-                    disabled={placing}
-                    whileHover={{ opacity: 0.88 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ duration: 0.12 }}
-                    style={{
-                      ...btn("#16a34a", "#fff"),
-                      cursor: placing ? "not-allowed" : "pointer",
-                      opacity: placing ? 0.5 : 1,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      letterSpacing: "0.01em",
-                    }}
-                  >
-                    {placing ? (
-                      <>
-                        <Spinner size={14} light /> Processing…
-                      </>
-                    ) : (
-                      `Pay ₱${fmt(pricing.amountDue)}`
-                    )}
-                  </motion.button>
-                </motion.div>
               )}
-            </AnimatePresence>
-          </div>
-        </div>
 
-        <AmountEntryModal
-          show={showAmountEntry}
-          amountDue={pricing.amountDue}
-          paymentMethod={paymentMethod}
-          onConfirm={(payload) => {
-            void handleAmountConfirmed(payload);
-          }}
-          onCancel={() => setShowAmountEntry(false)}
-        />
+              <button onClick={() => setShowNote((p) => !p)}
+                className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}>
+                <MessageSquare className="h-4 w-4" />{orderNote ? "Edit order note" : "Add order note"}
+              </button>
+              <Collapse open={showNote}>
+                <textarea value={orderNote} onChange={(e) => setOrderNote(e.target.value)} maxLength={240} rows={2} placeholder="e.g. Extra rice, no spicy, birthday order…"
+                  className="w-full resize-none rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 outline-none" />
+              </Collapse>
 
-        <RiderHandoverModal
-          show={handoverOrder !== null}
-          order={handoverOrder}
-          riderName={riderNameInput}
-          saving={savingHandover}
-          onChange={setRiderNameInput}
-          onConfirm={() => {
-            void handleRiderHandover();
-          }}
-          onCancel={closeRiderHandover}
-        />
+              <button className={`${isOnline ? B.green : B.dark} flex items-center justify-center gap-2 py-4 text-base`} disabled={placing || !isOnline || !customerType}
+                onClick={() => setShowAmount(true)}>
+                {placing && <Spinner size={16} light />}{payBtnLabel}
+              </button>
+              <p className="mt-2 text-center text-xs text-neutral-400">Inventory is deducted after payment confirmation.</p>
+            </div>
+          )}
+        </aside>
+      </div>
 
-      <SuccessModal
-        show={showSuccess}
-        onClose={resetOrder}
-        orderNumber={orderNumber}
-        savedCart={savedCart}
-        paidAmount={savedPricing.amountDue}
-        cashTendered={savedCash.tendered}
-        changeAmount={savedCash.change}
-        orderType={savedMeta.orderType}
-        paymentMethod={savedMeta.paymentMethod}
-        customerType={savedMeta.customerType}
-        discountAmount={savedPricing.discountAmount}
-        vatAmount={savedPricing.vatAmount}
+      <ConfirmModal
+        show={!!cancelOrder}
+        title={cancelAction === "refund" ? "Refund order?" : "Cancel order?"}
+        message={cancelAction === "refund" ? "This will mark the order as refunded and restore deducted inventory once." : "This will permanently cancel the online order. The customer will need to be notified separately."}
+        confirmLabel={cancelAction === "refund" ? "Yes, refund order" : "Yes, cancel order"}
+        busy={settlingId !== null} onConfirm={() => void confirmCancel()} onCancel={() => setCancelId(null)}
       />
-    </>
+      <ProceedModal order={proceedOrder} busy={proceeding} onConfirm={() => void confirmProceed()} onCancel={() => setProceedOrder(null)} />
+      <AmountModal show={showAmount} amountDue={pricing.amountDue} method={paymentMethod} onConfirm={(p) => void placeOrder(p)} onCancel={() => setShowAmount(false)} />
+      <HandoverModal order={handoverOrder} rider={rider} setRider={setRider} saving={savingHandover} onConfirm={() => void confirmHandover()} onCancel={() => { if (!savingHandover) { setHandoverOrder(null); setRider(""); } }} />
+      <SuccessModal receipt={done} cashier={cashierName} onClose={resetOrder} />
+      <HistoryModal show={showHistory} orders={shiftOrders} loading={shiftLoading} settlingId={settlingId} onClose={() => setShowHistory(false)} onSettle={(o) => void settleShiftOrder(o)} onReprint={(o) => void reprint(o)} />
+
+      <div className="pointer-events-none fixed bottom-6 right-6 z-[999999] flex w-[calc(100vw-48px)] max-w-sm flex-col gap-2">
+        <AnimatePresence>
+          {toasts.map((t) => {
+            const { c, I } = TOAST[t.type];
+            return (
+              <motion.div key={t.id} layout initial={{ opacity: 0, y: 16, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                className={`pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg ${c}`}>
+                <I className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="flex-1 text-sm font-medium text-neutral-900">{t.message}</p>
+                <button onClick={() => dismiss(t.id)}><X className="h-4 w-4 text-neutral-400" /></button>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+    </Ctx.Provider>
   );
 }

@@ -12,6 +12,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChevronLeft, ChevronRight, CalendarDays, X } from "lucide-react";
+import {
+  formatCurrencyAmount,
+  formatInSettingsTimezone,
+} from "@/lib/restaurantSettings";
 
 interface Order {
   id: number;
@@ -164,7 +168,11 @@ export function OrdersTable({ orders = [] }: OrdersTableProps) {
     const d = new Date(value);
     return Number.isNaN(d.getTime())
       ? value
-      : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      : formatInSettingsTimezone(d, undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
   };
 
   const formatTime = (value: string) => {
@@ -172,7 +180,11 @@ export function OrdersTable({ orders = [] }: OrdersTableProps) {
     const d = new Date(value);
     return Number.isNaN(d.getTime())
       ? value
-      : d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+      : formatInSettingsTimezone(d, undefined, {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        });
   };
 
   return (
@@ -187,7 +199,7 @@ export function OrdersTable({ orders = [] }: OrdersTableProps) {
               <span className="text-green-600 font-medium">{completedCount} completed</span>{" "}
               ·{" "}
               <span className="text-gray-600 font-medium">
-                ₱{totalRevenue.toLocaleString()} revenue
+                {formatCurrencyAmount(totalRevenue)} revenue
               </span>
             </p>
           )}
@@ -249,7 +261,7 @@ export function OrdersTable({ orders = [] }: OrdersTableProps) {
       <Table>
         <TableHeader>
           <TableRow className="border-gray-200 hover:bg-transparent">
-            <TableHead className="text-gray-700 font-semibold">Order ID</TableHead>
+            <TableHead className="text-gray-700 font-semibold">Order Number</TableHead>
             <TableHead className="text-gray-700 font-semibold">Date</TableHead>
             <TableHead className="text-gray-700 font-semibold">Time</TableHead>
             <TableHead className="text-gray-700 font-semibold">Order Type</TableHead>
@@ -296,7 +308,7 @@ export function OrdersTable({ orders = [] }: OrdersTableProps) {
                   {order.paymentCategory}
                 </TableCell>
                 <TableCell className="font-semibold text-gray-900 text-right">
-                  ₱{order.total.toLocaleString()}
+                  {formatCurrencyAmount(order.total)}
                 </TableCell>
               </TableRow>
             ))

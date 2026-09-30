@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+﻿import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import {
@@ -19,11 +19,30 @@ import {
   ChevronDown,
   Printer,
   TrendingUp,
+  Search,
+  Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
-import { api } from "@/lib/api";
+import {
+  api,
+  fetchAuthenticatedAsset,
+  isConfiguredBackendUrl,
+  resolveBackendUrl,
+} from "@/lib/api";
+import {
+  fetchGeneralSettings,
+  formatCurrencyAmount,
+  formatInSettingsTimezone,
+  GENERAL_SETTINGS_DEFAULTS,
+  type GeneralRestaurantSettings,
+} from "@/lib/restaurantSettings";
+import { useViewport } from "@/hooks/use-tablet";
+import { ReceiptViewerModal } from "@/components/receipt-viewer-modal";
+import type { ReceiptDto } from "@/lib/receipt";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types ---
 
 type Status = "Completed" | "Pending" | "Cancelled" | "Refunded";
 type LogType = "Sale" | "Refund" | "Void" | "Adjustment";
@@ -43,6 +62,8 @@ type OrderStatusFilter =
   | "Pending"
   | "Cancelled"
   | "Refunded";
+type PaymentMethodFilter = "All" | "Cash" | "GCash" | "Cash on Pickup";
+type OrderTypeFilter = "All" | "Dine In" | "Take Out" | "Delivery";
 
 interface SaleLog {
   id: string;
@@ -58,6 +79,8 @@ interface SaleLog {
   total: number;
   status: Status;
   paymentMethod: string;
+  paymentStatus: string;
+  proofImageUrl?: string;
   operator: string;
   cashierName: string;
   note?: string;
@@ -75,9 +98,11 @@ interface Order {
   orderType: string;
   status: Status;
   paymentCategory: string;
+  paymentStatus: string;
   cashierName?: string;
   riderName?: string;
   handoverTimestamp?: string | null;
+  proofImageUrl?: string | null;
 }
 
 interface RawOrderRow {
@@ -97,6 +122,10 @@ interface RawOrderRow {
   status?: string;
   paymentMethod?: string;
   payment_method?: string;
+  paymentStatus?: string;
+  payment_status?: string;
+  proofImageUrl?: string;
+  proof_image_url?: string;
   productId?: number;
   productName?: string;
   price?: number;
@@ -112,13 +141,11 @@ interface RawOrderRow {
   handover_timestamp?: string;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ---
 
 const ORDER_PAGE_SIZE = 10;
 const LOG_PAGE_SIZE = 20;
 const ITEM_H = 36;
-const POLL_INTERVAL_MS = 5000;
-
 const MONTHS = [
   "January",
   "February",
@@ -154,23 +181,41 @@ const STATUS_COLOR: Record<Status, string> = {
 };
 
 const TYPE_COLOR: Record<LogType, string> = {
-  Sale: "#f97316",
+  Sale: "#4f46e5",
   Refund: "#3b82f6",
   Void: "#9ca3af",
   Adjustment: "#8b5cf6",
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ---
 
 function daysInMonth(month: number, year: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
 
 function formatDisplayDate(d: Date): string {
-  return d.toLocaleDateString("en-US", {
+  return formatInSettingsTimezone(d, undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
+  });
+}
+
+function formatDisplayTime(value: Date | string | number): string {
+  return formatInSettingsTimezone(value, undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function formatReportCurrency(
+  value: number,
+  settings?: GeneralRestaurantSettings,
+): string {
+  return formatCurrencyAmount(value, settings, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -285,6 +330,7 @@ function getRevenueForPeriod(logs: SaleLog[], period: Period): number {
   return logs
     .filter((l) => {
       if (l.status !== "Completed") return false;
+      if (!isPaidPaymentStatus(l.paymentStatus)) return false;
       if (period === "All Time") return true;
       return l._dateObj >= start && l._dateObj <= now;
     })
@@ -315,6 +361,123 @@ function normalizeLogType(status: Status): LogType {
   return "Sale";
 }
 
+function formatPaymentStatus(value?: string | null): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return "Pending";
+  if (normalized === "pending payment") return "Unpaid";
+  if (normalized === "paid") return "Paid";
+  return String(value);
+}
+
+function isPaidPaymentStatus(value?: string | null): boolean {
+  return formatPaymentStatus(value) === "Paid";
+}
+
+function normalizePaymentMethod(value?: string | null): PaymentMethodFilter {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (
+    normalized === "cash on pickup" ||
+    normalized === "cash_on_pickup" ||
+    normalized === "pickup_cash"
+  ) {
+    return "Cash on Pickup";
+  }
+  if (
+    normalized.includes("gcash") ||
+    normalized.includes("e-payment") ||
+    normalized.includes("epayment")
+  ) {
+    return "GCash";
+  }
+  return "Cash";
+}
+
+function formatOrderType(value?: string | null): string {
+  switch (String(value ?? "").trim().toLowerCase()) {
+    case "dine-in":
+      return "Dine In";
+    case "take-out":
+      return "Take Out";
+    case "delivery":
+      return "Delivery";
+    default:
+      return value || "—";
+  }
+}
+
+const PROOF_NOTICE_EVENT = "the-crunch:proof-notice";
+
+function showProofNotice(message: string) {
+  window.dispatchEvent(
+    new CustomEvent(PROOF_NOTICE_EVENT, { detail: { message } }),
+  );
+}
+
+function resolveProofRequestUrl(proofImageUrl: string): string {
+  const resolvedUrl = resolveBackendUrl(proofImageUrl);
+  const url = new URL(resolvedUrl);
+  if (
+    isConfiguredBackendUrl(resolvedUrl) &&
+    url.pathname.startsWith("/uploads/proofs/")
+  ) {
+    const encodedFilename = url.pathname.slice("/uploads/proofs/".length);
+    const filename = decodeURIComponent(encodedFilename);
+    url.pathname = `/api/upload-proof/${encodeURIComponent(filename)}`;
+  }
+  return url.toString();
+}
+
+async function openProofImage(
+  e: { preventDefault: () => void; stopPropagation: () => void },
+  proofImageUrl?: string | null,
+) {
+  e.preventDefault();
+  e.stopPropagation();
+  const trimmed = String(proofImageUrl || "").trim();
+  if (!trimmed) {
+    showProofNotice("Proof image is no longer available.");
+    return;
+  }
+
+  let resolvedUrl: string;
+  try {
+    resolvedUrl = resolveProofRequestUrl(trimmed);
+  } catch {
+    showProofNotice("The stored proof reference is invalid.");
+    return;
+  }
+
+  if (!isConfiguredBackendUrl(resolvedUrl)) {
+    const opened = window.open(resolvedUrl, "_blank", "noopener,noreferrer");
+    if (!opened) showProofNotice("Allow pop-ups to view the payment proof.");
+    return;
+  }
+
+  const proofWindow = window.open("", "_blank", "width=720,height=820");
+  if (!proofWindow) {
+    showProofNotice("Allow pop-ups to view the payment proof.");
+    return;
+  }
+  proofWindow.opener = null;
+  proofWindow.document.title = "Loading payment proof";
+  proofWindow.document.body.innerHTML =
+    '<p style="font:14px system-ui;padding:24px;color:#475569">Loading payment proof…</p>';
+
+  try {
+    const proofBlob = await fetchAuthenticatedAsset(resolvedUrl);
+    const objectUrl = URL.createObjectURL(proofBlob);
+    proofWindow.location.replace(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
+  } catch (error) {
+    proofWindow.close();
+    showProofNotice(
+      error instanceof Error
+        ? error.message
+        : "Proof image is no longer available.",
+    );
+  }
+}
+
 function processRawRows(rows: RawOrderRow[]): {
   logs: SaleLog[];
   orders: Order[];
@@ -328,9 +491,11 @@ function processRawRows(rows: RawOrderRow[]): {
     orderType: string;
     status: string;
     paymentMethod: string;
+    paymentStatus: string;
     cashierName: string;
     riderName: string;
     handoverTimestamp: string | null;
+    proofImageUrl: string | null;
     orderNumber: string;
     transactionId: string;
   };
@@ -346,8 +511,15 @@ function processRawRows(rows: RawOrderRow[]): {
         orderType: r.orderType ?? r.order_type ?? "Order",
         status: r.status ?? "",
         paymentMethod:
-          String(r.paymentMethod ?? r.payment_method ?? "cash").trim() ||
-          "cash",
+          normalizePaymentMethod(
+            String(r.paymentMethod ?? r.payment_method ?? "cash").trim() ||
+              "cash",
+          ),
+        paymentStatus:
+          formatPaymentStatus(
+            String(r.paymentStatus ?? r.payment_status ?? "").trim() ||
+              "Pending",
+          ),
         cashierName:
           String(
             r.cashierName ??
@@ -360,18 +532,15 @@ function processRawRows(rows: RawOrderRow[]): {
         handoverTimestamp:
           String(r.handoverTimestamp ?? r.handover_timestamp ?? "").trim() ||
           null,
+        proofImageUrl:
+          String(r.proofImageUrl ?? r.proof_image_url ?? "").trim() || null,
         orderNumber: String(r.orderNumber ?? r.order_number ?? "").trim(),
         transactionId:
           String(
             r.transactionId ??
               r.transaction_id ??
-              r.paymentReference ??
-              r.payment_reference ??
               "",
-          ).trim() ||
-          (Number(r.paymentId ?? r.payment_id) > 0
-            ? `PAY-${Number(r.paymentId ?? r.payment_id)}`
-            : ""),
+          ).trim(),
       };
     }
 
@@ -379,9 +548,13 @@ function processRawRows(rows: RawOrderRow[]): {
     const handoverTimestamp = String(
       r.handoverTimestamp ?? r.handover_timestamp ?? "",
     ).trim();
+    const proofImageUrl = String(
+      r.proofImageUrl ?? r.proof_image_url ?? "",
+    ).trim();
 
     if (riderName) orderMap[r.id].riderName = riderName;
     if (handoverTimestamp) orderMap[r.id].handoverTimestamp = handoverTimestamp;
+    if (proofImageUrl) orderMap[r.id].proofImageUrl = proofImageUrl;
 
     orderMap[r.id].rows.push(r);
   }
@@ -408,16 +581,8 @@ function processRawRows(rows: RawOrderRow[]): {
       id: `${orderId}-${resolvedTxnId}`,
       transactionId: resolvedTxnId,
       orderId,
-      date: orderDate.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-      time: orderDate.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      }),
+      date: formatDisplayDate(orderDate),
+      time: formatDisplayTime(orderDate),
       type: normalizeLogType(status),
       product: productNames || `Order #${orderId}`,
       category: order.orderType,
@@ -426,6 +591,8 @@ function processRawRows(rows: RawOrderRow[]): {
       total: order.total,
       status,
       paymentMethod: order.paymentMethod,
+      paymentStatus: formatPaymentStatus(order.paymentStatus),
+      proofImageUrl: order.proofImageUrl || undefined,
       operator: order.cashierName,
       cashierName: order.cashierName,
       _dateObj: orderDate,
@@ -442,17 +609,15 @@ function processRawRows(rows: RawOrderRow[]): {
       })),
       total: order.total,
       date: order.date ?? "",
-      time: orderDate.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      }),
+      time: formatDisplayTime(orderDate),
       orderType: order.orderType,
       status,
       paymentCategory: order.paymentMethod,
+      paymentStatus: formatPaymentStatus(order.paymentStatus),
       cashierName: order.cashierName,
       riderName: order.riderName || undefined,
       handoverTimestamp: order.handoverTimestamp,
+      proofImageUrl: order.proofImageUrl,
     };
   }
 
@@ -462,33 +627,41 @@ function processRawRows(rows: RawOrderRow[]): {
   };
 }
 
-// ─── Print Helper ─────────────────────────────────────────────────────────────
+// --- Print Helper ---
 
 function triggerPrint(
   revenue: number,
   period: Period,
   logs: SaleLog[],
   orders: Order[],
+  restaurantSettings: GeneralRestaurantSettings,
 ) {
-  const completed = logs.filter((l) => l.status === "Completed");
-  const pending = logs.filter((l) => l.status === "Pending");
-  const cancelled = logs.filter((l) => l.status === "Cancelled");
-  const refunded = logs.filter((l) => l.status === "Refunded");
-
+  const paidCompleted = logs.filter(
+    (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
+  );
+  const gcashSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "GCash",
+  );
+  const cashSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash",
+  );
+  const cashOnPickupSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash on Pickup",
+  );
   const now = new Date();
-  const dateLabel = now.toLocaleDateString("en-US", {
+  const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
     month: "long",
     day: "numeric",
     year: "numeric",
   });
-  const timeLabel = now.toLocaleTimeString("en-US", {
+  const timeLabel = formatInSettingsTimezone(now, restaurantSettings, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
   });
 
   const completedOrders = orders
-    .filter((o) => o.status === "Completed")
+    .filter((o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus))
     .sort(
       (a, b) =>
         (parseDateSafe(b.date)?.getTime() ?? 0) -
@@ -498,20 +671,24 @@ function triggerPrint(
   const rows = completedOrders
     .map((o, i) => {
       const fmtDate =
-        parseDateSafe(o.date)?.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }) ?? "—";
+        parseDateSafe(o.date)
+          ? formatInSettingsTimezone(o.date, restaurantSettings, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })
+          : "—";
       const fmtHandover =
-        parseDateSafe(o.handoverTimestamp)?.toLocaleString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: true,
-        }) ?? "—";
+        parseDateSafe(o.handoverTimestamp)
+          ? formatInSettingsTimezone(o.handoverTimestamp ?? "", restaurantSettings, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            })
+          : "—";
       return `
         <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
           <td>${o.transactionId}</td>
@@ -522,7 +699,7 @@ function triggerPrint(
           <td>${o.orderType === "delivery" ? fmtHandover : "—"}</td>
           <td>${o.cashierName ?? "—"}</td>
           <td style="text-transform:capitalize;color:#2563eb">${o.paymentCategory}</td>
-          <td style="text-align:right;font-weight:700">₱${o.total.toLocaleString()}</td>
+          <td style="text-align:right;font-weight:700">${formatReportCurrency(o.total, restaurantSettings)}</td>
         </tr>
       `;
     })
@@ -533,13 +710,13 @@ function triggerPrint(
     <html>
     <head>
       <meta charset="utf-8"/>
-      <title>Sales Report – ${period}</title>
+      <title>Sales Report - ${period}</title>
       <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Poppins', sans-serif; background: #fff; color: #0f172a; padding: 40px 48px; font-size: 12px; }
         .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #f1f5f9; }
-        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #f97316; text-transform: uppercase; margin-bottom: 6px; }
+        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #4f46e5; text-transform: uppercase; margin-bottom: 6px; }
         .header-title { font-size: 24px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
         .header-period { font-size: 12px; color: #94a3b8; }
         .header-meta { text-align: right; }
@@ -578,9 +755,20 @@ function triggerPrint(
     <body>
       <div class="header">
         <div>
-          <p class="header-brand">The Crunch</p>
+          <p class="header-brand">${restaurantSettings.restaurantName}</p>
           <p class="header-title">Sales Report</p>
+          ${
+            restaurantSettings.tagline
+              ? `<p class="header-period">${restaurantSettings.tagline}</p>`
+              : ""
+          }
           <p class="header-period">Period: ${period}</p>
+          ${
+            [restaurantSettings.address, restaurantSettings.phone, restaurantSettings.email]
+              .filter(Boolean)
+              .map((line) => `<p class="header-period">${line}</p>`)
+              .join("")
+          }
         </div>
         <div class="header-meta">
           <p>Generated</p>
@@ -591,35 +779,35 @@ function triggerPrint(
       <div class="revenue-hero">
         <div>
           <p class="revenue-label">Total Revenue</p>
-          <p class="revenue-amount">₱${revenue.toLocaleString()}</p>
+          <p class="revenue-amount">${formatReportCurrency(revenue, restaurantSettings)}</p>
         </div>
         <div class="revenue-stats">
-          <div class="stat-item"><p class="stat-number" style="color:#4ade80">${completed.length}</p><p class="stat-label">Completed</p></div>
-          <div class="stat-item"><p class="stat-number" style="color:#fbbf24">${pending.length}</p><p class="stat-label">Pending</p></div>
-          <div class="stat-item"><p class="stat-number" style="color:#f87171">${cancelled.length}</p><p class="stat-label">Cancelled</p></div>
-          <div class="stat-item"><p class="stat-number" style="color:#60a5fa">${refunded.length}</p><p class="stat-label">Refunded</p></div>
+          <div class="stat-item"><p class="stat-number" style="color:#4ade80">${paidCompleted.length}</p><p class="stat-label">Paid Orders</p></div>
+          <div class="stat-item"><p class="stat-number" style="color:#60a5fa">${formatReportCurrency(gcashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p><p class="stat-label">GCash Sales</p></div>
+          <div class="stat-item"><p class="stat-number" style="color:#f59e0b">${formatReportCurrency(cashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p><p class="stat-label">Cash Sales</p></div>
+          <div class="stat-item"><p class="stat-number" style="color:#0f172a">${cashOnPickupSales.length}</p><p class="stat-label">Pickup Cash</p></div>
         </div>
       </div>
       <div class="summary-grid">
         <div class="summary-card" style="background:#f0fdf4;border:1px solid #bbf7d0">
-          <p class="summary-card-label">Completed Revenue</p>
-          <p class="summary-card-value" style="color:#16a34a">₱${completed.reduce((s, l) => s + l.total, 0).toLocaleString()}</p>
-          <p class="summary-card-sub">${completed.length} orders</p>
+          <p class="summary-card-label">Total Sales</p>
+          <p class="summary-card-value" style="color:#16a34a">${formatReportCurrency(paidCompleted.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">Completed + paid only</p>
         </div>
-        <div class="summary-card" style="background:#fffbeb;border:1px solid #fde68a">
-          <p class="summary-card-label">Pending Orders</p>
-          <p class="summary-card-value" style="color:#d97706">₱${pending.reduce((s, l) => s + l.total, 0).toLocaleString()}</p>
-          <p class="summary-card-sub">${pending.length} orders</p>
-        </div>
-        <div class="summary-card" style="background:#fef2f2;border:1px solid #fecaca">
-          <p class="summary-card-label">Cancelled</p>
-          <p class="summary-card-value" style="color:#dc2626">${cancelled.length} orders</p>
-          <p class="summary-card-sub">voided</p>
+        <div class="summary-card" style="background:#f8fafc;border:1px solid #cbd5e1">
+          <p class="summary-card-label">Completed Orders</p>
+          <p class="summary-card-value" style="color:#0f172a">${paidCompleted.length}</p>
+          <p class="summary-card-sub">Paid transactions</p>
         </div>
         <div class="summary-card" style="background:#eff6ff;border:1px solid #bfdbfe">
-          <p class="summary-card-label">Refunded</p>
-          <p class="summary-card-value" style="color:#2563eb">₱${refunded.reduce((s, l) => s + l.total, 0).toLocaleString()}</p>
-          <p class="summary-card-sub">${refunded.length} orders</p>
+          <p class="summary-card-label">GCash Sales</p>
+          <p class="summary-card-value" style="color:#2563eb">${formatReportCurrency(gcashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${gcashSales.length} orders</p>
+        </div>
+        <div class="summary-card" style="background:#fff7ed;border:1px solid #fdba74">
+          <p class="summary-card-label">Cash Sales</p>
+          <p class="summary-card-value" style="color:#d97706">${formatReportCurrency(cashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${cashOnPickupSales.length > 0 ? `${cashSales.length} cash · ${cashOnPickupSales.length} pickup cash` : `${cashSales.length} orders`}</p>
         </div>
       </div>
       <p class="section-title">Completed Orders (${completedOrders.length})</p>
@@ -636,11 +824,11 @@ function triggerPrint(
         <tfoot>
           <tr>
             <td colspan="8" style="text-align:right;color:#0f172a">Total Revenue</td>
-            <td style="text-align:right;color:#16a34a;font-size:15px">₱${revenue.toLocaleString()}</td>
+            <td style="text-align:right;color:#16a34a;font-size:15px">${formatReportCurrency(revenue, restaurantSettings)}</td>
           </tr>
         </tfoot>
       </table>
-      <p class="footer">Auto-generated by The Crunch POS System · Confidential</p>
+      <p class="footer">Auto-generated by ${restaurantSettings.restaurantName} POS System · Confidential</p>
     </body>
     </html>
   `;
@@ -655,7 +843,7 @@ function triggerPrint(
   };
 }
 
-// ─── Drum Picker Column ────────────────────────────────────────────────────────
+// --- Drum Picker Column ---
 
 interface DrumColProps {
   label: string;
@@ -687,7 +875,7 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
       const div = el as HTMLDivElement;
       div.style.fontSize = i === idx ? "17px" : "14px";
       div.style.fontWeight = i === idx ? "600" : "400";
-      div.style.color = i === idx ? "#4A1C1C" : "#94a3b8";
+      div.style.color = i === idx ? "#4f46e5" : "#94a3b8";
     });
   }
 
@@ -819,7 +1007,6 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
           textTransform: "uppercase",
           color: "#94a3b8",
           marginBottom: 8,
-          fontFamily: "'Poppins', sans-serif",
         }}
       >
         {label}
@@ -865,8 +1052,8 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
             height: ITEM_H,
             marginTop: -ITEM_H / 2,
             borderRadius: 10,
-            background: "rgba(74,28,28,0.07)",
-            border: "0.5px solid rgba(74,28,28,0.18)",
+            background: "rgba(79,70,229,0.08)",
+            border: "0.5px solid rgba(79,70,229,0.22)",
             zIndex: 1,
             pointerEvents: "none",
           }}
@@ -901,9 +1088,8 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
                 width: "100%",
                 fontSize: i === selectedIndex ? 17 : 14,
                 fontWeight: i === selectedIndex ? 600 : 400,
-                color: i === selectedIndex ? "#4A1C1C" : "#94a3b8",
+                color: i === selectedIndex ? "#4f46e5" : "#94a3b8",
                 transition: "color 0.15s, font-size 0.15s",
-                fontFamily: "'Poppins', sans-serif",
               }}
             >
               {item}
@@ -915,7 +1101,7 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
   );
 }
 
-// ─── Drum Date Picker ──────────────────────────────────────────────────────────
+// --- Drum Date Picker ---
 
 interface DrumDatePickerProps {
   open: boolean;
@@ -999,7 +1185,6 @@ function DrumDatePicker({
               borderRadius: 20,
               border: "0.5px solid #e2e8f0",
               paddingBottom: 32,
-              fontFamily: "'Poppins', sans-serif",
               boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
             }}
           >
@@ -1114,7 +1299,6 @@ function DrumDatePicker({
                   fontWeight: 500,
                   color: "#64748b",
                   cursor: "pointer",
-                  fontFamily: "'Poppins', sans-serif",
                 }}
               >
                 Cancel
@@ -1126,12 +1310,11 @@ function DrumDatePicker({
                   padding: "11px 0",
                   borderRadius: 12,
                   border: "none",
-                  background: "#4A1C1C",
+                  background: "#4f46e5",
                   fontSize: 13,
                   fontWeight: 600,
                   color: "#fff",
                   cursor: "pointer",
-                  fontFamily: "'Poppins', sans-serif",
                 }}
               >
                 Apply
@@ -1144,13 +1327,14 @@ function DrumDatePicker({
   );
 }
 
-// ─── Revenue Dropdown ─────────────────────────────────────────────────────────
+// --- Revenue Dropdown ---
 
 interface RevenueDropdownProps {
   period: Period;
   setPeriod: (p: Period) => void;
   logs: SaleLog[];
   orders: Order[];
+  restaurantSettings: GeneralRestaurantSettings;
 }
 
 function RevenueDropdown({
@@ -1158,6 +1342,7 @@ function RevenueDropdown({
   setPeriod,
   logs,
   orders,
+  restaurantSettings,
 }: RevenueDropdownProps) {
   const [open, setOpen] = useState(false);
   const [printToast, setPrintToast] = useState(false);
@@ -1187,9 +1372,10 @@ function RevenueDropdown({
     period === "All Time"
       ? logs
       : logs.filter((l) => l._dateObj >= start && l._dateObj <= now);
-  const completedCount = inPeriod.filter(
-    (l) => l.status === "Completed",
-  ).length;
+  const paidCompleted = inPeriod.filter(
+    (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
+  );
+  const completedCount = paidCompleted.length;
   const pendingCount = inPeriod.filter((l) => l.status === "Pending").length;
   const cancelledCount = inPeriod.filter(
     (l) => l.status === "Cancelled",
@@ -1207,7 +1393,7 @@ function RevenueDropdown({
 
   function handlePrint() {
     setOpen(false);
-    triggerPrint(revenue, period, logs, orders);
+    triggerPrint(revenue, period, logs, orders, restaurantSettings);
     setPrintToast(true);
     setTimeout(() => setPrintToast(false), 3000);
   }
@@ -1233,7 +1419,6 @@ function RevenueDropdown({
               alignItems: "center",
               gap: 10,
               boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-              fontFamily: "'Poppins', sans-serif",
             }}
           >
             <Printer size={14} color="#4ade80" />
@@ -1249,7 +1434,7 @@ function RevenueDropdown({
 
       <div
         ref={ref}
-        style={{ position: "relative", minWidth: 280, zIndex: 100 }}
+        style={{ position: "relative", minWidth: 300, zIndex: 100 }}
       >
         <motion.div
           whileHover={{ boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}
@@ -1257,7 +1442,7 @@ function RevenueDropdown({
           style={{
             background: "#fff",
             border: "1px solid #e2e8f0",
-            borderRadius: 16,
+            borderRadius: 20,
             padding: "18px 20px",
             cursor: "pointer",
             boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
@@ -1315,12 +1500,12 @@ function RevenueDropdown({
                 letterSpacing: -0.5,
               }}
             >
-              ₱{revenue.toLocaleString()}
+              {formatReportCurrency(revenue)}
             </motion.p>
           </AnimatePresence>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {[
-              { label: "Completed", count: completedCount, color: "#16a34a" },
+              { label: "Paid", count: completedCount, color: "#16a34a" },
               { label: "Pending", count: pendingCount, color: "#d97706" },
               { label: "Cancelled", count: cancelledCount, color: "#dc2626" },
               { label: "Refunded", count: refundedCount, color: "#2563eb" },
@@ -1423,7 +1608,6 @@ function RevenueDropdown({
                           color: period === p ? "#0f172a" : "#64748b",
                           fontSize: 13,
                           fontWeight: period === p ? 600 : 400,
-                          fontFamily: "'Poppins', sans-serif",
                           display: "block",
                         }}
                       >
@@ -1433,15 +1617,14 @@ function RevenueDropdown({
                         style={{
                           fontSize: 10,
                           color: "#cbd5e1",
-                          fontFamily: "'Poppins', sans-serif",
                         }}
                       >
-                        ₱{getRevenueForPeriod(logs, p).toLocaleString()} revenue
+                        {formatReportCurrency(getRevenueForPeriod(logs, p))} revenue
                       </span>
                     </div>
                   </div>
                   {period === p && (
-                    <span style={{ color: "#f97316", fontSize: 12 }}>✓</span>
+                    <span style={{ color: "#4f46e5", fontSize: 12 }}>✓</span>
                   )}
                 </motion.div>
               ))}
@@ -1467,12 +1650,15 @@ function RevenueDropdown({
                 whileHover={{ background: "#fef9f0" }}
                 onClick={handlePrint}
                 style={{
-                  padding: "12px 16px",
+                  margin: "4px 10px 10px",
+                  padding: "12px 14px",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: 12,
-                  borderTop: "1px solid #f8fafc",
+                  borderRadius: 16,
+                  border: "1px solid #f5d0a6",
+                  background: "#fffaf5",
                 }}
               >
                 <div
@@ -1480,12 +1666,12 @@ function RevenueDropdown({
                     width: 36,
                     height: 36,
                     borderRadius: 10,
-                    background: "#4A1C1C",
+                    background: "#4f46e5",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     flexShrink: 0,
-                    boxShadow: "0 2px 8px rgba(74,28,28,0.25)",
+                    boxShadow: "0 2px 8px rgba(79,70,229,0.25)",
                   }}
                 >
                   <Printer size={16} color="#fff" />
@@ -1497,7 +1683,6 @@ function RevenueDropdown({
                       fontSize: 13,
                       fontWeight: 600,
                       color: "#0f172a",
-                      fontFamily: "'Poppins', sans-serif",
                     }}
                   >
                     Print Sales Report
@@ -1506,11 +1691,11 @@ function RevenueDropdown({
                     style={{
                       margin: 0,
                       fontSize: 11,
-                      color: "#94a3b8",
-                      fontFamily: "'Poppins', sans-serif",
+                      color: "#64748b",
+                      lineHeight: 1.5,
                     }}
                   >
-                    {period} · ₱{revenue.toLocaleString()} · {completedCount}{" "}
+                    {period} · {formatReportCurrency(revenue)} · {completedCount}{" "}
                     completed
                   </p>
                 </div>
@@ -1537,7 +1722,6 @@ function RevenueDropdown({
                     fontSize: 10,
                     color: "#94a3b8",
                     lineHeight: 1.6,
-                    fontFamily: "'Poppins', sans-serif",
                   }}
                 >
                   Includes: revenue summary, completed orders, cashier
@@ -1552,7 +1736,7 @@ function RevenueDropdown({
   );
 }
 
-// ─── Refund Modal ──────────────────────────────────────────────────────────────
+// --- Refund Modal ---
 
 interface RefundModalProps {
   open: boolean;
@@ -1577,6 +1761,10 @@ function RefundModal({
   const total = log?.total ?? order?.total ?? 0;
   const cashierName = log?.cashierName ?? order?.cashierName ?? "—";
   const paymentMethod = log?.paymentMethod ?? order?.paymentCategory ?? "—";
+  const paymentStatus = formatPaymentStatus(
+    log?.paymentStatus ?? order?.paymentStatus ?? null,
+  );
+  const proofImageUrl = log?.proofImageUrl ?? order?.proofImageUrl ?? null;
 
   return (
     <AnimatePresence>
@@ -1613,7 +1801,6 @@ function RefundModal({
               background: "#fff",
               borderRadius: 20,
               boxShadow: "0 16px 48px rgba(0,0,0,0.12)",
-              fontFamily: "'Poppins', sans-serif",
               overflow: "hidden",
               border: "1px solid #e2e8f0",
             }}
@@ -1675,9 +1862,10 @@ function RefundModal({
                 {[
                   { label: "Transaction ID", value: txnId },
                   { label: "Product", value: product },
-                  { label: "Amount", value: `₱${total.toLocaleString()}` },
+                  { label: "Amount", value: formatReportCurrency(total) },
                   { label: "Cashier", value: cashierName },
-                  { label: "Payment", value: paymentMethod },
+                  { label: "Payment Method", value: paymentMethod },
+                  { label: "Payment Status", value: paymentStatus },
                 ].map((f) => (
                   <div
                     key={f.label}
@@ -1727,6 +1915,42 @@ function RefundModal({
                     </span>
                   </div>
                 ))}
+                {proofImageUrl && (
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 16,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "#94a3b8",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Payment Proof
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => openProofImage(e, proofImageUrl)}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "#2563eb",
+                        textDecoration: "none",
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                      }}
+                    >
+                      View Proof
+                    </button>
+                  </div>
+                )}
               </div>
 
               <p
@@ -1739,7 +1963,7 @@ function RefundModal({
               >
                 Are you sure you want to refund{" "}
                 <strong style={{ color: "#0f172a" }}>
-                  ₱{total.toLocaleString()}
+                  {formatReportCurrency(total)}
                 </strong>{" "}
                 for <strong style={{ color: "#0f172a" }}>{product}</strong>? The
                 order status will be updated to{" "}
@@ -1763,7 +1987,6 @@ function RefundModal({
                     fontWeight: 500,
                     color: "#64748b",
                     cursor: loading ? "not-allowed" : "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                     opacity: loading ? 0.6 : 1,
                   }}
                 >
@@ -1782,7 +2005,6 @@ function RefundModal({
                     fontWeight: 600,
                     color: "#fff",
                     cursor: loading ? "not-allowed" : "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1803,8 +2025,7 @@ function RefundModal({
                       >
                         <RotateCcw size={13} />
                       </motion.span>
-                      Processing…
-                    </>
+                      Processing…                    </>
                   ) : (
                     <>
                       <RotateCcw size={13} /> Confirm Refund
@@ -1820,100 +2041,205 @@ function RefundModal({
   );
 }
 
-// ─── Summary Bar ───────────────────────────────────────────────────────────────
+// --- Summary Bar ---
 
 function SummaryBar({ logs }: { logs: SaleLog[] }) {
-  const completed = logs.filter((l) => l.status === "Completed");
-  const pending = logs.filter((l) => l.status === "Pending");
-  const cancelled = logs.filter((l) => l.status === "Cancelled");
-  const refunded = logs.filter((l) => l.status === "Refunded");
+  const paidCompleted = logs.filter(
+    (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
+  );
+  const gcashSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "GCash",
+  );
+  const cashSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash",
+  );
+  const cashOnPickupSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash on Pickup",
+  );
 
   const stats = [
     {
-      label: "Completed Sales",
-      value: `₱${completed.reduce((s, l) => s + l.total, 0).toLocaleString()}`,
-      sub: `${completed.length} items`,
+      label: "Total Sales",
+      value: formatReportCurrency(
+        paidCompleted.reduce((sum, log) => sum + log.total, 0),
+      ),
+      sub: "Completed + paid only",
       color: "#16a34a",
       bg: "#f0fdf4",
       border: "#bbf7d0",
     },
     {
-      label: "Pending Orders",
-      value: `₱${pending.reduce((s, l) => s + l.total, 0).toLocaleString()}`,
-      sub: `${pending.length} items`,
-      color: "#d97706",
-      bg: "#fffbeb",
-      border: "#fde68a",
+      label: "Completed Orders",
+      value: `${paidCompleted.length}`,
+      sub: "Paid transactions",
+      color: "#0f172a",
+      bg: "#f8fafc",
+      border: "#cbd5e1",
     },
     {
-      label: "Cancelled",
-      value: `${cancelled.length} orders`,
-      sub: "voided",
-      color: "#dc2626",
-      bg: "#fef2f2",
-      border: "#fecaca",
-    },
-    {
-      label: "Refunded",
-      value: `₱${refunded.reduce((s, l) => s + l.total, 0).toLocaleString()}`,
-      sub: `${refunded.length} orders`,
+      label: "GCash Sales",
+      value: formatReportCurrency(
+        gcashSales.reduce((sum, log) => sum + log.total, 0),
+      ),
+      sub: `${gcashSales.length} orders`,
       color: "#2563eb",
       bg: "#eff6ff",
       border: "#bfdbfe",
     },
+    {
+      label: "Cash Sales",
+      value: formatReportCurrency(
+        cashSales.reduce((sum, log) => sum + log.total, 0),
+      ),
+      sub:
+        cashOnPickupSales.length > 0
+          ? `${cashSales.length} cash · ${cashOnPickupSales.length} pickup cash`
+          : `${cashSales.length} orders`,
+      color: "#d97706",
+      bg: "#fffbeb",
+      border: "#fde68a",
+    },
+  ];
+
+  const paymentBreakdown = [
+    {
+      label: "Cash",
+      value: formatReportCurrency(
+        cashSales.reduce((sum, log) => sum + log.total, 0),
+      ),
+      count: cashSales.length,
+    },
+    {
+      label: "GCash",
+      value: formatReportCurrency(
+        gcashSales.reduce((sum, log) => sum + log.total, 0),
+      ),
+      count: gcashSales.length,
+    },
+    ...(cashOnPickupSales.length > 0
+      ? [
+          {
+            label: "Cash on Pickup",
+            value: formatReportCurrency(
+              cashOnPickupSales.reduce((sum, log) => sum + log.total, 0),
+            ),
+            count: cashOnPickupSales.length,
+          },
+        ]
+      : []),
   ];
 
   return (
-    <div
-      style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}
-    >
-      {stats.map((s) => (
-        <motion.div
-          key={s.label}
-          whileHover={{ y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
-          style={{
-            flex: 1,
-            minWidth: 160,
-            background: s.bg,
-            border: `1px solid ${s.border}`,
-            borderRadius: 14,
-            padding: "16px 20px",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-          }}
-        >
-          <p
+    <>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+          gap: 14,
+          marginBottom: 14,
+          alignItems: "stretch",
+        }}
+      >
+        {stats.map((s) => (
+          <motion.div
+            key={s.label}
+            whileHover={{ y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
             style={{
-              color: "#94a3b8",
-              fontSize: 10,
-              fontWeight: 600,
-              margin: "0 0 6px",
-              letterSpacing: 1,
-              textTransform: "uppercase",
+              minHeight: 122,
+              background: s.bg,
+              border: `1px solid ${s.border}`,
+              borderRadius: 18,
+              padding: "18px 20px",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
             }}
           >
-            {s.label}
-          </p>
-          <p
+            <p
+              style={{
+                color: "#94a3b8",
+                fontSize: 10,
+                fontWeight: 700,
+                margin: "0 0 10px",
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+              }}
+            >
+              {s.label}
+            </p>
+            <p
+              style={{
+                color: s.color,
+                fontSize: 24,
+                fontWeight: 700,
+                margin: "0 0 8px",
+                lineHeight: 1.1,
+              }}
+            >
+              {s.value}
+            </p>
+            <p
+              style={{
+                color: "#64748b",
+                fontSize: 11,
+                margin: 0,
+                lineHeight: 1.5,
+              }}
+            >
+              {s.sub}
+            </p>
+          </motion.div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(170px, max-content))",
+          gap: 10,
+          marginBottom: 24,
+          alignItems: "stretch",
+        }}
+      >
+        {paymentBreakdown.map((item) => (
+          <div
+            key={item.label}
             style={{
-              color: s.color,
-              fontSize: 22,
-              fontWeight: 700,
-              margin: "0 0 2px",
+              background: "#fff",
+              border: "1px solid #e2e8f0",
+              borderRadius: 14,
+              padding: "12px 14px",
+              minWidth: 170,
+              boxShadow: "0 1px 4px rgba(15,23,42,0.04)",
             }}
           >
-            {s.value}
-          </p>
-          <p style={{ color: "#94a3b8", fontSize: 11, margin: 0 }}>{s.sub}</p>
-        </motion.div>
-      ))}
-    </div>
+            <p style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 4px" }}>
+              {item.label}
+            </p>
+            <p style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", margin: "0 0 2px" }}>
+              {item.value}
+            </p>
+            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+              {item.count} order{item.count !== 1 ? "s" : ""}
+            </p>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
-// ─── Log Row ───────────────────────────────────────────────────────────────────
+// --- Log Row ---
 
 function LogRow({ log, index }: { log: SaleLog; index: number }) {
   const [open, setOpen] = useState(false);
+  const paymentTone =
+    paymentBadgeStyle[normalizePaymentMethod(log.paymentMethod)] ?? {
+      bg: "#f8fafc",
+      text: "#475569",
+      border: "#cbd5e1",
+    };
 
   return (
     <motion.div
@@ -1954,16 +2280,30 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
         >
           {log.product}
         </span>
-        <span
-          style={{ color: "#94a3b8", fontSize: 11, width: 80, flexShrink: 0 }}
-        >
-          {log.paymentMethod}
+        <span style={{ width: 110, flexShrink: 0 }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "5px 10px",
+              borderRadius: 999,
+              background: paymentTone.bg,
+              color: paymentTone.text,
+              border: `1px solid ${paymentTone.border}`,
+              fontSize: 11,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {normalizePaymentMethod(log.paymentMethod)}
+          </span>
         </span>
         <span
           style={{
             color: TYPE_COLOR[log.type],
             fontSize: 11,
-            fontWeight: 600,
+            fontWeight: 700,
             width: 70,
             textAlign: "center",
             flexShrink: 0,
@@ -1972,7 +2312,14 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
           {log.type}
         </span>
         <span
-          style={{ color: "#94a3b8", fontSize: 12, width: 40, flexShrink: 0 }}
+          style={{
+            color: "#64748b",
+            fontSize: 12,
+            width: 52,
+            flexShrink: 0,
+            textAlign: "center",
+            fontWeight: 600,
+          }}
         >
           ×{log.quantity}
         </span>
@@ -1986,16 +2333,23 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
             flexShrink: 0,
           }}
         >
-          {log.total === 0 ? "—" : `₱${Math.abs(log.total).toLocaleString()}`}
+          {log.total === 0 ? "—" : formatReportCurrency(Math.abs(log.total))}
         </span>
         <span
           style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#f0fdf4",
             color: STATUS_COLOR["Completed"],
             fontSize: 11,
-            fontWeight: 600,
-            width: 80,
-            textAlign: "right",
+            fontWeight: 700,
+            width: 96,
+            textAlign: "center",
             flexShrink: 0,
+            borderRadius: 999,
+            border: "1px solid #bbf7d0",
+            padding: "5px 10px",
           }}
         >
           Completed
@@ -2041,12 +2395,13 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                 { label: "Transaction ID", value: log.transactionId },
                 { label: "Cashier", value: log.cashierName },
                 { label: "Payment Method", value: log.paymentMethod },
+                { label: "Payment Status", value: formatPaymentStatus(log.paymentStatus) },
                 {
                   label: "Unit Price",
-                  value: `₱${log.unitPrice.toLocaleString()}`,
+                  value: formatReportCurrency(log.unitPrice),
                 },
                 { label: "Quantity", value: `${log.quantity} pcs` },
-                { label: "Subtotal", value: `₱${log.total.toLocaleString()}` },
+                { label: "Subtotal", value: formatReportCurrency(log.total) },
                 { label: "Order Status", value: "Completed" },
               ].map((f) => (
                 <div key={f.label}>
@@ -2068,7 +2423,7 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                         f.label === "Order Status"
                           ? STATUS_COLOR["Completed"]
                           : f.label === "Cashier"
-                            ? "#4A1C1C"
+                            ? "#4f46e5"
                             : f.label === "Transaction ID"
                               ? "#111"
                               : "#334155",
@@ -2091,6 +2446,45 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                   </p>
                 </div>
               ))}
+              {log.proofImageUrl && (
+                <div>
+                  <p
+                    style={{
+                      color: "#94a3b8",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: 1,
+                      margin: "0 0 2px",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Payment Proof
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => openProofImage(e, log.proofImageUrl)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      color: "#1d4ed8",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      margin: 0,
+                      textDecoration: "none",
+                      background: "#eff6ff",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: 12,
+                      padding: "9px 13px",
+                      cursor: "pointer",
+                      boxShadow: "0 1px 3px rgba(29,78,216,0.08)",
+                    }}
+                  >
+                    <ImageIcon size={14} />
+                    View Proof
+                  </button>
+                </div>
+              )}
               {log.note && (
                 <div>
                   <p
@@ -2113,7 +2507,7 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                       margin: 0,
                     }}
                   >
-                    ⚠ {log.note}
+                    Warning: {log.note}
                   </p>
                 </div>
               )}
@@ -2125,31 +2519,103 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
   );
 }
 
-// ─── Empty State ───────────────────────────────────────────────────────────────
+// --- Empty / Loading States ---
 
 function EmptyState({ message }: { message: string }) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      style={{ padding: 60, textAlign: "center", color: "#cbd5e1" }}
+      style={{
+        padding: "56px 24px",
+        textAlign: "center",
+        color: "#cbd5e1",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 10,
+      }}
     >
+      <div
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: 16,
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#94a3b8",
+        }}
+      >
+        <Search size={18} />
+      </div>
       <p
         style={{
-          fontSize: 14,
-          fontWeight: 600,
-          margin: "0 0 6px",
-          color: "#94a3b8",
+          fontSize: 15,
+          fontWeight: 700,
+          margin: 0,
+          color: "#475569",
         }}
       >
         No completed transactions yet
       </p>
-      <p style={{ fontSize: 12, margin: 0 }}>{message}</p>
+      <p
+        style={{
+          fontSize: 12,
+          margin: 0,
+          color: "#94a3b8",
+          maxWidth: 360,
+          lineHeight: 1.6,
+        }}
+      >
+        {message}
+      </p>
     </motion.div>
   );
 }
 
-// ─── Log Pagination ────────────────────────────────────────────────────────────
+function LoadingState({ label }: { label: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      style={{
+        padding: "56px 24px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        color: "#64748b",
+      }}
+    >
+      <div
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 16,
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Loader2 size={18} className="animate-spin" />
+      </div>
+      <div style={{ textAlign: "center" }}>
+        <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "#334155" }}>
+          Loading report data
+        </p>
+        <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>{label}</p>
+      </div>
+    </motion.div>
+  );
+}
+
+// --- Pagination ---
 
 interface LogPaginationProps {
   currentPage: number;
@@ -2157,6 +2623,7 @@ interface LogPaginationProps {
   totalCount: number;
   pageSize: number;
   onPageChange: (page: number) => void;
+  itemLabel?: string;
 }
 
 function LogPagination({
@@ -2165,6 +2632,7 @@ function LogPagination({
   totalCount,
   pageSize,
   onPageChange,
+  itemLabel = "sales",
 }: LogPaginationProps) {
   if (totalPages <= 1) return null;
 
@@ -2184,7 +2652,7 @@ function LogPagination({
   return (
     <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100 px-1">
       <span className="text-sm text-gray-500">
-        Showing {start}–{end} of {totalCount} sales
+        Showing {start}–{end} of {totalCount} {itemLabel}
       </span>
       <div className="flex items-center gap-2">
         <Button
@@ -2206,7 +2674,7 @@ function LogPagination({
               key={p}
               variant={currentPage === p ? "default" : "outline"}
               size="icon"
-              className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#4A1C1C] hover:bg-[#3a1515] text-white border-0" : ""}`}
+              className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#4f46e5] hover:bg-[#4338ca] text-white border-0" : ""}`}
               onClick={() => onPageChange(p as number)}
             >
               {p}
@@ -2227,7 +2695,48 @@ function LogPagination({
   );
 }
 
-// ─── Order Row ─────────────────────────────────────────────────────────────────
+// --- Filter Chips ---
+// Shared pill-button filter group, used for order status, payment method,
+// and order type so we don't repeat the same markup three times.
+
+function FilterChips<T extends string>({
+  label,
+  options,
+  active,
+  onChange,
+  activeClass,
+}: {
+  label: string;
+  options: readonly T[];
+  active: T;
+  onChange: (value: T) => void;
+  activeClass?: (option: T) => string;
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-3">
+        {label}
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        {options.map((opt) => (
+          <button
+            key={opt}
+            onClick={() => onChange(opt)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+              active === opt
+                ? (activeClass?.(opt) ?? "bg-[#0f172a] text-white border-[#0f172a]")
+                : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
+            }`}
+          >
+            {opt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- Order Row ---
 
 const statusStyle: Record<string, { bg: string; text: string }> = {
   Completed: { bg: "#f0fdf4", text: "#16a34a" },
@@ -2239,17 +2748,23 @@ const statusStyle: Record<string, { bg: string; text: string }> = {
 const orderTypeStyle: Record<string, { bg: string; text: string }> = {
   "take-out": { bg: "#fffbeb", text: "#d97706" },
   delivery: { bg: "#eff6ff", text: "#2563eb" },
-  "dine-in": { bg: "#fff1f2", text: "#e11d48" },
+  "dine-in": { bg: "#f5f3ff", text: "#7c3aed" },
+};
+
+const paymentBadgeStyle: Record<string, { bg: string; text: string; border: string }> = {
+  Cash: { bg: "#fff7ed", text: "#c2410c", border: "#fdba74" },
+  GCash: { bg: "#eff6ff", text: "#1d4ed8", border: "#bfdbfe" },
+  "Cash on Pickup": { bg: "#f8fafc", text: "#334155", border: "#cbd5e1" },
 };
 
 function OrderRow({
   order,
-  index,
   onRefund,
+  onViewReceipt,
 }: {
   order: Order;
-  index: number;
   onRefund: (order: Order) => void;
+  onViewReceipt: (order: Order) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -2262,42 +2777,38 @@ function OrderRow({
   const fmtDate = (v?: string | null) => {
     const d = parseDateSafe(v);
     return d
-      ? d.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })
+      ? formatDisplayDate(d)
       : "—";
   };
   const fmtTime = (v?: string | null) => {
     const d = parseDateSafe(v);
     return d
-      ? d.toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: true,
-        })
+      ? formatDisplayTime(d)
       : "—";
   };
 
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
-  const canRefund = order.status === "Completed";
+  const canRefund =
+    order.status !== "Refunded" &&
+    order.status !== "Cancelled" &&
+    isPaidPaymentStatus(order.paymentStatus);
   const isDelivery = order.orderType === "delivery";
+  const orderTypeLabel = formatOrderType(order.orderType);
 
-  const orderTypeLabel =
-    order.orderType === "dine-in"
-      ? "Dine In"
-      : order.orderType === "take-out"
-        ? "Take Out"
-        : order.orderType || "—";
+  const paymentTone =
+    paymentBadgeStyle[normalizePaymentMethod(order.paymentCategory)] ?? {
+      bg: "#f8fafc",
+      text: "#475569",
+      border: "#cbd5e1",
+    };
 
   return (
     <>
       <TableRow
-        className="border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+        className="border-gray-100 hover:bg-slate-50/80 transition-colors cursor-pointer"
         onClick={() => setOpen((v) => !v)}
       >
-        <TableCell className="font-medium text-gray-900">
+        <TableCell className="font-medium text-gray-900 py-4">
           <div className="flex items-center gap-2">
             <motion.div
               animate={{ rotate: open ? 180 : 0 }}
@@ -2316,7 +2827,7 @@ function OrderRow({
             </span>
           </div>
         </TableCell>
-        <TableCell className="font-medium text-gray-700 whitespace-nowrap">
+        <TableCell className="font-medium text-gray-700 whitespace-nowrap py-4">
           <span
             style={{
               fontFamily: "'Poppins', monospace",
@@ -2326,45 +2837,64 @@ function OrderRow({
             {order.orderNumber}
           </span>
         </TableCell>
-        <TableCell className="text-gray-600 whitespace-nowrap">
+        <TableCell className="text-gray-600 whitespace-nowrap py-4">
           {fmtDate(order.date)}
         </TableCell>
-        <TableCell className="text-gray-800 font-semibold whitespace-nowrap">
+        <TableCell className="text-gray-800 font-semibold whitespace-nowrap py-4">
           {fmtTime(order.date)}
         </TableCell>
-        <TableCell>
+        <TableCell className="py-4">
           <span
             style={{
               background: otb.bg,
               color: otb.text,
               fontSize: 11,
-              fontWeight: 600,
-              padding: "3px 10px",
+              fontWeight: 700,
+              padding: "5px 10px",
               borderRadius: 99,
+              border: "1px solid rgba(148,163,184,0.18)",
+              display: "inline-flex",
             }}
           >
             {orderTypeLabel}
           </span>
         </TableCell>
-        <TableCell>
+        <TableCell className="py-4">
           <span
             style={{
               background: sc.bg,
               color: sc.text,
               fontSize: 11,
-              fontWeight: 600,
-              padding: "3px 10px",
+              fontWeight: 700,
+              padding: "5px 10px",
               borderRadius: 99,
+              border: "1px solid rgba(148,163,184,0.18)",
+              display: "inline-flex",
             }}
           >
             {order.status}
           </span>
         </TableCell>
-        <TableCell className="text-blue-600 font-medium capitalize">
-          {order.paymentCategory}
+        <TableCell className="py-4">
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "5px 10px",
+              borderRadius: 999,
+              background: paymentTone.bg,
+              color: paymentTone.text,
+              border: `1px solid ${paymentTone.border}`,
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            {normalizePaymentMethod(order.paymentCategory)}
+          </span>
         </TableCell>
-        <TableCell className="font-semibold text-gray-900 text-right">
-          ₱{order.total.toLocaleString()}
+        <TableCell className="font-semibold text-gray-900 text-right py-4">
+          {formatReportCurrency(order.total)}
         </TableCell>
       </TableRow>
 
@@ -2395,7 +2925,7 @@ function OrderRow({
                   >
                     {[
                       { label: "Transaction ID", value: order.transactionId },
-                      { label: "Order ID", value: order.orderNumber },
+                      { label: "Order Number", value: order.orderNumber },
                       { label: "Date", value: fmtDate(order.date) },
                       { label: "Time", value: fmtTime(order.date) },
                       { label: "Cashier", value: order.cashierName || "—" },
@@ -2414,9 +2944,13 @@ function OrderRow({
                       { label: "Total Qty", value: `${totalQty} pcs` },
                       {
                         label: "Subtotal",
-                        value: `₱${order.total.toLocaleString()}`,
+                        value: formatReportCurrency(order.total),
                       },
-                      { label: "Payment", value: order.paymentCategory },
+                      { label: "Payment Method", value: order.paymentCategory },
+                      {
+                        label: "Payment Status",
+                        value: formatPaymentStatus(order.paymentStatus),
+                      },
                       {
                         label: "Order Status",
                         value: order.status,
@@ -2455,7 +2989,7 @@ function OrderRow({
                               "Cashier",
                               "Subtotal",
                               "Transaction ID",
-                              "Order ID",
+                              "Order Number",
                             ].includes(f.label)
                               ? 700
                               : 500,
@@ -2464,20 +2998,20 @@ function OrderRow({
                               : f.label === "Subtotal"
                                 ? "#0f172a"
                                 : f.label === "Cashier"
-                                  ? "#4A1C1C"
+                                  ? "#4f46e5"
                                   : f.label === "Transaction ID"
                                     ? "#111"
-                                    : f.label === "Order ID"
+                                    : f.label === "Order Number"
                                     ? "#111"
                                     : "#334155",
                             fontFamily:
                               f.label === "Transaction ID" ||
-                              f.label === "Order ID"
+                              f.label === "Order Number"
                                 ? "'Poppins', monospace"
                                 : undefined,
                             letterSpacing:
                               f.label === "Transaction ID" ||
-                              f.label === "Order ID"
+                              f.label === "Order Number"
                                 ? "0.03em"
                                 : undefined,
                           }}
@@ -2487,6 +3021,82 @@ function OrderRow({
                       </div>
                     ))}
                   </div>
+
+                  <div style={{ marginBottom: 16 }}>
+                    <p
+                      style={{
+                        color: "#94a3b8",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: 1.2,
+                        margin: "0 0 8px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Receipt
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onViewReceipt(order);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "9px 13px",
+                        borderRadius: 12,
+                        border: "1px solid #cbd5e1",
+                        background: "#fff",
+                        color: "#0f172a",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Printer size={14} /> View Receipt
+                    </button>
+                  </div>
+
+                  {order.proofImageUrl && (
+                    <div style={{ marginBottom: canRefund ? 16 : 0 }}>
+                      <p
+                        style={{
+                          color: "#94a3b8",
+                          fontSize: 9,
+                          fontWeight: 700,
+                          letterSpacing: 1.2,
+                          margin: "0 0 8px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Payment Proof
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => openProofImage(e, order.proofImageUrl)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "9px 13px",
+                          borderRadius: 12,
+                          border: "1px solid #bfdbfe",
+                          background: "#eff6ff",
+                          color: "#1d4ed8",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          textDecoration: "none",
+                          cursor: "pointer",
+                          boxShadow: "0 1px 3px rgba(29,78,216,0.08)",
+                        }}
+                      >
+                        <ImageIcon size={14} />
+                        View Proof
+                      </button>
+                    </div>
+                  )}
 
                   <div style={{ marginBottom: canRefund ? 16 : 0 }}>
                     <p
@@ -2533,7 +3143,7 @@ function OrderRow({
                             </span>
                             {item.name}
                             <span style={{ color: "#94a3b8", fontSize: 11 }}>
-                              ₱{item.price.toLocaleString()}
+                              {formatReportCurrency(item.price)}
                             </span>
                           </div>
                         ))
@@ -2568,7 +3178,6 @@ function OrderRow({
                         fontSize: 12,
                         fontWeight: 600,
                         cursor: "pointer",
-                        fontFamily: "'Poppins', sans-serif",
                       }}
                     >
                       <RotateCcw size={13} /> Refund Order
@@ -2584,7 +3193,7 @@ function OrderRow({
   );
 }
 
-// ─── Orders Tab ────────────────────────────────────────────────────────────────
+// --- Orders Tab ---
 
 const ORDER_STATUS_FILTERS: OrderStatusFilter[] = [
   "All",
@@ -2592,6 +3201,20 @@ const ORDER_STATUS_FILTERS: OrderStatusFilter[] = [
   "Pending",
   "Cancelled",
   "Refunded",
+];
+
+const ORDER_PAYMENT_FILTERS: PaymentMethodFilter[] = [
+  "All",
+  "Cash",
+  "GCash",
+  "Cash on Pickup",
+];
+
+const ORDER_TYPE_FILTERS: OrderTypeFilter[] = [
+  "All",
+  "Dine In",
+  "Take Out",
+  "Delivery",
 ];
 
 const statusActiveColor: Record<OrderStatusFilter, string> = {
@@ -2604,10 +3227,14 @@ const statusActiveColor: Record<OrderStatusFilter, string> = {
 
 function OrdersTab({
   orders,
+  loading,
   onRefund,
+  onViewReceipt,
 }: {
   orders: Order[];
+  loading: boolean;
   onRefund: (order: Order) => void;
+  onViewReceipt: (order: Order) => void;
 }) {
   const now = new Date();
   const [currentPage, setCurrentPage] = useState(1);
@@ -2615,6 +3242,10 @@ function OrdersTab({
   const [toDate, setToDate] = useState<Date | null>(null);
   const [activeQuick, setActiveQuick] = useState<QuickKey | null>("all");
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>("All");
+  const [paymentMethodFilter, setPaymentMethodFilter] =
+    useState<PaymentMethodFilter>("All");
+  const [orderTypeFilter, setOrderTypeFilter] =
+    useState<OrderTypeFilter>("All");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<"from" | "to">("from");
   const [pickerInitial, setPickerInitial] = useState<Date>(now);
@@ -2659,10 +3290,22 @@ function OrdersTab({
   }
 
   const dateFiltered = filterOrdersByRange(orders, fromDate, toDate);
-  const filtered =
+  const statusFiltered =
     statusFilter === "All"
       ? dateFiltered
       : dateFiltered.filter((o) => o.status === statusFilter);
+  const paymentFiltered =
+    paymentMethodFilter === "All"
+      ? statusFiltered
+      : statusFiltered.filter(
+          (o) => normalizePaymentMethod(o.paymentCategory) === paymentMethodFilter,
+        );
+  const filtered =
+    orderTypeFilter === "All"
+      ? paymentFiltered
+      : paymentFiltered.filter(
+          (o) => formatOrderType(o.orderType) === orderTypeFilter,
+        );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ORDER_PAGE_SIZE));
 
@@ -2676,21 +3319,15 @@ function OrdersTab({
     currentPage * ORDER_PAGE_SIZE,
   );
 
-  const totalRevenue = filtered.reduce((sum, o) => sum + o.total, 0);
+  const totalRevenue = filtered
+    .filter(
+      (o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus),
+    )
+    .reduce((sum, o) => sum + o.total, 0);
   const completedCount = filtered.filter(
-    (o) => o.status === "Completed",
+    (o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus),
   ).length;
   const hasRange = !!(fromDate || toDate);
-
-  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1)
-    .filter(
-      (p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1,
-    )
-    .reduce<(number | "...")[]>((acc, p, idx, arr) => {
-      if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
-      acc.push(p);
-      return acc;
-    }, []);
 
   return (
     <>
@@ -2702,24 +3339,22 @@ function OrdersTab({
         onClose={() => setPickerOpen(false)}
       />
 
-      <Card className="bg-white rounded-2xl p-6 shadow-md border-0">
-        <div className="flex items-start justify-between mb-4 flex-wrap gap-4">
+      <Card className="bg-white rounded-[24px] p-6 shadow-md border-0">
+        <div className="flex items-start justify-between mb-5 flex-wrap gap-4">
           <div>
             <h3 className="text-base font-semibold text-gray-800">
               Order History
             </h3>
-            {(hasRange || statusFilter !== "All") && (
-              <p className="text-xs text-gray-400 mt-0.5">
-                {filtered.length} order{filtered.length !== 1 ? "s" : ""} ·{" "}
-                <span className="text-green-600 font-medium">
-                  {completedCount} completed
-                </span>{" "}
-                ·{" "}
-                <span className="text-gray-600 font-medium">
-                  ₱{totalRevenue.toLocaleString()} revenue
-                </span>
-              </p>
-            )}
+            <p className="text-xs text-gray-400 mt-0.5">
+              {filtered.length} order{filtered.length !== 1 ? "s" : ""} ·{" "}
+              <span className="text-green-600 font-medium">
+                {completedCount} completed
+              </span>{" "}
+              ·{" "}
+              <span className="text-gray-600 font-medium">
+                {formatReportCurrency(totalRevenue)} revenue
+              </span>
+            </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <CalendarDays className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -2727,7 +3362,7 @@ function OrdersTab({
               onClick={() => openDatePicker("from")}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
                 fromDate
-                  ? "border-[#4A1C1C] text-[#4A1C1C] bg-[#4A1C1C]/5"
+                  ? "border-[#4f46e5] text-[#4f46e5] bg-[#4f46e5]/5"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white"
               }`}
             >
@@ -2738,7 +3373,7 @@ function OrdersTab({
               onClick={() => openDatePicker("to")}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
                 toDate
-                  ? "border-[#4A1C1C] text-[#4A1C1C] bg-[#4A1C1C]/5"
+                  ? "border-[#4f46e5] text-[#4f46e5] bg-[#4f46e5]/5"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white"
               }`}
             >
@@ -2757,47 +3392,65 @@ function OrdersTab({
           </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap mb-4">
+        <div className="rounded-2xl border border-gray-100 bg-slate-50/80 p-4 mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-3">
+            Quick Range
+          </p>
+          <div className="flex gap-2 flex-wrap">
           {QUICK_RANGES.map((r) => (
             <button
               key={r.key}
               onClick={() => applyQuick(r.key)}
               className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
                 activeQuick === r.key
-                  ? "bg-[#4A1C1C] text-white border-[#4A1C1C]"
+                  ? "bg-[#4f46e5] text-white border-[#4f46e5]"
                   : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
               }`}
             >
               {r.label}
             </button>
           ))}
+          </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap mb-5">
-          {ORDER_STATUS_FILTERS.map((s) => (
-            <button
-              key={s}
-              onClick={() => {
-                setStatusFilter(s);
-                setCurrentPage(1);
-              }}
-              className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
-                statusFilter === s
-                  ? statusActiveColor[s]
-                  : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+        <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-3">
+          <FilterChips
+            label="Order Status"
+            options={ORDER_STATUS_FILTERS}
+            active={statusFilter}
+            activeClass={(s) => statusActiveColor[s]}
+            onChange={(s) => {
+              setStatusFilter(s);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Payment Method"
+            options={ORDER_PAYMENT_FILTERS}
+            active={paymentMethodFilter}
+            onChange={(m) => {
+              setPaymentMethodFilter(m);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Order Type"
+            options={ORDER_TYPE_FILTERS}
+            active={orderTypeFilter}
+            onChange={(t) => {
+              setOrderTypeFilter(t);
+              setCurrentPage(1);
+            }}
+          />
         </div>
 
+        <div className="overflow-hidden rounded-2xl border border-gray-100">
         <Table>
           <TableHeader>
-            <TableRow className="border-gray-200 hover:bg-transparent">
+            <TableRow className="border-gray-100 bg-slate-50 hover:bg-slate-50">
               {[
                 "Transaction ID",
-                "Order ID",
+                "Order Number",
                 "Date",
                 "Time",
                 "Order Type",
@@ -2807,7 +3460,7 @@ function OrdersTab({
               ].map((h) => (
                 <TableHead
                   key={h}
-                  className={`text-gray-700 font-semibold${h === "Amount" ? " text-right" : ""}`}
+                  className={`text-[11px] uppercase tracking-[0.16em] text-slate-500 font-bold${h === "Amount" ? " text-right" : ""}`}
                 >
                   {h}
                 </TableHead>
@@ -2815,104 +3468,86 @@ function OrdersTab({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="p-0">
+                  <LoadingState label="Refreshing order history and payment totals." />
+                </TableCell>
+              </TableRow>
+            ) : filtered.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={8}
-                  className="text-center text-gray-400 py-10"
+                  className="p-0"
                 >
-                  {orders.length === 0
-                    ? "No orders yet. Orders will appear here once the cashier processes them."
-                    : "No orders found for the selected filters."}
+                  <EmptyState
+                    message={
+                      orders.length === 0
+                        ? "No orders yet. Orders will appear here once the cashier processes them."
+                        : "No orders found for the selected filters."
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ) : (
-              paginated.map((order, i) => (
+              paginated.map((order) => (
                 <OrderRow
                   key={order.id}
                   order={order}
-                  index={i}
                   onRefund={onRefund}
+                  onViewReceipt={onViewReceipt}
                 />
               ))
             )}
           </TableBody>
         </Table>
+        </div>
 
-        {filtered.length > ORDER_PAGE_SIZE && (
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-            <span className="text-sm text-gray-500">
-              Showing {(currentPage - 1) * ORDER_PAGE_SIZE + 1}–
-              {Math.min(currentPage * ORDER_PAGE_SIZE, filtered.length)} of{" "}
-              {filtered.length} orders
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              {pageNumbers.map((p, idx) =>
-                p === "..." ? (
-                  <span key={`e-${idx}`} className="text-gray-400 text-sm px-1">
-                    ...
-                  </span>
-                ) : (
-                  <Button
-                    key={p}
-                    variant={currentPage === p ? "default" : "outline"}
-                    size="icon"
-                    className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#4A1C1C] hover:bg-[#3a1515] text-white border-0" : ""}`}
-                    onClick={() => setCurrentPage(p as number)}
-                  >
-                    {p}
-                  </Button>
-                ),
-              )}
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <LogPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={filtered.length}
+          pageSize={ORDER_PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="orders"
+        />
       </Card>
     </>
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
+// --- Main Page ---
 
 export default function SalesReports() {
   const now = new Date();
+  const { width, isMobile, isTablet } = useViewport();
+  const isNarrow = width < 980;
 
-  // ── Core state ──
+  // Core state
   const [logs, setLogs] = useState<SaleLog[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [restaurantSettings, setRestaurantSettings] =
+    useState<GeneralRestaurantSettings>(GENERAL_SETTINGS_DEFAULTS);
+  const [isLoading, setIsLoading] = useState(true);
+  const hasLoadedOnce = useRef(false);
+  const [proofNotice, setProofNotice] = useState("");
 
-  // ── UI state ──
+  // UI state
   const [activeTab, setActiveTab] = useState<TabKey>("logs");
   const [search, setSearch] = useState("");
   const [logPage, setLogPage] = useState(1);
   const [period, setPeriod] = useState<Period>("Today");
 
-  // ── Refund state ──
+  // Refund state
   const [refundLog, setRefundLog] = useState<SaleLog | null>(null);
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [refundLoading, setRefundLoading] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+  const [receiptError, setReceiptError] = useState("");
+  const [receipt, setReceipt] = useState<ReceiptDto | null>(null);
 
-  // ── Log date filter state ──
+  // Log date filter state
   const [logFromDate, setLogFromDate] = useState<Date | null>(null);
   const [logToDate, setLogToDate] = useState<Date | null>(null);
   const [activeLogQuick, setActiveLogQuick] = useState<QuickKey | null>("all");
@@ -2920,30 +3555,63 @@ export default function SalesReports() {
   const [logPickerTarget, setLogPickerTarget] = useState<"from" | "to">("from");
   const [logPickerInitial, setLogPickerInitial] = useState<Date>(now);
 
-  // ── Data fetching ──
+  // Data fetching
   const fetchSalesData = useCallback(async () => {
     try {
+      if (!hasLoadedOnce.current) setIsLoading(true);
       const rows = await api.get<RawOrderRow[]>("/orders");
       const { logs: l, orders: o } = processRawRows(rows ?? []);
       setLogs(l);
       setOrders(o);
     } catch (err) {
       console.error("Failed to fetch sales data:", err);
+    } finally {
+      setIsLoading(false);
+      hasLoadedOnce.current = true;
     }
   }, []);
 
+  useEffect(() => { void fetchSalesData(); }, [fetchSalesData]);
+  useEventInvalidation({
+    topics: ["orders.changed", "payments.changed"],
+    onInvalidate: fetchSalesData,
+  });
+
   useEffect(() => {
-    fetchSalesData();
-    const interval = setInterval(fetchSalesData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchSalesData]);
+    let cancelled = false;
+    fetchGeneralSettings().then((data) => {
+      if (!cancelled) {
+        setRestaurantSettings(data);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleProofNotice = (event: Event) => {
+      const customEvent = event as CustomEvent<{ message?: string }>;
+      setProofNotice(
+        String(customEvent.detail?.message || "Proof image is unavailable."),
+      );
+    };
+    window.addEventListener(PROOF_NOTICE_EVENT, handleProofNotice);
+    return () => window.removeEventListener(PROOF_NOTICE_EVENT, handleProofNotice);
+  }, []);
+
+  useEffect(() => {
+    if (!proofNotice) return;
+    const timeout = window.setTimeout(() => setProofNotice(""), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [proofNotice]);
 
   // Reset log page when search/date filters change
   useEffect(() => {
     setLogPage(1);
   }, [search, logFromDate, logToDate]);
 
-  // ── Log date picker handlers ──
+  // Log date picker handlers
   function openLogDatePicker(target: "from" | "to") {
     setLogPickerTarget(target);
     setLogPickerInitial(
@@ -2985,7 +3653,7 @@ export default function SalesReports() {
     setLogPage(1);
   }
 
-  // ── Refund handler ──
+  // Refund handler
   async function handleRefundConfirm() {
     const orderId = refundLog?.orderId ?? refundOrder?.id;
     if (orderId == null) return;
@@ -3003,8 +3671,27 @@ export default function SalesReports() {
     }
   }
 
-  // ── Derived log data ──
-  const completedLogs = logs.filter((l) => l.status === "Completed");
+  async function handleViewReceipt(order: Order) {
+    setReceiptOpen(true);
+    setReceiptLoading(true);
+    setReceiptError("");
+    setReceipt(null);
+    try {
+      setReceipt(await api.get<ReceiptDto>(`/orders/${order.id}/receipt`));
+    } catch (error) {
+      console.error("Receipt load failed:", error);
+      setReceiptError(
+        error instanceof Error ? error.message : "Unable to load receipt.",
+      );
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
+
+  // Derived log data
+  const completedLogs = logs.filter(
+    (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
+  );
   const dateFilteredLogs = filterLogsByRange(
     completedLogs,
     logFromDate,
@@ -3092,6 +3779,34 @@ export default function SalesReports() {
     >
       <Sidebar />
 
+      <AnimatePresence>
+        {proofNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            role="alert"
+            style={{
+              position: "fixed",
+              top: 22,
+              right: 22,
+              zIndex: 500,
+              maxWidth: 380,
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: "1px solid #fecaca",
+              background: "#fff1f2",
+              color: "#be123c",
+              boxShadow: "0 10px 30px rgba(15,23,42,0.12)",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {proofNotice}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <RefundModal
         open={!!(refundLog || refundOrder)}
         log={refundLog}
@@ -3106,6 +3821,18 @@ export default function SalesReports() {
         loading={refundLoading}
       />
 
+      <ReceiptViewerModal
+        open={receiptOpen}
+        receipt={receipt}
+        loading={receiptLoading}
+        error={receiptError}
+        onClose={() => {
+          setReceiptOpen(false);
+          setReceipt(null);
+          setReceiptError("");
+        }}
+      />
+
       <DrumDatePicker
         open={logPickerOpen}
         title={
@@ -3116,8 +3843,8 @@ export default function SalesReports() {
         onClose={() => setLogPickerOpen(false)}
       />
 
-      <div style={{ padding: "40px 40px 40px 88px" }}>
-        {/* ── Header ── */}
+      <div style={{ padding: isMobile ? "78px 14px 24px" : isTablet ? "84px 18px 28px" : "40px 40px 40px 88px" }}>
+        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -3134,7 +3861,7 @@ export default function SalesReports() {
           <div>
             <p
               style={{
-                color: "#f97316",
+                color: "#4f46e5",
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: 2,
@@ -3157,15 +3884,18 @@ export default function SalesReports() {
               Transaction history & audit trail
             </p>
           </div>
-          <RevenueDropdown
-            period={period}
-            setPeriod={setPeriod}
-            logs={logs}
-            orders={orders}
-          />
+          <div style={{ width: isMobile ? "100%" : "auto" }}>
+            <RevenueDropdown
+              period={period}
+              setPeriod={setPeriod}
+              logs={logs}
+              orders={orders}
+              restaurantSettings={restaurantSettings}
+            />
+          </div>
         </motion.div>
 
-        {/* ── Summary Bar ── */}
+        {/* Summary Bar */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -3174,15 +3904,18 @@ export default function SalesReports() {
           <SummaryBar logs={logs} />
         </motion.div>
 
-        {/* ── Tabs ── */}
+        {/* Tabs */}
         <div
           style={{
-            display: "inline-flex",
+            display: "flex",
             gap: 4,
             marginBottom: 20,
             background: "#f1f5f9",
             borderRadius: 99,
             padding: 4,
+            maxWidth: "100%",
+            overflowX: "auto",
+            width: "fit-content",
           }}
         >
           {tabs.map(({ key, label, count, icon }) => {
@@ -3200,7 +3933,6 @@ export default function SalesReports() {
                   border: "none",
                   background: active ? "#fff" : "transparent",
                   cursor: "pointer",
-                  fontFamily: "'Poppins', sans-serif",
                   fontSize: 13,
                   fontWeight: active ? 600 : 500,
                   color: active ? "#0f172a" : "#94a3b8",
@@ -3242,7 +3974,7 @@ export default function SalesReports() {
           })}
         </div>
 
-        {/* ── Sales Logs Tab ── */}
+        {/* Sales Logs Tab */}
         {activeTab === "logs" && (
           <>
             <motion.div
@@ -3250,37 +3982,53 @@ export default function SalesReports() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.15, duration: 0.35 }}
               style={{
-                display: "flex",
-                gap: 10,
+                display: "grid",
+                gridTemplateColumns: isNarrow ? "1fr" : "minmax(0,1fr) auto",
+                gap: 14,
                 marginBottom: 20,
-                alignItems: "center",
-                flexWrap: "wrap",
+                alignItems: "stretch",
               }}
             >
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by transaction ID, product, cashier, or payment method…"
+              <div
                 style={{
-                  flex: 1,
-                  minWidth: 220,
-                  background: "#fff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 99,
-                  padding: "10px 18px",
-                  fontSize: 13,
-                  color: "#1e293b",
-                  outline: "none",
-                  fontFamily: "'Poppins', sans-serif",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  position: "relative",
+                  minWidth: 0,
                 }}
-              />
+              >
+                <Search
+                  size={16}
+                  style={{
+                    position: "absolute",
+                    left: 16,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    color: "#94a3b8",
+                  }}
+                />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by transaction ID, product, cashier, or payment method..."
+                  style={{
+                    width: "100%",
+                    background: "#fff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 18,
+                    padding: "12px 18px 12px 42px",
+                    fontSize: 13,
+                    color: "#1e293b",
+                    outline: "none",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  }}
+                />
+              </div>
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: 8,
                   flexWrap: "wrap",
+                  justifyContent: isNarrow ? "flex-start" : "flex-end",
                 }}
               >
                 <CalendarDays className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -3291,16 +4039,15 @@ export default function SalesReports() {
                     alignItems: "center",
                     gap: 6,
                     padding: "8px 12px",
-                    borderRadius: 12,
+                    borderRadius: 14,
                     border: logFromDate
-                      ? "1px solid #4A1C1C"
+                      ? "1px solid #4f46e5"
                       : "1px solid #e5e7eb",
-                    background: logFromDate ? "rgba(74,28,28,0.05)" : "#fff",
-                    color: logFromDate ? "#4A1C1C" : "#6b7280",
+                    background: logFromDate ? "rgba(79,70,229,0.08)" : "#fff",
+                    color: logFromDate ? "#4f46e5" : "#6b7280",
                     fontSize: 13,
                     fontWeight: 500,
                     cursor: "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                   }}
                 >
                   {logFromDate ? formatDisplayDate(logFromDate) : "Select date"}
@@ -3313,16 +4060,15 @@ export default function SalesReports() {
                     alignItems: "center",
                     gap: 6,
                     padding: "8px 12px",
-                    borderRadius: 12,
+                    borderRadius: 14,
                     border: logToDate
-                      ? "1px solid #4A1C1C"
+                      ? "1px solid #4f46e5"
                       : "1px solid #e5e7eb",
-                    background: logToDate ? "rgba(74,28,28,0.05)" : "#fff",
-                    color: logToDate ? "#4A1C1C" : "#6b7280",
+                    background: logToDate ? "rgba(79,70,229,0.08)" : "#fff",
+                    color: logToDate ? "#4f46e5" : "#6b7280",
                     fontSize: 13,
                     fontWeight: 500,
                     cursor: "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                   }}
                 >
                   {logToDate ? formatDisplayDate(logToDate) : "Select date"}
@@ -3343,13 +4089,14 @@ export default function SalesReports() {
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  padding: "8px 14px",
+                  padding: "9px 14px",
                   borderRadius: 99,
                   background: "#f0fdf4",
                   border: "1px solid #bbf7d0",
                   fontSize: 12,
-                  fontWeight: 600,
+                  fontWeight: 700,
                   color: "#16a34a",
+                  whiteSpace: "nowrap",
                 }}
               >
                 <span
@@ -3361,7 +4108,7 @@ export default function SalesReports() {
                     display: "inline-block",
                   }}
                 />
-                Showing completed sales only
+                Showing completed paid sales only
               </div>
             </motion.div>
 
@@ -3371,7 +4118,7 @@ export default function SalesReports() {
                 display: "flex",
                 gap: 8,
                 flexWrap: "wrap",
-                marginBottom: 16,
+                marginBottom: 18,
               }}
             >
               {QUICK_RANGES.map((r) => (
@@ -3380,18 +4127,17 @@ export default function SalesReports() {
                   onClick={() => applyLogQuick(r.key)}
                   style={{
                     fontSize: 12,
-                    fontWeight: 600,
-                    padding: "6px 12px",
+                    fontWeight: 700,
+                    padding: "7px 13px",
                     borderRadius: 999,
                     border:
                       activeLogQuick === r.key
-                        ? "1px solid #4A1C1C"
+                        ? "1px solid #4f46e5"
                         : "1px solid #e5e7eb",
                     background:
-                      activeLogQuick === r.key ? "#4A1C1C" : "#f9fafb",
+                      activeLogQuick === r.key ? "#4f46e5" : "#f9fafb",
                     color: activeLogQuick === r.key ? "#fff" : "#6b7280",
                     cursor: "pointer",
-                    fontFamily: "'Poppins', sans-serif",
                     transition: "all 0.2s",
                   }}
                 >
@@ -3407,7 +4153,7 @@ export default function SalesReports() {
               transition={{ delay: 0.2, duration: 0.35 }}
               style={{
                 background: "#fff",
-                borderRadius: 16,
+                borderRadius: 20,
                 border: "1px solid #e2e8f0",
                 overflow: "hidden",
                 boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
@@ -3419,7 +4165,7 @@ export default function SalesReports() {
                   display: "flex",
                   alignItems: "center",
                   gap: 14,
-                  padding: "10px 20px",
+                  padding: "12px 20px",
                   borderBottom: "1px solid #f1f5f9",
                   background: "#f8fafc",
                 }}
@@ -3428,11 +4174,11 @@ export default function SalesReports() {
                 {[
                   { label: "TIME", width: 72 },
                   { label: "PRODUCT", flex: 1 },
-                  { label: "PAYMENT", width: 80 },
+                  { label: "PAYMENT", width: 110 },
                   { label: "TYPE", width: 70 },
-                  { label: "QTY", width: 40 },
+                  { label: "QTY", width: 52 },
                   { label: "AMOUNT", width: 100, align: "right" },
-                  { label: "STATUS", width: 80, align: "right" },
+                  { label: "STATUS", width: 96, align: "right" },
                 ].map((col) => (
                   <span
                     key={col.label}
@@ -3454,7 +4200,9 @@ export default function SalesReports() {
               </div>
 
               <AnimatePresence>
-                {dates.length === 0 ? (
+                {isLoading ? (
+                  <LoadingState label="Pulling paid completed sales from the latest order activity." />
+                ) : dates.length === 0 ? (
                   <EmptyState
                     key="empty"
                     message={
@@ -3491,8 +4239,7 @@ export default function SalesReports() {
                             {date}
                           </span>
                           <span style={{ color: "#cbd5e1", fontSize: 11 }}>
-                            {entries.length} records · ₱
-                            {dayRevenue.toLocaleString()} revenue
+                            {entries.length} records · {formatReportCurrency(dayRevenue)} revenue
                           </span>
                         </div>
                         {entries.map((log, i) => (
@@ -3535,7 +4282,7 @@ export default function SalesReports() {
           </>
         )}
 
-        {/* ── Orders Tab ── */}
+        {/* Orders Tab */}
         {activeTab === "orders" && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -3544,7 +4291,9 @@ export default function SalesReports() {
           >
             <OrdersTab
               orders={orders}
+              loading={isLoading}
               onRefund={(order) => setRefundOrder(order)}
+              onViewReceipt={handleViewReceipt}
             />
           </motion.div>
         )}
