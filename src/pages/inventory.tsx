@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import {
+  useState, useEffect, useRef, useCallback,
+  type ReactNode, type CSSProperties, type ChangeEvent, type FocusEvent, type ButtonHTMLAttributes,
+} from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { UserIdentityBanner } from "@/components/UserIdentityBanner";
 import { api, apiCall, resolveAssetUrl } from "@/lib/api";
@@ -14,61 +16,27 @@ import {
   formatInSettingsTimezone,
 } from "@/lib/restaurantSettings";
 
-// ── Real-time clock hook ─────────────────────────────────────────────
+/**
+ * BACKEND NOTES
+ * - Everything on this page comes from the API:
+ *     GET  /products?item_type=menu_item        menu items
+ *     GET  /inventory                           stock items (used as ingredient choices)
+ *     GET  /settings/menu-categories?activeOnly=1   category list
+ *     POST /products, PUT /products/:id, DELETE /products/:id (falls back to /inventory/:id)
+ *     POST /upload-product-image                item photo
+ * - Nothing is stored in localStorage or sessionStorage.
+ * - Poppins is loaded globally by the app. This file only references it.
+ */
 
-function useNow() {
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
+/* ────────────────────────────────────────────────────────────────────────────
+   Config
+   ──────────────────────────────────────────────────────────────────────── */
 
-const formatPeso = (value: number | string) =>
-  formatCurrencyAmount(Number(value || 0));
+const FONT = "'Poppins', sans-serif";
+const PLACEHOLDER_IMG = "/img/placeholder.jpg";
+const DEFAULT_UNIT = "piece"; // unit sent when creating a menu item (the form has no unit field)
 
-// ── Types ─────────────────────────────────────────────────────────────
-
-interface ApiInventoryRow {
-  id?: number; product_id?: number; inventory_id?: number; item_type?: string; menu_code?: string;
-  name?: string; product_name?: string; category?: string; image?: string; stock?: number;
-  quantity?: number; price?: number | string; unit?: string; promo?: string; isRawMaterial?: number | boolean;
-  description?: string; availability_status?: string; is_promotional?: number | boolean;
-  promo_price?: number | string | null; promo_label?: string; dailyWithdrawn?: number; returned?: number;
-  wasted?: number; soldToday?: number; manual_override?: number | boolean; manual_status?: string;
-  ingredient_count?: number; available_servings?: number | string | null; ingredients?: MenuIngredientRow[];
-}
-
-// ── Notification helper ──────────────────────────────────────────────
-
-function notify(
-  addNotification: ReturnType<typeof useNotifications>["addNotification"],
-  label: string,
-  type: "success" | "error" | "warning" | "info" = "info",
-) {
-  addNotification({ id: `${Date.now()}-${Math.random()}`, label, type });
-}
-
-async function uploadProductImage(file: File): Promise<string> {
-  const formData = new FormData();
-  formData.append("image", file);
-  const response = await api.post<{ fileUrl: string }>(
-    "/upload-product-image",
-    formData,
-  );
-  const fileUrl = String(response?.fileUrl ?? "").trim();
-  if (!fileUrl) {
-    throw new Error("Product image upload did not return a file path");
-  }
-  return fileUrl;
-}
-
-// ── Design tokens ─────────────────────────────────────────────────────
-// Warm dashboard palette built from the brand's own burnt-orange + forest
-// green pairing (matches the Settings module), so this reads as "The Crunch
-// Fairview" rather than a generic admin theme.
-
+// Colors (the page's existing palette, unchanged)
 const T = {
   page: "#F6F4EE",
   surface: "#FFFFFF",
@@ -89,237 +57,408 @@ const T = {
   badSoft: "#FBEAE8",
 };
 
-const FONT = "Poppins, sans-serif";
+/* ────────────────────────────────────────────────────────────────────────────
+   Types
+   ──────────────────────────────────────────────────────────────────────── */
 
-// ── Shared UI ─────────────────────────────────────────────────────────
+type ManualOverrideMode = "Auto" | "Force Available" | "Force Out of Stock";
+type ToastType = "success" | "error" | "warning" | "info";
+type Toast = (label: string, type?: ToastType) => void;
 
-function SMModal({
-  title,
-  eyebrow,
-  onClose,
-  children,
-  footer,
-}: {
-  title: string;
-  eyebrow?: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-}) {
+const OVERRIDE_MODES: ManualOverrideMode[] = ["Auto", "Force Available", "Force Out of Stock"];
+
+interface IngredientRow {
+  product_id?: number; product_name?: string; quantity_required?: number | string; unit?: string; stock?: number | string;
+}
+
+// One row from /products or /inventory
+interface ApiRow {
+  id?: number; product_id?: number; inventory_id?: number; item_type?: string; menu_code?: string;
+  name?: string; product_name?: string; category?: string; image?: string; stock?: number; quantity?: number;
+  price?: number | string; unit?: string; description?: string; availability_status?: string;
+  is_promotional?: number | boolean; promo_price?: number | string | null; promo_label?: string;
+  dailyWithdrawn?: number; manual_override?: number | boolean; manual_status?: string;
+  ingredient_count?: number; available_servings?: number | string | null; ingredients?: IngredientRow[];
+}
+
+interface IngredientInput { productId: string; quantityRequired: string }
+interface IngredientOption { id: number; name: string; category: string }
+interface MenuCategoryRecord { name: string; display_order: number; is_active: boolean | number }
+
+interface MenuItem {
+  id: number;
+  rawProductId?: number;
+  rawInventoryId?: number;
+  menuCode: string;
+  name: string;
+  category: string;
+  price: string;
+  unit: string;
+  stock: number;
+  description: string;
+  image: string;
+  availabilityStatus: string;
+  overrideMode: ManualOverrideMode;
+  hasRecipe: boolean;
+  availableServings: number | null;
+  isPromotional: boolean;
+  promoPrice: string;
+  promoLabel: string;
+  ingredients: IngredientInput[];
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Helpers
+   ──────────────────────────────────────────────────────────────────────── */
+
+const formatPeso = (value: number | string) => formatCurrencyAmount(Number(value || 0));
+const errorText = (error: unknown) => (error instanceof Error ? error.message : "Unknown error");
+
+function useNow() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
+async function uploadProductImage(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("image", file);
+  const response = await api.post<{ fileUrl: string }>("/upload-product-image", formData);
+  const fileUrl = String(response?.fileUrl ?? "").trim();
+  if (!fileUrl) throw new Error("Product image upload did not return a file path");
+  return fileUrl;
+}
+
+// Tries each endpoint in order. Moves to the next one only when the server answers 404.
+async function tryEndpoints(endpoints: string[], method: "PUT" | "DELETE", body?: object) {
+  let lastError: unknown;
+  for (const endpoint of endpoints) {
+    try {
+      await apiCall(endpoint, body ? { method, body } : { method });
+      return;
+    } catch (error) {
+      if (!errorText(error).includes("404")) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function toOverrideMode(manualOverride: unknown, manualStatus: unknown): ManualOverrideMode {
+  const isManual = manualOverride === true || manualOverride === 1 || String(manualOverride ?? "").trim().toLowerCase() === "true";
+  if (!isManual) return "Auto";
+  return String(manualStatus ?? "").trim().toLowerCase() === "out of stock" ? "Force Out of Stock" : "Force Available";
+}
+
+function toOverridePayload(mode: ManualOverrideMode) {
+  if (mode === "Force Available") return { manual_override: true, manual_status: "Available" };
+  if (mode === "Force Out of Stock") return { manual_override: true, manual_status: "Out of Stock" };
+  return { manual_override: false, manual_status: "Available" };
+}
+
+// Validates the ingredient rows and turns them into the API format
+function buildIngredientPayload(inputs: IngredientInput[]) {
+  const filled = inputs
+    .map((entry) => ({ productId: entry.productId.trim(), quantityRequired: entry.quantityRequired.trim() }))
+    .filter((entry) => entry.productId || entry.quantityRequired);
+
+  for (const entry of filled) {
+    if (!entry.productId || !entry.quantityRequired) throw new Error("Each ingredient row needs both an ingredient and a required quantity.");
+    if (Number(entry.quantityRequired) <= 0) throw new Error("Ingredient quantities must be greater than zero.");
+  }
+  return filled.map((entry) => ({ product_id: Number(entry.productId), quantity_required: Number(entry.quantityRequired) }));
+}
+
+// Keeps only menu items, and only the newest row when a name appears twice
+function latestPerName(rows: ApiRow[]) {
+  const rowId = (row: ApiRow) => Number(row.product_id ?? row.id ?? row.inventory_id ?? 0);
+  const newest = new Map<string, ApiRow>();
+  for (const row of rows) {
+    if (String(row.item_type ?? "menu_item").trim().toLowerCase() !== "menu_item") continue;
+    const key = String(row.product_name ?? row.name ?? "").trim().toLowerCase();
+    const saved = newest.get(key);
+    if (!saved || rowId(row) > rowId(saved)) newest.set(key, row);
+  }
+  return [...newest.values()];
+}
+
+function toMenuItem(item: ApiRow): MenuItem {
+  const id = Number(item.product_id ?? item.inventory_id ?? item.id ?? 0);
+  const servings = item.available_servings;
+  return {
+    id,
+    rawProductId: item.product_id ? Number(item.product_id) : undefined,
+    rawInventoryId: item.inventory_id ? Number(item.inventory_id) : undefined,
+    menuCode: String(item.menu_code ?? `M-${String(id).padStart(3, "0")}`),
+    name: item.name || item.product_name || "Unnamed Product",
+    category: item.category || "Uncategorized",
+    price: String(item.price ?? "0"),
+    unit: String(item.unit ?? DEFAULT_UNIT),
+    stock: Number(item.quantity ?? item.stock ?? 0),
+    description: String(item.description ?? ""),
+    image: item.image || PLACEHOLDER_IMG,
+    availabilityStatus: String(item.availability_status ?? "Available"),
+    overrideMode: toOverrideMode(item.manual_override, item.manual_status),
+    hasRecipe: Number(item.ingredient_count ?? 0) > 0,
+    availableServings: servings === null || servings === undefined || String(servings) === "" ? null : Number(servings),
+    isPromotional: Boolean(Number(item.is_promotional ?? 0)),
+    promoPrice: item.promo_price !== null && item.promo_price !== undefined && String(item.promo_price) !== "" ? String(item.promo_price) : "",
+    promoLabel: String(item.promo_label ?? ""),
+    ingredients: (item.ingredients ?? []).map((ingredient) => ({
+      productId: String(ingredient.product_id ?? ""),
+      quantityRequired: String(ingredient.quantity_required ?? ""),
+    })),
+  };
+}
+
+// What a customer can actually order: servings from the recipe, or plain stock
+const sellableQuantity = (item: MenuItem) => (item.hasRecipe ? Number(item.availableServings ?? 0) : item.stock);
+const isUnavailable = (item: MenuItem) => item.availabilityStatus === "Out of Stock" || sellableQuantity(item) === 0;
+const priceNumber = (value: string) => parseFloat(String(value).replace(/[^0-9.]/g, "")) || 0;
+
+// Loads everything the page needs from the API
+function useMenuAdmin(onError: (message: string) => void) {
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [apiCategories, setApiCategories] = useState<string[]>([]);
+  const [ingredientOptions, setIngredientOptions] = useState<IngredientOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [menuData, stockData, categoryData] = await Promise.all([
+        apiCall("/products?item_type=menu_item", { method: "GET" }),
+        apiCall("/inventory", { method: "GET" }),
+        apiCall("/settings/menu-categories?activeOnly=1", { method: "GET" }).catch(() => []),
+      ]);
+      const menuRows = Array.isArray(menuData) ? (menuData as ApiRow[]) : [];
+      const stockRows = Array.isArray(stockData) ? (stockData as ApiRow[]) : [];
+      const categoryRows = Array.isArray(categoryData) ? (categoryData as MenuCategoryRecord[]) : [];
+
+      setItems(latestPerName(menuRows).map(toMenuItem));
+
+      setApiCategories(
+        categoryRows
+          .filter((c) => c.is_active === true || c.is_active === 1)
+          .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0) || a.name.localeCompare(b.name))
+          .map((c) => c.name.trim())
+          .filter(Boolean),
+      );
+
+      setIngredientOptions(
+        stockRows
+          .filter((row) => String(row.item_type ?? "stock_item").trim().toLowerCase() === "stock_item")
+          .map((row) => ({
+            id: Number(row.product_id ?? row.id ?? row.inventory_id ?? 0),
+            name: String(row.product_name ?? row.name ?? "Unnamed Product"),
+            category: String(row.category ?? "Uncategorized"),
+          }))
+          .filter((option) => option.id > 0)
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+    } catch (error) {
+      console.error("Failed to load products:", error);
+      onErrorRef.current("Failed to load products. Please try refreshing.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  // Use the categories from Settings. If there are none, use the ones already on the items.
+  const categories = apiCategories.length > 0
+    ? apiCategories
+    : [...new Set(items.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+  return { items, categories, ingredientOptions, loading, reload };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Shared UI
+   ──────────────────────────────────────────────────────────────────────── */
+
+type Variant = "solid" | "outline" | "ghost" | "danger" | "dangerSolid";
+
+const buttonStyles: Record<Variant, CSSProperties> = {
+  solid: { color: "#fff", background: T.accent, border: `1px solid ${T.accent}` },
+  outline: { color: T.ink, background: T.surface, border: `1px solid ${T.line}` },
+  ghost: { color: T.muted, background: T.surfaceMuted, border: "1px solid transparent" },
+  danger: { color: T.bad, background: "transparent", border: "1px solid transparent" },
+  dangerSolid: { color: "#fff", background: T.bad, border: `1px solid ${T.bad}` },
+};
+
+function Button({ variant = "outline", small, style, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; small?: boolean }) {
   return (
-    <div
-      className="fixed inset-0 z-[400] flex items-center justify-center p-5 backdrop-blur-sm"
-      style={{ background: "rgba(28,27,23,0.38)", animation: "fadeIn 0.18s ease", fontFamily: FONT }}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-[520px] overflow-hidden rounded-[28px]"
-        style={{
-          background: T.surface,
-          boxShadow: "0 30px 80px rgba(28,27,23,0.20)",
-          animation: "slideUp 0.22s cubic-bezier(.4,0,.2,1)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between px-7 py-5" style={{ borderBottom: `1px solid ${T.line}`, background: T.surfaceMuted }}>
-          <div>
-            {eyebrow && <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: T.accent }}>{eyebrow}</p>}
-            <h3 className="text-[16px] font-semibold" style={{ color: T.ink }}>{title}</h3>
-          </div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full border-none text-[16px] leading-none transition-colors" style={{ color: T.muted, background: T.surface }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = T.ink; e.currentTarget.style.background = T.line; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = T.muted; e.currentTarget.style.background = T.surface; }}>
-            {"\u00D7"}
-          </button>
-        </div>
-        <div className="max-h-[62vh] overflow-y-auto px-7 py-6">{children}</div>
-        {footer && <div className="flex justify-end gap-2 px-7 py-4" style={{ borderTop: `1px solid ${T.line}`, background: T.surfaceMuted }}>{footer}</div>}
-      </div>
-      <style>{`
-        @keyframes fadeIn  { from { opacity:0 } to { opacity:1 } }
-        @keyframes slideUp { from { opacity:0; transform:translateY(12px) scale(0.98) } to { opacity:1; transform:translateY(0) scale(1) } }
-      `}</style>
-    </div>
+    <button
+      {...props}
+      className={`rounded-xl font-semibold transition-opacity hover:opacity-85 ${small ? "px-2.5 py-1.5 text-[11.5px]" : "px-4 py-2.5 text-[12.5px]"}`}
+      style={{ fontFamily: FONT, cursor: props.disabled ? "not-allowed" : "pointer", opacity: props.disabled ? 0.6 : 1, ...buttonStyles[variant], ...style }}
+    />
   );
 }
 
-function FormGroup({ label, children }: { label: string; children: React.ReactNode }) {
+const inputClass = "w-full rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all box-border";
+const inputStyle: CSSProperties = { color: T.ink, background: T.surfaceMuted, border: `1.5px solid ${T.line}`, fontFamily: FONT };
+const focusRing = (e: FocusEvent<HTMLElement>) => {
+  e.currentTarget.style.borderColor = T.accent;
+  e.currentTarget.style.boxShadow = `0 0 0 4px ${T.accentSoft}`;
+  e.currentTarget.style.background = T.surface;
+};
+const blurRing = (e: FocusEvent<HTMLElement>) => {
+  e.currentTarget.style.borderColor = T.line;
+  e.currentTarget.style.boxShadow = "none";
+  e.currentTarget.style.background = T.surfaceMuted;
+};
+const inputProps = { className: inputClass, style: inputStyle, onFocus: focusRing, onBlur: blurRing };
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mb-4">
-      <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.muted }}>{label}</label>
+      <label className="mb-1.5 block text-[11px] font-semibold" style={{ color: T.muted }}>{label}</label>
       {children}
     </div>
   );
 }
 
-const inputClass = "w-full rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all box-border";
-const inputStyle: React.CSSProperties = { color: T.ink, background: T.surfaceMuted, border: `1.5px solid ${T.line}`, fontFamily: FONT };
-function focusRing(e: React.FocusEvent<HTMLElement>) {
-  e.currentTarget.style.borderColor = T.accent;
-  e.currentTarget.style.boxShadow = `0 0 0 4px ${T.accentSoft}`;
-  e.currentTarget.style.background = T.surface;
-}
-function blurRing(e: React.FocusEvent<HTMLElement>) {
-  e.currentTarget.style.borderColor = T.line;
-  e.currentTarget.style.boxShadow = "none";
-  e.currentTarget.style.background = T.surfaceMuted;
-}
-
-interface FormInputProps extends React.InputHTMLAttributes<HTMLInputElement> { label: string }
-function FormInput({ label, type, onChange, step, ...rest }: FormInputProps) {
-  const isNumber = type === "number";
-  const allowDecimal = !(step === 1 || step === "1");
+function TextInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
-    <FormGroup label={label}>
-      <input
-        className={inputClass} style={inputStyle} onFocus={focusRing} onBlur={blurRing}
-        type={type} step={step} inputMode={isNumber ? (allowDecimal ? "decimal" : "numeric") : undefined}
-        onChange={(event) => {
-          if (!isNumber || !onChange) { onChange?.(event); return; }
-          let cleaned = event.target.value.replace(/[^\d.]/g, "");
-          if (!allowDecimal) {
-            cleaned = cleaned.replace(/\./g, "");
-          } else {
-            const firstDot = cleaned.indexOf(".");
-            if (firstDot >= 0) cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
-          }
-          event.target.value = cleaned;
-          onChange(event);
-        }}
-        onKeyDown={(event) => {
-          if (isNumber && (event.key === "-" || event.key === "+" || event.key === "e" || event.key === "E" || (!allowDecimal && event.key === "."))) {
-            event.preventDefault();
-          }
-          rest.onKeyDown?.(event);
-        }}
-        {...rest}
-      />
-    </FormGroup>
+    <Field label={label}>
+      <input {...inputProps} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+    </Field>
   );
 }
 
-function ImageUploadField({ preview, onChange }: { preview: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+// Numbers only (no minus sign, no letters). `decimal` allows one dot.
+function cleanNumber(raw: string, decimal: boolean) {
+  const digits = raw.replace(decimal ? /[^\d.]/g : /[^\d]/g, "");
+  if (!decimal) return digits;
+  const [whole, ...rest] = digits.split(".");
+  return rest.length ? `${whole}.${rest.join("")}` : whole;
+}
+
+function NumberInput({ label, value, onChange, placeholder, decimal = true }: { label?: string; value: string; onChange: (value: string) => void; placeholder?: string; decimal?: boolean }) {
+  const input = (
+    <input {...inputProps} type="text" inputMode={decimal ? "decimal" : "numeric"} value={value} placeholder={placeholder} onChange={(e) => onChange(cleanNumber(e.target.value, decimal))} />
+  );
+  return label ? <Field label={label}>{input}</Field> : input;
+}
+
+function Modal({ title, eyebrow, onClose, footer, children }: { title: string; eyebrow?: string; onClose: () => void; footer?: ReactNode; children: ReactNode }) {
+  // Close with the Escape key
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
-    <FormGroup label="Menu Item Image (optional)">
-      <label
-        className="flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl transition-all"
-        style={{ border: `1.5px dashed ${T.faint}`, background: T.surfaceMuted, minHeight: preview ? "auto" : "88px" }}
-        onMouseEnter={(e) => (e.currentTarget.style.borderColor = T.accent)}
-        onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.faint)}
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={onClose}
+      className="fixed inset-0 z-[400] flex items-center justify-center p-5 backdrop-blur-sm"
+      style={{ background: "rgba(28,27,23,0.38)", fontFamily: FONT }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.2 }}
+        onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}
+        className="flex max-h-[90vh] w-full max-w-[640px] flex-col overflow-hidden rounded-3xl"
+        style={{ background: T.surface, boxShadow: "0 30px 80px rgba(28,27,23,0.2)" }}
       >
-        {preview ? (
-          <img src={resolveAssetUrl(preview)} alt="Preview" className="h-[130px] w-full object-cover" />
-        ) : (
-          <div className="flex flex-col items-center gap-1 py-7">
-            <span className="text-[11px] font-medium" style={{ color: T.muted }}>Click to upload image</span>
-            <span className="text-[10px]" style={{ color: T.faint }}>PNG, JPG up to 5MB</span>
+        <div className="flex items-start justify-between px-7 py-5" style={{ borderBottom: `1px solid ${T.line}` }}>
+          <div>
+            {eyebrow && <p className="mb-0.5 text-[11px] font-semibold" style={{ color: T.accent }}>{eyebrow}</p>}
+            <h3 className="text-[17px] font-semibold" style={{ color: T.ink }}>{title}</h3>
           </div>
-        )}
-        <input type="file" accept="image/*" className="hidden" onChange={onChange} />
-      </label>
-    </FormGroup>
+          <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-[18px] leading-none" style={{ color: T.muted, background: T.surfaceMuted, border: "none", cursor: "pointer" }}>
+            {"\u00D7"}
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-7 py-6">{children}</div>
+        {footer && <div className="flex justify-end gap-2 px-7 py-4" style={{ borderTop: `1px solid ${T.line}`, background: T.surfaceMuted }}>{footer}</div>}
+      </motion.div>
+    </motion.div>
   );
 }
 
-function SectionHeader({ title, sub, cta }: { title: string; sub: string; cta?: React.ReactNode }) {
+const sectionTitle = "mb-3 mt-6 text-[12px] font-semibold first:mt-0";
+
+function StatusBadge({ unavailable }: { unavailable: boolean }) {
+  const color = unavailable ? T.bad : T.good;
   return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <div className="text-[17px] font-semibold" style={{ color: T.ink }}>{title}</div>
-        <div className="mt-0.5 text-[12px]" style={{ color: T.muted }}>{sub}</div>
-      </div>
-      {cta}
-    </div>
+    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ color, background: unavailable ? T.badSoft : T.goodSoft }}>
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+      {unavailable ? "Unavailable" : "Available"}
+    </span>
   );
 }
 
-function DataTable({ cols, rows, emptyHint }: { cols: string[]; rows: React.ReactNode[]; emptyHint: string }) {
-  return (
-    <div className="overflow-hidden rounded-2xl" style={{ border: `1px solid ${T.line}`, background: T.surface }}>
-      <table className="w-full border-collapse">
-        <thead>
-          <tr style={{ background: T.surfaceMuted, borderBottom: `1px solid ${T.line}` }}>
-            {cols.map((c) => (
-              <th key={c} className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.09em]" style={{ color: T.muted }}>{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td colSpan={cols.length}>
-                <div className="py-14 text-center">
-                  <div className="text-[13px] font-medium" style={{ color: T.muted }}>No records yet</div>
-                  <div className="mt-1 text-[11px]" style={{ color: T.faint }}>{emptyHint}</div>
-                </div>
-              </td>
-            </tr>
-          ) : (
-            rows
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+/* ────────────────────────────────────────────────────────────────────────────
+   Summary cards and side panels
+   ──────────────────────────────────────────────────────────────────────── */
 
+const svgProps = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none" } as const;
 const STAT_ICONS = {
-  grid: (c: string) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="8" height="8" rx="2" stroke={c} strokeWidth="2" /><rect x="13" y="3" width="8" height="8" rx="2" stroke={c} strokeWidth="2" /><rect x="3" y="13" width="8" height="8" rx="2" stroke={c} strokeWidth="2" /><rect x="13" y="13" width="8" height="8" rx="2" stroke={c} strokeWidth="2" /></svg>
-  ),
-  tag: (c: string) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12.5 3H5a2 2 0 0 0-2 2v7.5a2 2 0 0 0 .59 1.41l8.5 8.5a2 2 0 0 0 2.82 0l7.5-7.5a2 2 0 0 0 0-2.82l-8.5-8.5A2 2 0 0 0 12.5 3Z" stroke={c} strokeWidth="2" strokeLinejoin="round" /><circle cx="8" cy="8" r="1.5" fill={c} /></svg>
-  ),
-  alert: (c: string) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 9v4" stroke={c} strokeWidth="2" strokeLinecap="round" /><circle cx="12" cy="16.2" r="0.9" fill={c} /><path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20.2h15.4a2 2 0 0 0 1.7-3l-7.7-13.3a2 2 0 0 0-3.4 0Z" stroke={c} strokeWidth="2" strokeLinejoin="round" /></svg>
-  ),
-  wallet: (c: string) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2.5" stroke={c} strokeWidth="2" /><path d="M3 10h18" stroke={c} strokeWidth="2" /><path d="M16.5 14.5h2" stroke={c} strokeWidth="2" strokeLinecap="round" /></svg>
-  ),
+  grid: (c: string) => (<svg {...svgProps}><rect x="3" y="3" width="8" height="8" rx="2" stroke={c} strokeWidth="2" /><rect x="13" y="3" width="8" height="8" rx="2" stroke={c} strokeWidth="2" /><rect x="3" y="13" width="8" height="8" rx="2" stroke={c} strokeWidth="2" /><rect x="13" y="13" width="8" height="8" rx="2" stroke={c} strokeWidth="2" /></svg>),
+  tag: (c: string) => (<svg {...svgProps}><path d="M12.5 3H5a2 2 0 0 0-2 2v7.5a2 2 0 0 0 .59 1.41l8.5 8.5a2 2 0 0 0 2.82 0l7.5-7.5a2 2 0 0 0 0-2.82l-8.5-8.5A2 2 0 0 0 12.5 3Z" stroke={c} strokeWidth="2" strokeLinejoin="round" /><circle cx="8" cy="8" r="1.5" fill={c} /></svg>),
+  alert: (c: string) => (<svg {...svgProps}><path d="M12 9v4" stroke={c} strokeWidth="2" strokeLinecap="round" /><circle cx="12" cy="16.2" r="0.9" fill={c} /><path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20.2h15.4a2 2 0 0 0 1.7-3l-7.7-13.3a2 2 0 0 0-3.4 0Z" stroke={c} strokeWidth="2" strokeLinejoin="round" /></svg>),
+  wallet: (c: string) => (<svg {...svgProps}><rect x="3" y="6" width="18" height="13" rx="2.5" stroke={c} strokeWidth="2" /><path d="M3 10h18" stroke={c} strokeWidth="2" /><path d="M16.5 14.5h2" stroke={c} strokeWidth="2" strokeLinecap="round" /></svg>),
 };
 
-function StatCard({ label, value, meta, tone = "neutral", icon }: { label: string; value: number | string; meta?: string; tone?: "neutral" | "accent" | "deep" | "warn" | "bad"; icon: keyof typeof STAT_ICONS }) {
-  const toneColor = { neutral: T.ink, accent: T.accent, deep: T.deep, warn: T.warn, bad: T.bad }[tone];
-  const toneSoft = { neutral: T.surfaceMuted, accent: T.accentSoft, deep: T.deepSoft, warn: T.warnSoft, bad: T.badSoft }[tone];
+type Tone = "neutral" | "accent" | "deep" | "warn" | "bad";
+const TONES: Record<Tone, { color: string; soft: string }> = {
+  neutral: { color: T.ink, soft: T.surfaceMuted },
+  accent: { color: T.accent, soft: T.accentSoft },
+  deep: { color: T.deep, soft: T.deepSoft },
+  warn: { color: T.warn, soft: T.warnSoft },
+  bad: { color: T.bad, soft: T.badSoft },
+};
+
+function StatCard({ label, value, meta, tone, icon }: { label: string; value: number | string; meta: string; tone: Tone; icon: keyof typeof STAT_ICONS }) {
+  const { color, soft } = TONES[tone];
   return (
-    <div className="rounded-2xl p-6 transition-shadow hover:shadow-[0_10px_28px_rgba(28,27,23,0.08)]" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+    <div className="rounded-2xl p-5" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
       <div className="mb-4 flex items-center justify-between">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.09em]" style={{ color: T.muted }}>{label}</div>
-        <span className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-xl" style={{ background: toneSoft }}>{STAT_ICONS[icon](toneColor)}</span>
+        <span className="text-[12px] font-medium" style={{ color: T.muted }}>{label}</span>
+        <span className="grid h-9 w-9 place-items-center rounded-xl" style={{ background: soft }}>{STAT_ICONS[icon](color)}</span>
       </div>
-      <div className="font-mono text-[28px] font-semibold leading-none tabular-nums" style={{ color: toneColor }}>{value}</div>
-      {meta && <div className="mt-2.5 text-[11.5px]" style={{ color: T.faint }}>{meta}</div>}
+      <div className="text-[26px] font-semibold leading-none tabular-nums" style={{ color }}>{value}</div>
+      <div className="mt-2.5 text-[11.5px]" style={{ color: T.muted }}>{meta}</div>
     </div>
   );
 }
 
-function CategoryBreakdown({ products }: { products: MgmtProduct[] }) {
-  const palette = [T.accent, T.deep, T.warn, T.bad, "#6B7FD6", "#B98CCE"];
+function CategoryBreakdown({ items }: { items: MenuItem[] }) {
+  // One strong color, lighter tints for extra categories (simple, not colorful)
+  const palette = [T.deep, "#3F6B54", "#6F9683", "#9DB8A8", "#C3D6CB", "#DDE8E1"];
   const counts = new Map<string, number>();
-  products.forEach((p) => counts.set(p.category, (counts.get(p.category) ?? 0) + 1));
-  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  const total = products.length || 1;
-  let cumulative = 0;
-  const stops = entries.map(([, count], i) => {
-    const start = (cumulative / total) * 360;
-    cumulative += count;
-    const end = (cumulative / total) * 360;
-    return `${palette[i % palette.length]} ${start}deg ${end}deg`;
+  items.forEach((item) => counts.set(item.category, (counts.get(item.category) ?? 0) + 1));
+  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+
+  // Builds the pie: each category gets a slice of the 360 degree circle
+  let running = 0;
+  const slices = entries.map(([, count], i) => {
+    const start = (running / items.length) * 360;
+    running += count;
+    return `${palette[i % palette.length]} ${start}deg ${(running / items.length) * 360}deg`;
   });
-  const gradient = stops.length > 0 ? stops.join(", ") : `${T.line} 0deg 360deg`;
 
   return (
     <div className="rounded-2xl p-5" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
-      <div className="mb-4 text-[13px] font-semibold" style={{ color: T.ink }}>Category Breakdown</div>
+      <div className="mb-4 text-[14px] font-semibold" style={{ color: T.ink }}>By category</div>
       {entries.length === 0 ? (
-        <div className="rounded-xl px-3 py-6 text-center text-[11.5px]" style={{ color: T.faint, background: T.surfaceMuted, border: `1px dashed ${T.line}` }}>No menu items yet.</div>
+        <p className="rounded-xl px-3 py-6 text-center text-[12px]" style={{ color: T.muted, background: T.surfaceMuted }}>No menu items yet.</p>
       ) : (
         <div className="flex items-center gap-4">
-          <div className="relative h-[104px] w-[104px] flex-shrink-0 rounded-full" style={{ background: `conic-gradient(${gradient})` }}>
-            <div className="absolute inset-[16px] grid place-items-center rounded-full" style={{ background: T.surface }}>
+          <div className="relative h-[96px] w-[96px] flex-shrink-0 rounded-full" style={{ background: `conic-gradient(${slices.join(", ")})` }}>
+            <div className="absolute inset-[15px] grid place-items-center rounded-full" style={{ background: T.surface }}>
               <div className="text-center">
-                <div className="font-mono text-[18px] font-semibold leading-none" style={{ color: T.ink }}>{products.length}</div>
-                <div className="mt-1 text-[9px] uppercase tracking-[0.06em]" style={{ color: T.faint }}>items</div>
+                <div className="text-[17px] font-semibold leading-none tabular-nums" style={{ color: T.ink }}>{items.length}</div>
+                <div className="mt-1 text-[10px]" style={{ color: T.muted }}>items</div>
               </div>
             </div>
           </div>
@@ -327,8 +466,8 @@ function CategoryBreakdown({ products }: { products: MgmtProduct[] }) {
             {entries.slice(0, 5).map(([name, count], i) => (
               <div key={name} className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: palette[i % palette.length] }} />
-                <span className="min-w-0 flex-1 truncate text-[11.5px]" style={{ color: T.muted }}>{name}</span>
-                <span className="font-mono text-[11.5px] font-semibold tabular-nums" style={{ color: T.ink }}>{count}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px]" style={{ color: T.muted }}>{name}</span>
+                <span className="text-[12px] font-semibold tabular-nums" style={{ color: T.ink }}>{count}</span>
               </div>
             ))}
           </div>
@@ -338,796 +477,479 @@ function CategoryBreakdown({ products }: { products: MgmtProduct[] }) {
   );
 }
 
-function StatusDot({ tone }: { tone: "good" | "bad" }) {
-  const color = tone === "good" ? T.good : T.bad;
-  return <span className="inline-block h-[6px] w-[6px] rounded-full" style={{ background: color }} />;
-}
-
-const ghostBtnClass = "border-none cursor-pointer font-medium text-[11.5px] rounded-lg px-2.5 py-1.5 transition-colors";
-const dangerBtnStyle: React.CSSProperties = { color: T.bad, background: "transparent", fontFamily: FONT };
-const ghostBtnStyle: React.CSSProperties = { color: T.muted, background: T.surfaceMuted, fontFamily: FONT };
-const primaryBtnClass = "cursor-pointer font-semibold text-[12.5px] rounded-xl px-4 py-2.5 transition-all";
-const outlineBtnStyle: React.CSSProperties = { color: T.ink, background: T.surface, border: `1px solid ${T.line}`, fontFamily: FONT };
-const solidBtnStyle: React.CSSProperties = { color: "#fff", background: T.accent, border: `1px solid ${T.accent}`, fontFamily: FONT };
-
-// ── Menu Management Tab ──────────────────────────────────────────────
-
-interface MgmtProduct {
-  id: number; rawProductId?: number; rawInventoryId?: number; menuCode: string; name: string;
-  category: string; price: string; unit: string; stock: number; description?: string; image?: string;
-  availabilityStatus: string; manualOverride: boolean; manualStatus: string; overrideMode: ManualOverrideMode;
-  hasRecipe: boolean; availableServings?: number | null; isPromotional: boolean; promoPrice?: string; promoLabel?: string;
-  ingredients: MenuIngredientInput[];
-}
-
-interface MenuIngredientRow {
-  product_id?: number; product_name?: string; quantity_required?: number | string; unit?: string;
-  daily_withdrawn?: number | string; stock?: number | string;
-}
-
-interface MenuIngredientInput {
-  productId: string; quantityRequired: string; productName?: string; unit?: string; stock?: number;
-}
-
-interface IngredientOption { id: number; name: string; category: string; unit: string; stock: number }
-
-interface MenuCategoryRecord {
-  category_id: number; name: string; display_order: number; is_active: boolean | number;
-}
-
-type ManualOverrideMode = "Auto" | "Force Available" | "Force Out of Stock";
-
-const UNIT_OPTIONS = ["piece", "kg", "g", "liter", "ml", "bottle", "box"] as const;
-const OVERRIDE_MODE_OPTIONS: ManualOverrideMode[] = ["Auto", "Force Available", "Force Out of Stock"];
-
-async function tryPut(endpoints: string[], payload: object): Promise<void> {
-  let lastErr: unknown;
-  for (const ep of endpoints) {
-    try {
-      await apiCall(ep, { method: "PUT", body: payload });
-      return;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("404") && !msg.includes("HTTP 404")) throw err;
-      lastErr = err;
-    }
-  }
-  throw lastErr;
-}
-
-function MenuAdminTab() {
-  const { addNotification } = useNotifications();
-  const [products, setProducts] = useState<MgmtProduct[]>([]);
-  const [menuCategories, setMenuCategories] = useState<MenuCategoryRecord[]>([]);
-  const [ingredientOptions, setIngredientOptions] = useState<IngredientOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [search, setSearch] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [editProduct, setEditProduct] = useState<MgmtProduct | null>(null);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-
-  const [fName, setFName] = useState(""); const [fCat, setFCat] = useState("");
-  const [fPrice, setFPrice] = useState(""); const [fDesc, setFDesc] = useState("");
-  const [fOverrideMode, setFOverrideMode] = useState<ManualOverrideMode>(OVERRIDE_MODE_OPTIONS[0]);
-  const [fIngredients, setFIngredients] = useState<MenuIngredientInput[]>([]);
-  const [fIsPromotional, setFIsPromotional] = useState(false);
-  const [fPromoPrice, setFPromoPrice] = useState(""); const [fPromoLabel, setFPromoLabel] = useState("");
-  const [fImageFile, setFImageFile] = useState<File | null>(null);
-  const [fImagePreview, setFImagePreview] = useState("");
-
-  const [eName, setEName] = useState(""); const [eCat, setECat] = useState("");
-  const [ePrice, setEPrice] = useState(""); const [eStock, setEStock] = useState("");
-  const [initialEQuantity, setInitialEQuantity] = useState(0);
-  const [eDesc, setEDesc] = useState("");
-  const [eOverrideMode, setEOverrideMode] = useState<ManualOverrideMode>(OVERRIDE_MODE_OPTIONS[0]);
-  const [eIngredients, setEIngredients] = useState<MenuIngredientInput[]>([]);
-  const [eIsPromotional, setEIsPromotional] = useState(false);
-  const [ePromoPrice, setEPromoPrice] = useState(""); const [ePromoLabel, setEPromoLabel] = useState("");
-  const [eImageFile, setEImageFile] = useState<File | null>(null);
-  const [eImagePreview, setEImagePreview] = useState("");
-
-  const menuCategoryOptions = (() => {
-    const apiOptions = menuCategories
-      .filter((category) => category.is_active === true || category.is_active === 1)
-      .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0) || a.name.localeCompare(b.name))
-      .map((category) => category.name.trim())
-      .filter(Boolean);
-    if (apiOptions.length > 0) return apiOptions;
-
-    const fallback = new Set<string>([
-      "Menu Food", "Beverages", "Desserts", "Combo Meals", "Snacks", "Promotional Items",
-      ...products.map((product) => product.category).filter(Boolean),
-      fCat.trim(), eCat.trim(),
-    ]);
-    return Array.from(fallback).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  })();
-
-  function toOverrideMode(manualOverride: unknown, manualStatus: unknown): ManualOverrideMode {
-    const isManual =
-      manualOverride === true || manualOverride === 1 ||
-      String(manualOverride ?? "").trim().toLowerCase() === "true";
-    if (!isManual) return "Auto";
-    return String(manualStatus ?? "").trim().toLowerCase() === "out of stock"
-      ? "Force Out of Stock" : "Force Available";
-  }
-
-  function toIngredientsInput(ingredients: MenuIngredientRow[] | undefined): MenuIngredientInput[] {
-    return (ingredients ?? []).map((ingredient) => ({
-      productId: String(ingredient.product_id ?? ""),
-      quantityRequired: String(ingredient.quantity_required ?? ""),
-      productName: ingredient.product_name,
-      unit: ingredient.unit,
-      stock: Number(ingredient.stock ?? 0),
-    }));
-  }
-
-  function toOverridePayload(mode: ManualOverrideMode) {
-    if (mode === "Force Available") return { manual_override: true, manual_status: "Available" };
-    if (mode === "Force Out of Stock") return { manual_override: true, manual_status: "Out of Stock" };
-    return { manual_override: false, manual_status: "Available" };
-  }
-
-  function buildIngredientPayload(inputs: MenuIngredientInput[]) {
-    const sanitized = inputs
-      .map((entry) => ({ productId: entry.productId.trim(), quantityRequired: entry.quantityRequired.trim() }))
-      .filter((entry) => entry.productId.length > 0 || entry.quantityRequired.length > 0);
-
-    for (const entry of sanitized) {
-      if (!entry.productId || !entry.quantityRequired) {
-        throw new Error("Each ingredient row needs both an ingredient and a required quantity.");
-      }
-      if (Number(entry.quantityRequired) <= 0) {
-        throw new Error("Ingredient quantities must be greater than zero.");
-      }
-    }
-
-    return sanitized.map((entry) => ({
-      product_id: Number(entry.productId),
-      quantity_required: Number(entry.quantityRequired),
-    }));
-  }
-
-  function addIngredientRow(setter: Dispatch<SetStateAction<MenuIngredientInput[]>>) {
-    setter((prev) => [...prev, { productId: "", quantityRequired: "" }]);
-  }
-
-  function updateIngredientRow(
-    setter: Dispatch<SetStateAction<MenuIngredientInput[]>>,
-    index: number,
-    field: "productId" | "quantityRequired",
-    value: string,
-  ) {
-    setter((prev) => prev.map((entry, rowIndex) => (rowIndex === index ? { ...entry, [field]: value } : entry)));
-  }
-
-  function removeIngredientRow(setter: Dispatch<SetStateAction<MenuIngredientInput[]>>, index: number) {
-    setter((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
-  }
-
-  function renderOverrideButtons(value: ManualOverrideMode, onChange: (mode: ManualOverrideMode) => void) {
-    return (
-      <div className="grid grid-cols-3 gap-2">
-        {OVERRIDE_MODE_OPTIONS.map((option) => {
-          const active = value === option;
-          const style: React.CSSProperties = active
-            ? { background: T.deep, borderColor: T.deep, color: "#fff", border: "1px solid", fontFamily: FONT }
-            : { background: T.surfaceMuted, borderColor: T.line, color: T.muted, border: "1px solid", fontFamily: FONT };
-          return (
-            <button key={option} type="button" className="rounded-xl px-3 py-2 text-[11px] font-semibold transition-colors" style={style} onClick={() => onChange(option)}>
-              {option}
-            </button>
-          );
-        })}
+function AttentionList({ items }: { items: MenuItem[] }) {
+  return (
+    <div className="rounded-2xl p-5" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+      <div className="text-[14px] font-semibold" style={{ color: T.ink }}>Needs attention</div>
+      <div className="mb-4 mt-0.5 text-[12px]" style={{ color: T.muted }}>
+        {items.length > 0 ? "Items customers can't order right now" : "Everything is available"}
       </div>
-    );
-  }
-
-  function renderIngredientsEditor(value: MenuIngredientInput[], setter: Dispatch<SetStateAction<MenuIngredientInput[]>>) {
-    return (
-      <FormGroup label="Required Ingredients">
-        <div className="space-y-2">
-          {value.length === 0 && (
-            <p className="rounded-xl px-3 py-2.5 text-[11px]" style={{ color: T.muted, background: T.surfaceMuted }}>No ingredients assigned. This menu item will fall back to the existing stock-based availability.</p>
-          )}
-          {value.map((ingredient, index) => (
-            <div key={`${ingredient.productId}-${index}`} className="grid grid-cols-3 gap-2">
-              <select className={inputClass} style={inputStyle} onFocus={focusRing} onBlur={blurRing} value={ingredient.productId}
-                onChange={(e) => updateIngredientRow(setter, index, "productId", e.target.value)}>
-                <option value="">Select ingredient</option>
-                {ingredientOptions.map((option) => <option key={option.id} value={option.id}>{option.name} ({option.category})</option>)}
-              </select>
-              <input className={inputClass} style={inputStyle} onFocus={focusRing} onBlur={blurRing} type="number" min="0" step="0.01" placeholder="Qty required"
-                value={ingredient.quantityRequired} onChange={(e) => updateIngredientRow(setter, index, "quantityRequired", e.target.value)} />
-              <button type="button" className={ghostBtnClass} style={dangerBtnStyle} onClick={() => removeIngredientRow(setter, index)}>Remove</button>
+      {items.length === 0 ? (
+        <p className="rounded-xl px-3 py-6 text-center text-[12px]" style={{ color: T.muted, background: T.surfaceMuted }}>No stock issues to review.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {items.slice(0, 5).map((item) => (
+            <div key={item.id} className="rounded-xl px-3 py-2.5" style={{ background: T.surfaceMuted }}>
+              <div className="truncate text-[12.5px] font-semibold" style={{ color: T.ink }}>{item.name}</div>
+              <div className="mt-0.5 text-[11.5px]" style={{ color: T.muted }}>
+                {item.hasRecipe ? `${sellableQuantity(item)} servings available` : `${item.stock} ${item.unit} in stock`}
+              </div>
             </div>
           ))}
-          <button type="button" className={ghostBtnClass} style={ghostBtnStyle} onClick={() => addIngredientRow(setter)}>+ Add Ingredient</button>
         </div>
-      </FormGroup>
-    );
-  }
-
-  function renderProductForm(cfg: {
-    name: string; setName: (v: string) => void; cat: string; setCat: (v: string) => void;
-    price: string; setPrice: (v: string) => void; stock?: string; setStock?: (v: string) => void;
-    availableServings?: number;
-    overrideMode: ManualOverrideMode; setOverrideMode: (m: ManualOverrideMode) => void;
-    ingredients: MenuIngredientInput[]; setIngredients: Dispatch<SetStateAction<MenuIngredientInput[]>>;
-    isPromotional: boolean; setIsPromotional: (v: boolean) => void;
-    promoPrice: string; setPromoPrice: (v: string) => void; promoLabel: string; setPromoLabel: (v: string) => void;
-    desc: string; setDesc: (v: string) => void;
-    imagePreview: string; onImageChange: (e: React.ChangeEvent<HTMLInputElement>) => void; note?: string;
-  }) {
-    return (
-      <>
-        <FormInput label="Menu Item Name *" placeholder="e.g. Chicken Breast" value={cfg.name} onChange={(e) => cfg.setName(e.target.value)} />
-        <FormGroup label="Category *">
-          <select className={inputClass} style={inputStyle} onFocus={focusRing} onBlur={blurRing} value={cfg.cat} onChange={(e) => cfg.setCat(e.target.value)}>
-            <option value="">Select category</option>
-            {menuCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
-          </select>
-        </FormGroup>
-        {cfg.setStock ? (
-          <div className="grid grid-cols-2 gap-2.5">
-            <FormInput label="Price (P) *" type="number" min={1} step="0.01" placeholder="0.00" value={cfg.price} onChange={(e) => cfg.setPrice(e.target.value)} />
-            <FormInput label="Stock Qty" type="number" min={0} step="0.01" placeholder="0" value={cfg.stock} onChange={(e) => cfg.setStock!(e.target.value)} />
-          </div>
-        ) : cfg.availableServings !== undefined ? (
-          <div className="grid grid-cols-2 gap-2.5">
-            <FormInput label="Price (P) *" type="number" min={1} step="0.01" placeholder="0.00" value={cfg.price} onChange={(e) => cfg.setPrice(e.target.value)} />
-            <FormGroup label="Available Servings">
-              <div className={inputClass} style={{ ...inputStyle, background: T.surfaceMuted }} aria-readonly="true">
-                {cfg.availableServings}
-              </div>
-            </FormGroup>
-          </div>
-        ) : (
-          <FormInput label="Price (P) *" type="number" min={1} step="0.01" placeholder="0.00" value={cfg.price} onChange={(e) => cfg.setPrice(e.target.value)} />
-        )}
-        <FormGroup label="Availability Mode">
-          {renderOverrideButtons(cfg.overrideMode, cfg.setOverrideMode)}
-          {cfg.note && <p className="mt-2 text-[11px]" style={{ color: T.muted }}>{cfg.note}</p>}
-        </FormGroup>
-        {renderIngredientsEditor(cfg.ingredients, cfg.setIngredients)}
-        <FormGroup label="Promotional Menu">
-          <label className="flex items-center gap-2 text-[12px]" style={{ color: T.ink }}>
-            <input type="checkbox" checked={cfg.isPromotional} onChange={(e) => cfg.setIsPromotional(e.target.checked)} />
-            Mark this menu item as promotional
-          </label>
-        </FormGroup>
-        {cfg.isPromotional && (
-          <div className="grid grid-cols-2 gap-2.5">
-            <FormInput label="Promo Price" type="number" min={1} step="0.01" placeholder="0.00" value={cfg.promoPrice} onChange={(e) => cfg.setPromoPrice(e.target.value)} />
-            <FormInput label="Promo Label" placeholder="e.g. Summer Special" value={cfg.promoLabel} onChange={(e) => cfg.setPromoLabel(e.target.value)} />
-          </div>
-        )}
-        <FormGroup label="Description (optional)">
-          <textarea className={`${inputClass} resize-none`} style={inputStyle} onFocus={focusRing} onBlur={blurRing} rows={2} placeholder="Brief description..." value={cfg.desc} onChange={(e) => cfg.setDesc(e.target.value)} />
-        </FormGroup>
-        <ImageUploadField preview={cfg.imagePreview} onChange={cfg.onImageChange} />
-      </>
-    );
-  }
-
-  function normalizeManagementRows(data: ApiInventoryRow[]) {
-    const rows = data.filter(
-      (item) => String(item?.item_type ?? "menu_item").trim().toLowerCase() === "menu_item",
-    );
-    const groupedByName = new Map<string, ApiInventoryRow[]>();
-    for (const item of rows) {
-      const key = String(item?.product_name ?? item?.name ?? "").trim().toLowerCase();
-      const group = groupedByName.get(key) ?? [];
-      group.push(item);
-      groupedByName.set(key, group);
-    }
-    return Array.from(groupedByName.values()).map((group) =>
-      group.reduce((latest, current) => {
-        const latestId = Number(latest?.product_id ?? latest?.id ?? latest?.inventory_id ?? 0);
-        const currentId = Number(current?.product_id ?? current?.id ?? current?.inventory_id ?? 0);
-        return currentId > latestId ? current : latest;
-      }),
-    );
-  }
-
-  const loadProducts = async () => {
-    try {
-      setLoading(true);
-      const [menuData, stockData] = await Promise.all([
-        apiCall("/products?item_type=menu_item", { method: "GET" }),
-        apiCall("/inventory", { method: "GET" }),
-      ]);
-      const menuCategoryData = await apiCall("/settings/menu-categories?activeOnly=1", { method: "GET" }).catch(() => []);
-      const productData = Array.isArray(menuData) ? (menuData as ApiInventoryRow[]) : [];
-      const inventoryData = Array.isArray(stockData) ? (stockData as ApiInventoryRow[]) : [];
-      setMenuCategories(Array.isArray(menuCategoryData) ? (menuCategoryData as MenuCategoryRecord[]) : []);
-
-      const allOptions = inventoryData
-        .filter((item) => String(item?.item_type ?? "stock_item").trim().toLowerCase() === "stock_item")
-        .map((item) => ({
-          id: Number(item.product_id ?? item.id ?? item.inventory_id ?? 0),
-          name: String(item.product_name ?? item.name ?? "Unnamed Product"),
-          category: String(item.category ?? "Uncategorized"),
-          unit: String(item.unit ?? "piece"),
-          stock: Number(item.stock ?? item.quantity ?? item.dailyWithdrawn ?? 0),
-        }))
-        .filter((item) => item.id > 0)
-        .sort((a, b) => a.name.localeCompare(b.name));
-      setIngredientOptions(allOptions);
-
-      const normalized = normalizeManagementRows(productData);
-      setProducts(
-        normalized.map((item) => ({
-          id: Number(item.product_id ?? item.inventory_id ?? item.id ?? 0),
-          rawProductId: item.product_id ? Number(item.product_id) : undefined,
-          rawInventoryId: item.inventory_id ? Number(item.inventory_id) : undefined,
-          menuCode: String(item.menu_code ?? `M-${String(item.product_id ?? item.id ?? item.inventory_id ?? 0).padStart(3, "0")}`),
-          name: item.name || item.product_name || "Unnamed Product",
-          category: item.category || "Uncategorized",
-          price: String(item.price ?? "0"),
-          unit: String(item.unit ?? "piece"),
-          stock: Number((item as any).quantity ?? (item as any).stock ?? 0),
-          description: String((item as any).description ?? ""),
-          image: item.image || "/img/placeholder.jpg",
-          availabilityStatus: String(item.availability_status ?? "Available"),
-          manualOverride: Boolean(Number(item.manual_override ?? 0)),
-          manualStatus: String(item.manual_status ?? "Available"),
-          overrideMode: toOverrideMode(item.manual_override, item.manual_status),
-          hasRecipe: Number(item.ingredient_count ?? 0) > 0,
-          availableServings:
-            item.available_servings === null || item.available_servings === undefined || String(item.available_servings) === ""
-              ? null : Number(item.available_servings),
-          isPromotional: Boolean(Number(item.is_promotional ?? 0)),
-          promoPrice:
-            item.promo_price !== null && item.promo_price !== undefined && String(item.promo_price) !== ""
-              ? String(item.promo_price) : "",
-          promoLabel: String(item.promo_label ?? ""),
-          ingredients: toIngredientsInput(item.ingredients),
-        })),
-      );
-    } catch (error) {
-      console.error("Failed to load products:", error);
-      notify(addNotification, "Failed to load products. Please try refreshing.", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { void loadProducts(); }, []);
-
-  function resetAddForm() {
-    setFName(""); setFCat(""); setFPrice(""); setFDesc("");
-    setFOverrideMode(OVERRIDE_MODE_OPTIONS[0]);
-    setFIngredients([]);
-    setFIsPromotional(false); setFPromoPrice(""); setFPromoLabel("");
-    setFImageFile(null); setFImagePreview("");
-  }
-
-  function openEdit(product: MgmtProduct) {
-    setEditProduct(product);
-    setEName(product.name); setECat(product.category); setEPrice(product.price);
-    setEStock(String(product.stock)); setInitialEQuantity(product.stock); setEDesc(product.description ?? "");
-    setEOverrideMode(product.overrideMode);
-    setEIngredients(product.ingredients);
-    setEIsPromotional(Boolean(product.isPromotional));
-    setEPromoPrice(product.promoPrice ?? ""); setEPromoLabel(product.promoLabel ?? "");
-    setEImageFile(null);
-    setEImagePreview(product.image && product.image !== "/img/placeholder.jpg" ? product.image : "");
-  }
-
-  async function handleAdd() {
-    if (!fName.trim() || !fCat.trim() || !fPrice.trim()) {
-      notify(addNotification, "Please fill in Name, Category, and Price.", "warning");
-      return;
-    }
-    const parsedPrice = Number(fPrice);
-    if (!Number.isFinite(parsedPrice) || parsedPrice < 1) {
-      notify(addNotification, "Price must be at least \u20B11.", "warning");
-      return;
-    }
-    if (fIsPromotional && fPromoPrice.trim()) {
-      const parsedPromoPrice = Number(fPromoPrice);
-      if (!Number.isFinite(parsedPromoPrice) || parsedPromoPrice < 1) {
-        notify(addNotification, "Promo price must be at least \u20B11.", "warning");
-        return;
-      }
-    }
-    try {
-      setSaving(true);
-      let imageUrl = "/img/placeholder.jpg";
-      if (fImageFile) imageUrl = await uploadProductImage(fImageFile);
-      const ingredients = buildIngredientPayload(fIngredients);
-      const manualOverridePayload = toOverridePayload(fOverrideMode);
-
-      await api.post("/products", {
-        name: fName.trim(), category: fCat.trim(), item_type: "menu_item",
-        price: parsedPrice, unit: UNIT_OPTIONS[0], quantity: 0,
-        description: fDesc.trim() || null, image: imageUrl,
-        ...manualOverridePayload, override_mode: fOverrideMode,
-        is_promotional: fIsPromotional,
-        promo_price: fIsPromotional && fPromoPrice.trim() ? Number(fPromoPrice) : null,
-        promo_label: fIsPromotional ? fPromoLabel.trim() || null : null,
-        ingredients,
-      });
-
-      await loadProducts();
-      setShowAdd(false);
-      resetAddForm();
-      notify(addNotification, `"${fName.trim()}" added successfully.`, "success");
-    } catch (error) {
-      notify(addNotification, `Failed to add product: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleEdit() {
-    if (!editProduct) return;
-    if (!eName.trim() || !eCat.trim() || !ePrice.trim()) {
-      notify(addNotification, "Please fill in Name, Category, and Price.", "warning");
-      return;
-    }
-    const parsedPrice = Number(ePrice);
-    if (!Number.isFinite(parsedPrice) || parsedPrice < 1) {
-      notify(addNotification, "Price must be at least \u20B11.", "warning");
-      return;
-    }
-    const parsedStock = Number(eStock || 0);
-    if (!editProduct.hasRecipe && (!Number.isFinite(parsedStock) || parsedStock < 0)) {
-      notify(addNotification, "Stock quantity cannot be negative.", "warning");
-      return;
-    }
-    if (eIsPromotional && ePromoPrice.trim()) {
-      const parsedPromoPrice = Number(ePromoPrice);
-      if (!Number.isFinite(parsedPromoPrice) || parsedPromoPrice < 1) {
-        notify(addNotification, "Promo price must be at least \u20B11.", "warning");
-        return;
-      }
-    }
-    try {
-      setSaving(true);
-      let editImageUrl: string | undefined;
-      if (eImageFile) {
-        editImageUrl = await uploadProductImage(eImageFile);
-      } else if (eImagePreview && eImagePreview !== "/img/placeholder.jpg") {
-        editImageUrl = eImagePreview;
-      }
-      const ingredients = buildIngredientPayload(eIngredients);
-      const isRecipeSave = editProduct.hasRecipe || ingredients.length > 0;
-      const payload: Record<string, unknown> = {
-        name: eName.trim(), category: eCat.trim(), item_type: "menu_item",
-        price: parsedPrice, unit: editProduct.unit || UNIT_OPTIONS[0],
-        description: eDesc.trim() || null,
-        ...toOverridePayload(eOverrideMode), override_mode: eOverrideMode,
-        is_promotional: eIsPromotional,
-        promo_price: eIsPromotional && ePromoPrice.trim() ? Number(ePromoPrice) : null,
-        promo_label: eIsPromotional ? ePromoLabel.trim() || null : null,
-        ingredients,
-      };
-      if (!isRecipeSave && parsedStock !== initialEQuantity) payload.quantity = parsedStock;
-      if (editImageUrl) payload.image = editImageUrl;
-
-      await tryPut([`/products/${editProduct.rawProductId ?? editProduct.id}`], payload);
-      await loadProducts();
-      setEditProduct(null);
-      notify(addNotification, `"${eName.trim()}" updated successfully.`, "success");
-    } catch (error) {
-      notify(addNotification, `Failed to update: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDelete(id: number) {
-    const product = products.find((entry) => entry.id === id);
-    const endpointsToTry: string[] = [];
-    const pid = product?.rawProductId ?? id;
-    const iid = product?.rawInventoryId;
-    endpointsToTry.push(`/products/${pid}`);
-    if (iid && iid !== pid) endpointsToTry.push(`/products/${iid}`);
-    endpointsToTry.push(`/inventory/${pid}`);
-    if (iid && iid !== pid) endpointsToTry.push(`/inventory/${iid}`);
-
-    try {
-      setSaving(true);
-      let lastErr: unknown;
-      let deleted = false;
-      for (const endpoint of endpointsToTry) {
-        try {
-          await apiCall(endpoint, { method: "DELETE" });
-          deleted = true;
-          break;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (!msg.includes("404") && !msg.includes("HTTP 404")) throw err;
-          lastErr = err;
-        }
-      }
-      if (!deleted) throw lastErr;
-      await loadProducts();
-      setDeleteId(null);
-      notify(addNotification, "Product deleted successfully.", "success");
-    } catch (error) {
-      notify(addNotification, `Failed to delete: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleAvailabilityToggle(product: MgmtProduct) {
-    const nextMode: ManualOverrideMode = product.overrideMode === "Auto" ? "Force Out of Stock" : "Auto";
-    try {
-      await tryPut([`/products/${product.rawProductId ?? product.id}`], {
-        ...toOverridePayload(nextMode), override_mode: nextMode,
-      });
-      await loadProducts();
-      notify(addNotification, `"${product.name}" override set to ${nextMode}.`, "success");
-    } catch (error) {
-      notify(addNotification, `Failed to update availability: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
-    }
-  }
-
-  const filtered = products.filter((product) => {
-    const term = search.toLowerCase();
-    return (
-      product.name.toLowerCase().includes(term) ||
-      product.category.toLowerCase().includes(term) ||
-      product.menuCode.toLowerCase().includes(term) ||
-      String(product.promoLabel ?? "").toLowerCase().includes(term)
-    );
-  });
-
-  const getSellableQuantity = (product: MgmtProduct) =>
-    product.hasRecipe ? Number(product.availableServings ?? 0) : product.stock;
-
-  const totalValue = products.reduce((sum, product) => {
-    const price = parseFloat(String(product.price).replace(/[^0-9.]/g, "")) || 0;
-    return sum + price * getSellableQuantity(product);
-  }, 0);
-  const hiddenCount = products.filter((product) => product.availabilityStatus === "Out of Stock").length;
-  const promoCount = products.filter((product) => product.isPromotional).length;
-  const outOfStockCount = products.filter((product) => getSellableQuantity(product) === 0).length;
-  const attentionItems = products
-    .filter((product) => getSellableQuantity(product) === 0 || product.availabilityStatus === "Out of Stock")
-    .slice(0, 5);
-
-  return (
-    <div className="rounded-[28px] p-8" style={{ background: T.surface, border: `1px solid ${T.line}`, fontFamily: FONT }}>
-      <div className="mb-7">
-        <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.14em]" style={{ color: T.accent }}>Menu Administration</p>
-        <h2 className="text-[21px] font-semibold" style={{ color: T.ink }}>Menu Management</h2>
-        <p className="mt-1 text-[13px]" style={{ color: T.muted }}>
-          Add, edit, hide, promote, and maintain menu items, prices, categories, descriptions, images, ingredients, and availability.
-        </p>
-      </div>
-
-      <div className="mb-7 grid grid-cols-2 gap-3.5 md:grid-cols-4">
-        <StatCard label="Total Menu Items" value={products.length} meta="Currently in system" icon="grid" tone="deep" />
-        <StatCard label="Promotional" value={promoCount} meta="Active special menus" tone={promoCount > 0 ? "accent" : "neutral"} icon="tag" />
-        <StatCard label="Unavailable" value={hiddenCount} meta="Marked out of stock" tone={hiddenCount > 0 ? "warn" : "deep"} icon="alert" />
-        <StatCard label="Menu Value" value={formatPeso(totalValue)} meta={`${outOfStockCount} item${outOfStockCount === 1 ? "" : "s"} with zero stock`} tone={outOfStockCount > 0 ? "bad" : "deep"} icon="wallet" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_260px]">
-        <div>
-          <SectionHeader
-            title="Menu Item List"
-            sub="Menu codes, pricing, promotions, and admin-controlled availability in one place"
-            cta={
-              <div className="flex gap-2">
-                <button className={primaryBtnClass} style={outlineBtnStyle} onClick={() => void loadProducts()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
-                <button className={primaryBtnClass} style={solidBtnStyle} onClick={() => setShowAdd(true)}>+ Add Menu Item</button>
-              </div>
-            }
-          />
-
-          <div className="mb-4 flex items-center gap-2 rounded-full px-4 py-1" style={{ background: T.surfaceMuted, border: `1.5px solid ${T.line}` }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-              <circle cx="11" cy="11" r="7" stroke={T.faint} strokeWidth="2" />
-              <path d="M20 20L16.65 16.65" stroke={T.faint} strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <input className="w-full bg-transparent py-2 text-[13px] outline-none" style={{ color: T.ink, fontFamily: FONT }}
-              placeholder="Search by menu code, name, category, or promo label..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
-
-          {loading ? (
-            <div className="flex flex-col items-center justify-center gap-4 py-16">
-              <motion.div className="h-9 w-9 rounded-full border-[3px]" style={{ borderColor: T.line, borderTopColor: T.accent }}
-                animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.9, ease: "linear" }} />
-              <p className="text-[13px]" style={{ color: T.muted }}>Loading menu items...</p>
-            </div>
-          ) : (
-            <DataTable
-              cols={["Menu Code", "Image", "Name", "Category", "Price", "Promo", "Status", "Actions"]}
-              emptyHint="No menu items found. Try refreshing or add a new product."
-              rows={filtered.map((product) => {
-                const priceNum = parseFloat(String(product.price).replace(/[^0-9.]/g, ""));
-                const promoNum = parseFloat(String(product.promoPrice ?? "").replace(/[^0-9.]/g, ""));
-                const autoNote = product.hasRecipe ? "Auto from ingredients (per serving)" : "Auto from stock fallback";
-                return (
-                  <tr key={product.id} style={{ borderBottom: `1px solid ${T.line}` }} className="transition-colors last:border-b-0"
-                    onMouseEnter={(e) => (e.currentTarget.style.background = T.surfaceMuted)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
-                    <td className="px-4 py-3.5 font-mono text-[12px] font-semibold tabular-nums" style={{ color: T.accent }}>{product.menuCode}</td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl" style={{ background: T.surfaceMuted, border: `1px solid ${T.line}` }}>
-                        {product.image && product.image !== "/img/placeholder.jpg"
-                          ? <img src={resolveAssetUrl(product.image)} alt={product.name} className="h-full w-full object-cover" />
-                          : <span className="text-[13px] font-bold" style={{ color: T.faint }}>{product.name.charAt(0).toUpperCase()}</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <div className="text-[12.5px] font-semibold" style={{ color: T.ink }}>{product.name}</div>
-                      {product.description && <div className="max-w-[180px] truncate text-[11px]" style={{ color: T.muted }}>{product.description}</div>}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium" style={{ background: T.deepSoft, color: T.deep }}>{product.category}</span>
-                    </td>
-                    <td className="px-4 py-3.5 font-mono text-[12.5px] font-semibold tabular-nums" style={{ color: T.ink }}>{formatPeso(priceNum)}</td>
-                    <td className="px-4 py-3.5">
-                      {product.isPromotional ? (
-                        <div className="flex flex-col gap-1">
-                          <span className="inline-block w-fit rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ background: T.accentSoft, color: T.accent }}>
-                            {product.promoLabel || "Promotional"}
-                          </span>
-                          {product.promoPrice && <span className="font-mono text-[11px] font-semibold tabular-nums" style={{ color: T.accent }}>{formatPeso(promoNum)}</span>}
-                        </div>
-                      ) : <span className="text-[12px]" style={{ color: T.faint }}>Standard</span>}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <StatusDot tone={product.availabilityStatus === "Out of Stock" ? "bad" : "good"} />
-                        <span className="text-[12px] font-medium" style={{ color: T.ink }}>{product.availabilityStatus}</span>
-                      </div>
-                      <div className="mt-1 text-[10px]" style={{ color: T.faint }}>{product.overrideMode === "Auto" ? autoNote : product.overrideMode}</div>
-                      {product.hasRecipe && <div className="mt-1 text-[10px]" style={{ color: T.muted }}>Available servings: {getSellableQuantity(product)}</div>}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex gap-1">
-                        <button className={ghostBtnClass} style={ghostBtnStyle} onClick={() => openEdit(product)}>Edit</button>
-                        <button className={ghostBtnClass} style={ghostBtnStyle} onClick={() => void handleAvailabilityToggle(product)}>
-                          {product.overrideMode === "Auto" ? "Force Out" : "Set Auto"}
-                        </button>
-                        <button className={ghostBtnClass} style={dangerBtnStyle} onClick={() => setDeleteId(product.id)}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            />
-          )}
-        </div>
-
-        <aside className="flex flex-col gap-5" style={{ height: "fit-content" }}>
-          <CategoryBreakdown products={products} />
-
-          <div className="rounded-2xl p-5" style={{ background: T.surfaceMuted, border: `1px solid ${T.line}` }}>
-            <div className="mb-1 text-[13px] font-semibold" style={{ color: T.ink }}>Needs Attention</div>
-            <div className="mb-4 text-[11px]" style={{ color: T.muted }}>
-              {attentionItems.length > 0 ? `${hiddenCount} item${hiddenCount === 1 ? "" : "s"} unavailable right now` : "Everything is available"}
-            </div>
-            {attentionItems.length === 0 ? (
-              <div className="rounded-xl px-3 py-6 text-center text-[11.5px]" style={{ color: T.faint, background: T.surface, border: `1px dashed ${T.line}` }}>
-                No stock issues to review.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {attentionItems.map((product) => {
-                  const maxStock = Math.max(1, ...products.filter((entry) => !entry.hasRecipe).map((entry) => entry.stock));
-                  const fillPct = product.hasRecipe ? 0 : Math.min(100, Math.round((product.stock / maxStock) * 100));
-                  return (
-                    <div key={product.id} className="rounded-xl px-3 py-2.5" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-[12px] font-semibold" style={{ color: T.ink }}>{product.name}</span>
-                        <StatusDot tone="bad" />
-                      </div>
-                      <div className="mt-1 text-[10.5px]" style={{ color: T.muted }}>
-                        {product.hasRecipe ? `Available servings: ${getSellableQuantity(product)}` : `${product.stock} ${product.unit} in stock`}
-                      </div>
-                      {!product.hasRecipe && (
-                        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full" style={{ background: T.line }}>
-                          <div className="h-full rounded-full" style={{ width: `${fillPct}%`, background: T.bad }} />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </aside>
-      </div>
-
-      {showAdd && (
-        <SMModal
-          eyebrow="New Record" title="Add Menu Item"
-          onClose={() => { setShowAdd(false); resetAddForm(); }}
-          footer={<>
-            <button className={ghostBtnClass} style={ghostBtnStyle} onClick={() => { setShowAdd(false); resetAddForm(); }} disabled={saving}>Discard</button>
-            <button className={primaryBtnClass} style={solidBtnStyle} onClick={() => void handleAdd()} disabled={saving}>{saving ? "Saving..." : "Add Menu Item"}</button>
-          </>}
-        >
-          {renderProductForm({
-            name: fName, setName: setFName, cat: fCat, setCat: setFCat, price: fPrice, setPrice: setFPrice,
-            overrideMode: fOverrideMode, setOverrideMode: setFOverrideMode,
-            ingredients: fIngredients, setIngredients: setFIngredients,
-            isPromotional: fIsPromotional, setIsPromotional: setFIsPromotional,
-            promoPrice: fPromoPrice, setPromoPrice: setFPromoPrice, promoLabel: fPromoLabel, setPromoLabel: setFPromoLabel,
-            desc: fDesc, setDesc: setFDesc, imagePreview: fImagePreview,
-            onImageChange: (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setFImageFile(file);
-              setFImagePreview(URL.createObjectURL(file));
-            },
-          })}
-        </SMModal>
-      )}
-
-      {editProduct && (
-        <SMModal
-          eyebrow={`Menu Code ${editProduct.menuCode}`} title={`Edit Menu Item - ${editProduct.name}`}
-          onClose={() => setEditProduct(null)}
-          footer={<>
-            <button className={ghostBtnClass} style={ghostBtnStyle} onClick={() => setEditProduct(null)} disabled={saving}>Discard</button>
-            <button className={primaryBtnClass} style={solidBtnStyle} onClick={() => void handleEdit()} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</button>
-          </>}
-        >
-          {renderProductForm({
-            name: eName, setName: setEName, cat: eCat, setCat: setECat, price: ePrice, setPrice: setEPrice,
-            stock: editProduct.hasRecipe ? undefined : eStock,
-            setStock: editProduct.hasRecipe ? undefined : setEStock,
-            availableServings: editProduct.hasRecipe ? Number(editProduct.availableServings ?? 0) : undefined,
-            overrideMode: eOverrideMode, setOverrideMode: setEOverrideMode,
-            ingredients: eIngredients, setIngredients: setEIngredients,
-            isPromotional: eIsPromotional, setIsPromotional: setEIsPromotional,
-            promoPrice: ePromoPrice, setPromoPrice: setEPromoPrice, promoLabel: ePromoLabel, setPromoLabel: setEPromoLabel,
-            desc: eDesc, setDesc: setEDesc, imagePreview: eImagePreview,
-            onImageChange: (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setEImageFile(file);
-              setEImagePreview(URL.createObjectURL(file));
-            },
-            note: `Current customer status: ${editProduct.availabilityStatus}`,
-          })}
-        </SMModal>
-      )}
-
-      {deleteId !== null && (
-        <SMModal
-          eyebrow="Confirm Deletion" title="Delete Menu Item"
-          onClose={() => setDeleteId(null)}
-          footer={<>
-            <button className={ghostBtnClass} style={ghostBtnStyle} onClick={() => setDeleteId(null)} disabled={saving}>Cancel</button>
-            <button className={primaryBtnClass} style={{ ...solidBtnStyle, background: T.bad, borderColor: T.bad }} onClick={() => void handleDelete(deleteId!)} disabled={saving}>
-              {saving ? "Deleting..." : "Yes, Delete"}
-            </button>
-          </>}
-        >
-          <p className="text-[13px] leading-relaxed" style={{ color: T.muted }}>
-            Are you sure you want to delete{" "}
-            <span className="font-semibold" style={{ color: T.ink }}>
-              {products.find((product) => product.id === deleteId)?.name ?? "this menu item"}
-            </span>
-            ? This action cannot be undone.
-          </p>
-        </SMModal>
       )}
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────────────────────
+   Add / edit form (one component for both)
+   ──────────────────────────────────────────────────────────────────────── */
+
+interface FormValues {
+  name: string; category: string; price: string; stock: string; description: string;
+  overrideMode: ManualOverrideMode; ingredients: IngredientInput[];
+  isPromotional: boolean; promoPrice: string; promoLabel: string;
+}
+
+const EMPTY_FORM: FormValues = {
+  name: "", category: "", price: "", stock: "0", description: "", overrideMode: "Auto", ingredients: [],
+  isPromotional: false, promoPrice: "", promoLabel: "",
+};
+
+const formFromItem = (item: MenuItem): FormValues => ({
+  name: item.name, category: item.category, price: item.price, stock: String(item.stock), description: item.description,
+  overrideMode: item.overrideMode, ingredients: item.ingredients,
+  isPromotional: item.isPromotional, promoPrice: item.promoPrice, promoLabel: item.promoLabel,
+});
+
+function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, onSaved }: {
+  item: MenuItem | null; // null means "add a new item"
+  categories: string[]; ingredientOptions: IngredientOption[]; toast: Toast; onClose: () => void; onSaved: () => void;
+}) {
+  const isEdit = item !== null;
+  const [values, setValues] = useState<FormValues>(item ? formFromItem(item) : EMPTY_FORM);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState(item && item.image !== PLACEHOLDER_IMG ? item.image : "");
+  const [saving, setSaving] = useState(false);
+  const set = (patch: Partial<FormValues>) => setValues((current) => ({ ...current, ...patch }));
+
+  // The current category is always selectable, even if Settings no longer lists it
+  const categoryOptions = values.category && !categories.includes(values.category) ? [values.category, ...categories] : categories;
+
+  const updateIngredient = (index: number, patch: Partial<IngredientInput>) =>
+    set({ ingredients: values.ingredients.map((row, i) => (i === index ? { ...row, ...patch } : row)) });
+
+  const pickImage = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  async function submit() {
+    const warn = (message: string) => toast(message, "warning");
+    const price = Number(values.price);
+    const promoPrice = values.isPromotional && values.promoPrice.trim() ? Number(values.promoPrice) : null;
+    const stock = Number(values.stock || 0);
+
+    if (!values.name.trim() || !values.category.trim() || !values.price.trim()) return warn("Please fill in Name, Category, and Price.");
+    if (!Number.isFinite(price) || price < 1) return warn("Price must be at least \u20B11.");
+    if (promoPrice !== null && (!Number.isFinite(promoPrice) || promoPrice < 1)) return warn("Promo price must be at least \u20B11.");
+    if (isEdit && !item.hasRecipe && (!Number.isFinite(stock) || stock < 0)) return warn("Stock quantity cannot be negative.");
+
+    try {
+      setSaving(true);
+      const ingredients = buildIngredientPayload(values.ingredients);
+
+      let image: string | undefined;
+      if (imageFile) image = await uploadProductImage(imageFile);
+      else if (isEdit && imagePreview) image = imagePreview;
+
+      const shared = {
+        name: values.name.trim(),
+        category: values.category.trim(),
+        item_type: "menu_item",
+        price,
+        description: values.description.trim() || null,
+        ...toOverridePayload(values.overrideMode),
+        override_mode: values.overrideMode,
+        is_promotional: values.isPromotional,
+        promo_price: promoPrice,
+        promo_label: values.isPromotional ? values.promoLabel.trim() || null : null,
+        ingredients,
+      };
+
+      if (isEdit) {
+        const payload: Record<string, unknown> = { ...shared, unit: item.unit || DEFAULT_UNIT };
+        const usesRecipe = item.hasRecipe || ingredients.length > 0;
+        if (!usesRecipe && stock !== item.stock) payload.quantity = stock; // only send stock if it changed
+        if (image) payload.image = image;
+        await tryEndpoints([`/products/${item.rawProductId ?? item.id}`], "PUT", payload);
+        toast(`"${shared.name}" updated successfully.`, "success");
+      } else {
+        await api.post("/products", { ...shared, unit: DEFAULT_UNIT, quantity: 0, image: image ?? PLACEHOLDER_IMG });
+        toast(`"${shared.name}" added successfully.`, "success");
+      }
+      onSaved();
+    } catch (error) {
+      toast(`${isEdit ? "Failed to update" : "Failed to add product"}: ${errorText(error)}`, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      eyebrow={isEdit ? `Menu code ${item.menuCode}` : "New menu item"}
+      title={isEdit ? `Edit ${item.name}` : "Add menu item"}
+      onClose={onClose}
+      footer={<>
+        <Button variant="ghost" onClick={onClose} disabled={saving}>Discard</Button>
+        <Button variant="solid" onClick={() => void submit()} disabled={saving}>{saving ? "Saving..." : isEdit ? "Save changes" : "Add menu item"}</Button>
+      </>}
+    >
+      <p className={sectionTitle} style={{ color: T.ink }}>Details</p>
+      <TextInput label="Name *" placeholder="e.g. Chicken Breast" value={values.name} onChange={(name) => set({ name })} />
+      <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
+        <Field label="Category *">
+          <select {...inputProps} value={values.category} onChange={(e) => set({ category: e.target.value })}>
+            <option value="">Select category</option>
+            {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </Field>
+        <NumberInput label="Price (\u20B1) *" placeholder="0.00" value={values.price} onChange={(price) => set({ price })} />
+      </div>
+      {isEdit && (
+        item.hasRecipe ? (
+          <Field label="Available servings (from ingredients)">
+            <div {...{ className: inputClass, style: inputStyle }} aria-readonly="true">{Number(item.availableServings ?? 0)}</div>
+          </Field>
+        ) : (
+          <NumberInput label="Stock quantity" placeholder="0" value={values.stock} onChange={(stock) => set({ stock })} />
+        )
+      )}
+      <Field label="Description (optional)">
+        <textarea {...inputProps} className={`${inputClass} resize-none`} rows={2} placeholder="Brief description..." value={values.description} onChange={(e) => set({ description: e.target.value })} />
+      </Field>
+
+      <p className={sectionTitle} style={{ color: T.ink }}>Availability</p>
+      <div className="grid grid-cols-3 gap-2">
+        {OVERRIDE_MODES.map((mode) => {
+          const active = values.overrideMode === mode;
+          return (
+            <button
+              key={mode} type="button" onClick={() => set({ overrideMode: mode })}
+              className="rounded-xl px-3 py-2 text-[11.5px] font-semibold transition-colors"
+              style={{ fontFamily: FONT, cursor: "pointer", border: "1px solid", background: active ? T.deep : T.surfaceMuted, borderColor: active ? T.deep : T.line, color: active ? "#fff" : T.muted }}
+            >
+              {mode}
+            </button>
+          );
+        })}
+      </div>
+      {isEdit && <p className="mt-2 text-[11.5px]" style={{ color: T.muted }}>Current customer status: {item.availabilityStatus}</p>}
+
+      <p className={sectionTitle} style={{ color: T.ink }}>Ingredients</p>
+      <div className="space-y-2">
+        {values.ingredients.length === 0 && (
+          <p className="rounded-xl px-3 py-2.5 text-[11.5px]" style={{ color: T.muted, background: T.surfaceMuted }}>
+            No ingredients assigned. Availability will follow the item's own stock.
+          </p>
+        )}
+        {values.ingredients.map((row, index) => (
+          <div key={index} className="grid grid-cols-[1fr_110px_auto] gap-2">
+            <select {...inputProps} value={row.productId} onChange={(e) => updateIngredient(index, { productId: e.target.value })}>
+              <option value="">Select ingredient</option>
+              {ingredientOptions.map((option) => <option key={option.id} value={option.id}>{option.name} ({option.category})</option>)}
+            </select>
+            <NumberInput placeholder="Qty" value={row.quantityRequired} onChange={(quantityRequired) => updateIngredient(index, { quantityRequired })} />
+            <Button variant="danger" small type="button" onClick={() => set({ ingredients: values.ingredients.filter((_, i) => i !== index) })}>Remove</Button>
+          </div>
+        ))}
+        <Button variant="ghost" small type="button" onClick={() => set({ ingredients: [...values.ingredients, { productId: "", quantityRequired: "" }] })}>+ Add ingredient</Button>
+      </div>
+
+      <p className={sectionTitle} style={{ color: T.ink }}>Promotion</p>
+      <label className="mb-3 flex cursor-pointer items-center gap-2 text-[12.5px]" style={{ color: T.ink }}>
+        <input type="checkbox" checked={values.isPromotional} onChange={(e) => set({ isPromotional: e.target.checked })} style={{ accentColor: T.accent }} />
+        Mark this item as promotional
+      </label>
+      {values.isPromotional && (
+        <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
+          <NumberInput label="Promo price" placeholder="0.00" value={values.promoPrice} onChange={(promoPrice) => set({ promoPrice })} />
+          <TextInput label="Promo label" placeholder="e.g. Summer special" value={values.promoLabel} onChange={(promoLabel) => set({ promoLabel })} />
+        </div>
+      )}
+
+      <p className={sectionTitle} style={{ color: T.ink }}>Photo</p>
+      <label
+        className="flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl transition-colors"
+        style={{ border: `1.5px dashed ${T.faint}`, background: T.surfaceMuted, minHeight: imagePreview ? "auto" : 88 }}
+      >
+        {imagePreview ? (
+          <img src={resolveAssetUrl(imagePreview)} alt="Preview" className="h-[140px] w-full object-cover" />
+        ) : (
+          <span className="py-7 text-center text-[12px]" style={{ color: T.muted }}>Click to upload an image (PNG or JPG, up to 5MB)</span>
+        )}
+        <input type="file" accept="image/*" className="hidden" onChange={pickImage} />
+      </label>
+    </Modal>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Menu list
+   ──────────────────────────────────────────────────────────────────────── */
+
+type StatusFilter = "all" | "available" | "unavailable";
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "available", label: "Available" },
+  { value: "unavailable", label: "Unavailable" },
+];
+
+function MenuAdminTab() {
+  const { addNotification } = useNotifications();
+  const toast: Toast = (label, type = "info") => addNotification({ id: `${Date.now()}-${Math.random()}`, label, type });
+  const { items, categories, ingredientOptions, loading, reload } = useMenuAdmin((message) => toast(message, "error"));
+
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [formTarget, setFormTarget] = useState<MenuItem | "new" | null>(null); // which item the form is open for
+  const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const term = search.trim().toLowerCase();
+  const visible = items.filter((item) =>
+    (categoryFilter === "all" || item.category === categoryFilter) &&
+    (statusFilter === "all" || (statusFilter === "unavailable") === isUnavailable(item)) &&
+    (!term || [item.name, item.category, item.menuCode, item.promoLabel].some((text) => text.toLowerCase().includes(term))),
+  );
+
+  // Numbers for the summary cards
+  const unavailableItems = items.filter(isUnavailable);
+  const promoCount = items.filter((item) => item.isPromotional).length;
+  const zeroStockCount = items.filter((item) => sellableQuantity(item) === 0).length;
+  const menuValue = items.reduce((sum, item) => sum + priceNumber(item.price) * sellableQuantity(item), 0);
+  const markedOutCount = items.filter((item) => item.availabilityStatus === "Out of Stock").length;
+
+  async function toggleAvailability(item: MenuItem) {
+    const next: ManualOverrideMode = item.overrideMode === "Auto" ? "Force Out of Stock" : "Auto";
+    try {
+      await tryEndpoints([`/products/${item.rawProductId ?? item.id}`], "PUT", { ...toOverridePayload(next), override_mode: next });
+      await reload();
+      toast(`"${item.name}" override set to ${next}.`, "success");
+    } catch (error) {
+      toast(`Failed to update availability: ${errorText(error)}`, "error");
+    }
+  }
+
+  async function deleteItem(item: MenuItem) {
+    const productId = item.rawProductId ?? item.id;
+    const inventoryId = item.rawInventoryId;
+    const endpoints = [`/products/${productId}`];
+    if (inventoryId && inventoryId !== productId) endpoints.push(`/products/${inventoryId}`);
+    endpoints.push(`/inventory/${productId}`);
+    if (inventoryId && inventoryId !== productId) endpoints.push(`/inventory/${inventoryId}`);
+
+    try {
+      setDeleting(true);
+      await tryEndpoints(endpoints, "DELETE");
+      await reload();
+      setDeleteTarget(null);
+      toast("Product deleted successfully.", "success");
+    } catch (error) {
+      toast(`Failed to delete: ${errorText(error)}`, "error");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const rowHover = {
+    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = T.surfaceMuted; },
+    onMouseLeave: (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = "transparent"; },
+  };
+  const columns = ["Item", "Category", "Price", "Availability", ""];
+
+  return (
+    <div style={{ fontFamily: FONT }}>
+      {/* Summary */}
+      <div className="mb-6 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
+        <StatCard label="Menu items" value={items.length} meta="Currently in the system" icon="grid" tone="deep" />
+        <StatCard label="Promotional" value={promoCount} meta="Active special menus" icon="tag" tone={promoCount > 0 ? "accent" : "neutral"} />
+        <StatCard label="Unavailable" value={markedOutCount} meta="Marked out of stock" icon="alert" tone={markedOutCount > 0 ? "warn" : "deep"} />
+        <StatCard label="Menu value" value={formatPeso(menuValue)} meta={`${zeroStockCount} item${zeroStockCount === 1 ? "" : "s"} with zero stock`} icon="wallet" tone={zeroStockCount > 0 ? "bad" : "deep"} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <section>
+          {/* Toolbar */}
+          <div className="mb-4 flex flex-wrap items-center gap-2.5">
+            <div className="flex min-w-[220px] flex-1 items-center gap-2 rounded-xl px-3.5" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                <circle cx="11" cy="11" r="7" stroke={T.muted} strokeWidth="2" />
+                <path d="M20 20L16.65 16.65" stroke={T.muted} strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              <input
+                type="search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search menu items"
+                placeholder="Search by name, code, category or promo"
+                className="w-full bg-transparent py-2.5 text-[13px] outline-none" style={{ color: T.ink, fontFamily: FONT }}
+              />
+            </div>
+            <select
+              value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} aria-label="Filter by category"
+              className="rounded-xl px-3 py-2.5 text-[12.5px] outline-none" style={{ color: T.ink, background: T.surface, border: `1px solid ${T.line}`, fontFamily: FONT }}
+            >
+              <option value="all">All categories</option>
+              {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+            <div className="flex rounded-xl p-1" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+              {STATUS_FILTERS.map(({ value, label }) => {
+                const active = statusFilter === value;
+                return (
+                  <button
+                    key={value} onClick={() => setStatusFilter(value)}
+                    className="rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors"
+                    style={{ fontFamily: FONT, cursor: "pointer", border: "none", background: active ? T.deep : "transparent", color: active ? "#fff" : T.muted }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <Button onClick={() => void reload()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</Button>
+            <Button variant="solid" onClick={() => setFormTarget("new")}>+ Add menu item</Button>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-hidden rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] border-collapse">
+                <thead>
+                  <tr style={{ background: T.surfaceMuted, borderBottom: `1px solid ${T.line}` }}>
+                    {columns.map((column, i) => (
+                      <th key={i} className="px-4 py-3 text-left text-[11.5px] font-semibold" style={{ color: T.muted }}>{column}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    [0, 1, 2, 3].map((row) => (
+                      <tr key={row} style={{ borderBottom: `1px solid ${T.line}` }}>
+                        <td colSpan={columns.length} className="px-4 py-4">
+                          <div className="h-12 animate-pulse rounded-xl" style={{ background: T.surfaceMuted }} />
+                        </td>
+                      </tr>
+                    ))
+                  ) : visible.length === 0 ? (
+                    <tr>
+                      <td colSpan={columns.length} className="px-4 py-16 text-center">
+                        <div className="text-[13.5px] font-semibold" style={{ color: T.ink }}>{items.length === 0 ? "No menu items yet" : "No items match your filters"}</div>
+                        <div className="mt-1 text-[12px]" style={{ color: T.muted }}>
+                          {items.length === 0 ? "Add your first menu item to get started." : "Try a different search, category or status."}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : visible.map((item) => {
+                    const unavailable = isUnavailable(item);
+                    return (
+                      <tr key={item.id} style={{ borderBottom: `1px solid ${T.line}` }} {...rowHover}>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="grid h-12 w-12 flex-shrink-0 place-items-center overflow-hidden rounded-xl" style={{ background: T.surfaceMuted, border: `1px solid ${T.line}` }}>
+                              {item.image !== PLACEHOLDER_IMG
+                                ? <img src={resolveAssetUrl(item.image)} alt={item.name} className="h-full w-full object-cover" />
+                                : <span className="text-[13px] font-semibold" style={{ color: T.muted }}>{item.name.charAt(0).toUpperCase()}</span>}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-[13px] font-semibold" style={{ color: T.ink }}>{item.name}</div>
+                              <div className="text-[11.5px]" style={{ color: T.muted }}>
+                                <span className="font-medium tabular-nums" style={{ color: T.accent }}>{item.menuCode}</span>
+                                {item.description && <span className="ml-2 inline-block max-w-[160px] truncate align-bottom">{item.description}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="inline-block rounded-full px-2.5 py-1 text-[11.5px] font-medium" style={{ background: T.deepSoft, color: T.deep }}>{item.category}</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <div className="text-[13px] font-semibold tabular-nums" style={{ color: T.ink }}>{formatPeso(priceNumber(item.price))}</div>
+                          {item.isPromotional && (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <span className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold" style={{ background: T.accentSoft, color: T.accent }}>{item.promoLabel || "Promo"}</span>
+                              {item.promoPrice && <span className="text-[11.5px] font-semibold tabular-nums" style={{ color: T.accent }}>{formatPeso(priceNumber(item.promoPrice))}</span>}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <StatusBadge unavailable={unavailable} />
+                          <div className="mt-1.5 text-[11.5px]" style={{ color: T.muted }}>
+                            {item.hasRecipe ? `${sellableQuantity(item)} servings` : `${item.stock} ${item.unit}`}
+                            {item.overrideMode !== "Auto" && ` · ${item.overrideMode}`}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" small onClick={() => setFormTarget(item)}>Edit</Button>
+                            <Button variant="ghost" small onClick={() => void toggleAvailability(item)}>{item.overrideMode === "Auto" ? "Force out" : "Set auto"}</Button>
+                            <Button variant="danger" small onClick={() => setDeleteTarget(item)}>Delete</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <aside className="flex flex-col gap-5" style={{ height: "fit-content" }}>
+          <CategoryBreakdown items={items} />
+          <AttentionList items={unavailableItems} />
+        </aside>
+      </div>
+
+      {formTarget !== null && (
+        <MenuFormModal
+          item={formTarget === "new" ? null : formTarget}
+          categories={categories} ingredientOptions={ingredientOptions} toast={toast}
+          onClose={() => setFormTarget(null)}
+          onSaved={() => { setFormTarget(null); void reload(); }}
+        />
+      )}
+
+      {deleteTarget && (
+        <Modal
+          eyebrow="Confirm deletion" title="Delete menu item" onClose={() => setDeleteTarget(null)}
+          footer={<>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
+            <Button variant="dangerSolid" onClick={() => void deleteItem(deleteTarget)} disabled={deleting}>{deleting ? "Deleting..." : "Yes, delete"}</Button>
+          </>}
+        >
+          <p className="text-[13px] leading-relaxed" style={{ color: T.muted }}>
+            Are you sure you want to delete <span className="font-semibold" style={{ color: T.ink }}>{deleteTarget.name}</span>? This action cannot be undone.
+          </p>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Page
+   ──────────────────────────────────────────────────────────────────────── */
 
 export default function Inventory() {
   const now = useNow();
   const [restaurantSettings, setRestaurantSettings] = useState(GENERAL_SETTINGS_DEFAULTS);
+
   useEffect(() => {
     let cancelled = false;
-    void fetchGeneralSettings().then((settings) => {
-      if (!cancelled) setRestaurantSettings(settings);
-    });
+    void fetchGeneralSettings().then((settings) => { if (!cancelled) setRestaurantSettings(settings); });
     return () => { cancelled = true; };
   }, []);
 
@@ -1135,15 +957,16 @@ export default function Inventory() {
     <div className="flex min-h-screen" style={{ background: T.page, fontFamily: FONT }}>
       <Sidebar />
       <main className="tablet-shell flex-1">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-          className="mb-6 flex flex-wrap items-start justify-between gap-4"
+        <motion.header
+          initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
+          className="mb-7 flex flex-wrap items-start justify-between gap-4"
         >
           <div>
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: T.accent }}>
-              Menu Administration
+            <p className="mb-1 text-[12px] font-semibold" style={{ color: T.accent }}>Menu administration</p>
+            <h1 className="text-[30px] font-semibold tracking-tight" style={{ color: T.ink }}>Menu Management</h1>
+            <p className="mt-1 max-w-[560px] text-[13px]" style={{ color: T.muted }}>
+              Manage menu items, prices, categories, ingredients, promotions and availability.
             </p>
-            <h1 className="text-[32px] font-bold tracking-tight" style={{ color: T.ink }}>Menu Management</h1>
           </div>
           <UserIdentityBanner className="order-3 w-full sm:order-2 sm:w-auto" />
           <div className="flex select-none items-center gap-3 rounded-2xl px-4 py-2.5" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
@@ -1154,15 +977,15 @@ export default function Inventory() {
               </svg>
             </div>
             <div className="flex flex-col items-end">
-              <p className="font-mono text-[15px] font-semibold tabular-nums" style={{ color: T.ink }}>
+              <p className="text-[15px] font-semibold tabular-nums" style={{ color: T.ink }}>
                 {formatInSettingsTimezone(now, restaurantSettings, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </p>
-              <p className="mt-0.5 text-[11px]" style={{ color: T.muted }}>
+              <p className="mt-0.5 text-[11.5px]" style={{ color: T.muted }}>
                 {formatInSettingsTimezone(now, restaurantSettings, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
               </p>
             </div>
           </div>
-        </motion.div>
+        </motion.header>
 
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.22 }}>
           <MenuAdminTab />

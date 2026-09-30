@@ -173,18 +173,26 @@ const QUICK_RANGES = [
   { label: "All time", key: "all" },
 ] as const;
 
+// Palette: one strong color (deep green) + neutrals. Red is kept only for
+// destructive states (cancelled, refund confirmation).
+const DEEP = "#1A3A2A";
+const DEEP_SOFT = "#E7EFE9";
+const DEEP_LINE = "#C3D6CB";
+const BAD = "#C23B2E";
+const BAD_SOFT = "#FBEAE8";
+
 const STATUS_COLOR: Record<Status, string> = {
-  Completed: "#16a34a",
-  Pending: "#d97706",
-  Cancelled: "#dc2626",
-  Refunded: "#2563eb",
+  Completed: DEEP,
+  Pending: "#64748b",
+  Cancelled: BAD,
+  Refunded: "#334155",
 };
 
 const TYPE_COLOR: Record<LogType, string> = {
-  Sale: "#4f46e5",
-  Refund: "#3b82f6",
+  Sale: DEEP,
+  Refund: "#334155",
   Void: "#9ca3af",
-  Adjustment: "#8b5cf6",
+  Adjustment: "#64748b",
 };
 
 // --- Helpers ---
@@ -698,7 +706,7 @@ function triggerPrint(
           <td>${o.orderType === "delivery" ? (o.riderName ?? "—") : "—"}</td>
           <td>${o.orderType === "delivery" ? fmtHandover : "—"}</td>
           <td>${o.cashierName ?? "—"}</td>
-          <td style="text-transform:capitalize;color:#2563eb">${o.paymentCategory}</td>
+          <td style="text-transform:capitalize;color:${DEEP}">${o.paymentCategory}</td>
           <td style="text-align:right;font-weight:700">${formatReportCurrency(o.total, restaurantSettings)}</td>
         </tr>
       `;
@@ -716,23 +724,23 @@ function triggerPrint(
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Poppins', sans-serif; background: #fff; color: #0f172a; padding: 40px 48px; font-size: 12px; }
         .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #f1f5f9; }
-        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #4f46e5; text-transform: uppercase; margin-bottom: 6px; }
+        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: ${DEEP}; text-transform: uppercase; margin-bottom: 6px; }
         .header-title { font-size: 24px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
         .header-period { font-size: 12px; color: #94a3b8; }
         .header-meta { text-align: right; }
         .header-meta p { font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
         .header-meta strong { font-size: 13px; font-weight: 600; color: #334155; }
-        .revenue-hero { background: #0f172a; border-radius: 14px; padding: 20px 24px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .revenue-label { font-size: 10px; color: #94a3b8; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+        .revenue-hero { background: ${DEEP}; border-radius: 14px; padding: 20px 24px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .revenue-label { font-size: 10px; color: ${DEEP_LINE}; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
         .revenue-amount { font-size: 32px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
         .revenue-stats { display: flex; gap: 28px; }
         .stat-item { text-align: center; }
-        .stat-number { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
-        .stat-label { font-size: 10px; color: #64748b; }
+        .stat-number { font-size: 20px; font-weight: 700; margin-bottom: 2px; color: #fff; }
+        .stat-label { font-size: 10px; color: ${DEEP_LINE}; }
         .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
-        .summary-card { border-radius: 10px; padding: 14px 16px; }
+        .summary-card { border-radius: 10px; padding: 14px 16px; background: #fff; border: 1px solid #e2e8f0; }
         .summary-card-label { font-size: 9px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
-        .summary-card-value { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+        .summary-card-value { font-size: 20px; font-weight: 700; margin-bottom: 2px; color: #0f172a; }
         .summary-card-sub { font-size: 10px; color: #94a3b8; }
         .section-title { font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
@@ -782,31 +790,31 @@ function triggerPrint(
           <p class="revenue-amount">${formatReportCurrency(revenue, restaurantSettings)}</p>
         </div>
         <div class="revenue-stats">
-          <div class="stat-item"><p class="stat-number" style="color:#4ade80">${paidCompleted.length}</p><p class="stat-label">Paid Orders</p></div>
-          <div class="stat-item"><p class="stat-number" style="color:#60a5fa">${formatReportCurrency(gcashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p><p class="stat-label">GCash Sales</p></div>
-          <div class="stat-item"><p class="stat-number" style="color:#f59e0b">${formatReportCurrency(cashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p><p class="stat-label">Cash Sales</p></div>
-          <div class="stat-item"><p class="stat-number" style="color:#0f172a">${cashOnPickupSales.length}</p><p class="stat-label">Pickup Cash</p></div>
+          <div class="stat-item"><p class="stat-number">${paidCompleted.length}</p><p class="stat-label">Paid Orders</p></div>
+          <div class="stat-item"><p class="stat-number">${formatReportCurrency(gcashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p><p class="stat-label">GCash Sales</p></div>
+          <div class="stat-item"><p class="stat-number">${formatReportCurrency(cashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p><p class="stat-label">Cash Sales</p></div>
+          <div class="stat-item"><p class="stat-number">${cashOnPickupSales.length}</p><p class="stat-label">Pickup Cash</p></div>
         </div>
       </div>
       <div class="summary-grid">
-        <div class="summary-card" style="background:#f0fdf4;border:1px solid #bbf7d0">
+        <div class="summary-card">
           <p class="summary-card-label">Total Sales</p>
-          <p class="summary-card-value" style="color:#16a34a">${formatReportCurrency(paidCompleted.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-value" style="color:${DEEP}">${formatReportCurrency(paidCompleted.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
           <p class="summary-card-sub">Completed + paid only</p>
         </div>
-        <div class="summary-card" style="background:#f8fafc;border:1px solid #cbd5e1">
+        <div class="summary-card">
           <p class="summary-card-label">Completed Orders</p>
-          <p class="summary-card-value" style="color:#0f172a">${paidCompleted.length}</p>
+          <p class="summary-card-value">${paidCompleted.length}</p>
           <p class="summary-card-sub">Paid transactions</p>
         </div>
-        <div class="summary-card" style="background:#eff6ff;border:1px solid #bfdbfe">
+        <div class="summary-card">
           <p class="summary-card-label">GCash Sales</p>
-          <p class="summary-card-value" style="color:#2563eb">${formatReportCurrency(gcashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-value">${formatReportCurrency(gcashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
           <p class="summary-card-sub">${gcashSales.length} orders</p>
         </div>
-        <div class="summary-card" style="background:#fff7ed;border:1px solid #fdba74">
+        <div class="summary-card">
           <p class="summary-card-label">Cash Sales</p>
-          <p class="summary-card-value" style="color:#d97706">${formatReportCurrency(cashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-value">${formatReportCurrency(cashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
           <p class="summary-card-sub">${cashOnPickupSales.length > 0 ? `${cashSales.length} cash · ${cashOnPickupSales.length} pickup cash` : `${cashSales.length} orders`}</p>
         </div>
       </div>
@@ -824,7 +832,7 @@ function triggerPrint(
         <tfoot>
           <tr>
             <td colspan="8" style="text-align:right;color:#0f172a">Total Revenue</td>
-            <td style="text-align:right;color:#16a34a;font-size:15px">${formatReportCurrency(revenue, restaurantSettings)}</td>
+            <td style="text-align:right;color:${DEEP};font-size:15px">${formatReportCurrency(revenue, restaurantSettings)}</td>
           </tr>
         </tfoot>
       </table>
@@ -875,7 +883,7 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
       const div = el as HTMLDivElement;
       div.style.fontSize = i === idx ? "17px" : "14px";
       div.style.fontWeight = i === idx ? "600" : "400";
-      div.style.color = i === idx ? "#4f46e5" : "#94a3b8";
+      div.style.color = i === idx ? DEEP : "#94a3b8";
     });
   }
 
@@ -1052,8 +1060,8 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
             height: ITEM_H,
             marginTop: -ITEM_H / 2,
             borderRadius: 10,
-            background: "rgba(79,70,229,0.08)",
-            border: "0.5px solid rgba(79,70,229,0.22)",
+            background: "rgba(26,58,42,0.08)",
+            border: "0.5px solid rgba(26,58,42,0.22)",
             zIndex: 1,
             pointerEvents: "none",
           }}
@@ -1088,7 +1096,7 @@ function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
                 width: "100%",
                 fontSize: i === selectedIndex ? 17 : 14,
                 fontWeight: i === selectedIndex ? 600 : 400,
-                color: i === selectedIndex ? "#4f46e5" : "#94a3b8",
+                color: i === selectedIndex ? DEEP : "#94a3b8",
                 transition: "color 0.15s, font-size 0.15s",
               }}
             >
@@ -1310,7 +1318,7 @@ function DrumDatePicker({
                   padding: "11px 0",
                   borderRadius: 12,
                   border: "none",
-                  background: "#4f46e5",
+                  background: DEEP,
                   fontSize: 13,
                   fontWeight: 600,
                   color: "#fff",
@@ -1412,7 +1420,7 @@ function RevenueDropdown({
               top: 20,
               right: 24,
               zIndex: 9999,
-              background: "#0f172a",
+              background: DEEP,
               borderRadius: 12,
               padding: "12px 18px",
               display: "flex",
@@ -1421,11 +1429,11 @@ function RevenueDropdown({
               boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
             }}
           >
-            <Printer size={14} color="#4ade80" />
+            <Printer size={14} color={DEEP_LINE} />
             <span style={{ fontSize: 13, fontWeight: 500, color: "#fff" }}>
               Print dialog opened
             </span>
-            <span style={{ fontSize: 11, color: "#64748b" }}>
+            <span style={{ fontSize: 11, color: DEEP_LINE }}>
               · {period} report
             </span>
           </motion.div>
@@ -1493,7 +1501,7 @@ function RevenueDropdown({
               exit={{ opacity: 0, y: -5 }}
               transition={{ duration: 0.18 }}
               style={{
-                color: "#0f172a",
+                color: DEEP,
                 fontSize: 28,
                 fontWeight: 700,
                 margin: "0 0 8px",
@@ -1505,10 +1513,10 @@ function RevenueDropdown({
           </AnimatePresence>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {[
-              { label: "Paid", count: completedCount, color: "#16a34a" },
-              { label: "Pending", count: pendingCount, color: "#d97706" },
-              { label: "Cancelled", count: cancelledCount, color: "#dc2626" },
-              { label: "Refunded", count: refundedCount, color: "#2563eb" },
+              { label: "Paid", count: completedCount, color: DEEP },
+              { label: "Pending", count: pendingCount, color: "#64748b" },
+              { label: "Cancelled", count: cancelledCount, color: BAD },
+              { label: "Refunded", count: refundedCount, color: "#334155" },
             ].map((s) => (
               <span
                 key={s.label}
@@ -1591,7 +1599,7 @@ function RevenueDropdown({
                         width: 28,
                         height: 28,
                         borderRadius: 8,
-                        background: period === p ? "#0f172a" : "#f1f5f9",
+                        background: period === p ? DEEP : "#f1f5f9",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -1624,7 +1632,7 @@ function RevenueDropdown({
                     </div>
                   </div>
                   {period === p && (
-                    <span style={{ color: "#4f46e5", fontSize: 12 }}>✓</span>
+                    <span style={{ color: DEEP, fontSize: 12 }}>✓</span>
                   )}
                 </motion.div>
               ))}
@@ -1647,7 +1655,7 @@ function RevenueDropdown({
               </div>
 
               <motion.div
-                whileHover={{ background: "#fef9f0" }}
+                whileHover={{ background: "#f1f5f9" }}
                 onClick={handlePrint}
                 style={{
                   margin: "4px 10px 10px",
@@ -1657,8 +1665,8 @@ function RevenueDropdown({
                   alignItems: "center",
                   gap: 12,
                   borderRadius: 16,
-                  border: "1px solid #f5d0a6",
-                  background: "#fffaf5",
+                  border: "1px solid #e2e8f0",
+                  background: "#f8fafc",
                 }}
               >
                 <div
@@ -1666,12 +1674,12 @@ function RevenueDropdown({
                     width: 36,
                     height: 36,
                     borderRadius: 10,
-                    background: "#4f46e5",
+                    background: DEEP,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     flexShrink: 0,
-                    boxShadow: "0 2px 8px rgba(79,70,229,0.25)",
+                    boxShadow: "0 2px 8px rgba(26,58,42,0.25)",
                   }}
                 >
                   <Printer size={16} color="#fff" />
@@ -1705,9 +1713,9 @@ function RevenueDropdown({
                     fontWeight: 700,
                     padding: "3px 8px",
                     borderRadius: 6,
-                    background: "#f0fdf4",
-                    color: "#16a34a",
-                    border: "1px solid #bbf7d0",
+                    background: DEEP_SOFT,
+                    color: DEEP,
+                    border: `1px solid ${DEEP_LINE}`,
                     whiteSpace: "nowrap",
                   }}
                 >
@@ -1820,15 +1828,15 @@ function RefundModal({
                     width: 40,
                     height: 40,
                     borderRadius: 12,
-                    background: "#fef2f2",
-                    border: "1px solid #fecaca",
+                    background: BAD_SOFT,
+                    border: "1px solid #f3c9c4",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     flexShrink: 0,
                   }}
                 >
-                  <RotateCcw size={18} color="#dc2626" />
+                  <RotateCcw size={18} color={BAD} />
                 </div>
                 <div>
                   <p
@@ -1899,7 +1907,7 @@ function RefundModal({
                         lineHeight: 1.5,
                         color:
                           f.label === "Amount"
-                            ? "#dc2626"
+                            ? BAD
                             : f.label === "Transaction ID"
                               ? "#111"
                               : "#1e293b",
@@ -1939,8 +1947,8 @@ function RefundModal({
                       style={{
                         fontSize: 12,
                         fontWeight: 600,
-                        color: "#2563eb",
-                        textDecoration: "none",
+                        color: DEEP,
+                        textDecoration: "underline",
                         background: "transparent",
                         border: "none",
                         padding: 0,
@@ -1967,7 +1975,7 @@ function RefundModal({
                 </strong>{" "}
                 for <strong style={{ color: "#0f172a" }}>{product}</strong>? The
                 order status will be updated to{" "}
-                <span style={{ color: "#2563eb", fontWeight: 600 }}>
+                <span style={{ color: "#334155", fontWeight: 600 }}>
                   Refunded
                 </span>
                 .
@@ -2000,7 +2008,7 @@ function RefundModal({
                     padding: "11px 0",
                     borderRadius: 12,
                     border: "none",
-                    background: loading ? "#f87171" : "#dc2626",
+                    background: loading ? "#d9857c" : BAD,
                     fontSize: 13,
                     fontWeight: 600,
                     color: "#fff",
@@ -2025,7 +2033,8 @@ function RefundModal({
                       >
                         <RotateCcw size={13} />
                       </motion.span>
-                      Processing…                    </>
+                      Processing…
+                    </>
                   ) : (
                     <>
                       <RotateCcw size={13} /> Confirm Refund
@@ -2057,6 +2066,7 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
     (l) => normalizePaymentMethod(l.paymentMethod) === "Cash on Pickup",
   );
 
+  // First card is the one strong block (solid deep green); the rest stay white.
   const stats = [
     {
       label: "Total Sales",
@@ -2064,17 +2074,13 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
         paidCompleted.reduce((sum, log) => sum + log.total, 0),
       ),
       sub: "Completed + paid only",
-      color: "#16a34a",
-      bg: "#f0fdf4",
-      border: "#bbf7d0",
+      dark: true,
     },
     {
       label: "Completed Orders",
       value: `${paidCompleted.length}`,
       sub: "Paid transactions",
-      color: "#0f172a",
-      bg: "#f8fafc",
-      border: "#cbd5e1",
+      dark: false,
     },
     {
       label: "GCash Sales",
@@ -2082,9 +2088,7 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
         gcashSales.reduce((sum, log) => sum + log.total, 0),
       ),
       sub: `${gcashSales.length} orders`,
-      color: "#2563eb",
-      bg: "#eff6ff",
-      border: "#bfdbfe",
+      dark: false,
     },
     {
       label: "Cash Sales",
@@ -2095,9 +2099,7 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
         cashOnPickupSales.length > 0
           ? `${cashSales.length} cash · ${cashOnPickupSales.length} pickup cash`
           : `${cashSales.length} orders`,
-      color: "#d97706",
-      bg: "#fffbeb",
-      border: "#fde68a",
+      dark: false,
     },
   ];
 
@@ -2146,8 +2148,8 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
             whileHover={{ y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
             style={{
               minHeight: 122,
-              background: s.bg,
-              border: `1px solid ${s.border}`,
+              background: s.dark ? DEEP : "#fff",
+              border: `1px solid ${s.dark ? DEEP : "#e2e8f0"}`,
               borderRadius: 18,
               padding: "18px 20px",
               boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
@@ -2158,7 +2160,7 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
           >
             <p
               style={{
-                color: "#94a3b8",
+                color: s.dark ? DEEP_LINE : "#94a3b8",
                 fontSize: 10,
                 fontWeight: 700,
                 margin: "0 0 10px",
@@ -2170,7 +2172,7 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
             </p>
             <p
               style={{
-                color: s.color,
+                color: s.dark ? "#fff" : "#0f172a",
                 fontSize: 24,
                 fontWeight: 700,
                 margin: "0 0 8px",
@@ -2181,7 +2183,7 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
             </p>
             <p
               style={{
-                color: "#64748b",
+                color: s.dark ? DEEP_LINE : "#64748b",
                 fontSize: 11,
                 margin: 0,
                 lineHeight: 1.5,
@@ -2340,7 +2342,7 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            background: "#f0fdf4",
+            background: DEEP_SOFT,
             color: STATUS_COLOR["Completed"],
             fontSize: 11,
             fontWeight: 700,
@@ -2348,7 +2350,7 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
             textAlign: "center",
             flexShrink: 0,
             borderRadius: 999,
-            border: "1px solid #bbf7d0",
+            border: `1px solid ${DEEP_LINE}`,
             padding: "5px 10px",
           }}
         >
@@ -2423,7 +2425,7 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                         f.label === "Order Status"
                           ? STATUS_COLOR["Completed"]
                           : f.label === "Cashier"
-                            ? "#4f46e5"
+                            ? DEEP
                             : f.label === "Transaction ID"
                               ? "#111"
                               : "#334155",
@@ -2467,17 +2469,16 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 8,
-                      color: "#1d4ed8",
+                      color: DEEP,
                       fontSize: 12,
                       fontWeight: 700,
                       margin: 0,
                       textDecoration: "none",
-                      background: "#eff6ff",
-                      border: "1px solid #bfdbfe",
+                      background: DEEP_SOFT,
+                      border: `1px solid ${DEEP_LINE}`,
                       borderRadius: 12,
                       padding: "9px 13px",
                       cursor: "pointer",
-                      boxShadow: "0 1px 3px rgba(29,78,216,0.08)",
                     }}
                   >
                     <ImageIcon size={14} />
@@ -2501,7 +2502,7 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                   </p>
                   <p
                     style={{
-                      color: "#d97706",
+                      color: "#64748b",
                       fontSize: 13,
                       fontWeight: 500,
                       margin: 0,
@@ -2674,7 +2675,7 @@ function LogPagination({
               key={p}
               variant={currentPage === p ? "default" : "outline"}
               size="icon"
-              className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#4f46e5] hover:bg-[#4338ca] text-white border-0" : ""}`}
+              className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#1A3A2A] hover:bg-[#12291d] text-white border-0" : ""}`}
               onClick={() => onPageChange(p as number)}
             >
               {p}
@@ -2724,7 +2725,7 @@ function FilterChips<T extends string>({
             onClick={() => onChange(opt)}
             className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
               active === opt
-                ? (activeClass?.(opt) ?? "bg-[#0f172a] text-white border-[#0f172a]")
+                ? (activeClass?.(opt) ?? "bg-[#1A3A2A] text-white border-[#1A3A2A]")
                 : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
             }`}
           >
@@ -2739,21 +2740,22 @@ function FilterChips<T extends string>({
 // --- Order Row ---
 
 const statusStyle: Record<string, { bg: string; text: string }> = {
-  Completed: { bg: "#f0fdf4", text: "#16a34a" },
-  Pending: { bg: "#fffbeb", text: "#d97706" },
-  Cancelled: { bg: "#fef2f2", text: "#dc2626" },
-  Refunded: { bg: "#eff6ff", text: "#2563eb" },
+  Completed: { bg: DEEP_SOFT, text: DEEP },
+  Pending: { bg: "#f1f5f9", text: "#64748b" },
+  Cancelled: { bg: BAD_SOFT, text: BAD },
+  Refunded: { bg: "#f1f5f9", text: "#334155" },
 };
 
+// Order types are neutral; only delivery gets the soft green tint.
 const orderTypeStyle: Record<string, { bg: string; text: string }> = {
-  "take-out": { bg: "#fffbeb", text: "#d97706" },
-  delivery: { bg: "#eff6ff", text: "#2563eb" },
-  "dine-in": { bg: "#f5f3ff", text: "#7c3aed" },
+  "take-out": { bg: "#f1f5f9", text: "#475569" },
+  delivery: { bg: DEEP_SOFT, text: DEEP },
+  "dine-in": { bg: "#f1f5f9", text: "#475569" },
 };
 
 const paymentBadgeStyle: Record<string, { bg: string; text: string; border: string }> = {
-  Cash: { bg: "#fff7ed", text: "#c2410c", border: "#fdba74" },
-  GCash: { bg: "#eff6ff", text: "#1d4ed8", border: "#bfdbfe" },
+  Cash: { bg: "#f1f5f9", text: "#334155", border: "#cbd5e1" },
+  GCash: { bg: DEEP_SOFT, text: DEEP, border: DEEP_LINE },
   "Cash on Pickup": { bg: "#f8fafc", text: "#334155", border: "#cbd5e1" },
 };
 
@@ -2998,7 +3000,7 @@ function OrderRow({
                               : f.label === "Subtotal"
                                 ? "#0f172a"
                                 : f.label === "Cashier"
-                                  ? "#4f46e5"
+                                  ? DEEP
                                   : f.label === "Transaction ID"
                                     ? "#111"
                                     : f.label === "Order Number"
@@ -3082,14 +3084,13 @@ function OrderRow({
                           gap: 8,
                           padding: "9px 13px",
                           borderRadius: 12,
-                          border: "1px solid #bfdbfe",
-                          background: "#eff6ff",
-                          color: "#1d4ed8",
+                          border: `1px solid ${DEEP_LINE}`,
+                          background: DEEP_SOFT,
+                          color: DEEP,
                           fontSize: 12,
                           fontWeight: 700,
                           textDecoration: "none",
                           cursor: "pointer",
-                          boxShadow: "0 1px 3px rgba(29,78,216,0.08)",
                         }}
                       >
                         <ImageIcon size={14} />
@@ -3159,7 +3160,7 @@ function OrderRow({
                     <motion.button
                       whileHover={{
                         scale: 1.02,
-                        boxShadow: "0 4px 16px rgba(220,38,38,0.18)",
+                        boxShadow: "0 4px 16px rgba(194,59,46,0.18)",
                       }}
                       whileTap={{ scale: 0.97 }}
                       onClick={(e) => {
@@ -3172,9 +3173,9 @@ function OrderRow({
                         gap: 6,
                         padding: "8px 18px",
                         borderRadius: 10,
-                        border: "1px solid #fecaca",
-                        background: "#fef2f2",
-                        color: "#dc2626",
+                        border: "1px solid #f3c9c4",
+                        background: BAD_SOFT,
+                        color: BAD,
                         fontSize: 12,
                         fontWeight: 600,
                         cursor: "pointer",
@@ -3218,11 +3219,11 @@ const ORDER_TYPE_FILTERS: OrderTypeFilter[] = [
 ];
 
 const statusActiveColor: Record<OrderStatusFilter, string> = {
-  All: "bg-[#0f172a] text-white border-[#0f172a]",
-  Completed: "bg-green-700 text-white border-green-700",
-  Pending: "bg-yellow-600 text-white border-yellow-600",
-  Cancelled: "bg-red-600 text-white border-red-600",
-  Refunded: "bg-blue-600 text-white border-blue-600",
+  All: "bg-[#1A3A2A] text-white border-[#1A3A2A]",
+  Completed: "bg-[#1A3A2A] text-white border-[#1A3A2A]",
+  Pending: "bg-slate-500 text-white border-slate-500",
+  Cancelled: "bg-[#C23B2E] text-white border-[#C23B2E]",
+  Refunded: "bg-slate-700 text-white border-slate-700",
 };
 
 function OrdersTab({
@@ -3347,7 +3348,7 @@ function OrdersTab({
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">
               {filtered.length} order{filtered.length !== 1 ? "s" : ""} ·{" "}
-              <span className="text-green-600 font-medium">
+              <span className="text-[#1A3A2A] font-medium">
                 {completedCount} completed
               </span>{" "}
               ·{" "}
@@ -3362,7 +3363,7 @@ function OrdersTab({
               onClick={() => openDatePicker("from")}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
                 fromDate
-                  ? "border-[#4f46e5] text-[#4f46e5] bg-[#4f46e5]/5"
+                  ? "border-[#1A3A2A] text-[#1A3A2A] bg-[#1A3A2A]/5"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white"
               }`}
             >
@@ -3373,7 +3374,7 @@ function OrdersTab({
               onClick={() => openDatePicker("to")}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
                 toDate
-                  ? "border-[#4f46e5] text-[#4f46e5] bg-[#4f46e5]/5"
+                  ? "border-[#1A3A2A] text-[#1A3A2A] bg-[#1A3A2A]/5"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white"
               }`}
             >
@@ -3403,7 +3404,7 @@ function OrdersTab({
               onClick={() => applyQuick(r.key)}
               className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
                 activeQuick === r.key
-                  ? "bg-[#4f46e5] text-white border-[#4f46e5]"
+                  ? "bg-[#1A3A2A] text-white border-[#1A3A2A]"
                   : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
               }`}
             >
@@ -3794,9 +3795,9 @@ export default function SalesReports() {
               maxWidth: 380,
               padding: "12px 16px",
               borderRadius: 12,
-              border: "1px solid #fecaca",
-              background: "#fff1f2",
-              color: "#be123c",
+              border: "1px solid #f3c9c4",
+              background: BAD_SOFT,
+              color: BAD,
               boxShadow: "0 10px 30px rgba(15,23,42,0.12)",
               fontSize: 12,
               fontWeight: 600,
@@ -3861,7 +3862,7 @@ export default function SalesReports() {
           <div>
             <p
               style={{
-                color: "#4f46e5",
+                color: DEEP,
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: 2,
@@ -3962,7 +3963,7 @@ export default function SalesReports() {
                     borderRadius: 99,
                     fontSize: 11,
                     fontWeight: 700,
-                    background: active ? "#0f172a" : "#cbd5e1",
+                    background: active ? DEEP : "#cbd5e1",
                     color: active ? "#fff" : "#64748b",
                     transition: "all 0.2s",
                   }}
@@ -4041,10 +4042,10 @@ export default function SalesReports() {
                     padding: "8px 12px",
                     borderRadius: 14,
                     border: logFromDate
-                      ? "1px solid #4f46e5"
+                      ? `1px solid ${DEEP}`
                       : "1px solid #e5e7eb",
-                    background: logFromDate ? "rgba(79,70,229,0.08)" : "#fff",
-                    color: logFromDate ? "#4f46e5" : "#6b7280",
+                    background: logFromDate ? "rgba(26,58,42,0.08)" : "#fff",
+                    color: logFromDate ? DEEP : "#6b7280",
                     fontSize: 13,
                     fontWeight: 500,
                     cursor: "pointer",
@@ -4062,10 +4063,10 @@ export default function SalesReports() {
                     padding: "8px 12px",
                     borderRadius: 14,
                     border: logToDate
-                      ? "1px solid #4f46e5"
+                      ? `1px solid ${DEEP}`
                       : "1px solid #e5e7eb",
-                    background: logToDate ? "rgba(79,70,229,0.08)" : "#fff",
-                    color: logToDate ? "#4f46e5" : "#6b7280",
+                    background: logToDate ? "rgba(26,58,42,0.08)" : "#fff",
+                    color: logToDate ? DEEP : "#6b7280",
                     fontSize: 13,
                     fontWeight: 500,
                     cursor: "pointer",
@@ -4091,11 +4092,11 @@ export default function SalesReports() {
                   gap: 6,
                   padding: "9px 14px",
                   borderRadius: 99,
-                  background: "#f0fdf4",
-                  border: "1px solid #bbf7d0",
+                  background: DEEP_SOFT,
+                  border: `1px solid ${DEEP_LINE}`,
                   fontSize: 12,
                   fontWeight: 700,
-                  color: "#16a34a",
+                  color: DEEP,
                   whiteSpace: "nowrap",
                 }}
               >
@@ -4104,7 +4105,7 @@ export default function SalesReports() {
                     width: 7,
                     height: 7,
                     borderRadius: "50%",
-                    background: "#16a34a",
+                    background: DEEP,
                     display: "inline-block",
                   }}
                 />
@@ -4132,10 +4133,10 @@ export default function SalesReports() {
                     borderRadius: 999,
                     border:
                       activeLogQuick === r.key
-                        ? "1px solid #4f46e5"
+                        ? `1px solid ${DEEP}`
                         : "1px solid #e5e7eb",
                     background:
-                      activeLogQuick === r.key ? "#4f46e5" : "#f9fafb",
+                      activeLogQuick === r.key ? DEEP : "#f9fafb",
                     color: activeLogQuick === r.key ? "#fff" : "#6b7280",
                     cursor: "pointer",
                     transition: "all 0.2s",

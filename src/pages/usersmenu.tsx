@@ -605,6 +605,23 @@ export default function Delicacy() {
   const cardRefs = useRef<Record<number,HTMLDivElement|null>>({});
   const submittingRef = useRef(false);
 
+  // Navbar is position:fixed so it stays visible while scrolling, no matter
+  // what overflow the parent layout has. The spacer below it keeps the page
+  // content from sliding under the bar; its height is measured so it stays
+  // correct when the nav wraps onto two lines on small screens.
+  const navRef = useRef<HTMLElement | null>(null);
+  const [navHeight, setNavHeight] = useState(68);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const update = () => setNavHeight(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // scroll lock
   useEffect(() => {
     const lock = orderTypeOpen||showCashTerms||showCheckout;
@@ -815,7 +832,7 @@ export default function Delicacy() {
       <div style={{ position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden" }}>
         {[{ top:"-8%",left:"10%",w:700,op:0.05 },{ top:"45%",right:"-8%",w:520,op:0.03 },{ bottom:"-8%",left:"30%",w:600,op:0.04 }].map((g,i)=><div key={i} style={{ position:"absolute",...g,width:g.w,height:g.w,borderRadius:"50%",background:`radial-gradient(circle,rgba(245,200,66,${g.op}) 0%,transparent 65%)` }} />)}
       </div>
-      <motion.nav initial={{ y:-80,opacity:0 }} animate={{ y:0,opacity:1 }} transition={{ duration:0.65,ease:EASE }} style={{ position:"sticky",top:0,zIndex:100,background:scrolled?"rgba(14,12,10,0.96)":"rgba(14,12,10,0.80)",backdropFilter:"blur(24px)",borderBottom:"1px solid rgba(240,237,232,0.07)",padding:isNarrowPhone?"10px 14px":"0 clamp(16px,4vw,40px)",minHeight:68,display:"flex",justifyContent:"space-between",alignItems:"center",gap:isNarrowPhone?10:12,flexWrap:isNarrow?"wrap":"nowrap" }}>
+      <motion.nav ref={navRef} initial={{ y:-80,opacity:0 }} animate={{ y:0,opacity:1 }} transition={{ duration:0.65,ease:EASE }} style={{ position:"fixed",top:0,left:0,right:0,zIndex:100,boxSizing:"border-box",background:scrolled?"rgba(14,12,10,0.96)":"rgba(14,12,10,0.80)",backdropFilter:"blur(24px)",borderBottom:"1px solid rgba(240,237,232,0.07)",padding:isNarrowPhone?"10px 14px":"0 clamp(16px,4vw,40px)",minHeight:68,display:"flex",justifyContent:"space-between",alignItems:"center",gap:isNarrowPhone?10:12,flexWrap:isNarrow?"wrap":"nowrap" }}>
         <div style={{ display:"flex",alignItems:"center",gap:8,minWidth:0 }}>
           <img src="/img/logo24.png" alt={`${restaurantSettings.restaurantName} logo`} style={{ width:32,height:32,objectFit:"contain" }} />
           {!isNarrowPhone&&<span style={{ fontSize:20,fontWeight:900,color:"#f0ede8" }}>{restaurantSettings.restaurantName}</span>}
@@ -844,6 +861,8 @@ export default function Delicacy() {
           )}</AnimatePresence>
         </div>
       </motion.nav>
+      {/* Spacer: the nav is fixed, so reserve its height to keep content below it */}
+      <div style={{ height:navHeight }} aria-hidden />
 
       <div style={{ maxWidth:1200,margin:"0 auto",padding:"clamp(24px,5vw,52px) clamp(16px,4vw,40px) 0",position:"relative",zIndex:1 }}>
         <motion.div initial={{ opacity:0,y:-20 }} animate={{ opacity:1,y:0 }} transition={{ delay:0.1,duration:0.75,ease:EASE }} style={{ marginBottom:36 }}>
