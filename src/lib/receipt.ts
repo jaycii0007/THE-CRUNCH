@@ -107,14 +107,12 @@ export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): stri
   const m = r.merchant;
 
   const info: [string, string][] = [
-    ["Order No.", r.orderNumber],
-    ["Txn ID", r.transactionId ?? ""],
+    ["Order ID", r.orderNumber],
     ["Date", formatReceiptDate(r)],
     ["Cashier", cashier],
     ["Order Type", r.orderType ? cap(r.orderType) + (r.tableNumber ? ` / Table ${r.tableNumber}` : "") : ""],
     ["Customer", r.customerType || r.discount.name || ""],
     ["Payment", paymentLabel(r.paymentMethod)],
-    ["Status", r.currentStatus ?? ""],
   ];
 
   const items = r.items.length
@@ -135,9 +133,9 @@ export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): stri
     : num(r.amountPaid) ? row("Amount Paid", money(r.amountPaid, cur)) : "";
 
   return PAGE(`Receipt ${r.orderNumber}`, "", `
-<h1>${esc(m.name || "Receipt")}</h1>
+<h1>The Crunch Fairview</h1>
 ${[m.tagline, m.address, m.phone, m.email].filter(Boolean).map((l) => `<p class="c s">${esc(l)}</p>`).join("")}
-<p class="c b" style="margin-top:6px;letter-spacing:.12em">OFFICIAL RECEIPT</p>
+<p class="c s" style="margin-top:6px">This serves as a preliminary receipt, not an official receipt.</p>
 <hr/>
 ${r.isLegacyReceipt ? `<div class="legacy">Legacy transaction: some original details are unavailable.${r.usesCurrentProductNameFallback ? " Product names are current catalog names." : ""}</div>` : ""}
 <table>${info.filter(([, v]) => v).map(([l, v]) => row(l, v)).join("")}</table>

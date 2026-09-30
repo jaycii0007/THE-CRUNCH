@@ -1330,10 +1330,8 @@ export default function StockManager() {
                   pageVariants={pageVariants}
                   staggerVariants={staggerVariants}
                   itemVariants={itemVariants}
-                  poOrders={po.poOrders}
                   lowStock={lowStock}
                   criticalStock={criticalStock}
-                  poFilterStatus={po.poFilterStatus}
                   filteredPOs={po.filteredPOs}
                   poLoading={po.poLoading}
                   products={products}
@@ -1348,7 +1346,6 @@ export default function StockManager() {
                       getCategoryStyle={getCategoryStyle}
                     />
                   }
-                  setPoFilterStatus={po.setPoFilterStatus}
                   onNewPO={() => po.setPrefillPOProduct(null)}
                   onOrderNow={po.handleOrderNow}
                   isMenuFoodProduct={isMenuFoodProduct}

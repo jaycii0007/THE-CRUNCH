@@ -66,27 +66,27 @@ export function PurchaseHistoryTab({
         >
           {[
             {
-              label: "Completed Orders",
+              label: "History Records",
               value: filteredCompletedPOs.length,
               accent: "emerald",
               summary: "historyCompleted" as const,
-              sub: "in selected date range",
+              sub: "ordered, received, or cancelled",
             },
             {
-              label: "Received Today",
+              label: "Received",
               value: filteredCompletedPOs.filter(
-                (o) => o.receivedDate === new Date().toISOString().split("T")[0],
+                (o) => o.status === "Received",
               ).length,
               accent: "sky",
               summary: "historyToday" as const,
-              sub: "completed today",
+              sub: "received into inventory",
             },
             {
-              label: "With Receipt Logged",
-              value: filteredCompletedPOs.filter((o) => !!o.receiptNo).length,
+              label: "Cancelled",
+              value: filteredCompletedPOs.filter((o) => o.status === "Cancelled").length,
               accent: "slate",
               summary: "historyReceipt" as const,
-              sub: "receipt number recorded",
+              sub: "preserved for audit history",
             },
           ].map((k) => (
             <KPICard
@@ -108,7 +108,7 @@ export function PurchaseHistoryTab({
                   Purchase Order History
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Completed purchase orders only
+                  Ordered, received, and cancelled purchase orders
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -200,10 +200,10 @@ export function PurchaseHistoryTab({
             <div className="hidden lg:grid grid-cols-[1.5fr_2fr_1.5fr_1.5fr_1.5fr_1.5fr_auto] px-5 py-3 border-b border-slate-100 text-xs font-semibold text-slate-400 uppercase tracking-wide">
               <span>PO No.</span>
               <span>Supplier</span>
-              <span>Receipt</span>
-              <span>Received By</span>
-              <span>Received On</span>
-              <span>Items</span>
+              <span>PO Document</span>
+              <span>Handled By</span>
+              <span>History Date</span>
+              <span>Inventory</span>
               <span className="text-right">Status</span>
             </div>
             <div className="divide-y divide-slate-50">
@@ -215,8 +215,8 @@ export function PurchaseHistoryTab({
                 <EmptyState
                   message={
                     poHistoryDateFrom || poHistoryDateTo
-                      ? "No completed purchase orders match this date range."
-                      : "No completed purchase orders found."
+                      ? "No purchase order history matches this date range."
+                      : "No purchase order history found."
                   }
                 />
               ) : (
@@ -269,13 +269,17 @@ export function PurchaseHistoryTab({
                           {order.receivedBy || "-"}
                         </span>
                         <span className="text-sm text-slate-500">
-                          {order.receivedDate
-                            ? fmtReceivedDate(order.receivedDate)
-                            : "-"}
+                          {fmtReceivedDate(order.receivedDate ?? order.date)}
                         </span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {totalQuantity} unit{totalQuantity !== 1 ? "s" : ""}
-                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-800">
+                            {order.items.slice(0, 2).map((item) => item.name).join(", ") || "No inventory items"}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {totalQuantity} unit{totalQuantity !== 1 ? "s" : ""}
+                            {order.items.length > 2 ? ` across ${order.items.length} items` : ""}
+                          </p>
+                        </div>
                         <span className="flex justify-end">
                           <POBadge status={order.status} />
                         </span>
@@ -310,15 +314,12 @@ export function PurchaseHistoryTab({
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-500">
                         <span>Receipt: {order.receiptNo || "-"}</span>
-                        <span>Received by: {order.receivedBy || "-"}</span>
+                        <span>Handled by: {order.receivedBy || "-"}</span>
                         <span>
-                          Date:{" "}
-                          {order.receivedDate
-                            ? fmtReceivedDate(order.receivedDate)
-                            : "-"}
+                          Date: {fmtReceivedDate(order.receivedDate ?? order.date)}
                         </span>
-                        <span className="font-semibold text-slate-700">
-                          {totalQuantity} unit{totalQuantity !== 1 ? "s" : ""}
+                        <span className="font-semibold text-slate-700 truncate">
+                          Inventory: {order.items.map((item) => `${item.name} (${item.quantity} ${item.unit})`).join(", ") || "None"}
                         </span>
                       </div>
                     </motion.div>
@@ -334,7 +335,7 @@ export function PurchaseHistoryTab({
                     poHistoryPage * poHistoryPageSize,
                     filteredCompletedPOs.length,
                   )}{" "}
-                  of {filteredCompletedPOs.length} completed order
+                  of {filteredCompletedPOs.length} history record
                   {filteredCompletedPOs.length !== 1 ? "s" : ""}
                 </p>
                 <div className="flex items-center gap-2">

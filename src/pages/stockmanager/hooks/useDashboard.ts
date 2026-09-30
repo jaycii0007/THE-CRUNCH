@@ -207,10 +207,12 @@ export function useDashboard({
     const draftOrders = purchaseOrders.filter((order) => order.status === "Draft");
     const orderedOrders = purchaseOrders.filter((order) => order.status === "Ordered");
     const receivedOrders = purchaseOrders.filter((order) => order.status === "Received");
-    const receivedTodayOrders = completedPurchaseOrders.filter(
-      (order) => order.receivedDate === new Date().toISOString().split("T")[0],
+    const receivedHistoryOrders = completedPurchaseOrders.filter(
+      (order) => order.status === "Received",
     );
-    const receiptOrders = completedPurchaseOrders.filter((order) => !!order.receiptNo);
+    const cancelledHistoryOrders = completedPurchaseOrders.filter(
+      (order) => order.status === "Cancelled",
+    );
 
     return {
       products: {
@@ -294,28 +296,28 @@ export function useDashboard({
         emptyMessage: "No received purchase orders found.",
       },
       historyCompleted: {
-        title: "Completed Purchase Order History",
-        subtitle: "Completed orders in the selected history date range.",
-        totalLabel: "Completed Orders",
+        title: "Purchase Order History",
+        subtitle: "Ordered, received, and cancelled purchase orders in the selected range.",
+        totalLabel: "History Records",
         totalValue: completedPurchaseOrders.length.toString(),
         rows: toPurchaseOrderRows(completedPurchaseOrders, "history"),
-        emptyMessage: "No completed purchase orders match this date range.",
+        emptyMessage: "No purchase order history matches this date range.",
       },
       historyToday: {
-        title: "Purchase Orders Received Today",
-        subtitle: "Completed purchase orders received today.",
-        totalLabel: "Received Today",
-        totalValue: receivedTodayOrders.length.toString(),
-        rows: toPurchaseOrderRows(receivedTodayOrders, "today"),
-        emptyMessage: "No purchase orders were received today.",
+        title: "Received Purchase Orders",
+        subtitle: "Purchase orders received into inventory in the selected range.",
+        totalLabel: "Received",
+        totalValue: receivedHistoryOrders.length.toString(),
+        rows: toPurchaseOrderRows(receivedHistoryOrders, "received-history"),
+        emptyMessage: "No received purchase orders match this date range.",
       },
       historyReceipt: {
-        title: "Purchase Orders With Receipts",
-        subtitle: "Completed purchase orders with a receipt number logged.",
-        totalLabel: "Receipts Logged",
-        totalValue: receiptOrders.length.toString(),
-        rows: toPurchaseOrderRows(receiptOrders, "receipt"),
-        emptyMessage: "No completed purchase orders have receipts logged.",
+        title: "Cancelled Purchase Orders",
+        subtitle: "Cancelled records preserved for audit history.",
+        totalLabel: "Cancelled",
+        totalValue: cancelledHistoryOrders.length.toString(),
+        rows: toPurchaseOrderRows(cancelledHistoryOrders, "cancelled-history"),
+        emptyMessage: "No cancelled purchase orders match this date range.",
       },
     } satisfies Record<
       DashboardSummaryKey,

@@ -41,6 +41,8 @@ import { useViewport } from "@/hooks/use-tablet";
 import { ReceiptViewerModal } from "@/components/receipt-viewer-modal";
 import type { ReceiptDto } from "@/lib/receipt";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
+import { useAuth } from "@/context/authcontext";
+import { canSettlePersistedOrders } from "@/lib/permissions";
 
 // --- Types ---
 
@@ -48,6 +50,7 @@ type Status = "Completed" | "Pending" | "Cancelled" | "Refunded";
 type LogType = "Sale" | "Refund" | "Void" | "Adjustment";
 type Period = "Today" | "Last 7 Days" | "Last 30 Days" | "All Time";
 type TabKey = "logs" | "orders";
+type SettlementAction = "refund" | "void";
 type QuickKey =
   | "today"
   | "yesterday"
@@ -370,7 +373,9 @@ function normalizeLogType(status: Status): LogType {
 }
 
 function formatPaymentStatus(value?: string | null): string {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (!normalized) return "Pending";
   if (normalized === "pending payment") return "Unpaid";
   if (normalized === "paid") return "Paid";
@@ -381,8 +386,16 @@ function isPaidPaymentStatus(value?: string | null): boolean {
   return formatPaymentStatus(value) === "Paid";
 }
 
+function getOrderSettlementAction(order: Order): SettlementAction | null {
+  if (order.status === "Refunded" || order.status === "Cancelled") return null;
+  if (isPaidPaymentStatus(order.paymentStatus)) return "refund";
+  return order.status === "Completed" ? null : "void";
+}
+
 function normalizePaymentMethod(value?: string | null): PaymentMethodFilter {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (
     normalized === "cash on pickup" ||
     normalized === "cash_on_pickup" ||
@@ -401,7 +414,11 @@ function normalizePaymentMethod(value?: string | null): PaymentMethodFilter {
 }
 
 function formatOrderType(value?: string | null): string {
-  switch (String(value ?? "").trim().toLowerCase()) {
+  switch (
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+  ) {
     case "dine-in":
       return "Dine In";
     case "take-out":
@@ -518,16 +535,13 @@ function processRawRows(rows: RawOrderRow[]): {
         date: r.date ?? "",
         orderType: r.orderType ?? r.order_type ?? "Order",
         status: r.status ?? "",
-        paymentMethod:
-          normalizePaymentMethod(
-            String(r.paymentMethod ?? r.payment_method ?? "cash").trim() ||
-              "cash",
-          ),
-        paymentStatus:
-          formatPaymentStatus(
-            String(r.paymentStatus ?? r.payment_status ?? "").trim() ||
-              "Pending",
-          ),
+        paymentMethod: normalizePaymentMethod(
+          String(r.paymentMethod ?? r.payment_method ?? "cash").trim() ||
+            "cash",
+        ),
+        paymentStatus: formatPaymentStatus(
+          String(r.paymentStatus ?? r.payment_status ?? "").trim() || "Pending",
+        ),
         cashierName:
           String(
             r.cashierName ??
@@ -543,12 +557,7 @@ function processRawRows(rows: RawOrderRow[]): {
         proofImageUrl:
           String(r.proofImageUrl ?? r.proof_image_url ?? "").trim() || null,
         orderNumber: String(r.orderNumber ?? r.order_number ?? "").trim(),
-        transactionId:
-          String(
-            r.transactionId ??
-              r.transaction_id ??
-              "",
-          ).trim(),
+        transactionId: String(r.transactionId ?? r.transaction_id ?? "").trim(),
       };
     }
 
@@ -669,7 +678,9 @@ function triggerPrint(
   });
 
   const completedOrders = orders
-    .filter((o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus))
+    .filter(
+      (o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus),
+    )
     .sort(
       (a, b) =>
         (parseDateSafe(b.date)?.getTime() ?? 0) -
@@ -678,25 +689,27 @@ function triggerPrint(
 
   const rows = completedOrders
     .map((o, i) => {
-      const fmtDate =
-        parseDateSafe(o.date)
-          ? formatInSettingsTimezone(o.date, restaurantSettings, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })
-          : "—";
-      const fmtHandover =
-        parseDateSafe(o.handoverTimestamp)
-          ? formatInSettingsTimezone(o.handoverTimestamp ?? "", restaurantSettings, {
+      const fmtDate = parseDateSafe(o.date)
+        ? formatInSettingsTimezone(o.date, restaurantSettings, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })
+        : "—";
+      const fmtHandover = parseDateSafe(o.handoverTimestamp)
+        ? formatInSettingsTimezone(
+            o.handoverTimestamp ?? "",
+            restaurantSettings,
+            {
               month: "short",
               day: "numeric",
               year: "numeric",
               hour: "2-digit",
               minute: "2-digit",
               hour12: true,
-            })
-          : "—";
+            },
+          )
+        : "—";
       return `
         <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
           <td>${o.transactionId}</td>
@@ -771,12 +784,14 @@ function triggerPrint(
               : ""
           }
           <p class="header-period">Period: ${period}</p>
-          ${
-            [restaurantSettings.address, restaurantSettings.phone, restaurantSettings.email]
-              .filter(Boolean)
-              .map((line) => `<p class="header-period">${line}</p>`)
-              .join("")
-          }
+          ${[
+            restaurantSettings.address,
+            restaurantSettings.phone,
+            restaurantSettings.email,
+          ]
+            .filter(Boolean)
+            .map((line) => `<p class="header-period">${line}</p>`)
+            .join("")}
         </div>
         <div class="header-meta">
           <p>Generated</p>
@@ -791,16 +806,25 @@ function triggerPrint(
         </div>
         <div class="revenue-stats">
           <div class="stat-item"><p class="stat-number">${paidCompleted.length}</p><p class="stat-label">Paid Orders</p></div>
-          <div class="stat-item"><p class="stat-number">${formatReportCurrency(gcashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p><p class="stat-label">GCash Sales</p></div>
-          <div class="stat-item"><p class="stat-number">${formatReportCurrency(cashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p><p class="stat-label">Cash Sales</p></div>
+          <div class="stat-item"><p class="stat-number">${formatReportCurrency(
+            gcashSales.reduce((sum, log) => sum + log.total, 0),
+            restaurantSettings,
+          )}</p><p class="stat-label">GCash Sales</p></div>
+          <div class="stat-item"><p class="stat-number">${formatReportCurrency(
+            cashSales.reduce((sum, log) => sum + log.total, 0),
+            restaurantSettings,
+          )}</p><p class="stat-label">Cash Sales</p></div>
           <div class="stat-item"><p class="stat-number">${cashOnPickupSales.length}</p><p class="stat-label">Pickup Cash</p></div>
         </div>
       </div>
       <div class="summary-grid">
         <div class="summary-card">
           <p class="summary-card-label">Total Sales</p>
-          <p class="summary-card-value" style="color:${DEEP}">${formatReportCurrency(paidCompleted.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
-          <p class="summary-card-sub">Completed + paid only</p>
+          <p class="summary-card-value" style="color:${DEEP}">${formatReportCurrency(
+            paidCompleted.reduce((sum, log) => sum + log.total, 0),
+            restaurantSettings,
+          )}</p>
+          <p class="summary-card-sub">Completed</p>
         </div>
         <div class="summary-card">
           <p class="summary-card-label">Completed Orders</p>
@@ -809,12 +833,18 @@ function triggerPrint(
         </div>
         <div class="summary-card">
           <p class="summary-card-label">GCash Sales</p>
-          <p class="summary-card-value">${formatReportCurrency(gcashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-value">${formatReportCurrency(
+            gcashSales.reduce((sum, log) => sum + log.total, 0),
+            restaurantSettings,
+          )}</p>
           <p class="summary-card-sub">${gcashSales.length} orders</p>
         </div>
         <div class="summary-card">
           <p class="summary-card-label">Cash Sales</p>
-          <p class="summary-card-value">${formatReportCurrency(cashSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-value">${formatReportCurrency(
+            cashSales.reduce((sum, log) => sum + log.total, 0),
+            restaurantSettings,
+          )}</p>
           <p class="summary-card-sub">${cashOnPickupSales.length > 0 ? `${cashSales.length} cash · ${cashOnPickupSales.length} pickup cash` : `${cashSales.length} orders`}</p>
         </div>
       </div>
@@ -1627,7 +1657,8 @@ function RevenueDropdown({
                           color: "#cbd5e1",
                         }}
                       >
-                        {formatReportCurrency(getRevenueForPeriod(logs, p))} revenue
+                        {formatReportCurrency(getRevenueForPeriod(logs, p))}{" "}
+                        revenue
                       </span>
                     </div>
                   </div>
@@ -1703,8 +1734,8 @@ function RevenueDropdown({
                       lineHeight: 1.5,
                     }}
                   >
-                    {period} · {formatReportCurrency(revenue)} · {completedCount}{" "}
-                    completed
+                    {period} · {formatReportCurrency(revenue)} ·{" "}
+                    {completedCount} completed
                   </p>
                 </div>
                 <div
@@ -1750,6 +1781,7 @@ interface RefundModalProps {
   open: boolean;
   log: SaleLog | null;
   order: Order | null;
+  action: SettlementAction;
   onConfirm: () => void;
   onClose: () => void;
   loading: boolean;
@@ -1759,10 +1791,13 @@ function RefundModal({
   open,
   log,
   order,
+  action,
   onConfirm,
   onClose,
   loading,
 }: RefundModalProps) {
+  const isRefund = action === "refund";
+  const actionLabel = isRefund ? "Refund" : "Void";
   const txnId = log?.transactionId ?? order?.transactionId ?? "";
   const product =
     log?.product ?? (order ? order.items.map((i) => i.name).join(", ") : "");
@@ -1847,7 +1882,7 @@ function RefundModal({
                       color: "#0f172a",
                     }}
                   >
-                    Confirm Refund
+                    Confirm {actionLabel}
                   </p>
                   <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>
                     This action cannot be undone
@@ -1969,14 +2004,14 @@ function RefundModal({
                   lineHeight: 1.65,
                 }}
               >
-                Are you sure you want to refund{" "}
-                <strong style={{ color: "#0f172a" }}>
+                Are you sure you want to {isRefund ? "refund" : "void"} the order
+                for <strong style={{ color: "#0f172a" }}>{product}</strong>{" "}
+                totaling <strong style={{ color: "#0f172a" }}>
                   {formatReportCurrency(total)}
-                </strong>{" "}
-                for <strong style={{ color: "#0f172a" }}>{product}</strong>? The
+                </strong>? The
                 order status will be updated to{" "}
                 <span style={{ color: "#334155", fontWeight: 600 }}>
-                  Refunded
+                  {isRefund ? "Refunded" : "Cancelled"}
                 </span>
                 .
               </p>
@@ -2037,7 +2072,7 @@ function RefundModal({
                     </>
                   ) : (
                     <>
-                      <RotateCcw size={13} /> Confirm Refund
+                      <RotateCcw size={13} /> Confirm {actionLabel}
                     </>
                   )}
                 </button>
@@ -2073,7 +2108,7 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
       value: formatReportCurrency(
         paidCompleted.reduce((sum, log) => sum + log.total, 0),
       ),
-      sub: "Completed + paid only",
+      sub: "Completed",
       dark: true,
     },
     {
@@ -2216,10 +2251,26 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
               boxShadow: "0 1px 4px rgba(15,23,42,0.04)",
             }}
           >
-            <p style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 4px" }}>
+            <p
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#94a3b8",
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                margin: "0 0 4px",
+              }}
+            >
               {item.label}
             </p>
-            <p style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", margin: "0 0 2px" }}>
+            <p
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: "#0f172a",
+                margin: "0 0 2px",
+              }}
+            >
               {item.value}
             </p>
             <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
@@ -2236,12 +2287,13 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
 
 function LogRow({ log, index }: { log: SaleLog; index: number }) {
   const [open, setOpen] = useState(false);
-  const paymentTone =
-    paymentBadgeStyle[normalizePaymentMethod(log.paymentMethod)] ?? {
-      bg: "#f8fafc",
-      text: "#475569",
-      border: "#cbd5e1",
-    };
+  const paymentTone = paymentBadgeStyle[
+    normalizePaymentMethod(log.paymentMethod)
+  ] ?? {
+    bg: "#f8fafc",
+    text: "#475569",
+    border: "#cbd5e1",
+  };
 
   return (
     <motion.div
@@ -2397,7 +2449,10 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                 { label: "Transaction ID", value: log.transactionId },
                 { label: "Cashier", value: log.cashierName },
                 { label: "Payment Method", value: log.paymentMethod },
-                { label: "Payment Status", value: formatPaymentStatus(log.paymentStatus) },
+                {
+                  label: "Payment Status",
+                  value: formatPaymentStatus(log.paymentStatus),
+                },
                 {
                   label: "Unit Price",
                   value: formatReportCurrency(log.unitPrice),
@@ -2607,7 +2662,14 @@ function LoadingState({ label }: { label: string }) {
         <Loader2 size={18} className="animate-spin" />
       </div>
       <div style={{ textAlign: "center" }}>
-        <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "#334155" }}>
+        <p
+          style={{
+            margin: "0 0 4px",
+            fontSize: 14,
+            fontWeight: 700,
+            color: "#334155",
+          }}
+        >
           Loading report data
         </p>
         <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>{label}</p>
@@ -2725,7 +2787,8 @@ function FilterChips<T extends string>({
             onClick={() => onChange(opt)}
             className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
               active === opt
-                ? (activeClass?.(opt) ?? "bg-[#1A3A2A] text-white border-[#1A3A2A]")
+                ? (activeClass?.(opt) ??
+                  "bg-[#1A3A2A] text-white border-[#1A3A2A]")
                 : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
             }`}
           >
@@ -2753,7 +2816,10 @@ const orderTypeStyle: Record<string, { bg: string; text: string }> = {
   "dine-in": { bg: "#f1f5f9", text: "#475569" },
 };
 
-const paymentBadgeStyle: Record<string, { bg: string; text: string; border: string }> = {
+const paymentBadgeStyle: Record<
+  string,
+  { bg: string; text: string; border: string }
+> = {
   Cash: { bg: "#f1f5f9", text: "#334155", border: "#cbd5e1" },
   GCash: { bg: DEEP_SOFT, text: DEEP, border: DEEP_LINE },
   "Cash on Pickup": { bg: "#f8fafc", text: "#334155", border: "#cbd5e1" },
@@ -2761,11 +2827,13 @@ const paymentBadgeStyle: Record<string, { bg: string; text: string; border: stri
 
 function OrderRow({
   order,
-  onRefund,
+  canSettle,
+  onSettle,
   onViewReceipt,
 }: {
   order: Order;
-  onRefund: (order: Order) => void;
+  canSettle: boolean;
+  onSettle: (order: Order, action: SettlementAction) => void;
   onViewReceipt: (order: Order) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -2778,31 +2846,26 @@ function OrderRow({
 
   const fmtDate = (v?: string | null) => {
     const d = parseDateSafe(v);
-    return d
-      ? formatDisplayDate(d)
-      : "—";
+    return d ? formatDisplayDate(d) : "—";
   };
   const fmtTime = (v?: string | null) => {
     const d = parseDateSafe(v);
-    return d
-      ? formatDisplayTime(d)
-      : "—";
+    return d ? formatDisplayTime(d) : "—";
   };
 
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
-  const canRefund =
-    order.status !== "Refunded" &&
-    order.status !== "Cancelled" &&
-    isPaidPaymentStatus(order.paymentStatus);
+  const settlementAction = getOrderSettlementAction(order);
+  const showSettlement = canSettle && settlementAction !== null;
   const isDelivery = order.orderType === "delivery";
   const orderTypeLabel = formatOrderType(order.orderType);
 
-  const paymentTone =
-    paymentBadgeStyle[normalizePaymentMethod(order.paymentCategory)] ?? {
-      bg: "#f8fafc",
-      text: "#475569",
-      border: "#cbd5e1",
-    };
+  const paymentTone = paymentBadgeStyle[
+    normalizePaymentMethod(order.paymentCategory)
+  ] ?? {
+    bg: "#f8fafc",
+    text: "#475569",
+    border: "#cbd5e1",
+  };
 
   return (
     <>
@@ -3004,8 +3067,8 @@ function OrderRow({
                                   : f.label === "Transaction ID"
                                     ? "#111"
                                     : f.label === "Order Number"
-                                    ? "#111"
-                                    : "#334155",
+                                      ? "#111"
+                                      : "#334155",
                             fontFamily:
                               f.label === "Transaction ID" ||
                               f.label === "Order Number"
@@ -3062,7 +3125,7 @@ function OrderRow({
                   </div>
 
                   {order.proofImageUrl && (
-                    <div style={{ marginBottom: canRefund ? 16 : 0 }}>
+                    <div style={{ marginBottom: showSettlement ? 16 : 0 }}>
                       <p
                         style={{
                           color: "#94a3b8",
@@ -3099,7 +3162,7 @@ function OrderRow({
                     </div>
                   )}
 
-                  <div style={{ marginBottom: canRefund ? 16 : 0 }}>
+                  <div style={{ marginBottom: showSettlement ? 16 : 0 }}>
                     <p
                       style={{
                         color: "#94a3b8",
@@ -3156,7 +3219,7 @@ function OrderRow({
                     </div>
                   </div>
 
-                  {canRefund && (
+                  {showSettlement && settlementAction && (
                     <motion.button
                       whileHover={{
                         scale: 1.02,
@@ -3165,7 +3228,7 @@ function OrderRow({
                       whileTap={{ scale: 0.97 }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onRefund(order);
+                        onSettle(order, settlementAction);
                       }}
                       style={{
                         display: "inline-flex",
@@ -3181,7 +3244,7 @@ function OrderRow({
                         cursor: "pointer",
                       }}
                     >
-                      <RotateCcw size={13} /> Refund Order
+                      <RotateCcw size={13} /> {settlementAction === "refund" ? "Refund Order" : "Void Order"}
                     </motion.button>
                   )}
                 </div>
@@ -3229,12 +3292,14 @@ const statusActiveColor: Record<OrderStatusFilter, string> = {
 function OrdersTab({
   orders,
   loading,
-  onRefund,
+  canSettle,
+  onSettle,
   onViewReceipt,
 }: {
   orders: Order[];
   loading: boolean;
-  onRefund: (order: Order) => void;
+  canSettle: boolean;
+  onSettle: (order: Order, action: SettlementAction) => void;
   onViewReceipt: (order: Order) => void;
 }) {
   const now = new Date();
@@ -3299,7 +3364,8 @@ function OrdersTab({
     paymentMethodFilter === "All"
       ? statusFiltered
       : statusFiltered.filter(
-          (o) => normalizePaymentMethod(o.paymentCategory) === paymentMethodFilter,
+          (o) =>
+            normalizePaymentMethod(o.paymentCategory) === paymentMethodFilter,
         );
   const filtered =
     orderTypeFilter === "All"
@@ -3398,19 +3464,19 @@ function OrdersTab({
             Quick Range
           </p>
           <div className="flex gap-2 flex-wrap">
-          {QUICK_RANGES.map((r) => (
-            <button
-              key={r.key}
-              onClick={() => applyQuick(r.key)}
-              className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
-                activeQuick === r.key
-                  ? "bg-[#1A3A2A] text-white border-[#1A3A2A]"
-                  : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+            {QUICK_RANGES.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => applyQuick(r.key)}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                  activeQuick === r.key
+                    ? "bg-[#1A3A2A] text-white border-[#1A3A2A]"
+                    : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -3446,62 +3512,60 @@ function OrdersTab({
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-gray-100">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-gray-100 bg-slate-50 hover:bg-slate-50">
-              {[
-                "Transaction ID",
-                "Order Number",
-                "Date",
-                "Time",
-                "Order Type",
-                "Status",
-                "Payment",
-                "Amount",
-              ].map((h) => (
-                <TableHead
-                  key={h}
-                  className={`text-[11px] uppercase tracking-[0.16em] text-slate-500 font-bold${h === "Amount" ? " text-right" : ""}`}
-                >
-                  {h}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="p-0">
-                  <LoadingState label="Refreshing order history and payment totals." />
-                </TableCell>
+          <Table>
+            <TableHeader>
+              <TableRow className="border-gray-100 bg-slate-50 hover:bg-slate-50">
+                {[
+                  "Transaction ID",
+                  "Order Number",
+                  "Date",
+                  "Time",
+                  "Order Type",
+                  "Status",
+                  "Payment",
+                  "Amount",
+                ].map((h) => (
+                  <TableHead
+                    key={h}
+                    className={`text-[11px] uppercase tracking-[0.16em] text-slate-500 font-bold${h === "Amount" ? " text-right" : ""}`}
+                  >
+                    {h}
+                  </TableHead>
+                ))}
               </TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="p-0"
-                >
-                  <EmptyState
-                    message={
-                      orders.length === 0
-                        ? "No orders yet. Orders will appear here once the cashier processes them."
-                        : "No orders found for the selected filters."
-                    }
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="p-0">
+                    <LoadingState label="Refreshing order history and payment totals." />
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="p-0">
+                    <EmptyState
+                      message={
+                        orders.length === 0
+                          ? "No orders yet. Orders will appear here once the cashier processes them."
+                          : "No orders found for the selected filters."
+                      }
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginated.map((order) => (
+                  <OrderRow
+                    key={order.id}
+                    order={order}
+                    canSettle={canSettle}
+                    onSettle={onSettle}
+                    onViewReceipt={onViewReceipt}
                   />
-                </TableCell>
-              </TableRow>
-            ) : (
-              paginated.map((order) => (
-                <OrderRow
-                  key={order.id}
-                  order={order}
-                  onRefund={onRefund}
-                  onViewReceipt={onViewReceipt}
-                />
-              ))
-            )}
-          </TableBody>
-        </Table>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
 
         <LogPagination
@@ -3520,6 +3584,8 @@ function OrdersTab({
 // --- Main Page ---
 
 export default function SalesReports() {
+  const { user } = useAuth();
+  const canManagePersistedSettlements = canSettlePersistedOrders(user?.role);
   const now = new Date();
   const { width, isMobile, isTablet } = useViewport();
   const isNarrow = width < 980;
@@ -3542,6 +3608,7 @@ export default function SalesReports() {
   // Refund state
   const [refundLog, setRefundLog] = useState<SaleLog | null>(null);
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
+  const [settlementAction, setSettlementAction] = useState<SettlementAction>("refund");
   const [refundLoading, setRefundLoading] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptLoading, setReceiptLoading] = useState(false);
@@ -3572,7 +3639,9 @@ export default function SalesReports() {
     }
   }, []);
 
-  useEffect(() => { void fetchSalesData(); }, [fetchSalesData]);
+  useEffect(() => {
+    void fetchSalesData();
+  }, [fetchSalesData]);
   useEventInvalidation({
     topics: ["orders.changed", "payments.changed"],
     onInvalidate: fetchSalesData,
@@ -3598,7 +3667,8 @@ export default function SalesReports() {
       );
     };
     window.addEventListener(PROOF_NOTICE_EVENT, handleProofNotice);
-    return () => window.removeEventListener(PROOF_NOTICE_EVENT, handleProofNotice);
+    return () =>
+      window.removeEventListener(PROOF_NOTICE_EVENT, handleProofNotice);
   }, []);
 
   useEffect(() => {
@@ -3654,17 +3724,20 @@ export default function SalesReports() {
     setLogPage(1);
   }
 
-  // Refund handler
+  // Persisted order settlement handler
   async function handleRefundConfirm() {
+    if (!canManagePersistedSettlements) return;
     const orderId = refundLog?.orderId ?? refundOrder?.id;
     if (orderId == null) return;
 
     setRefundLoading(true);
     try {
-      await api.patch(`/orders/${orderId}`, { status: "Refunded" });
+      await api.patch(`/orders/${orderId}`, {
+        status: settlementAction === "refund" ? "Refunded" : "Cancelled",
+      });
       await fetchSalesData();
     } catch (err) {
-      console.error("Refund failed:", err);
+      console.error("Order settlement failed:", err);
     } finally {
       setRefundLoading(false);
       setRefundLog(null);
@@ -3812,6 +3885,7 @@ export default function SalesReports() {
         open={!!(refundLog || refundOrder)}
         log={refundLog}
         order={refundOrder}
+        action={settlementAction}
         onConfirm={handleRefundConfirm}
         onClose={() => {
           if (!refundLoading) {
@@ -3844,7 +3918,15 @@ export default function SalesReports() {
         onClose={() => setLogPickerOpen(false)}
       />
 
-      <div style={{ padding: isMobile ? "78px 14px 24px" : isTablet ? "84px 18px 28px" : "40px 40px 40px 88px" }}>
+      <div
+        style={{
+          padding: isMobile
+            ? "78px 14px 24px"
+            : isTablet
+              ? "84px 18px 28px"
+              : "40px 40px 40px 88px",
+        }}
+      >
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -12 }}
@@ -4135,8 +4217,7 @@ export default function SalesReports() {
                       activeLogQuick === r.key
                         ? `1px solid ${DEEP}`
                         : "1px solid #e5e7eb",
-                    background:
-                      activeLogQuick === r.key ? DEEP : "#f9fafb",
+                    background: activeLogQuick === r.key ? DEEP : "#f9fafb",
                     color: activeLogQuick === r.key ? "#fff" : "#6b7280",
                     cursor: "pointer",
                     transition: "all 0.2s",
@@ -4240,7 +4321,8 @@ export default function SalesReports() {
                             {date}
                           </span>
                           <span style={{ color: "#cbd5e1", fontSize: 11 }}>
-                            {entries.length} records · {formatReportCurrency(dayRevenue)} revenue
+                            {entries.length} records ·{" "}
+                            {formatReportCurrency(dayRevenue)} revenue
                           </span>
                         </div>
                         {entries.map((log, i) => (
@@ -4293,7 +4375,11 @@ export default function SalesReports() {
             <OrdersTab
               orders={orders}
               loading={isLoading}
-              onRefund={(order) => setRefundOrder(order)}
+              canSettle={canManagePersistedSettlements}
+              onSettle={(order, action) => {
+                setSettlementAction(action);
+                setRefundOrder(order);
+              }}
               onViewReceipt={handleViewReceipt}
             />
           </motion.div>

@@ -26,6 +26,8 @@ import { UserIdentityBanner } from "@/components/UserIdentityBanner";
 import { useNotifications } from "@/lib/NotificationContext";
 import { useViewport } from "@/hooks/use-tablet";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
+import { useAuth } from "../context/authcontext";
+import { canSettlePersistedOrders } from "../lib/permissions";
 import {
   fetchGeneralSettings,
   formatInSettingsTimezone,
@@ -272,13 +274,14 @@ interface TicketProps {
   nowMs: number;
   pendingAction: PendingAction;
   isSettling: boolean;
+  canSettle: boolean;
   onStart: (id: string) => void;
   onComplete: (order: OrderCard) => void;
   onAdjustTimer: (order: OrderCard, deltaMinutes: number) => void;
   onSettle: (order: OrderCard) => void;
 }
 
-function OrderTicket({ order, nowMs, pendingAction, isSettling, onStart, onComplete, onAdjustTimer, onSettle }: TicketProps) {
+function OrderTicket({ order, nowMs, pendingAction, isSettling, canSettle, onStart, onComplete, onAdjustTimer, onSettle }: TicketProps) {
   const stage = getStage(order);
   const overdue = isOverdue(order, nowMs);
   const orderType = order.orderType || order.status;
@@ -394,7 +397,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, onStart, onCompl
             </button>
           )}
 
-          {settlement && (
+          {canSettle && settlement && (
             <button
               onClick={() => onSettle(order)}
               disabled={settleLocked}
@@ -402,8 +405,8 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, onStart, onCompl
             >
               <XCircle size={15} />
               {isSettling
-                ? settlement === "refund" ? "Refunding..." : "Cancelling..."
-                : settlement === "refund" ? "Refund order" : "Cancel order"}
+                ? settlement === "refund" ? "Refunding..." : "Voiding..."
+                : settlement === "refund" ? "Refund order" : "Void order"}
             </button>
           )}
         </div>
@@ -417,6 +420,8 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, onStart, onCompl
 /* -------------------------------------------------------------------------- */
 
 export default function Order() {
+  const { user } = useAuth();
+  const canManagePersistedSettlements = canSettlePersistedOrders(user?.role);
   const [now, setNow] = useState(new Date());
   const [settings, setSettings] = useState(GENERAL_SETTINGS_DEFAULTS);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
@@ -555,6 +560,7 @@ export default function Order() {
   };
 
   const handleSettle = async (order: OrderCard) => {
+    if (!canManagePersistedSettlements) return;
     const action = getSettlementAction(order.currentStatus, order.paymentStatus);
     if (!action) return;
     setSettlingId(order.id);
@@ -681,6 +687,7 @@ export default function Order() {
                               nowMs={now.getTime()}
                               pendingAction={pendingAction}
                               isSettling={settlingId === order.id}
+                              canSettle={canManagePersistedSettlements}
                               onStart={handleStart}
                               onComplete={handleComplete}
                               onAdjustTimer={handleAdjustTimer}

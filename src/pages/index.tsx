@@ -819,7 +819,7 @@ export default function AdminDashboard() {
             <div className="shrink-0">
               <h1 className="text-2xl font-semibold sm:text-3xl text-[#4A1C1C]">{settings.restaurantName}</h1>
               <p className="mt-1 text-sm font-medium uppercase tracking-wide text-gray-400">
-                Administrator Dashboard
+                Dashboard
               </p>
             </div>
 

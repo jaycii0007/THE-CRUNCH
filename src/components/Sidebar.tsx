@@ -29,6 +29,7 @@ import {
   type PermissionsMap,
 } from "@/lib/permissions";
 import { fetchGeneralSettings, GENERAL_SETTINGS_EVENT } from "@/lib/restaurantSettings";
+import { InventoryNotificationCenter } from "@/components/InventoryNotificationCenter";
 
 /*
  * Slide-in navigation menu for staff users.
@@ -185,6 +186,7 @@ export function Sidebar() {
 
   return (
     <>
+      <InventoryNotificationCenter role={role} />
       {/* Menu / close toggle */}
       <motion.button
         onClick={() => setIsOpen((open) => !open)}

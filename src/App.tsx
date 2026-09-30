@@ -132,13 +132,6 @@ function ProtectedRoute({
   if (!permissionsReady) {
     return null;
   }
-  console.log("[App] route check", {
-    userRole,
-    permissionKey,
-    allowed: permissionKey
-      ? hasPagePermission(userRole, permissionKey, permissions)
-      : true,
-  });
   if (permissionKey && !hasPagePermission(userRole, permissionKey, permissions)) {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -194,8 +187,6 @@ export default function App() {
 
     const syncPermissions = () => {
       const cached = readCachedPermissions();
-      console.log("[App] cached permissions", cached);
-      console.log("[App] current userRole", userRole);
       setPermissions(cached);
       setPermissionsReady(true);
     };
@@ -204,7 +195,6 @@ export default function App() {
       try {
         const next = await fetchPermissions();
         if (cancelled) return;
-        console.log("[App] loaded permissions", next);
         setPermissions(next);
         setPermissionsReady(true);
       } catch {

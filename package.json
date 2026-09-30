@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:sse-client": "node scripts/test-sse-client.mjs"
+    "test:sse-client": "node scripts/test-sse-client.mjs",
+    "test:batch4": "node scripts/test-batch4-static.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",

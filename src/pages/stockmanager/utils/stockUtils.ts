@@ -379,17 +379,11 @@ export function getPOItemDateTrackingType(
   >,
 ): "none" | "expiry" | "shelf_life" {
   const itemCategory = String(item.category ?? "");
-  const { matchedCategory, dateTrackingType } = resolveInventoryCategoryMatch(
+  const { dateTrackingType } = resolveInventoryCategoryMatch(
     itemCategory,
     inventoryCategoryNameLookup,
     inventoryCategoryDateTrackingLookup,
   );
-  console.log("PO DATE TRACKING DEBUG", {
-    itemName: item.name,
-    itemCategory,
-    matchedCategory,
-    dateTrackingType,
-  });
   return dateTrackingType;
 }
 

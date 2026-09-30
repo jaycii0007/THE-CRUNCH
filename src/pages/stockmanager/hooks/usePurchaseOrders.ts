@@ -56,7 +56,6 @@ export function usePurchaseOrders({
   const [receivingOrder, setReceivingOrder] = useState<PurchaseOrder | null>(
     null,
   );
-  const [poFilterStatus, setPoFilterStatus] = useState<POStatus | "All">("All");
   const [poLoading, setPoLoading] = useState(false);
   const [poError, setPoError] = useState<string | null>(null);
   const [poHistoryDateFrom, setPoHistoryDateFrom] = useState("");
@@ -109,20 +108,21 @@ export function usePurchaseOrders({
   }, [criticalStock, lowStock]);
 
   const filteredPOs = useMemo(
-    () =>
-      poFilterStatus === "All"
-        ? poOrders.filter((o) => o.status !== "Received")
-        : poOrders.filter((o) => o.status === poFilterStatus),
-    [poOrders, poFilterStatus],
+    () => poOrders.filter((o) => o.status === "Draft"),
+    [poOrders],
   );
   const completedPOs = useMemo(
-    () => poOrders.filter((o) => o.status === "Received"),
+    () => poOrders.filter((o) => o.status !== "Draft"),
     [poOrders],
   );
   const filteredCompletedPOs = useMemo(
     () =>
       completedPOs.filter((o) =>
-        isDateInRange(o.receivedDate, poHistoryDateFrom, poHistoryDateTo),
+        isDateInRange(
+          o.receivedDate ?? o.date,
+          poHistoryDateFrom,
+          poHistoryDateTo,
+        ),
       ),
     [completedPOs, poHistoryDateFrom, poHistoryDateTo],
   );
@@ -338,7 +338,6 @@ export function usePurchaseOrders({
     selectedOrder,
     printOrder,
     receivingOrder,
-    poFilterStatus,
     poLoading,
     poError,
     poHistoryDateFrom,
@@ -364,7 +363,6 @@ export function usePurchaseOrders({
     setSelectedOrder,
     setPrintOrder,
     setReceivingOrder,
-    setPoFilterStatus,
     setPoHistoryDateFrom,
     setPoHistoryDateTo,
     setPoHistoryPage,

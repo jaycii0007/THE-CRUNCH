@@ -654,7 +654,7 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
       <div className="space-y-2">
         {values.ingredients.length === 0 && (
           <p className="rounded-xl px-3 py-2.5 text-[11.5px]" style={{ color: T.muted, background: T.surfaceMuted }}>
-            No ingredients assigned. Availability will follow the item's own stock.
+            No ingredients assigned. In Auto mode, this item is unavailable until at least one ingredient is configured.
           </p>
         )}
         {values.ingredients.map((row, index) => (

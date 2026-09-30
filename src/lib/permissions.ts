@@ -52,7 +52,7 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
     settings: true,
   },
   cashier: {
-    overview: false,
+    overview: true,
     orders: true,
     menuManagement: false,
     menus: true,
@@ -76,7 +76,7 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
 // Permissions that are always on, whatever is saved.
 const REQUIRED_PERMISSIONS: Record<NonNullRole, PermissionKey[]> = {
   administrator: [...PERMISSION_KEYS],
-  cashier: ["orders"],
+  cashier: ["overview", "orders"],
   inventory_manager: ["orders"],
 };
 
@@ -183,6 +183,11 @@ export function fetchPermissions(): Promise<PermissionsMap> {
 // Administrators keep their database role but bypass staff page restrictions.
 export function isSuperuserRole(value: unknown): boolean {
   return normalizeRole(value) === SUPERUSER_ROLE;
+}
+
+export function canSettlePersistedOrders(value: unknown): boolean {
+  const role = normalizeRole(value);
+  return role === SUPERUSER_ROLE || role === "inventory_manager";
 }
 
 export function hasPagePermission(

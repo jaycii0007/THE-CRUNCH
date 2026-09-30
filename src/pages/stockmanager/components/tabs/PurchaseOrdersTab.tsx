@@ -2,7 +2,7 @@ import { motion, type Variants } from "framer-motion";
 import { EmptyState } from "../EmptyState";
 import { POBadge } from "../POBadge";
 import { KPICard } from "../KPICard";
-import type { DashboardSummaryKey, POStatus, Product, PurchaseOrder, StockAlertSettings } from "../../types/inventory";
+import type { DashboardSummaryKey, Product, PurchaseOrder, StockAlertSettings } from "../../types/inventory";
 
 function CartIcon() {
   return (
@@ -44,10 +44,8 @@ export function PurchaseOrdersTab({
   pageVariants,
   staggerVariants,
   itemVariants,
-  poOrders,
   lowStock,
   criticalStock,
-  poFilterStatus,
   filteredPOs,
   poLoading,
   products,
@@ -55,7 +53,6 @@ export function PurchaseOrdersTab({
   statusDot,
   statusBar,
   restockBanner,
-  setPoFilterStatus,
   onNewPO,
   onOrderNow,
   isMenuFoodProduct,
@@ -68,10 +65,8 @@ export function PurchaseOrdersTab({
   pageVariants: Variants;
   staggerVariants: Variants;
   itemVariants: Variants;
-  poOrders: PurchaseOrder[];
   lowStock: Product[];
   criticalStock: Product[];
-  poFilterStatus: POStatus | "All";
   filteredPOs: PurchaseOrder[];
   poLoading: boolean;
   products: Product[];
@@ -79,7 +74,6 @@ export function PurchaseOrdersTab({
   statusDot: Record<"critical" | "low" | "normal", string>;
   statusBar: Record<"critical" | "low" | "normal", string>;
   restockBanner: React.ReactNode;
-  setPoFilterStatus: React.Dispatch<React.SetStateAction<POStatus | "All">>;
   onNewPO: () => void;
   onOrderNow: (product: Product) => void;
   isMenuFoodProduct: (p: Pick<Product, "item_type">) => boolean;
@@ -106,35 +100,32 @@ export function PurchaseOrdersTab({
         animate="show"
         className="space-y-5"
       >
-        <motion.div variants={itemVariants} className="grid grid-cols-4 gap-4">
+        <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[
             {
-              label: "Total Orders",
-              value: poOrders.length,
+              label: "Active Drafts",
+              value: filteredPOs.length,
               accent: "slate",
-              summary: "poAll" as const,
-              sub: "all purchase orders",
+              summary: "poDraft" as const,
+              sub: "purchase orders being prepared",
             },
             {
-              label: "Draft",
-              value: poOrders.filter((o) => o.status === "Draft").length,
+              label: "Inventory Items",
+              value: filteredPOs.reduce((sum, order) => sum + order.items.length, 0),
               accent: "yellow",
               summary: "poDraft" as const,
-              sub: "not yet placed",
+              sub: "lines across active drafts",
             },
             {
-              label: "Ordered",
-              value: poOrders.filter((o) => o.status === "Ordered").length,
+              label: "Units Requested",
+              value: filteredPOs.reduce(
+                (sum, order) =>
+                  sum + order.items.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0),
+                0,
+              ),
               accent: "blue",
-              summary: "poOrdered" as const,
-              sub: "awaiting delivery",
-            },
-            {
-              label: "Received",
-              value: poOrders.filter((o) => o.status === "Received").length,
-              accent: "emerald",
-              summary: "poReceived" as const,
-              sub: "received into stock",
+              summary: "poDraft" as const,
+              sub: "inventory units in active drafts",
             },
           ].map((k) => (
             <KPICard
@@ -151,23 +142,7 @@ export function PurchaseOrdersTab({
         {(criticalStock.length > 0 || lowStock.length > 0) && (
           <motion.div variants={itemVariants}>{restockBanner}</motion.div>
         )}
-        <motion.div
-          variants={itemVariants}
-          className="flex items-center justify-between gap-3"
-        >
-          <div className="flex gap-2 flex-wrap">
-            {(["All", "Draft", "Ordered", "Cancelled"] as (POStatus | "All")[]).map(
-              (s) => (
-                <button
-                  key={s}
-                  onClick={() => setPoFilterStatus(s)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${poFilterStatus === s ? "bg-slate-900 text-white" : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"}`}
-                >
-                  {s}
-                </button>
-              ),
-            )}
-          </div>
+        <motion.div variants={itemVariants} className="flex items-center justify-end gap-3">
           <button
             onClick={onNewPO}
             className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-xl hover:bg-slate-700 transition-colors"
@@ -269,7 +244,7 @@ export function PurchaseOrdersTab({
           <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
             <div className="px-5 py-4 border-b border-slate-50">
               <p className="font-semibold text-slate-800 text-sm">
-                Purchase Orders
+                Draft Purchase Orders
               </p>
               <p className="text-xs text-slate-400 mt-0.5">
                 {filteredPOs.length} order
@@ -292,7 +267,7 @@ export function PurchaseOrdersTab({
                   Loading purchase orders{"\u2026"}
                 </div>
               ) : filteredPOs.length === 0 ? (
-                <EmptyState message="No purchase orders found." />
+                <EmptyState message="No draft purchase orders found." />
               ) : (
                 filteredPOs.map((order, i) => {
                   const itemCountText =
