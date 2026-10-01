@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Bell, PackageX, X } from "lucide-react";
 import { apiCall } from "@/lib/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { normalizeRole } from "@/lib/permissions";
 
+// 👉 Change this to match your actual route
+const PURCHASE_ORDERS_PATH = "/purchase-orders";
+
 type AlertSeverity = "out" | "critical" | "low" | "normal";
+type Tab = "unread" | "read";
 
 interface InventoryAlert {
   inventory_id: number;
@@ -15,6 +20,7 @@ interface InventoryAlert {
   mainStock: number;
   severity: AlertSeverity;
   thresholds: { low: number; critical: number };
+  is_read: boolean;
 }
 
 interface InventoryAlertsResponse {
@@ -29,11 +35,19 @@ const SEVERITY_ORDER: Record<AlertSeverity, number> = {
   normal: 3,
 };
 
+const SEVERITY_STYLES: Record<Exclude<AlertSeverity, "normal">, string> = {
+  out: "bg-red-100 text-red-600",
+  critical: "bg-orange-100 text-orange-600",
+  low: "bg-amber-100 text-amber-600",
+};
+
 export function InventoryNotificationCenter({ role }: { role: unknown }) {
+  const navigate = useNavigate();
   const normalizedRole = normalizeRole(role);
   const enabled =
     normalizedRole === "administrator" || normalizedRole === "inventory_manager";
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>("unread");
   const [alerts, setAlerts] = useState<InventoryAlert[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +73,7 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
       setError(
         loadError instanceof Error
           ? loadError.message
-          : "Unable to load inventory alerts.",
+          : "Unable to load notifications.",
       );
     } finally {
       if (mounted.current) setLoading(false);
@@ -77,26 +91,59 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
     debounceMs: 350,
   });
 
-  const visibleAlerts = useMemo(() => {
-    const roleFiltered =
-      normalizedRole === "inventory_manager"
-        ? alerts.filter((alert) =>
-            alert.severity === "critical" || alert.severity === "out",
-          )
-        : alerts.filter((alert) => alert.severity !== "normal");
-    return [...roleFiltered].sort(
-      (a, b) =>
-        SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
-        a.product_name.localeCompare(b.product_name),
-    );
-  }, [alerts, normalizedRole]);
+  // Overall list: every non-normal alert, same for all roles
+  const allAlerts = useMemo(
+    () =>
+      alerts
+        .filter((alert) => alert.severity !== "normal")
+        .sort(
+          (a, b) =>
+            SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
+            a.product_name.localeCompare(b.product_name),
+        ),
+    [alerts],
+  );
+
+  const unreadAlerts = useMemo(() => allAlerts.filter((a) => !a.is_read), [allAlerts]);
+  const readAlerts = useMemo(() => allAlerts.filter((a) => a.is_read), [allAlerts]);
+  const shownAlerts = tab === "unread" ? unreadAlerts : readAlerts;
+
+  const markAsRead = useCallback(
+    async (inventoryId: number) => {
+      // Optimistic update, rolled back by re-fetching if the request fails
+      setAlerts((current) =>
+        current.map((a) =>
+          a.inventory_id === inventoryId ? { ...a, is_read: true } : a,
+        ),
+      );
+      try {
+        await apiCall(`/inventory/alerts/${inventoryId}/read`, { method: "POST" });
+      } catch {
+        void loadAlerts();
+      }
+    },
+    [loadAlerts],
+  );
+
+  const markAllAsRead = useCallback(async () => {
+    setAlerts((current) => current.map((a) => ({ ...a, is_read: true })));
+    try {
+      await apiCall("/inventory/alerts/read-all", { method: "POST" });
+    } catch {
+      void loadAlerts();
+    }
+  }, [loadAlerts]);
+
+  const handleAlertClick = useCallback(
+    (alert: InventoryAlert) => {
+      if (!alert.is_read) void markAsRead(alert.inventory_id);
+      setOpen(false);
+      navigate(`${PURCHASE_ORDERS_PATH}?product_id=${alert.product_id}`);
+    },
+    [markAsRead, navigate],
+  );
 
   if (!enabled) return null;
-
-  const roleLabel =
-    normalizedRole === "administrator"
-      ? "Inventory notifications"
-      : "Critical stock notifications";
 
   return (
     <div className="fixed right-4 top-4 z-40 font-['Poppins',sans-serif] sm:right-6 sm:top-6">
@@ -104,26 +151,22 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
         type="button"
         onClick={() => setOpen((current) => !current)}
         className="relative grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-lg transition hover:text-slate-900"
-        aria-label={`${roleLabel}: ${visibleAlerts.length} active`}
+        aria-label={`Notifications: ${unreadAlerts.length} unread`}
         aria-expanded={open}
       >
         <Bell className="h-5 w-5" />
-        {visibleAlerts.length > 0 && (
+        {unreadAlerts.length > 0 && (
           <span className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-4 text-white">
-            {visibleAlerts.length > 99 ? "99+" : visibleAlerts.length}
+            {unreadAlerts.length > 99 ? "99+" : unreadAlerts.length}
           </span>
         )}
       </button>
 
       {open && (
         <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-start justify-between border-b border-slate-100 px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-800">{roleLabel}</p>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Current live alerts · updates when stock changes
-              </p>
-            </div>
+          {/* Header: title only */}
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+            <p className="text-sm font-semibold text-slate-800">Notifications</p>
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -134,10 +177,43 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
             </button>
           </div>
 
+          {/* Read / Unread tabs */}
+          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+            <div className="flex gap-1">
+              {(["unread", "read"] as const).map((key) => {
+                const count = key === "unread" ? unreadAlerts.length : readAlerts.length;
+                const active = tab === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setTab(key)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${
+                      active
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:bg-slate-100"
+                    }`}
+                  >
+                    {key} ({count})
+                  </button>
+                );
+              })}
+            </div>
+            {tab === "unread" && unreadAlerts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void markAllAsRead()}
+                className="text-xs font-semibold text-slate-600 underline hover:text-slate-900"
+              >
+                Mark all as read
+              </button>
+            )}
+          </div>
+
           <div className="max-h-[min(65vh,30rem)] overflow-y-auto p-2">
             {loading && alerts.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-slate-400">
-                Loading alerts…
+                Loading notifications…
               </p>
             ) : error ? (
               <div className="p-3 text-center">
@@ -150,26 +226,41 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
                   Try again
                 </button>
               </div>
-            ) : visibleAlerts.length === 0 ? (
+            ) : shownAlerts.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-slate-400">
-                No active stock alerts.
+                {tab === "unread" ? "No unread notifications." : "No read notifications."}
               </p>
             ) : (
-              visibleAlerts.map((alert) => {
+              shownAlerts.map((alert) => {
                 const isOut = alert.severity === "out";
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={`${alert.inventory_id}-${alert.severity}`}
-                    className="mb-1 flex gap-3 rounded-xl px-3 py-3 hover:bg-slate-50"
+                    onClick={() => handleAlertClick(alert)}
+                    title="Go to Purchase Orders"
+                    className={`mb-1 flex w-full cursor-pointer gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-slate-100 ${
+                      alert.is_read ? "bg-white" : "bg-slate-50"
+                    }`}
                   >
                     <span
-                      className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${isOut ? "bg-red-100 text-red-600" : alert.severity === "critical" ? "bg-orange-100 text-orange-600" : "bg-amber-100 text-amber-600"}`}
+                      className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
+                        SEVERITY_STYLES[alert.severity as Exclude<AlertSeverity, "normal">]
+                      }`}
                     >
-                      {isOut ? <PackageX className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                      {isOut ? (
+                        <PackageX className="h-4 w-4" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4" />
+                      )}
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-semibold text-slate-800">
+                        <p
+                          className={`truncate text-sm text-slate-800 ${
+                            alert.is_read ? "font-medium" : "font-bold"
+                          }`}
+                        >
                           {alert.product_name}
                         </p>
                         <span className="shrink-0 text-[10px] font-bold uppercase text-slate-500">
@@ -178,12 +269,16 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
                       </div>
                       <p className="mt-0.5 text-xs text-slate-500">
                         {alert.mainStock} {alert.unit} remaining
-                        {isOut
-                          ? ""
-                          : ` · critical at ${alert.thresholds.critical}`}
+                        {isOut ? "" : ` · critical at ${alert.thresholds.critical}`}
                       </p>
                     </div>
-                  </div>
+                    {!alert.is_read && (
+                      <span
+                        className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-600"
+                        aria-label="Unread"
+                      />
+                    )}
+                  </button>
                 );
               })
             )}

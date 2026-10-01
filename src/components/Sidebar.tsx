@@ -61,15 +61,15 @@ const ROLE_LABELS: Record<Role, string> = {
   customer: "Customer",
 };
 
-// Every link the sidebar can show.
+// Every link the sidebar can show, in display order.
 const SIDEBAR_ITEMS: SidebarItem[] = [
-  { label: "Orders View", path: "/orders", permissionKey: "orders", icon: ShoppingCart },
   { label: "Overview", path: "/dashboard", permissionKey: "overview", icon: LayoutDashboard },
-  { label: "Menu Management", path: "/inventory", permissionKey: "menuManagement", icon: UtensilsCrossed },
+  { label: "Orders View", path: "/orders", permissionKey: "orders", icon: ShoppingCart },
   { label: "Menu View", path: "/menu", permissionKey: "menus", icon: BookOpen },
+  { label: "Menu Management", path: "/inventory", permissionKey: "menuManagement", icon: UtensilsCrossed },
   { label: "Stock Manager", path: "/stockmanager", permissionKey: "stockManager", icon: Package },
-  { label: "User Accounts", path: "/users", permissionKey: "userAccounts", icon: Users },
   { label: "Sales & Reports", path: "/sales-reports", permissionKey: "salesReports", icon: BarChart2 },
+  { label: "User Accounts", path: "/users", permissionKey: "userAccounts", icon: Users },
   { label: "Settings", path: "/settings", permissionKey: "settings", icon: Settings },
 ];
 

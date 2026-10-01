@@ -29,7 +29,6 @@ import {
   Search,
   Trash2,
   UtensilsCrossed,
-  Wifi,
   WifiOff,
   MessageSquare,
   Percent,
@@ -296,7 +295,7 @@ function Modal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 z-[99998] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[99998] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-4"
         >
           <motion.div
             onClick={(e) => e.stopPropagation()}
@@ -325,7 +324,7 @@ const ModalHead = ({
   tone?: string;
   onClose?: () => void;
 }) => (
-  <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-5">
+  <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-5 sm:px-6">
     <div>
       <p className={`text-xs font-semibold uppercase tracking-wider ${tone}`}>
         {e}
@@ -335,7 +334,7 @@ const ModalHead = ({
     {onClose && (
       <button
         onClick={onClose}
-        className="rounded-lg p-1.5 hover:bg-neutral-100"
+        className="rounded-lg p-2 hover:bg-neutral-100"
       >
         <X className="h-5 w-5 text-neutral-400" />
       </button>
@@ -408,7 +407,7 @@ function Pill({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${TONE[tone]}`}
+      className={`flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold transition sm:px-4 ${TONE[tone]}`}
     >
       {pulse && (
         <span className="h-2 w-2 animate-pulse rounded-full bg-current" />
@@ -508,7 +507,7 @@ const Empty = ({
   icon?: ReactNode;
   children: ReactNode;
 }) => (
-  <div className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-neutral-400">
+  <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center text-sm text-neutral-400">
     {icon}
     {children}
   </div>
@@ -527,7 +526,7 @@ function OrderRow({
   const { money, time } = useFmt();
   return (
     <div className="grid gap-2 border-t border-neutral-200/70 p-4 first:border-t-0">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-base font-bold text-neutral-900">
@@ -543,13 +542,13 @@ function OrderRow({
             <b className="text-neutral-900">{money(o.total)}</b>
           </p>
           {showPay && (
-            <p className="flex items-center gap-2 text-sm text-neutral-700">
+            <p className="flex flex-wrap items-center gap-2 text-sm text-neutral-700">
               Payment: {paymentLabel(o.paymentMethod)}{" "}
               <PayBadge status={o.paymentStatus} />
             </p>
           )}
         </div>
-        <div className="flex shrink-0 gap-2">{actions}</div>
+        <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
       </div>
       <p className="text-sm text-neutral-600">
         {o.items.map((i) => `${i.quantity}× ${i.name}`).join("  ·  ")}
@@ -611,7 +610,7 @@ const ProductCard = memo(
             <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
           </span>
         )}
-        <div className="p-4">
+        <div className="p-3 sm:p-4">
           <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-snug text-neutral-800">
             {item.name}
           </p>
@@ -640,7 +639,7 @@ const CartRow = memo(
     const [showNote, setShowNote] = useState(false);
     const max = getEffectiveMaxQuantity(item.remainingStock);
     const step =
-      "flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
+      "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
     return (
       <motion.div
         layout
@@ -689,7 +688,7 @@ const CartRow = memo(
                 );
                 if (v > 0) onQty(item.id, v - item.quantity);
               }}
-              className="h-8 w-12 rounded-lg border border-neutral-200 text-center text-sm font-semibold outline-none focus:border-neutral-900"
+              className="h-9 w-12 rounded-lg border border-neutral-200 text-center text-sm font-semibold outline-none focus:border-neutral-900"
             />
             <button
               className={step}
@@ -703,7 +702,7 @@ const CartRow = memo(
             <button
               title="Add note"
               onClick={() => setShowNote((p) => !p)}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg ${item.note ? "bg-blue-50" : "hover:bg-neutral-100"}`}
+              className={`flex h-9 w-9 items-center justify-center rounded-lg ${item.note ? "bg-blue-50" : "hover:bg-neutral-100"}`}
             >
               <MessageSquare
                 className={`h-4 w-4 ${item.note ? "text-blue-600" : "text-neutral-300"}`}
@@ -712,7 +711,7 @@ const CartRow = memo(
             <button
               title="Remove"
               onClick={() => onRemove(item.id)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-50"
+              className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-red-50"
             >
               <Trash2 className="h-4 w-4 text-neutral-300 hover:text-red-500" />
             </button>
@@ -799,7 +798,7 @@ function ProceedModal({
             title={order.orderNumber}
             onClose={busy ? undefined : onCancel}
           />
-          <div className="grid grid-cols-2 gap-2.5 border-b border-neutral-100 p-6">
+          <div className="grid grid-cols-2 gap-2.5 border-b border-neutral-100 p-5 sm:p-6">
             {[
               [
                 "Order type",
@@ -818,7 +817,7 @@ function ProceedModal({
               </div>
             ))}
           </div>
-          <div className="max-h-44 space-y-2 overflow-y-auto border-b border-neutral-100 p-6">
+          <div className="max-h-44 space-y-2 overflow-y-auto border-b border-neutral-100 p-5 sm:p-6">
             <p className={eyebrow}>Order items</p>
             {order.items.map((i, k) => (
               <p key={k} className="text-sm text-neutral-700">
@@ -827,7 +826,7 @@ function ProceedModal({
               </p>
             ))}
           </div>
-          <div className="space-y-3 p-6">
+          <div className="space-y-3 p-5 sm:p-6">
             <div className="flex items-center justify-between">
               <span className="text-sm text-neutral-500">Order total</span>
               <span className="text-2xl font-bold">{money(order.total)}</span>
@@ -892,7 +891,7 @@ function HandoverModal({
             title={order.orderNumber}
             onClose={saving ? undefined : onCancel}
           />
-          <div className="space-y-4 p-6">
+          <div className="space-y-4 p-5 sm:p-6">
             <div>
               <p className={`${eyebrow} mb-1.5`}>Rider name</p>
               <input
@@ -995,11 +994,11 @@ function AmountModal({
 
   return (
     <Modal show={show} max="max-w-sm" onClose={onCancel}>
-      <div className="border-b border-neutral-100 px-6 py-5">
+      <div className="border-b border-neutral-100 px-5 py-5 sm:px-6">
         <p className={eyebrow}>Amount due</p>
         <p className="text-3xl font-semibold">{money(amountDue)}</p>
       </div>
-      <div className="p-6">
+      <div className="p-5 sm:p-6">
         {method === "cash" ? (
           <>
             <p className={`${eyebrow} mb-1.5`}>Cash tendered</p>
@@ -1019,7 +1018,7 @@ function AmountModal({
                   <button
                     key={a}
                     onClick={() => setInput(String(a))}
-                    className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-medium text-neutral-600"
+                    className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600"
                   >
                     {money(a)}
                   </button>
@@ -1168,7 +1167,7 @@ function DiscountModal({
         tone="text-green-600"
         onClose={onClose}
       />
-      <div className="space-y-2 p-6">
+      <div className="space-y-2 p-5 sm:p-6">
         {discounts.map((discount) => {
           const selected = discount.name === selectedName;
           const rate = Number(discount.percentage || 0);
@@ -1226,7 +1225,7 @@ function DiscountAuthorizationModal({
         tone="text-amber-600"
         onClose={busy ? undefined : onCancel}
       />
-      <div className="p-6">
+      <div className="p-5 sm:p-6">
         <p className="mb-4 text-sm text-neutral-500">
           Enter the authorization code to apply{" "}
           <b className="text-neutral-900">{discount?.name}</b> (
@@ -1336,7 +1335,7 @@ function SuccessModal({
           </div>
           <div className="max-h-36 space-y-2 overflow-y-auto px-6 py-4">
             {r.items.map((i, k) => (
-              <div key={k} className="flex justify-between text-sm">
+              <div key={k} className="flex justify-between gap-3 text-sm">
                 <span className="text-neutral-600">
                   {i.productName}{" "}
                   <span className="text-neutral-400">×{i.quantity}</span>
@@ -1459,7 +1458,7 @@ function HistoryModal({
     ["Voided", String(voidedCount), "text-red-600"],
   ];
   const iconBtn =
-    "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 transition active:scale-95";
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 transition active:scale-95";
 
   return (
     <Modal show={show} max="max-w-xl" onClose={onClose}>
@@ -1469,14 +1468,16 @@ function HistoryModal({
         tone="text-blue-600"
         onClose={onClose}
       />
-      <div className="grid grid-cols-3 gap-3 border-b border-neutral-100 p-5">
+      <div className="grid grid-cols-3 gap-2 border-b border-neutral-100 p-4 sm:gap-3 sm:p-5">
         {stats.map(([l, v, c]) => (
           <div
             key={l}
             className="rounded-xl border border-neutral-100 bg-neutral-50 p-3 text-center"
           >
             <p className={eyebrow}>{l}</p>
-            <p className={`text-xl font-bold ${c}`}>{v}</p>
+            <p className={`break-words text-lg font-bold sm:text-xl ${c}`}>
+              {v}
+            </p>
           </div>
         ))}
       </div>
@@ -1499,7 +1500,7 @@ function HistoryModal({
               key={o.id}
               className="border-b border-neutral-100 last:border-0"
             >
-              <div className="flex items-center gap-3 px-6 py-4">
+              <div className="flex items-center gap-2 px-4 py-4 sm:gap-3 sm:px-6">
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex flex-wrap items-center gap-2">
                     <span
@@ -1561,9 +1562,9 @@ function HistoryModal({
                 )}
               </div>
               <Collapse open={open === o.id}>
-                <div className="mx-6 -mt-3 mb-4 space-y-1 rounded-xl border border-neutral-100 bg-neutral-50 p-4 text-sm">
+                <div className="mx-4 -mt-3 mb-4 space-y-1 rounded-xl border border-neutral-100 bg-neutral-50 p-4 text-sm sm:mx-6">
                   {o.items.map((i, k) => (
-                    <p key={k} className="flex justify-between">
+                    <p key={k} className="flex justify-between gap-3">
                       <span>
                         {i.name} ×{i.quantity}
                       </span>
@@ -1595,6 +1596,8 @@ export default function CashierView() {
   const { toasts, toast, dismiss } = useToast();
   const firstPoll = useRef(true);
   const placingRef = useRef(false);
+  const prevReviewCount = useRef(0);
+  const prevDeliveryCount = useRef(0);
 
   const u = user as Record<string, unknown> | null;
   const cashierId = Number(u?.userId) > 0 ? Number(u?.userId) : null;
@@ -1796,16 +1799,20 @@ export default function CashierView() {
       ]);
       const first = firstPoll.current;
       firstPoll.current = false;
-      const paid = (d ?? []).filter((o) => isPaid(o.paymentStatus));
-      setReview((prev) => {
-        if (!first && (r ?? []).length > prev.length) setNotifOpen(true);
-        return r ?? [];
-      });
+      const nextReview = r ?? [];
+      const nextDelivery = (d ?? []).filter((o) => isPaid(o.paymentStatus));
+
+      // open the panels when new orders arrive (not on the very first load)
+      if (!first && nextReview.length > prevReviewCount.current)
+        setNotifOpen(true);
+      if (!first && nextDelivery.length > prevDeliveryCount.current)
+        setDeliveryOpen(true);
+      prevReviewCount.current = nextReview.length;
+      prevDeliveryCount.current = nextDelivery.length;
+
+      setReview(nextReview);
       setReady((p ?? []).filter((o) => isPaid(o.paymentStatus)));
-      setDelivery((prev) => {
-        if (!first && paid.length > prev.length) setDeliveryOpen(true);
-        return paid;
-      });
+      setDelivery(nextDelivery);
     } catch (e) {
       console.warn("Order notification refresh failed:", e);
     }
@@ -1984,9 +1991,12 @@ export default function CashierView() {
     [gross, billing, discountRate],
   );
 
+  // A discount approval is tied to the items and quantities it was issued for.
+  // Editing a note must not cancel it, so only items/quantities are watched.
+  const cartSignature = cart.map((i) => `${i.id}:${i.quantity}`).join(",");
   useEffect(() => {
     setDiscountApproval(null);
-  }, [cart]);
+  }, [cartSignature]);
 
   const addToCart = useCallback((item: MenuItem) => {
     const max = getEffectiveMaxQuantity(item.remainingStock);
@@ -2028,7 +2038,8 @@ export default function CashierView() {
     [products],
   );
 
-  const voidCurrentOrder = () => {
+  // Puts the whole order form back to its starting state (used by Void and New order).
+  const clearOrderForm = () => {
     setCart([]);
     setOrderType("dine-in");
     setPaymentMethod("cash");
@@ -2040,13 +2051,22 @@ export default function CashierView() {
     setSelectedTable(null);
     setOrderNote("");
     setShowNote(false);
-    setShowAmount(false);
     setShowDiscounts(false);
     setPendingDiscount(null);
     setDiscountApproval(null);
     setDiscountAuthError("");
+  };
+
+  const voidCurrentOrder = () => {
+    clearOrderForm();
+    setShowAmount(false);
     setShowVoidConfirm(false);
     toast("info", "Current order voided.");
+  };
+
+  const resetOrder = () => {
+    setDone(null);
+    clearOrderForm();
   };
 
   const selectDiscount = (nextDiscount: DiscountType) => {
@@ -2221,24 +2241,6 @@ export default function CashierView() {
     }
   };
 
-  const resetOrder = () => {
-    setDone(null);
-    setCart([]);
-    setOrderType("dine-in");
-    setPaymentMethod("cash");
-    setCustomerType(
-      discountTypes.find((item) => Number(item.percentage || 0) <= 0)?.name ??
-        discountTypes[0]?.name ??
-        "",
-    );
-    setSelectedTable(null);
-    setOrderNote("");
-    setShowNote(false);
-    setDiscountApproval(null);
-    setPendingDiscount(null);
-    setDiscountAuthError("");
-  };
-
   const onlineCount = review.length + ready.length;
   const pendingDelivery = delivery.filter(
     (o) =>
@@ -2256,8 +2258,8 @@ export default function CashierView() {
     <Ctx.Provider value={fmt}>
       <Sidebar />
       {!isOnline && (
-        <div className="fixed left-1/2 top-3 z-[99999] flex -translate-x-1/2 items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-lg">
-          <WifiOff className="h-4 w-4" />
+        <div className="fixed left-1/2 top-3 z-[99999] flex w-max max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-lg">
+          <WifiOff className="h-4 w-4 shrink-0" />
           No connection — orders cannot be placed
         </div>
       )}
@@ -2270,19 +2272,11 @@ export default function CashierView() {
         <section
           className={`flex min-w-0 flex-1 flex-col ${compact ? "" : "overflow-hidden"}`}
         >
-          <div className="shrink-0 px-8 pt-7">
+          <div className="shrink-0 px-4 pt-6 sm:px-8 sm:pt-7">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <h1 className="text-2xl font-semibold">Menu</h1>
               <UserIdentityBanner className="order-3 w-full sm:order-2 sm:w-auto" />
               <div className="flex flex-wrap items-center gap-2">
-                <Pill tone={isOnline ? "green" : "red"}>
-                  {isOnline ? (
-                    <Wifi className="h-4 w-4" />
-                  ) : (
-                    <WifiOff className="h-4 w-4" />
-                  )}
-                  {isOnline ? "Online" : "Offline"}
-                </Pill>
                 <Pill onClick={() => setShowHistory(true)}>
                   <History className="h-4 w-4" />
                   History
@@ -2401,7 +2395,7 @@ export default function CashierView() {
                 {handed.map((o) => (
                   <div
                     key={`h${o.id}`}
-                    className="flex items-center justify-between border-t border-neutral-200/70 p-4 first:border-t-0"
+                    className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200/70 p-4 first:border-t-0"
                   >
                     <div>
                       <p className="font-bold">{o.orderNumber}</p>
@@ -2441,7 +2435,7 @@ export default function CashierView() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-8 pb-8">
+          <div className="flex-1 overflow-y-auto px-4 pb-8 sm:px-8">
             {loadingProducts && !products.length ? (
               <div className="flex h-52 items-center justify-center">
                 <Spinner size={24} />
@@ -2466,7 +2460,7 @@ export default function CashierView() {
             ) : (
               <motion.div
                 layout
-                className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4"
+                className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))] sm:gap-4"
               >
                 {filtered.map((item) => (
                   <ProductCard
@@ -2485,7 +2479,7 @@ export default function CashierView() {
         <aside
           className={`flex shrink-0 flex-col bg-white ${compact ? "w-full border-t" : "w-[400px] border-l"} border-neutral-100`}
         >
-          <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-6">
+          <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-5 sm:px-6 sm:py-6">
             <div>
               <h2 className="text-lg font-semibold">Current order</h2>
               <p className="text-sm text-neutral-400">
@@ -2498,7 +2492,7 @@ export default function CashierView() {
               <button
                 onClick={() => setShowVoidConfirm(true)}
                 title="Void current order"
-                className="flex h-9 items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700"
+                className="flex h-10 items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700"
               >
                 <Ban className="h-4 w-4" />
                 Void
@@ -2506,7 +2500,7 @@ export default function CashierView() {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6">
             {cart.length === 0 ? (
               <Empty
                 icon={<UtensilsCrossed className="h-8 w-8 text-neutral-300" />}
@@ -2529,7 +2523,7 @@ export default function CashierView() {
           </div>
 
           {cart.length > 0 && (
-            <div className="shrink-0 border-t border-neutral-100 p-6">
+            <div className="shrink-0 border-t border-neutral-100 p-4 sm:p-6">
               <div className="mb-4 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 text-sm">
                 {[
                   ["Subtotal", fmt.money(gross), "text-neutral-500"],
@@ -2551,7 +2545,7 @@ export default function CashierView() {
                 ].map(([l, v, c]) => (
                   <p
                     key={l}
-                    className="flex justify-between border-b border-dashed border-neutral-200 px-4 py-2.5"
+                    className="flex justify-between gap-3 border-b border-dashed border-neutral-200 px-4 py-2.5"
                   >
                     <span className="text-neutral-400">{l}</span>
                     <span className={`font-medium ${c}`}>{v}</span>
@@ -2587,13 +2581,13 @@ export default function CashierView() {
               <button
                 type="button"
                 onClick={() => setShowDiscounts(true)}
-                className="mb-2 flex w-full items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-700 transition hover:border-neutral-400"
+                className="mb-2 flex w-full items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-700 transition hover:border-neutral-400"
               >
                 <span className="flex items-center gap-2 font-semibold">
                   <Percent className="h-4 w-4 text-green-600" />
                   Discount
                 </span>
-                <span className="text-neutral-500">
+                <span className="truncate text-neutral-500">
                   {discount
                     ? `${discount.name} (${pct(discountRate)}%)`
                     : "Select"}
@@ -2617,7 +2611,7 @@ export default function CashierView() {
 
               <button
                 onClick={() => setShowNote((p) => !p)}
-                className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}
+                className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}
               >
                 <MessageSquare className="h-4 w-4" />
                 {orderNote ? "Edit order note" : "Add order note"}
@@ -2729,7 +2723,7 @@ export default function CashierView() {
         onReprint={(o) => void reprint(o)}
       />
 
-      <div className="pointer-events-none fixed bottom-6 right-6 z-[999999] flex w-[calc(100vw-48px)] max-w-sm flex-col gap-2">
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[999999] flex w-[calc(100vw-32px)] max-w-sm flex-col gap-2 sm:bottom-6 sm:right-6">
         <AnimatePresence>
           {toasts.map((t) => {
             const { c, I } = TOAST[t.type];

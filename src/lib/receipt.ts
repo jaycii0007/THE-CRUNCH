@@ -54,6 +54,13 @@ export interface ReceiptOptions {
   cashier?: string | null;
 }
 
+// ---------- Store details (edit these) ----------
+const STORE_NAME = "The Crunch";
+const STORE_ADDRESS = ["6 Falcon St., cor Dahlia Fairview,", "Quezon City, Philippines"];
+const SOCIAL_HANDLE = "@TheCrunchFairviewDahlia";
+const WEBSITE = "www.thecrunch.site";
+
+// ---------- Helpers ----------
 const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -67,6 +74,13 @@ const PAYMENT: Record<string, string> = {
   cash: "Cash", gcash: "GCash", cash_on_pickup: "Cash on Pickup", gcash_onsite: "Onsite GCash / E-Payment",
 };
 const paymentLabel = (v: string | null) => (v ? PAYMENT[v.trim().toLowerCase()] ?? v : "");
+
+const orderTypeLabel = (v: string | null) => {
+  const t = (v ?? "").toLowerCase().replace(/[\s_-]/g, "");
+  if (t.includes("dine")) return "Dine-In";
+  if (t.includes("take") || t.includes("pickup") || t.includes("togo")) return "Take Out";
+  return v ? cap(v) : "";
+};
 
 export function formatReceiptDate(r: ReceiptDto): string {
   const d = new Date(r.orderDate);
@@ -100,58 +114,62 @@ ${css}
 
 const row = (l: string, v: string, cls = "") => `<tr class="${cls}"><td>${esc(l)}</td><td class="r">${esc(v)}</td></tr>`;
 
+// ---------- Receipt ----------
 export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): string {
   const cur = r.currency;
   const cashier = r.cashierName || opts.cashier || "";
   const isCash = String(r.paymentMethod).toLowerCase() === "cash";
-  const m = r.merchant;
 
   const info: [string, string][] = [
-    ["Order ID", r.orderNumber],
+    ["Order #", r.orderNumber],
+    ["Transaction ID", r.transactionId || ""],
     ["Date", formatReceiptDate(r)],
     ["Cashier", cashier],
-    ["Order Type", r.orderType ? cap(r.orderType) + (r.tableNumber ? ` / Table ${r.tableNumber}` : "") : ""],
-    ["Customer", r.customerType || r.discount.name || ""],
-    ["Payment", paymentLabel(r.paymentMethod)],
+    ["Order Type", orderTypeLabel(r.orderType) + (r.tableNumber ? ` / Table ${r.tableNumber}` : "")],
   ];
 
   const items = r.items.length
     ? r.items.map((i) => `<tr><td class="q">${esc(i.quantity)}x</td><td>${esc(i.productName)}<div class="s">@ ${esc(money(i.unitPrice, cur))}</div>${
         i.note ? `<div class="s">* ${esc(i.note)}</div>` : ""}</td><td class="r">${esc(money(i.subtotal, cur))}</td></tr>`).join("")
-    : `<tr><td colspan="3">No historical item rows available.</td></tr>`;
+    : `<tr><td colspan="3">No item rows available.</td></tr>`;
 
-  const totals = [
-    row("Subtotal", money(r.subtotal, cur)),
-    num(r.discount.amount) && r.discount.amount > 0
+  const hasDiscount = num(r.discount.amount) && r.discount.amount > 0;
+  const extras = [
+    hasDiscount ? row("Subtotal", money(r.subtotal, cur)) : "",
+    hasDiscount
       ? row(`Discount${r.discount.name ? ` (${r.discount.name})` : ""}${rate(r.discount.rate)}`, `-${money(r.discount.amount, cur)}`) : "",
     num(r.tax.amount) && r.tax.amount > 0 ? row(`Tax${rate(r.tax.rate)}`, money(r.tax.amount, cur)) : "",
     num(r.serviceCharge.amount) && r.serviceCharge.amount > 0 ? row(`Service Charge${rate(r.serviceCharge.rate)}`, money(r.serviceCharge.amount, cur)) : "",
   ].join("");
 
-  const paid = isCash && num(r.cashTendered)
-    ? row("Cash Tendered", money(r.cashTendered, cur)) + row("Change", money(r.change, cur))
-    : num(r.amountPaid) ? row("Amount Paid", money(r.amountPaid, cur)) : "";
+  const payment =
+    (r.paymentMethod ? row("Payment", paymentLabel(r.paymentMethod)) : "") +
+    (isCash && num(r.cashTendered) ? row("Cash Tendered", money(r.cashTendered, cur)) : "") +
+    (num(r.change) ? row("Change", money(r.change, cur), "b") : "");
 
   return PAGE(`Receipt ${r.orderNumber}`, "", `
-<h1>The Crunch Fairview</h1>
-${[m.tagline, m.address, m.phone, m.email].filter(Boolean).map((l) => `<p class="c s">${esc(l)}</p>`).join("")}
-<p class="c s" style="margin-top:6px">This serves as a preliminary receipt, not an official receipt.</p>
+<h1>${esc(STORE_NAME)}</h1>
+${STORE_ADDRESS.map((l) => `<p class="c s">${esc(l)}</p>`).join("")}
 <hr/>
-${r.isLegacyReceipt ? `<div class="legacy">Legacy transaction: some original details are unavailable.${r.usesCurrentProductNameFallback ? " Product names are current catalog names." : ""}</div>` : ""}
 <table>${info.filter(([, v]) => v).map(([l, v]) => row(l, v)).join("")}</table>
 <hr/>
-<table><tr><th class="q">QTY</th><th>ITEM</th><th class="r">AMOUNT</th></tr>${items}</table>
+<table><tr><th class="q">QTY</th><th>MENU</th><th class="r">PRICE</th></tr>${items}</table>
 <hr/>
-<table>${totals}</table>
+${extras ? `<table>${extras}</table><hr/>` : ""}
+<table>${row("TOTAL", money(r.total, cur), "tot")}</table>
+<hr/>
+<table>${payment}</table>
+${r.orderNote ? `<hr/><p><b>Note:</b> ${esc(r.orderNote)}</p>` : ""}
 <hr class="d"/>
-<table>${row("TOTAL", money(r.total, cur), "tot")}${paid}</table>
-${r.orderNote ? `<hr/><p><b>Order note:</b> ${esc(r.orderNote)}</p>` : ""}
-<hr/>
-<p class="c b">THANK YOU!</p>
-<p class="c s">Please keep this receipt for your records.</p>
-${cashier ? `<p class="c s" style="margin-top:6px">Served by ${esc(cashier)}</p>` : ""}`);
+<p class="c b" style="font-size:14px">THANK YOU!</p>
+<p class="c">Please come again</p>
+<p class="c b" style="margin-top:10px">Follow us</p>
+<p class="c">${esc(SOCIAL_HANDLE)}</p>
+<p class="c b" style="margin-top:10px">Visit us at</p>
+<p class="c">${esc(WEBSITE)}</p>`);
 }
 
+// ---------- Kitchen order ticket ----------
 /** Kitchen order ticket: items, notes and table only. */
 export function buildKotHtml(r: ReceiptDto, opts: ReceiptOptions = {}): string {
   const cashier = r.cashierName || opts.cashier || "";
@@ -160,13 +178,14 @@ export function buildKotHtml(r: ReceiptDto, opts: ReceiptOptions = {}): string {
 <h1 style="font-size:14px">Kitchen Order Ticket</h1>
 <p class="c b" style="font-size:22px;margin:6px 0">${esc(r.orderNumber)}</p>
 <p class="c s">${esc(formatReceiptDate(r))}</p>
-<p class="c b" style="margin-top:4px">${esc((r.orderType ?? "").toUpperCase())}${r.tableNumber ? ` / TABLE ${esc(r.tableNumber)}` : ""}</p>
+<p class="c b" style="margin-top:4px">${esc(orderTypeLabel(r.orderType).toUpperCase())}${r.tableNumber ? ` / TABLE ${esc(r.tableNumber)}` : ""}</p>
 <hr class="d"/>
 <table class="k">${r.items.map((i) => `<tr><td class="q">${esc(i.quantity)}x</td><td>${esc(i.productName)}${i.note ? `<div class="s">Note: ${esc(i.note)}</div>` : ""}</td></tr>`).join("")}</table>
 ${r.orderNote ? `<p style="margin-top:12px;padding:8px;border:2px dashed #000"><b>Note:</b> ${esc(r.orderNote)}</p>` : ""}
 ${cashier ? `<p class="c s" style="margin-top:10px">Cashier: ${esc(cashier)}</p>` : ""}`);
 }
 
+// ---------- Print / download ----------
 /** Opens HTML in a popup and opens the print dialog. */
 export function printHtml(html: string, w = 420, h = 760) {
   const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
