@@ -48,6 +48,10 @@ import { usePurchaseOrders } from "./hooks/usePurchaseOrders";
 import { useSuppliers } from "./hooks/useSuppliers";
 import { toNumber } from "./utils/formatters";
 import {
+  STOCK_MANAGER_ACTIVE_TAB_STORAGE_KEY,
+  STOCK_MANAGER_TAB_REQUEST_EVENT,
+} from "./navigation";
+import {
   DEFAULT_STOCK_ALERT_SETTINGS,
   getAlertSeverity,
   getAppliedThresholds,
@@ -66,7 +70,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "purchases", label: "Purchase Orders" },
   { id: "purchase-history", label: "Purchase Order History" },
 ];
-const ACTIVE_TAB_STORAGE_KEY = "stockmanager.activeTab";
 const REMOVED_STOCK_MANAGER_TABS = new Set([
   "withdrawal",
   "kitchen",
@@ -287,7 +290,7 @@ export default function StockManager() {
       return FALLBACK_TAB;
     }
     return sanitizeStockManagerTab(
-      window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY),
+      window.localStorage.getItem(STOCK_MANAGER_ACTIVE_TAB_STORAGE_KEY),
     );
   });
   const activeTab = sanitizeStockManagerTab(tab);
@@ -597,14 +600,29 @@ export default function StockManager() {
   }, [tab]);
 
   useEffect(() => {
+    const handleTabRequest = (event: Event) => {
+      const requestedTab = (event as CustomEvent<{ tab?: unknown }>).detail?.tab;
+      if (isValidStockManagerTab(requestedTab)) setTab(requestedTab);
+    };
+    window.addEventListener(STOCK_MANAGER_TAB_REQUEST_EVENT, handleTabRequest);
+    return () =>
+      window.removeEventListener(STOCK_MANAGER_TAB_REQUEST_EVENT, handleTabRequest);
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
-    const storedTab = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    const storedTab = window.localStorage.getItem(
+      STOCK_MANAGER_ACTIVE_TAB_STORAGE_KEY,
+    );
     const safeStoredTab = sanitizeStockManagerTab(storedTab);
     if (storedTab !== safeStoredTab) {
-      window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, safeStoredTab);
+      window.localStorage.setItem(
+        STOCK_MANAGER_ACTIVE_TAB_STORAGE_KEY,
+        safeStoredTab,
+      );
     }
     window.localStorage.setItem(
-      ACTIVE_TAB_STORAGE_KEY,
+      STOCK_MANAGER_ACTIVE_TAB_STORAGE_KEY,
       sanitizeStockManagerTab(tab),
     );
   }, [tab]);

@@ -4,9 +4,10 @@ import { AlertTriangle, Bell, PackageX, X } from "lucide-react";
 import { apiCall } from "@/lib/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { normalizeRole } from "@/lib/permissions";
-
-// 👉 Change this to match your actual route
-const PURCHASE_ORDERS_PATH = "/purchase-orders";
+import {
+  requestStockManagerTab,
+  STOCK_MANAGER_PATH,
+} from "@/pages/stockmanager/navigation";
 
 type AlertSeverity = "out" | "critical" | "low" | "normal";
 type Tab = "unread" | "read";
@@ -138,7 +139,8 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
     (alert: InventoryAlert) => {
       if (!alert.is_read) void markAsRead(alert.inventory_id);
       setOpen(false);
-      navigate(`${PURCHASE_ORDERS_PATH}?product_id=${alert.product_id}`);
+      requestStockManagerTab("purchases");
+      navigate(STOCK_MANAGER_PATH);
     },
     [markAsRead, navigate],
   );
