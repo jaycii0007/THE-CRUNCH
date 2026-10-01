@@ -29,6 +29,10 @@ interface RefundRequest {
   };
 }
 
+// Temporarily disabled for beta testing. Keep the implementation intact so the
+// refund-request UI can be re-enabled after the workflow is fixed.
+const REFUND_REQUEST_UI_ENABLED = false;
+
 const money = new Intl.NumberFormat("en-PH", {
   style: "currency",
   currency: "PHP",
@@ -41,7 +45,7 @@ function canStillRefund(request: RefundRequest) {
 }
 
 export function AdminRefundNotificationCenter({ role }: { role: unknown }) {
-  const enabled = normalizeRole(role) === "administrator";
+  const enabled = REFUND_REQUEST_UI_ENABLED && normalizeRole(role) === "administrator";
   const [open, setOpen] = useState(false);
   const [requests, setRequests] = useState<RefundRequest[]>([]);
   const [selected, setSelected] = useState<RefundRequest | null>(null);

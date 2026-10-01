@@ -3,6 +3,7 @@ export type ApplicationEventTopic =
   | "payments.changed"
   | "inventory.changed"
   | "products.changed"
+  | "refundRequests.changed"
   | "purchaseOrders.changed";
 
 export interface ParsedSseEvent {
