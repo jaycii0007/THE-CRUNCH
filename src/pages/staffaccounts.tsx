@@ -9,7 +9,7 @@ import { useAuth } from "../context/authcontext";
 import { useViewport } from "@/hooks/use-tablet";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Role = "administrator" | "cashier" | "inventory_manager";
+type Role = "administrator" | "cashier" | "cook" | "inventory_manager";
 type RoleFilter = Role | "all";
 type NotificationType = "error" | "warning" | "success";
 
@@ -24,17 +24,19 @@ interface FormState {
 const FONT_FAMILY = "'Poppins', sans-serif";
 const FIELD_MAX_LENGTH = 100;
 
-const ROLES: Role[] = ["administrator", "cashier", "inventory_manager"];
+const ROLES: Role[] = ["administrator", "cashier", "cook", "inventory_manager"];
 
 const ROLE_LABEL: Record<Role, string> = {
   administrator: "Admin",
   cashier: "Cashier",
+  cook: "Cook",
   inventory_manager: "Inventory Mgr",
 };
 
 const ROLE_COLORS: Record<Role, { bg: string; color: string }> = {
   administrator: { bg: "#edf2ff", color: "#3b5bdb" },
   cashier: { bg: "#e6fcf5", color: "#0ca678" },
+  cook: { bg: "#fff4e6", color: "#d9480f" },
   inventory_manager: { bg: "#f3f0ff", color: "#7048e8" },
 };
 

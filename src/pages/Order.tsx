@@ -28,6 +28,7 @@ import { useViewport } from "@/hooks/use-tablet";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { useAuth } from "../context/authcontext";
 import { canSettlePersistedOrders } from "../lib/permissions";
+import { getSettlementAction as getRefundSettlementAction } from "@/lib/refundEligibility";
 import {
   fetchGeneralSettings,
   formatInSettingsTimezone,
@@ -73,6 +74,7 @@ interface OrderCard {
   paymentStatus?: string;
   estimatedPrepMinutes?: number;
   prepStartedAt?: number;
+  startedAt?: number;
   readyAt?: number;
   dueAt?: number;
 }
@@ -148,16 +150,16 @@ const ORDER_TYPE_LABEL: Record<string, string> = {
 /* -------------------------------------------------------------------------- */
 
 const normalize = (value?: string | null) => String(value ?? "").trim().toLowerCase();
-const isPaid = (value?: string | null) => normalize(value) === "paid";
 const isTerminalStatus = (value?: string | null) => ["refunded", "cancelled"].includes(normalize(value));
 
-function getSettlementAction(currentStatus?: string | null, paymentStatus?: string | null): SettlementAction {
-  const status = normalize(currentStatus);
-  if (["refunded", "cancelled"].includes(status)) return null;
-  if (status === "completed") return isPaid(paymentStatus) ? "refund" : null;
-  if (["queued", "preparing", "ready", "ready for pickup"].includes(status)) return "refund";
-  if (status === "pending payment") return "cancel";
-  return isPaid(paymentStatus) ? "refund" : "cancel";
+function getSettlementAction(order: OrderCard): SettlementAction {
+  return getRefundSettlementAction({
+    status: order.currentStatus,
+    paymentStatus: order.paymentStatus,
+    prepStartedAt: order.prepStartedAt,
+    startedAt: order.startedAt,
+    readyAt: order.readyAt,
+  });
 }
 
 const getStage = (order: OrderCard): Stage => (order.isReady ? "ready" : order.isPreparing ? "preparing" : "new");
@@ -286,7 +288,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canSettle, onSta
   const overdue = isOverdue(order, nowMs);
   const orderType = order.orderType || order.status;
   const needsPickup = orderType === "delivery" || !!order.isOnlinePickup;
-  const settlement = getSettlementAction(order.currentStatus, order.paymentStatus);
+  const settlement = getSettlementAction(order);
   const prepMinutes = Math.max(order.estimatedPrepMinutes ?? 10, 1);
 
   const thisAction = pendingAction?.orderId === order.id ? pendingAction.action : null;
@@ -561,7 +563,7 @@ export default function Order() {
 
   const handleSettle = async (order: OrderCard) => {
     if (!canManagePersistedSettlements) return;
-    const action = getSettlementAction(order.currentStatus, order.paymentStatus);
+    const action = getSettlementAction(order);
     if (!action) return;
     setSettlingId(order.id);
     try {

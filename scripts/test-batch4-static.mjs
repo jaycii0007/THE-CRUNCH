@@ -40,6 +40,18 @@ assert.match(
   /alert\.severity === "critical" \|\| alert\.severity === "out"/,
   "Stock Manager notifications must be restricted to critical/out alerts",
 );
+assert.match(notificationCenter, /"refundRequests\.changed"/);
+assert.match(notificationCenter, /"purchaseOrders\.changed"/);
+assert.match(notificationCenter, /onInvalidate: loadNotifications/);
+assert.match(notificationCenter, /\/staff-notifications/);
+assert.match(notificationCenter, /\/inventory\/alerts\/\$\{notification\.id\}\/read/);
+assert.match(notificationCenter, /\/inventory\/alerts\/read-all/);
+assert.match(notificationCenter, /\/staff-notifications\/read-all/);
+assert.match(notificationCenter, /inventoryUnread \+ staffUnread/);
+assert.match(notificationCenter, /requestStockManagerTab\("purchases"\)/);
+assert.match(notificationCenter, /Refund approval and settlement are not available here/);
+assert.doesNotMatch(notificationCenter, /\/refund-requests\/.*\/ignore/);
+assert.doesNotMatch(notificationCenter, /status:\s*["']Refunded["']/);
 
 const cashier = read("src/pages/menu.tsx");
 const online = read("src/pages/usersmenu.tsx");

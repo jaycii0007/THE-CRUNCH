@@ -12,6 +12,7 @@ import {
   BarChart2,
   Settings,
   LogOut,
+  UserRound,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ const TABLET_BREAKPOINT = 1100;
 const ROLE_LABELS: Record<Role, string> = {
   administrator: "Administrator",
   cashier: "Cashier",
+  cook: "Cook",
   inventory_manager: "Inventory Manager",
   customer: "Customer",
 };
@@ -351,6 +353,23 @@ export function Sidebar() {
                 "[&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]",
               )}
             >
+              <NavLink to="/my-account" end onClick={closeSidebar}>
+                {({ isActive }) => (
+                  <Button
+                    variant="ghost"
+                    className={cn(
+                      "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5 gap-3 h-auto",
+                      isActive
+                        ? "bg-gray-100 text-black font-semibold"
+                        : "text-gray-500 hover:text-black hover:bg-gray-50",
+                      isMobile && "py-3 text-base",
+                    )}
+                  >
+                    <UserRound className={cn("flex-shrink-0", iconSize)} strokeWidth={isActive ? 2.2 : 1.8} />
+                    <span>My Account</span>
+                  </Button>
+                )}
+              </NavLink>
               {visibleItems.map(({ label, path, icon: Icon }, index) => (
                 <NavLink key={path} to={path} end onClick={closeSidebar}>
                   {({ isActive }) => (

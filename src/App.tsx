@@ -23,6 +23,7 @@ import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
 import Products from "./pages/products";
 import Settings from "./pages/settings";
+import MyAccount from "./pages/my-account";
 
 // ── Shared / Auth
 import Login from "./pages/login";
@@ -67,7 +68,7 @@ function getHomePathForRole(
   if (role === "customer") return ROLE_MAP.customer;
 
   const fallback = ROLE_MAP[role] ?? "/unauthorized";
-  const rolePermissions = role === "cook" ? undefined : permissions[role];
+  const rolePermissions = permissions[role];
   if (!rolePermissions) return fallback;
 
   const fallbackPermission = (
@@ -251,6 +252,10 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
 
       <Route path="/aboutthecrunch" element={<AboutTheCrunch />} />
+      <Route
+        path="/my-account"
+        element={isAuth ? <MyAccount /> : <Navigate to="/login" replace />}
+      />
 
       {/* ── Customer landing (public, but passes auth state for nav) ── */}
       <Route

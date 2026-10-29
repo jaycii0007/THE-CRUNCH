@@ -26,6 +26,7 @@ import {
   GENERAL_SETTINGS_DEFAULTS,
   getCurrencySymbol,
 } from "@/lib/restaurantSettings";
+import { summarizeFinancialOrders } from "@/lib/financialStatus";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Types                                   */
@@ -46,6 +47,7 @@ interface Order {
   orderType: string;
   status: string;
   paymentCategory: string;
+  paymentStatus: string;
 }
 
 interface RawOrderRow {
@@ -56,6 +58,8 @@ interface RawOrderRow {
   status?: string;
   paymentMethod?: string;
   payment_method?: string;
+  paymentStatus?: string;
+  payment_status?: string;
   orderType?: string;
   order_type?: string;
   productId?: number;
@@ -695,6 +699,7 @@ function groupOrderRows(rows: RawOrderRow[]): Order[] {
         orderType: row.orderType ?? row.order_type ?? "",
         status: row.status ?? "",
         paymentCategory: row.paymentMethod ?? row.payment_method ?? "",
+        paymentStatus: row.paymentStatus ?? row.payment_status ?? "",
       });
     }
     if (row.productId) {
@@ -780,18 +785,39 @@ export default function AdminDashboard() {
   );
   const previousOrders = useMemo(() => filterPreviousPeriod(orders, period), [orders, period]);
 
-  const totalOrders = filteredOrders.length;
-  const totalSales = sum(filteredOrders.map((o) => o.total));
-  const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
-  const activeOrders = filteredOrders.filter((o) => !["Completed", "Cancelled"].includes(o.status)).length;
+  const financialSummary = useMemo(
+    () => summarizeFinancialOrders(filteredOrders),
+    [filteredOrders],
+  );
+  const previousFinalizedSales = useMemo(
+    () => summarizeFinancialOrders(previousOrders).finalizedSales,
+    [previousOrders],
+  );
+  const {
+    totalOrders,
+    totalSales,
+    finalizedSalesCount,
+    averageOrderValue: avgOrderValue,
+    activeOrders,
+    pendingOrders,
+    cancelledOrders,
+    refundedOrders,
+    finalizedSales,
+  } = financialSummary;
 
-  const topItems = useMemo(() => computeTopItems(filteredOrders), [filteredOrders]);
-  const orderTypes = useMemo(() => computeShares(filteredOrders, (o) => o.orderType || "Unknown"), [filteredOrders]);
-  const payments = useMemo(() => computeShares(filteredOrders, (o) => o.paymentCategory || "Others"), [filteredOrders]);
-  const heatmap = useMemo(() => computeHeatmap(filteredOrders), [filteredOrders]);
+  const topItems = useMemo(() => computeTopItems(finalizedSales), [finalizedSales]);
+  const orderTypes = useMemo(
+    () => computeShares(finalizedSales, (o) => o.orderType || "Unknown"),
+    [finalizedSales],
+  );
+  const payments = useMemo(
+    () => computeShares(finalizedSales, (o) => o.paymentCategory || "Others"),
+    [finalizedSales],
+  );
+  const heatmap = useMemo(() => computeHeatmap(finalizedSales), [finalizedSales]);
   const chartData = useMemo(
-    () => computeChartData(filteredOrders, previousOrders, period, salesView),
-    [filteredOrders, previousOrders, period, salesView],
+    () => computeChartData(finalizedSales, previousFinalizedSales, period, salesView),
+    [finalizedSales, previousFinalizedSales, period, salesView],
   );
 
   /* ---- Formatting ---- */
@@ -863,10 +889,22 @@ export default function AdminDashboard() {
 
           {/* KPIs */}
           <section className="mb-6 grid grid-cols-1 gap-4 sm:mb-8 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4">
-            <KpiCard label="Total Orders" value={show(totalOrders.toLocaleString())} hint="Live" />
-            <KpiCard label="Total Sales" value={show(money(totalSales, wholeNumber))} hint="Live" />
-            <KpiCard label="Avg Order Value" value={show(money(avgOrderValue))} hint="Per transaction" />
-            <KpiCard label="Active Orders" value={show(activeOrders.toLocaleString())} hint="In progress" />
+            <KpiCard
+              label="Total Orders"
+              value={show(totalOrders.toLocaleString())}
+              hint={show(`${cancelledOrders} cancelled · ${refundedOrders} refunded`)}
+            />
+            <KpiCard
+              label="Total Sales"
+              value={show(money(totalSales, wholeNumber))}
+              hint={show(`${finalizedSalesCount} finalized`)}
+            />
+            <KpiCard label="Avg Order Value" value={show(money(avgOrderValue))} hint="Per finalized sale" />
+            <KpiCard
+              label="Active Orders"
+              value={show(activeOrders.toLocaleString())}
+              hint={show(`${pendingOrders} pending`)}
+            />
           </section>
 
           {/* Sales chart + payment methods */}

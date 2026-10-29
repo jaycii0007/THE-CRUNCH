@@ -362,7 +362,11 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
             <span style={{ width: 1, height: 18, background: 'var(--line)', margin: '0 8px' }} />
             {isAuthenticated ? (
               <>
-                {user?.username && <span className="status"><User size={14} />{user.username}</span>}
+                {user?.username && (
+                  <button className="status" onClick={() => navigate('/my-account')} title="Open My Account">
+                    <User size={14} />{user.username}
+                  </button>
+                )}
                 <button className="btn btn-gold" onClick={logout}>Log out</button>
               </>
             ) : (
@@ -385,7 +389,10 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
               {navLinks.map(l => <button key={l.label} className="link" style={{ textAlign: 'left', fontSize: 15 }} onClick={() => { l.action(); setMenuOpen(false) }}>{l.label}</button>)}
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 {isAuthenticated ? (
-                  <button className="btn btn-gold" style={{ flex: 1 }} onClick={() => { logout(); setMenuOpen(false) }}>Log out</button>
+                  <>
+                    <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { navigate('/my-account'); setMenuOpen(false) }}>My Account</button>
+                    <button className="btn btn-gold" style={{ flex: 1 }} onClick={() => { logout(); setMenuOpen(false) }}>Log out</button>
+                  </>
                 ) : (
                   <>
                     <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { navigate('/login'); setMenuOpen(false) }}>Log in</button>

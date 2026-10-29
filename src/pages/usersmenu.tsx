@@ -1042,11 +1042,12 @@ export default function Delicacy() {
               {user && (
                 <>
                   {!isNarrowPhone && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                    <button type="button" onClick={() => navigate("/my-account")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", border: `1px solid ${C.border}`, borderRadius: 8, background: "transparent", cursor: "pointer", fontFamily: FONT }}>
                       <span style={{ width: 26, height: 26, borderRadius: "50%", background: C.surfaceAlt, border: `1px solid ${C.borderStrong}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 700, color: C.primary }}>{initials}</span>
                       <span style={{ fontSize: 12.5, fontWeight: 500, color: C.muted, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{customerName.split(" ")[0]}</span>
-                    </div>
+                    </button>
                   )}
+                  {isNarrowPhone && <Button small onClick={() => navigate("/my-account")}>Account</Button>}
                   <Button small onClick={() => { logout(); navigate("/aboutthecrunch"); }}>Log out</Button>
                 </>
               )}

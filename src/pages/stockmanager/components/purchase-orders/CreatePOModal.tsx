@@ -32,6 +32,7 @@ const MAX_SUGGESTIONS = 6;
 // Quantity is kept as a string while typing and converted to a number on save.
 type DraftItem = {
   uid: number;
+  productId: number | null;
   name: string;
   category: string;
   unit: string;
@@ -172,6 +173,7 @@ export function CreatePOModal({
   allProducts: Product[];
   allSuppliers: Supplier[];
   prefillProduct?: {
+    productId: number;
     name: string;
     category: string;
     unit: string;
@@ -184,6 +186,7 @@ export function CreatePOModal({
   const nextUid = useRef(1);
   const makeItem = (overrides: Partial<Omit<DraftItem, "uid">> = {}): DraftItem => ({
     uid: nextUid.current++,
+    productId: null,
     name: "",
     category: "",
     unit: "",
@@ -201,12 +204,22 @@ export function CreatePOModal({
   // Find any product by its (case-insensitive) name.
   const productByName = useMemo(() => {
     const map = new Map<string, Product>();
+    const duplicateNames = new Set<string>();
     allProducts.forEach((p) => {
       const key = normalize(p.product_name);
-      if (!map.has(key)) map.set(key, p);
+      if (map.has(key)) {
+        map.delete(key);
+        duplicateNames.add(key);
+      } else if (!duplicateNames.has(key)) {
+        map.set(key, p);
+      }
     });
     return map;
   }, [allProducts]);
+  const productById = useMemo(
+    () => new Map(allProducts.map((product) => [product.product_id, product])),
+    [allProducts],
+  );
 
   // Products that can be suggested in the item field (menu food is excluded).
   const orderableProducts = useMemo(
@@ -229,9 +242,12 @@ export function CreatePOModal({
     if (prefillProduct) {
       // Use the live inventory record when we can find it, so the
       // suggested quantity matches the current stock level.
-      const match = productByName.get(normalize(prefillProduct.name));
+      const match =
+        productById.get(prefillProduct.productId) ??
+        productByName.get(normalize(prefillProduct.name));
       return [
         makeItem({
+          productId: match?.product_id ?? prefillProduct.productId,
           name: prefillProduct.name,
           category: match?.category ?? prefillProduct.category,
           unit: match?.unit ?? prefillProduct.unit,
@@ -284,7 +300,9 @@ export function CreatePOModal({
     return items.map((item, idx) => {
       const errors: ItemErrors = {};
       const key = normalize(item.name);
-      const product = productByName.get(key);
+      const product =
+        (item.productId ? productById.get(item.productId) : undefined) ??
+        productByName.get(key);
 
       if (!key) {
         errors.name = "Enter an item name.";
@@ -309,7 +327,7 @@ export function CreatePOModal({
 
       return errors;
     });
-  }, [items, productByName]);
+  }, [items, productById, productByName]);
 
   const supplierError = selectedSupplierId === "" ? "Select a supplier." : "";
   const deliveryDateError = !deliveryDate
@@ -416,6 +434,7 @@ export function CreatePOModal({
 
   const buildItemFromProduct = (product: Product): DraftItem =>
     makeItem({
+      productId: product.product_id,
       name: product.product_name,
       category: product.category,
       unit: product.unit,
@@ -481,6 +500,7 @@ export function CreatePOModal({
     const match = productByName.get(normalize(name));
     updateItem(uid, {
       name,
+      productId: match?.product_id ?? null,
       category: match?.category ?? "",
       unit: match?.unit ?? "",
     });
@@ -505,6 +525,7 @@ export function CreatePOModal({
         item.uid === uid
           ? {
               ...item,
+              productId: product.product_id,
               name: product.product_name,
               category: product.category,
               unit: product.unit,
@@ -602,9 +623,12 @@ export function CreatePOModal({
     // Build the items from the inventory record so name, category and unit
     // always match inventory exactly.
     const poItems: POItem[] = items.map((item, idx) => {
-      const product = productByName.get(normalize(item.name));
+      const product =
+        (item.productId ? productById.get(item.productId) : undefined) ??
+        productByName.get(normalize(item.name));
       return {
         id: idx + 1,
+        productId: product?.product_id ?? item.productId,
         name: product ? product.product_name : item.name.trim(),
         category: product ? product.category : item.category,
         unit: product ? product.unit : item.unit,
@@ -875,7 +899,10 @@ export function CreatePOModal({
                   const quantityError = item.quantityTouched
                     ? errors.quantity
                     : undefined;
-                  const isMatched = !!productByName.get(normalize(item.name));
+                  const isMatched = !!(
+                    (item.productId && productById.get(item.productId)) ||
+                    productByName.get(normalize(item.name))
+                  );
                   const notListedBySupplier =
                     isMatched &&
                     !!selectedSupplier &&

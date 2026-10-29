@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { useConfirm, useNotifications } from "@/lib/NotificationContext";
 import { normalizeRole } from "@/lib/permissions";
+import { isRefundEligible } from "@/lib/refundEligibility";
 
 interface RefundRequestItem {
   name: string;
@@ -25,6 +26,9 @@ interface RefundRequest {
     total: number;
     status: string;
     paymentStatus: string;
+    prepStartedAt?: string | null;
+    startedAt?: string | null;
+    readyAt?: string | null;
     items: RefundRequestItem[];
   };
 }
@@ -39,9 +43,7 @@ const money = new Intl.NumberFormat("en-PH", {
 });
 
 function canStillRefund(request: RefundRequest) {
-  const status = request.order.status.trim().toLowerCase();
-  return request.order.paymentStatus.trim().toLowerCase() === "paid" &&
-    status !== "refunded" && status !== "cancelled";
+  return isRefundEligible(request.order);
 }
 
 export function AdminRefundNotificationCenter({ role }: { role: unknown }) {
@@ -130,7 +132,7 @@ export function AdminRefundNotificationCenter({ role }: { role: unknown }) {
     const approved = await confirm({
       title: `Refund ${selected.orderNumber}?`,
       message:
-        "Confirm the actual refund. The existing secure refund workflow will update payment and apply its preparation-based inventory restoration rules.",
+        "Confirm the refund. The order will be rechecked to ensure preparation has not started before inventory is restored.",
       confirmLabel: "Confirm Refund",
       cancelLabel: "Cancel",
       danger: true,

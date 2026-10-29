@@ -9,6 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:sse-client": "node scripts/test-sse-client.mjs",
+    "test:financial": "node scripts/test-financial-correctness.mjs",
+    "test:refund-policy": "node scripts/test-refund-policy.mjs",
+    "test:account": "node scripts/test-my-account-static.mjs",
     "test:batch4": "node scripts/test-batch4-static.mjs"
   },
   "dependencies": {

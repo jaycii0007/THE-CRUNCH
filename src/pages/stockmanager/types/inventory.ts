@@ -34,6 +34,7 @@ export type POStatus = "Draft" | "Ordered" | "Received" | "Cancelled";
 
 export interface POItem {
   id: number;
+  productId?: number | null;
   name: string;
   category: string;
   unit: string;

@@ -106,7 +106,6 @@ export type TabKey =
   | "notifications"
   | "roles"
   | "security"
-  | "personal"
   | "feedback";
 
 export interface RestaurantSettings {
@@ -716,14 +715,6 @@ export function RolesTab() {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Personal tab (own account + password)                                      */
-/* -------------------------------------------------------------------------- */
-
-// At least 8 characters, with one letter and one number.
-const STRONG_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
-const EMPTY_PASSWORDS = { current: "", next: "", confirm: "" };
-
 // "inventory_manager" -> "Inventory Manager"
 function formatRoleLabel(value: string) {
   return value
@@ -731,118 +722,6 @@ function formatRoleLabel(value: string) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-// Tracks the busy state and the success / error message of one form.
-function useFormAction() {
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
-
-  const fail = (text: string) => setResult({ ok: false, text });
-
-  // Runs the task. Its returned text is shown on success, the error message on failure.
-  const run = async (task: () => Promise<string>, fallbackError: string) => {
-    setBusy(true);
-    setResult(null);
-    try {
-      setResult({ ok: true, text: await task() });
-    } catch (error) {
-      fail(error instanceof Error ? error.message : fallbackError);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return { busy, result, run, fail };
-}
-
-// Bottom row of a form: status message on the left, submit button on the right.
-// On phones the button takes the full width below the message.
-function FormFooter({ action, label, busyLabel, onSubmit }: {
-  action: ReturnType<typeof useFormAction>; label: string; busyLabel: string; onSubmit: () => void;
-}) {
-  const isMobile = useViewport() === "mobile";
-  return (
-    <div
-      style={{
-        padding: isMobile ? "14px 0" : "14px 20px",
-        display: "flex", alignItems: isMobile ? "stretch" : "center",
-        flexDirection: isMobile ? "column-reverse" : "row",
-        justifyContent: "space-between", gap: 12, flexWrap: "wrap",
-      }}
-    >
-      <span style={typo("0.72rem", action.result?.ok ? SUCCESS : ERROR, 400)}>{action.result?.text}</span>
-      <button onClick={onSubmit} disabled={action.busy} style={accentButton(action.busy)}>
-        {action.busy ? busyLabel : label}
-      </button>
-    </div>
-  );
-}
-
-export function PersonalTab({ account, onAccountChange }: {
-  account: OwnAccount; onAccountChange: (account: OwnAccount) => void;
-}) {
-  const [displayName, setDisplayName] = useState(account.username);
-  const [passwords, setPasswords] = useState(EMPTY_PASSWORDS);
-  const profile = useFormAction();
-  const password = useFormAction();
-
-  const saveProfile = () => {
-    const username = displayName.trim();
-    if (username.length < 2 || username.length > 100) {
-      return profile.fail("Display name must be between 2 and 100 characters.");
-    }
-    void profile.run(async () => {
-      const saved = await api.put<OwnAccount>("/users/me", { username });
-      setDisplayName(saved.username);
-      onAccountChange(saved);
-      return "Account details updated.";
-    }, "Failed to update your account.");
-  };
-
-  const savePassword = () => {
-    const { current, next, confirm } = passwords;
-    if (!current || !next || !confirm) {
-      return password.fail("Current password, new password, and confirmation are required.");
-    }
-    if (next !== confirm) return password.fail("New passwords do not match.");
-    if (!STRONG_PASSWORD.test(next)) {
-      return password.fail("New password must be at least 8 characters with a letter and number.");
-    }
-    void password.run(async () => {
-      await api.put<{ message: string }>("/users/me/password", {
-        currentPassword: current,
-        newPassword: next,
-        confirmPassword: confirm,
-      });
-      setPasswords(EMPTY_PASSWORDS);
-      return "Password changed successfully.";
-    }, "Failed to change your password.");
-  };
-
-  const setPassword = (key: keyof typeof EMPTY_PASSWORDS) => (value: string) =>
-    setPasswords((prev) => ({ ...prev, [key]: value }));
-
-  return (
-    <>
-      <Section>
-        <FR label="Display name / username">
-          <SI value={displayName} onChange={setDisplayName} placeholder="Display name" />
-        </FR>
-        <FR label="Email"><Value muted>{account.email || "Not available"}</Value></FR>
-        <FR label="Role" last><Value muted>{formatRoleLabel(account.role) || "Not available"}</Value></FR>
-        <FormFooter action={profile} label="Save Account" busyLabel="Saving..." onSubmit={saveProfile} />
-      </Section>
-      <Section>
-        <FR label="Current password"><SI value={passwords.current} onChange={setPassword("current")} type="password" /></FR>
-        <FR label="New password"><SI value={passwords.next} onChange={setPassword("next")} type="password" /></FR>
-        <FR label="Confirm new password" last>
-          <SI value={passwords.confirm} onChange={setPassword("confirm")} type="password" />
-        </FR>
-        <FormFooter action={password} label="Change Password" busyLabel="Changing..." onSubmit={savePassword} />
-      </Section>
-    </>
-  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1017,7 +896,6 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "System",
     items: [
-      { key: "personal", label: "My Account" },
       { key: "notifications", label: "Notifications" },
       { key: "feedback", label: "Customer Feedback" },
     ],
@@ -1033,7 +911,6 @@ export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
   notifications: { title: "Notifications",           desc: "Alert channels and toast settings." },
   roles:         { title: "Roles & Permissions",     desc: "Which pages each role can open, as saved in the system." },
   security:      { title: "Security Settings",       desc: "Session timeout." },
-  personal:      { title: "My Account",              desc: "Manage your own display name and password securely." },
   feedback:      { title: "Customer Feedback",       desc: "Customer reviews and ratings from the menu page." },
 };
 
@@ -1308,9 +1185,7 @@ function AccessMessage({ status, onRetry }: { status: AccessStatus; onRetry: () 
 }
 
 // The settings menu and the selected tab. Only mounted for administrators.
-function SettingsPanel({ account, onAccountChange }: {
-  account: OwnAccount; onAccountChange: (account: OwnAccount) => void;
-}) {
+function SettingsPanel() {
   const [activeTab, setActiveTab] = useState<TabKey>("business");
   const settings = useSettings();
   const feedback = useFeedback();
@@ -1322,7 +1197,7 @@ function SettingsPanel({ account, onAccountChange }: {
   const tabProps: TabProps = { s: settings.values, set: settings.setField };
 
   // Tabs that do not edit restaurant settings have no save button.
-  const showSave = !["roles", "personal", "feedback"].includes(activeTab);
+  const showSave = !["roles", "feedback"].includes(activeTab);
 
   // One status line: error first, then loading, then the save confirmation.
   const status = [
@@ -1340,7 +1215,6 @@ function SettingsPanel({ account, onAccountChange }: {
       case "notifications": return <NotifTab {...tabProps} />;
       case "roles":         return <RolesTab />;
       case "security":      return <SecurityTab {...tabProps} />;
-      case "personal":      return <PersonalTab account={account} onAccountChange={onAccountChange} />;
       case "feedback":
         return (
           <FeedbackTab
@@ -1426,13 +1300,13 @@ function SettingsPanel({ account, onAccountChange }: {
 
 // Everything that depends on the screen size sits inside the provider.
 function SettingsView() {
-  const { status, account, applyAccount, verify } = useAdminAccess();
+  const { status, account, verify } = useAdminAccess();
   const isMobile = useViewport() === "mobile";
 
   return (
     <PageFrame>
       {status === "allowed" && account ? (
-        <SettingsPanel account={account} onAccountChange={applyAccount} />
+        <SettingsPanel />
       ) : (
         <div style={{ ...S.card, alignItems: "center", padding: isMobile ? 20 : 32 }}>
           <div style={{ flex: 1, minWidth: 0 }}>

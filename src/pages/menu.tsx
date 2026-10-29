@@ -55,6 +55,10 @@ import {
 } from "../lib/orderQuantity";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import {
+  getSettlementAction as getRefundSettlementAction,
+  type RefundOrderLike,
+} from "@/lib/refundEligibility";
+import {
   buildKotHtml,
   buildReceiptHtml,
   downloadHtml,
@@ -137,6 +141,9 @@ interface OnlineOrder {
   riderName?: string | null;
   paymentMethod?: string | null;
   paymentStatus?: string | null;
+  prepStartedAt?: string | number | null;
+  startedAt?: string | number | null;
+  readyAt?: string | number | null;
   items: { name: string; quantity: number }[];
 }
 interface ShiftOrder {
@@ -148,6 +155,9 @@ interface ShiftOrder {
   paymentMethod: string;
   status: string;
   paymentStatus?: string | null;
+  prepStartedAt?: string | number | null;
+  startedAt?: string | number | null;
+  readyAt?: string | number | null;
   items: { name: string; quantity: number; price: number }[];
 }
 
@@ -165,13 +175,13 @@ const pct = (n: number) => String(Number(n.toFixed(2)));
 const getSettlementAction = (
   status?: string | null,
   payment?: string | null,
+  preparation: RefundOrderLike = {},
 ): Settle | null => {
-  const s = norm(status);
-  if (["completed", "refunded", "cancelled"].includes(s)) return null;
-  if (["queued", "preparing", "ready", "ready for pickup"].includes(s))
-    return "refund";
-  if (s === "pending payment") return "cancel";
-  return isPaid(payment) ? "refund" : "cancel";
+  return getRefundSettlementAction({
+    ...preparation,
+    status,
+    paymentStatus: payment,
+  });
 };
 
 const paymentLabel = (m?: string | null) => {
@@ -1494,7 +1504,7 @@ function HistoryModal({
           const cancelled = norm(o.status) === "cancelled";
           const refunded = norm(o.status) === "refunded";
           const settled = cancelled || refunded;
-          const action = getSettlementAction(o.status, o.paymentStatus);
+          const action = getSettlementAction(o.status, o.paymentStatus, o);
           return (
             <div
               key={o.id}
@@ -1860,8 +1870,13 @@ export default function CashierView() {
       await patchOrder(id, { status });
       onDone(status);
       toast("info", `${label} ${action === "refund" ? "refunded" : "voided"}.`);
-    } catch {
-      toast("error", `Failed to ${action} order. Please try again.`);
+    } catch (error) {
+      toast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : `Failed to ${action} order. Please try again.`,
+      );
     } finally {
       setSettlingId(null);
     }
@@ -1869,7 +1884,7 @@ export default function CashierView() {
 
   const cancelOrder = review.find((o) => o.id === cancelId);
   const cancelAction = cancelOrder
-    ? getSettlementAction(cancelOrder.trackingStatus, cancelOrder.paymentStatus)
+    ? getSettlementAction(cancelOrder.trackingStatus, cancelOrder.paymentStatus, cancelOrder)
     : null;
 
   const confirmCancel = async () => {
@@ -1882,7 +1897,7 @@ export default function CashierView() {
 
   const settleShiftOrder = (o: ShiftOrder) => {
     if (!canManagePersistedSettlements) return;
-    const action = getSettlementAction(o.status, o.paymentStatus);
+    const action = getSettlementAction(o.status, o.paymentStatus, o);
     if (!action)
       return toast(
         "warning",
@@ -2316,6 +2331,7 @@ export default function CashierView() {
                   const action = getSettlementAction(
                     o.trackingStatus,
                     o.paymentStatus,
+                    o,
                   );
                   return (
                     <OrderRow

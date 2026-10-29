@@ -21,7 +21,7 @@ type NotifyFn = (notification: {
   type: "success" | "error";
 }) => void;
 export type POPrefillProduct =
-  | { name: string; category: string; unit: string; supplier: string }
+  | { productId: number; name: string; category: string; unit: string; supplier: string }
   | null
   | undefined;
 
@@ -88,6 +88,7 @@ export function usePurchaseOrders({
 
   const handleOrderNow = useCallback((product: Product) => {
     setPrefillPOProduct({
+      productId: product.product_id,
       name: product.product_name,
       category: product.category,
       unit: product.unit,

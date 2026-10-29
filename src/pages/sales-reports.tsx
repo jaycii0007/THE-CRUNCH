@@ -43,6 +43,8 @@ import type { ReceiptDto } from "@/lib/receipt";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { useAuth } from "@/context/authcontext";
 import { canSettlePersistedOrders } from "@/lib/permissions";
+import { isFinalizedSale } from "@/lib/financialStatus";
+import { getSettlementAction as getRefundSettlementAction } from "@/lib/refundEligibility";
 
 // --- Types ---
 
@@ -100,8 +102,12 @@ interface Order {
   time: string;
   orderType: string;
   status: Status;
+  rawStatus: string;
   paymentCategory: string;
   paymentStatus: string;
+  prepStartedAt?: string | null;
+  startedAt?: string | null;
+  readyAt?: string | null;
   cashierName?: string;
   riderName?: string;
   handoverTimestamp?: string | null;
@@ -127,6 +133,9 @@ interface RawOrderRow {
   payment_method?: string;
   paymentStatus?: string;
   payment_status?: string;
+  prepStartedAt?: string;
+  startedAt?: string;
+  readyAt?: string;
   proofImageUrl?: string;
   proof_image_url?: string;
   productId?: number;
@@ -340,8 +349,7 @@ function getRevenueForPeriod(logs: SaleLog[], period: Period): number {
 
   return logs
     .filter((l) => {
-      if (l.status !== "Completed") return false;
-      if (!isPaidPaymentStatus(l.paymentStatus)) return false;
+      if (!isFinalizedSale(l)) return false;
       if (period === "All Time") return true;
       return l._dateObj >= start && l._dateObj <= now;
     })
@@ -382,14 +390,12 @@ function formatPaymentStatus(value?: string | null): string {
   return String(value);
 }
 
-function isPaidPaymentStatus(value?: string | null): boolean {
-  return formatPaymentStatus(value) === "Paid";
-}
-
 function getOrderSettlementAction(order: Order): SettlementAction | null {
-  if (order.status === "Refunded" || order.status === "Cancelled") return null;
-  if (isPaidPaymentStatus(order.paymentStatus)) return "refund";
-  return order.status === "Completed" ? null : "void";
+  const action = getRefundSettlementAction({
+    ...order,
+    status: order.rawStatus,
+  });
+  return action === "cancel" ? "void" : action;
 }
 
 function normalizePaymentMethod(value?: string | null): PaymentMethodFilter {
@@ -523,6 +529,9 @@ function processRawRows(rows: RawOrderRow[]): {
     proofImageUrl: string | null;
     orderNumber: string;
     transactionId: string;
+    prepStartedAt: string | null;
+    startedAt: string | null;
+    readyAt: string | null;
   };
 
   const orderMap: Record<number, OrderAccum> = {};
@@ -558,6 +567,9 @@ function processRawRows(rows: RawOrderRow[]): {
           String(r.proofImageUrl ?? r.proof_image_url ?? "").trim() || null,
         orderNumber: String(r.orderNumber ?? r.order_number ?? "").trim(),
         transactionId: String(r.transactionId ?? r.transaction_id ?? "").trim(),
+        prepStartedAt: r.prepStartedAt ?? null,
+        startedAt: r.startedAt ?? null,
+        readyAt: r.readyAt ?? null,
       };
     }
 
@@ -629,8 +641,12 @@ function processRawRows(rows: RawOrderRow[]): {
       time: formatDisplayTime(orderDate),
       orderType: order.orderType,
       status,
+      rawStatus: order.status,
       paymentCategory: order.paymentMethod,
       paymentStatus: formatPaymentStatus(order.paymentStatus),
+      prepStartedAt: order.prepStartedAt,
+      startedAt: order.startedAt,
+      readyAt: order.readyAt,
       cashierName: order.cashierName,
       riderName: order.riderName || undefined,
       handoverTimestamp: order.handoverTimestamp,
@@ -653,9 +669,7 @@ function triggerPrint(
   orders: Order[],
   restaurantSettings: GeneralRestaurantSettings,
 ) {
-  const paidCompleted = logs.filter(
-    (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
-  );
+  const paidCompleted = logs.filter(isFinalizedSale);
   const gcashSales = paidCompleted.filter(
     (l) => normalizePaymentMethod(l.paymentMethod) === "GCash",
   );
@@ -678,9 +692,7 @@ function triggerPrint(
   });
 
   const completedOrders = orders
-    .filter(
-      (o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus),
-    )
+    .filter(isFinalizedSale)
     .sort(
       (a, b) =>
         (parseDateSafe(b.date)?.getTime() ?? 0) -
@@ -1410,9 +1422,7 @@ function RevenueDropdown({
     period === "All Time"
       ? logs
       : logs.filter((l) => l._dateObj >= start && l._dateObj <= now);
-  const paidCompleted = inPeriod.filter(
-    (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
-  );
+  const paidCompleted = inPeriod.filter(isFinalizedSale);
   const completedCount = paidCompleted.length;
   const pendingCount = inPeriod.filter((l) => l.status === "Pending").length;
   const cancelledCount = inPeriod.filter(
@@ -2088,9 +2098,7 @@ function RefundModal({
 // --- Summary Bar ---
 
 function SummaryBar({ logs }: { logs: SaleLog[] }) {
-  const paidCompleted = logs.filter(
-    (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
-  );
+  const paidCompleted = logs.filter(isFinalizedSale);
   const gcashSales = paidCompleted.filter(
     (l) => normalizePaymentMethod(l.paymentMethod) === "GCash",
   );
@@ -3387,13 +3395,9 @@ function OrdersTab({
   );
 
   const totalRevenue = filtered
-    .filter(
-      (o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus),
-    )
+    .filter(isFinalizedSale)
     .reduce((sum, o) => sum + o.total, 0);
-  const completedCount = filtered.filter(
-    (o) => o.status === "Completed" && isPaidPaymentStatus(o.paymentStatus),
-  ).length;
+  const completedCount = filtered.filter(isFinalizedSale).length;
   const hasRange = !!(fromDate || toDate);
 
   return (
@@ -3738,6 +3742,12 @@ export default function SalesReports() {
       await fetchSalesData();
     } catch (err) {
       console.error("Order settlement failed:", err);
+      setProofNotice(
+        err instanceof Error
+          ? err.message
+          : "The order could not be settled. Refresh and try again.",
+      );
+      await fetchSalesData();
     } finally {
       setRefundLoading(false);
       setRefundLog(null);
@@ -3763,9 +3773,7 @@ export default function SalesReports() {
   }
 
   // Derived log data
-  const completedLogs = logs.filter(
-    (l) => l.status === "Completed" && isPaidPaymentStatus(l.paymentStatus),
-  );
+  const completedLogs = logs.filter(isFinalizedSale);
   const dateFilteredLogs = filterLogsByRange(
     completedLogs,
     logFromDate,

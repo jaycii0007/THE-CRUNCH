@@ -1,57 +1,98 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Bell, PackageX, X } from "lucide-react";
+import { AlertTriangle, Bell, FileText, PackageCheck, PackageX, ShoppingCart, X } from "lucide-react";
 import { apiCall } from "@/lib/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { normalizeRole } from "@/lib/permissions";
-import {
-  requestStockManagerTab,
-  STOCK_MANAGER_PATH,
-} from "@/pages/stockmanager/navigation";
+import { requestStockManagerTab, STOCK_MANAGER_PATH } from "@/pages/stockmanager/navigation";
 
-type AlertSeverity = "out" | "critical" | "low" | "normal";
-type Tab = "unread" | "read";
+type AlertSeverity = "out" | "critical" | "low";
+type NotificationTab = "unread" | "read";
 
 interface InventoryAlert {
-  inventory_id: number;
-  product_id: number;
+  alert_id: number;
   product_name: string;
-  category: string;
   unit: string;
   mainStock: number;
   severity: AlertSeverity;
   thresholds: { low: number; critical: number };
+  created_at: string;
+  resolved_at: string | null;
   is_read: boolean;
 }
 
 interface InventoryAlertsResponse {
-  generatedAt: string;
-  items: InventoryAlert[];
+  notifications: InventoryAlert[];
+  unreadCount: number;
 }
 
-const SEVERITY_ORDER: Record<AlertSeverity, number> = {
-  out: 0,
-  critical: 1,
-  low: 2,
-  normal: 3,
-};
+interface StaffNotification {
+  notification_id: number;
+  category: "refund_request" | "purchase_order";
+  event_type: string;
+  entity_id: string;
+  title: string;
+  message: string;
+  status: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  is_read: boolean;
+}
 
-const SEVERITY_STYLES: Record<Exclude<AlertSeverity, "normal">, string> = {
+interface StaffNotificationsResponse {
+  notifications: StaffNotification[];
+  unreadCount: number;
+}
+
+type UnifiedNotification =
+  | { source: "inventory"; id: number; item: InventoryAlert }
+  | { source: "staff"; id: number; item: StaffNotification };
+
+const SEVERITY_STYLES: Record<AlertSeverity, string> = {
   out: "bg-red-100 text-red-600",
   critical: "bg-orange-100 text-orange-600",
   low: "bg-amber-100 text-amber-600",
 };
 
+function formatNotificationTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Time unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
+function metadataText(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function isRead(notification: UnifiedNotification) {
+  return notification.item.is_read;
+}
+
+function createdAt(notification: UnifiedNotification) {
+  return notification.item.created_at;
+}
+
 export function InventoryNotificationCenter({ role }: { role: unknown }) {
   const navigate = useNavigate();
   const normalizedRole = normalizeRole(role);
-  const enabled =
-    normalizedRole === "administrator" || normalizedRole === "inventory_manager";
+  const enabled = normalizedRole === "administrator" || normalizedRole === "inventory_manager";
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>("unread");
-  const [alerts, setAlerts] = useState<InventoryAlert[]>([]);
+  const [tab, setTab] = useState<NotificationTab>("unread");
+  const [inventoryAlerts, setInventoryAlerts] = useState<InventoryAlert[]>([]);
+  const [staffNotifications, setStaffNotifications] = useState<StaffNotification[]>([]);
+  const [inventoryUnread, setInventoryUnread] = useState(0);
+  const [staffUnread, setStaffUnread] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
+  const [markingKey, setMarkingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedRefund, setSelectedRefund] = useState<StaffNotification | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -61,232 +102,284 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
     };
   }, []);
 
-  const loadAlerts = useCallback(async () => {
+  const loadNotifications = useCallback(async () => {
     if (!enabled) return;
     setLoading(true);
     try {
-      const response = await apiCall<InventoryAlertsResponse>("/inventory/alerts");
+      const [inventoryResponse, staffResponse] = await Promise.all([
+        apiCall<InventoryAlertsResponse>("/inventory/alerts"),
+        apiCall<StaffNotificationsResponse>("/staff-notifications"),
+      ]);
       if (!mounted.current) return;
-      setAlerts(response.items ?? []);
+      setInventoryAlerts(inventoryResponse.notifications ?? []);
+      setStaffNotifications(staffResponse.notifications ?? []);
+      setInventoryUnread(Number(inventoryResponse.unreadCount) || 0);
+      setStaffUnread(Number(staffResponse.unreadCount) || 0);
       setError(null);
     } catch (loadError) {
       if (!mounted.current) return;
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load notifications.",
-      );
+      setError(loadError instanceof Error ? loadError.message : "Unable to load notifications.");
     } finally {
       if (mounted.current) setLoading(false);
     }
   }, [enabled]);
 
   useEffect(() => {
-    void loadAlerts();
-  }, [loadAlerts]);
+    void loadNotifications();
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    if (!selectedRefund) return;
+    const current = staffNotifications.find(
+      (notification) => notification.notification_id === selectedRefund.notification_id,
+    );
+    if (current && current !== selectedRefund) setSelectedRefund(current);
+  }, [selectedRefund, staffNotifications]);
 
   useEventInvalidation({
-    topics: ["inventory.changed", "products.changed"],
-    onInvalidate: loadAlerts,
+    topics: ["inventory.changed", "products.changed", "refundRequests.changed", "purchaseOrders.changed"],
+    onInvalidate: loadNotifications,
     enabled,
     debounceMs: 350,
   });
 
-  // Overall list: every non-normal alert, same for all roles
-  const allAlerts = useMemo(
-    () =>
-      alerts
-        .filter((alert) => alert.severity !== "normal")
-        .sort(
-          (a, b) =>
-            SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
-            a.product_name.localeCompare(b.product_name),
-        ),
-    [alerts],
-  );
+  const allNotifications = useMemo<UnifiedNotification[]>(() => {
+    const visibleInventory = normalizedRole === "inventory_manager"
+      ? inventoryAlerts.filter((alert) => alert.severity === "critical" || alert.severity === "out")
+      : normalizedRole === "administrator" ? inventoryAlerts : [];
+    const visibleStaff = staffNotifications.filter((notification) => {
+      if (notification.category === "refund_request") return normalizedRole === "administrator";
+      return normalizedRole === "administrator" || normalizedRole === "inventory_manager";
+    });
+    return [
+      ...visibleInventory.map((item): UnifiedNotification => ({ source: "inventory", id: item.alert_id, item })),
+      ...visibleStaff.map((item): UnifiedNotification => ({ source: "staff", id: item.notification_id, item })),
+    ].sort((left, right) => new Date(createdAt(right)).getTime() - new Date(createdAt(left)).getTime());
+  }, [inventoryAlerts, normalizedRole, staffNotifications]);
 
-  const unreadAlerts = useMemo(() => allAlerts.filter((a) => !a.is_read), [allAlerts]);
-  const readAlerts = useMemo(() => allAlerts.filter((a) => a.is_read), [allAlerts]);
-  const shownAlerts = tab === "unread" ? unreadAlerts : readAlerts;
-
-  const markAsRead = useCallback(
-    async (inventoryId: number) => {
-      // Optimistic update, rolled back by re-fetching if the request fails
-      setAlerts((current) =>
-        current.map((a) =>
-          a.inventory_id === inventoryId ? { ...a, is_read: true } : a,
-        ),
-      );
-      try {
-        await apiCall(`/inventory/alerts/${inventoryId}/read`, { method: "POST" });
-      } catch {
-        void loadAlerts();
-      }
-    },
-    [loadAlerts],
+  const unreadNotifications = useMemo(
+    () => allNotifications.filter((notification) => !isRead(notification)),
+    [allNotifications],
   );
+  const readNotifications = useMemo(() => allNotifications.filter(isRead), [allNotifications]);
+  const shownNotifications = tab === "unread" ? unreadNotifications : readNotifications;
+  const unreadCount = inventoryUnread + staffUnread;
+
+  const markAsRead = useCallback(async (notification: UnifiedNotification) => {
+    if (isRead(notification)) return;
+    const key = `${notification.source}:${notification.id}`;
+    if (markingKey === key) return;
+    setMarkingKey(key);
+    if (notification.source === "inventory") {
+      setInventoryAlerts((current) => current.map((item) =>
+        item.alert_id === notification.id ? { ...item, is_read: true } : item,
+      ));
+      setInventoryUnread((current) => Math.max(0, current - 1));
+    } else {
+      setStaffNotifications((current) => current.map((item) =>
+        item.notification_id === notification.id ? { ...item, is_read: true } : item,
+      ));
+      setStaffUnread((current) => Math.max(0, current - 1));
+    }
+    try {
+      const endpoint = notification.source === "inventory"
+        ? `/inventory/alerts/${notification.id}/read`
+        : `/staff-notifications/${notification.id}/read`;
+      await apiCall(endpoint, { method: "POST" });
+      setError(null);
+    } catch (markError) {
+      setError(markError instanceof Error ? markError.message : "Unable to mark this notification as read.");
+      void loadNotifications();
+    } finally {
+      if (mounted.current) setMarkingKey(null);
+    }
+  }, [loadNotifications, markingKey]);
 
   const markAllAsRead = useCallback(async () => {
-    setAlerts((current) => current.map((a) => ({ ...a, is_read: true })));
+    if (markingAll) return;
+    setMarkingAll(true);
+    setInventoryAlerts((current) => current.map((item) => ({ ...item, is_read: true })));
+    setStaffNotifications((current) => current.map((item) => ({ ...item, is_read: true })));
+    setInventoryUnread(0);
+    setStaffUnread(0);
     try {
-      await apiCall("/inventory/alerts/read-all", { method: "POST" });
-    } catch {
-      void loadAlerts();
+      await Promise.all([
+        apiCall("/inventory/alerts/read-all", { method: "POST" }),
+        apiCall("/staff-notifications/read-all", { method: "POST" }),
+      ]);
+      setError(null);
+    } catch (markError) {
+      setError(markError instanceof Error ? markError.message : "Unable to mark all notifications as read.");
+      void loadNotifications();
+    } finally {
+      if (mounted.current) setMarkingAll(false);
     }
-  }, [loadAlerts]);
+  }, [loadNotifications, markingAll]);
 
-  const handleAlertClick = useCallback(
-    (alert: InventoryAlert) => {
-      if (!alert.is_read) void markAsRead(alert.inventory_id);
-      setOpen(false);
-      requestStockManagerTab("purchases");
-      navigate(STOCK_MANAGER_PATH);
-    },
-    [markAsRead, navigate],
-  );
+  const openNotification = useCallback((notification: UnifiedNotification) => {
+    if (!isRead(notification)) void markAsRead(notification);
+    setOpen(false);
+    if (notification.source === "staff" && notification.item.category === "refund_request") {
+      setSelectedRefund(notification.item);
+      return;
+    }
+    requestStockManagerTab("purchases");
+    navigate(STOCK_MANAGER_PATH);
+  }, [markAsRead, navigate]);
 
   if (!enabled) return null;
 
   return (
-    <div className="fixed right-4 top-4 z-40 font-['Poppins',sans-serif] sm:right-6 sm:top-6">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="relative grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-lg transition hover:text-slate-900"
-        aria-label={`Notifications: ${unreadAlerts.length} unread`}
-        aria-expanded={open}
-      >
-        <Bell className="h-5 w-5" />
-        {unreadAlerts.length > 0 && (
-          <span className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-4 text-white">
-            {unreadAlerts.length > 99 ? "99+" : unreadAlerts.length}
-          </span>
-        )}
-      </button>
+    <>
+      <div className="fixed right-4 top-4 z-40 font-['Poppins',sans-serif] sm:right-6 sm:top-6">
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          className="relative grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-lg transition hover:text-slate-900"
+          aria-label={`Staff notifications: ${unreadCount} unread`}
+          aria-expanded={open}
+        >
+          <Bell className="h-5 w-5" />
+          {unreadCount > 0 && (
+            <span className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-4 text-white">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </button>
 
-      {open && (
-        <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-          {/* Header: title only */}
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <p className="text-sm font-semibold text-slate-800">Notifications</p>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              aria-label="Close notifications"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Read / Unread tabs */}
-          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-            <div className="flex gap-1">
-              {(["unread", "read"] as const).map((key) => {
-                const count = key === "unread" ? unreadAlerts.length : readAlerts.length;
-                const active = tab === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setTab(key)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${
-                      active
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-500 hover:bg-slate-100"
-                    }`}
-                  >
-                    {key} ({count})
-                  </button>
-                );
-              })}
-            </div>
-            {tab === "unread" && unreadAlerts.length > 0 && (
-              <button
-                type="button"
-                onClick={() => void markAllAsRead()}
-                className="text-xs font-semibold text-slate-600 underline hover:text-slate-900"
-              >
-                Mark all as read
-              </button>
-            )}
-          </div>
-
-          <div className="max-h-[min(65vh,30rem)] overflow-y-auto p-2">
-            {loading && alerts.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm text-slate-400">
-                Loading notifications…
-              </p>
-            ) : error ? (
-              <div className="p-3 text-center">
-                <p className="text-sm text-red-600">{error}</p>
-                <button
-                  type="button"
-                  onClick={() => void loadAlerts()}
-                  className="mt-2 text-xs font-semibold text-slate-700 underline"
-                >
-                  Try again
-                </button>
+        {open && (
+          <div className="absolute right-0 mt-2 w-[min(27rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Notifications</p>
+                <p className="text-[11px] text-slate-500">Inventory, refunds, and purchase orders</p>
               </div>
-            ) : shownAlerts.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm text-slate-400">
-                {tab === "unread" ? "No unread notifications." : "No read notifications."}
-              </p>
-            ) : (
-              shownAlerts.map((alert) => {
-                const isOut = alert.severity === "out";
-                return (
-                  <button
-                    type="button"
-                    key={`${alert.inventory_id}-${alert.severity}`}
-                    onClick={() => handleAlertClick(alert)}
-                    title="Go to Purchase Orders"
-                    className={`mb-1 flex w-full cursor-pointer gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-slate-100 ${
-                      alert.is_read ? "bg-white" : "bg-slate-50"
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
-                        SEVERITY_STYLES[alert.severity as Exclude<AlertSeverity, "normal">]
-                      }`}
+              <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close notifications">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+              <div className="flex gap-1">
+                {(["unread", "read"] as const).map((key) => {
+                  const count = key === "unread" ? unreadNotifications.length : readNotifications.length;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setTab(key)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${tab === key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}
                     >
-                      {isOut ? (
-                        <PackageX className="h-4 w-4" />
-                      ) : (
-                        <AlertTriangle className="h-4 w-4" />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p
-                          className={`truncate text-sm text-slate-800 ${
-                            alert.is_read ? "font-medium" : "font-bold"
-                          }`}
-                        >
-                          {alert.product_name}
-                        </p>
-                        <span className="shrink-0 text-[10px] font-bold uppercase text-slate-500">
-                          {isOut ? "Out" : alert.severity}
+                      {key} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+              {tab === "unread" && unreadCount > 0 && (
+                <button type="button" disabled={markingAll} onClick={() => void markAllAsRead()} className="text-xs font-semibold text-slate-600 underline hover:text-slate-900 disabled:opacity-50">
+                  {markingAll ? "Marking…" : "Mark all as read"}
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-[min(65vh,32rem)] overflow-y-auto p-2">
+              {loading && allNotifications.length === 0 ? (
+                <p className="px-3 py-8 text-center text-sm text-slate-400">Loading notifications…</p>
+              ) : error ? (
+                <div className="p-3 text-center">
+                  <p className="text-sm text-red-600">{error}</p>
+                  <button type="button" onClick={() => void loadNotifications()} className="mt-2 text-xs font-semibold text-slate-700 underline">Try again</button>
+                </div>
+              ) : shownNotifications.length === 0 ? (
+                <p className="px-3 py-8 text-center text-sm text-slate-400">
+                  {tab === "unread" ? "No unread notifications." : "No read notifications yet."}
+                </p>
+              ) : (
+                shownNotifications.map((notification) => {
+                  const key = `${notification.source}:${notification.id}`;
+                  const unread = !isRead(notification);
+                  const inventory = notification.source === "inventory" ? notification.item : null;
+                  const staff = notification.source === "staff" ? notification.item : null;
+                  const isRefund = staff?.category === "refund_request";
+                  const iconClass = inventory ? SEVERITY_STYLES[inventory.severity]
+                    : isRefund ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700";
+                  return (
+                    <div key={key} className={`mb-1 flex gap-2 rounded-xl px-3 py-3 transition hover:bg-slate-100 ${unread ? "bg-slate-50" : "bg-white"}`}>
+                      <button type="button" onClick={() => openNotification(notification)} className="flex min-w-0 flex-1 gap-3 text-left">
+                        <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${iconClass}`}>
+                          {inventory?.severity === "out" ? <PackageX className="h-4 w-4" />
+                            : inventory ? <AlertTriangle className="h-4 w-4" />
+                              : isRefund ? <FileText className="h-4 w-4" />
+                                : staff?.event_type === "purchase_order.received" ? <PackageCheck className="h-4 w-4" />
+                                  : <ShoppingCart className="h-4 w-4" />}
                         </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {alert.mainStock} {alert.unit} remaining
-                        {isOut ? "" : ` · critical at ${alert.thresholds.critical}`}
-                      </p>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-start justify-between gap-2">
+                            <span className={`text-sm text-slate-800 ${unread ? "font-bold" : "font-medium"}`}>
+                              {inventory ? inventory.product_name : staff?.title}
+                            </span>
+                            <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                              {inventory ? "Inventory" : isRefund ? "Refund request" : "Purchase order"}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block text-xs text-slate-500">
+                            {inventory ? `${inventory.mainStock} ${inventory.unit} remaining` : staff?.message}
+                          </span>
+                          <span className="mt-1 block text-[11px] text-slate-400">
+                            {formatNotificationTime(createdAt(notification))}
+                            {inventory ? inventory.resolved_at ? " · Resolved" : " · Active" : staff?.status ? ` · ${staff.status}` : ""}
+                          </span>
+                        </span>
+                      </button>
+                      {unread && (
+                        <button type="button" disabled={markingKey === key} onClick={() => void markAsRead(notification)} className="h-fit shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50" aria-label="Mark notification as read">
+                          {markingKey === key ? "…" : "Mark read"}
+                        </button>
+                      )}
                     </div>
-                    {!alert.is_read && (
-                      <span
-                        className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-600"
-                        aria-label="Unread"
-                      />
-                    )}
-                  </button>
-                );
-              })
-            )}
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {selectedRefund && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-label="Refund request details">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-violet-700">Refund request review</p>
+                <h2 className="mt-1 text-lg font-bold text-slate-900">
+                  {metadataText(selectedRefund.metadata, "orderNumber") || `Order ${selectedRefund.entity_id}`}
+                </h2>
+              </div>
+              <button type="button" onClick={() => setSelectedRefund(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close refund request details">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <dl className="mt-5 space-y-3 text-sm">
+              <div>
+                <dt className="text-xs font-semibold uppercase text-slate-500">Requested</dt>
+                <dd className="mt-1 text-slate-800">{formatNotificationTime(selectedRefund.created_at)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase text-slate-500">Reason</dt>
+                <dd className="mt-1 whitespace-pre-wrap text-slate-800">{metadataText(selectedRefund.metadata, "reason") || selectedRefund.message}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase text-slate-500">Current status</dt>
+                <dd className="mt-1 font-semibold text-slate-800">{selectedRefund.status || "Pending"}</dd>
+              </div>
+            </dl>
+            <div className="mt-5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              This notification is read-only. Refund approval and settlement are not available here.
+            </div>
+            <button type="button" onClick={() => setSelectedRefund(null)} className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Close</button>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
