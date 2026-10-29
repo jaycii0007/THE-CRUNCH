@@ -1,6 +1,8 @@
 // API configuration and utility functions
-const RAW_API_URL = (import.meta as { env?: { VITE_API_URL?: string } }).env
-  ?.VITE_API_URL;
+const CLIENT_ENV = (import.meta as {
+  env?: { VITE_API_URL?: string; PROD?: boolean };
+}).env;
+const RAW_API_URL = CLIENT_ENV?.VITE_API_URL;
 
 const DEFAULT_LOCAL_API_ORIGIN = "http://localhost:5000";
 
@@ -8,8 +10,27 @@ function resolveApiOrigin(): string {
   const trimmed = String(RAW_API_URL || "")
     .trim()
     .replace(/\/+$/, "");
-  if (!trimmed) return DEFAULT_LOCAL_API_ORIGIN;
-  return trimmed.replace(/\/api$/i, "");
+  if (!trimmed) {
+    if (CLIENT_ENV?.PROD) {
+      throw new Error("VITE_API_URL is required for a production build.");
+    }
+    return DEFAULT_LOCAL_API_ORIGIN;
+  }
+
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  const parsed = new URL(candidate.replace(/\/api$/i, ""));
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error("VITE_API_URL must use HTTP or HTTPS.");
+  }
+  if (
+    CLIENT_ENV?.PROD &&
+    ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname)
+  ) {
+    throw new Error("VITE_API_URL cannot use localhost in production.");
+  }
+  return parsed.toString().replace(/\/+$/, "");
 }
 
 function normalizeEndpoint(endpoint: string): string {

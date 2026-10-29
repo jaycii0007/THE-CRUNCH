@@ -15,10 +15,10 @@ import type {
   SupplierHistory,
   WithdrawalType,
 } from "../types/inventory";
+import { resolveBackendUrl } from "@/lib/api";
 
-export const RAW_API_BASE =
-  import.meta.env.VITE_API_URL || "http://localhost:5000";
-export const API_BASE = `${RAW_API_BASE.replace(/\/api\/?$/, "").replace(/\/$/, "")}/api`;
+export const API_BASE = resolveBackendUrl("/api");
+export const RAW_API_BASE = API_BASE.replace(/\/api\/?$/i, "");
 
 export async function apiFetch<T>(
   path: string,

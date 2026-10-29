@@ -12,7 +12,8 @@
     "test:financial": "node scripts/test-financial-correctness.mjs",
     "test:refund-policy": "node scripts/test-refund-policy.mjs",
     "test:account": "node scripts/test-my-account-static.mjs",
-    "test:batch4": "node scripts/test-batch4-static.mjs"
+    "test:batch4": "node scripts/test-batch4-static.mjs",
+    "test:deployment": "node scripts/test-deployment-config.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",

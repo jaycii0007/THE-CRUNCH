@@ -26,8 +26,12 @@ const draftVoidStart = menu.indexOf("const voidCurrentOrder = () =>");
 const draftVoidEnd = menu.indexOf("const selectDiscount =", draftVoidStart);
 assert.ok(draftVoidStart >= 0 && draftVoidEnd > draftVoidStart);
 const draftVoidSource = menu.slice(draftVoidStart, draftVoidEnd);
-assert.match(draftVoidSource, /setCart\(\[\]\)/);
+assert.match(draftVoidSource, /clearOrderForm\(\)/);
 assert.doesNotMatch(draftVoidSource, /api\.|fetch\(/);
+const clearOrderStart = menu.indexOf("const clearOrderForm = () =>");
+const clearOrderEnd = menu.indexOf("const voidCurrentOrder = () =>", clearOrderStart);
+assert.ok(clearOrderStart >= 0 && clearOrderEnd > clearOrderStart);
+assert.match(menu.slice(clearOrderStart, clearOrderEnd), /setCart\(\[\]\)/);
 assert.match(menu, /title="Void current order"/);
 
 assert.match(menu, /status = action === "refund" \? "Refunded" : "Cancelled"/);
