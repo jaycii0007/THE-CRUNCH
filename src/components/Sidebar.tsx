@@ -237,7 +237,7 @@ export function Sidebar() {
   return (
     <>
       {staffRole && user && (
-        <div className="fixed right-4 top-4 z-40 flex max-w-[calc(100vw-5.5rem)] items-center gap-2 font-['Poppins',sans-serif] sm:right-6 sm:top-6">
+        <div className="fixed right-4 top-4 z-40 flex max-w-[calc(100vw-6rem)] items-center gap-2 font-['Poppins',sans-serif] sm:right-6 sm:top-6">
           <div className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-lg sm:px-4">
             <p className="truncate text-xs font-semibold text-slate-900 sm:text-sm">
               {user.username}
@@ -376,7 +376,10 @@ export function Sidebar() {
                       isMobile && "py-3 text-base",
                     )}
                   >
-                    <UserRound className={cn("flex-shrink-0", iconSize)} strokeWidth={isActive ? 2.2 : 1.8} />
+                    <UserRound
+                      className={cn("flex-shrink-0", iconSize)}
+                      strokeWidth={isActive ? 2.2 : 1.8}
+                    />
                     <span>My Profile</span>
                   </Button>
                 )}

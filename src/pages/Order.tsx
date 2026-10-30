@@ -597,31 +597,42 @@ export default function Order() {
       <div className={shellPadding}>
         <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           {/* Header */}
-          <header className="mb-6 flex flex-wrap items-center justify-between gap-5">
+          <header className="mb-6 flex flex-col items-start gap-5">
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900">
                 <ChefHat size={24} className="text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">Cook</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                  Cook
+                </h1>
                 <p className="text-sm text-slate-500">
-                  {formatDate(now)} · <span className="font-semibold tabular-nums text-slate-700">{formatTime(now)}</span>
+                  {formatDate(now)} ·{" "}
+                  <span className="font-semibold tabular-nums text-slate-700">
+                    {formatTime(now)}
+                  </span>
                 </p>
               </div>
             </div>
 
-            <div className="order-2 grid w-full grid-cols-2 gap-3 sm:order-3 sm:grid-cols-3 lg:flex lg:w-auto">
+            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3 lg:max-w-[720px]">
               {STATS.map(({ key, label, icon: Icon, tone }) => (
                 <div
                   key={key}
                   className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
                 >
-                  <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}>
+                  <span
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}
+                  >
                     <Icon size={18} />
                   </span>
                   <div>
-                    <div className="text-2xl font-bold leading-none text-slate-900">{counts[key]}</div>
-                    <div className="mt-1 whitespace-nowrap text-xs font-medium text-slate-500">{label}</div>
+                    <div className="text-2xl font-bold leading-none text-slate-900">
+                      {counts[key]}
+                    </div>
+                    <div className="mt-1 whitespace-nowrap text-xs font-medium text-slate-500">
+                      {label}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -630,7 +641,9 @@ export default function Order() {
 
           {notifPermission === "default" && (
             <button
-              onClick={() => Notification.requestPermission().then(setNotifPermission)}
+              onClick={() =>
+                Notification.requestPermission().then(setNotifPermission)
+              }
               className="mb-6 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50"
             >
               <Bell size={16} className="text-amber-500" />
@@ -644,19 +657,31 @@ export default function Order() {
               <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
                 <Utensils size={28} className="text-slate-300" />
               </span>
-              <p className="text-lg font-semibold text-slate-600">No pending orders</p>
-              <p className="text-sm text-slate-400">New orders will appear here as they come in.</p>
+              <p className="text-lg font-semibold text-slate-600">
+                No pending orders
+              </p>
+              <p className="text-sm text-slate-400">
+                New orders will appear here as they come in.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
               {COLUMNS.map(({ stage, title, icon: Icon, badge, empty }) => {
-                const column = sortedOrders.filter((o) => getStage(o) === stage);
+                const column = sortedOrders.filter(
+                  (o) => getStage(o) === stage,
+                );
                 return (
                   <section key={stage} className="min-w-0">
                     <div className="mb-4 flex items-center gap-2.5">
                       <Icon size={18} className="text-slate-500" />
-                      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-                      <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${badge}`}>{column.length}</span>
+                      <h2 className="text-lg font-semibold text-slate-900">
+                        {title}
+                      </h2>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${badge}`}
+                      >
+                        {column.length}
+                      </span>
                     </div>
 
                     {column.length === 0 ? (
