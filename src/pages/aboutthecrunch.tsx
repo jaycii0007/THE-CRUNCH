@@ -173,23 +173,26 @@ function Reveal({
   delay = 0,
   dir = 'up',
   style = {},
+  className = '',
 }: {
   children: ReactNode;
   delay?: number;
   dir?: 'up' | 'left' | 'right' | 'none';
   style?: CSSProperties;
+  className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-40px' });
+  const inView = useInView(ref, { once: true, margin: '-60px' });
   const init =
-    dir === 'up' ? { opacity: 0, y: 35 } : dir === 'left' ? { opacity: 0, x: -35 } : dir === 'right' ? { opacity: 0, x: 35 } : { opacity: 0 };
+    dir === 'up' ? { opacity: 0, y: 40 } : dir === 'left' ? { opacity: 0, x: -40 } : dir === 'right' ? { opacity: 0, x: 40 } : { opacity: 0 };
 
   return (
     <motion.div
       ref={ref}
+      className={className}
       initial={init}
       animate={inView ? { opacity: 1, y: 0, x: 0 } : init}
-      transition={{ delay, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ delay, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
       style={style}
     >
       {children}
@@ -197,26 +200,42 @@ function Reveal({
   );
 }
 
-// ── Stat Card Component ───────────────────────────────────────────────────
+// ── Stat Card Component (Enhanced 3D) ──────────────────────────────────────
 function StatCard({ value, label, sub }: { value: string; label: string; sub?: string }) {
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 680;
+
   return (
     <motion.div
-      whileHover={{ y: -4, borderColor: 'rgba(245, 200, 66, 0.4)' }}
       style={{
-        background: 'rgba(16, 13, 10, 0.85)',
-        backdropFilter: 'blur(16px)',
+        background: 'rgba(16, 13, 10, 0.9)',
+        backdropFilter: 'blur(20px)',
         border: `1px solid ${BORDER}`,
-        borderRadius: 16,
-        padding: '16px 22px',
-        textAlign: 'left',
-        transition: 'border-color 0.25s, transform 0.25s',
+        borderRadius: 18,
+        padding: '20px 24px',
+        textAlign: 'center',
+        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03)',
+        transformStyle: 'preserve-3d',
+        perspective: 1000,
       }}
+      whileHover={isMobile ? {} : {
+        y: -8,
+        rotateX: 3,
+        rotateY: -3,
+        borderColor: 'rgba(245, 200, 66, 0.5)',
+        boxShadow: '0 20px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 40px rgba(245, 200, 66, 0.1)',
+        scale: 1.02,
+        transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] }
+      }}
+      whileTap={{ scale: 0.98 }}
     >
-      <div style={{ fontFamily: PP, fontSize: 26, fontWeight: 900, color: Y, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontFamily: PP, fontSize: 11, fontWeight: 700, color: CR, letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 6 }}>
-        {label}
-      </div>
-      {sub && <div style={{ fontSize: 11.5, color: CR_MUTED, marginTop: 2, fontWeight: 300 }}>{sub}</div>}
+      <motion.div style={{ transform: 'translateZ(20px)' }}>
+        <div style={{ fontFamily: PP, fontSize: 28, fontWeight: 900, color: Y, lineHeight: 1, textShadow: '0 4px 20px rgba(245, 200, 66, 0.3)' }}>{value}</div>
+        <div style={{ fontFamily: PP, fontSize: 11, fontWeight: 700, color: CR, letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 8 }}>
+          {label}
+        </div>
+        {sub && <div style={{ fontSize: 11.5, color: CR_MUTED, marginTop: 4, fontWeight: 300 }}>{sub}</div>}
+      </motion.div>
     </motion.div>
   );
 }
@@ -333,6 +352,16 @@ export default function AboutTheCrunch() {
   return (
     <MotionConfig reducedMotion="user">
       <div style={{ fontFamily: PP, background: BG, color: CR, overflowX: 'hidden', minHeight: '100vh', position: 'relative' }}>
+        {/* Global Vignette for Cinematic Depth */}
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            pointerEvents: 'none',
+            zIndex: 9999,
+            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(8,7,6,0.3) 80%, rgba(8,7,6,0.5) 100%)',
+          }}
+        />
         <EmberCanvas />
         <ScrollProgressBar />
         <AmbientSpotlight />
@@ -353,10 +382,11 @@ export default function AboutTheCrunch() {
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: isMobile ? '0 20px' : '0 40px',
-            background: scrolled || menuOpen ? 'rgba(8, 7, 6, 0.92)' : 'transparent',
-            backdropFilter: scrolled || menuOpen ? 'blur(20px)' : 'none',
+            background: scrolled || menuOpen ? 'rgba(8, 7, 6, 0.95)' : 'transparent',
+            backdropFilter: scrolled || menuOpen ? 'blur(24px)' : 'none',
             borderBottom: scrolled ? `1px solid ${BORDER}` : '1px solid transparent',
             transition: 'background 0.3s ease, border-color 0.3s ease',
+            boxShadow: scrolled ? '0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.02)' : 'none',
           }}
         >
           {/* Brand */}
@@ -384,30 +414,32 @@ export default function AboutTheCrunch() {
               {NAV_LINKS.map(({ label, path }) => {
                 const isActive = path === '/aboutthecrunch';
                 return (
-                  <button
+                  <motion.button
                     key={label}
                     onClick={() => handleNav(path)}
                     style={{
-                      background: isActive ? 'rgba(245, 200, 66, 0.1)' : 'transparent',
-                      border: isActive ? '1px solid rgba(245, 200, 66, 0.25)' : '1px solid transparent',
+                      background: isActive ? 'rgba(245, 200, 66, 0.12)' : 'transparent',
+                      border: isActive ? '1px solid rgba(245, 200, 66, 0.3)' : '1px solid transparent',
                       cursor: 'pointer',
                       fontFamily: PP,
                       fontSize: 13.5,
                       fontWeight: 600,
-                      padding: '7px 16px',
+                      padding: '8px 18px',
                       borderRadius: 999,
                       color: isActive ? Y : 'rgba(245, 242, 235, 0.65)',
-                      transition: 'all 0.2s ease',
+                      position: 'relative',
+                      overflow: 'hidden',
                     }}
-                    onMouseEnter={e => {
-                      if (!isActive) e.currentTarget.style.color = CR;
+                    whileHover={isActive ? {} : {
+                      color: CR,
+                      background: 'rgba(245, 200, 66, 0.08)',
+                      borderColor: 'rgba(245, 200, 66, 0.2)',
+                      y: -1,
                     }}
-                    onMouseLeave={e => {
-                      if (!isActive) e.currentTarget.style.color = 'rgba(245, 242, 235, 0.65)';
-                    }}
+                    whileTap={{ scale: 0.97 }}
                   >
-                    {label}
-                  </button>
+                    <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
+                  </motion.button>
                 );
               })}
             </nav>
@@ -417,59 +449,64 @@ export default function AboutTheCrunch() {
           {!isTablet ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {isAuth ? (
-                <button
+                <motion.button
                   onClick={handleLogout}
                   style={{
                     background: Y,
                     border: 'none',
-                    borderRadius: 10,
-                    padding: '9px 20px',
-                    fontSize: 13,
+                    borderRadius: 12,
+                    padding: '10px 22px',
+                    fontSize: 13.5,
                     fontWeight: 700,
                     color: '#130d04',
                     cursor: 'pointer',
                     fontFamily: PP,
-                    transition: 'transform 0.2s ease',
+                    boxShadow: '0 4px 16px rgba(245, 200, 66, 0.3)',
                   }}
+                  whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(245, 200, 66, 0.45)' }}
+                  whileTap={{ scale: 0.97 }}
                 >
                   Log Out
-                </button>
+                </motion.button>
               ) : (
                 <>
-                  <button
+                  <motion.button
                     onClick={() => navigate('/login')}
                     style={{
                       background: 'rgba(255, 255, 255, 0.05)',
                       border: `1px solid ${BORDER}`,
-                      borderRadius: 10,
-                      padding: '9px 18px',
-                      fontSize: 13,
+                      borderRadius: 12,
+                      padding: '10px 20px',
+                      fontSize: 13.5,
                       fontWeight: 600,
                       color: CR,
                       cursor: 'pointer',
                       fontFamily: PP,
-                      transition: 'background 0.2s',
                     }}
+                    whileHover={{ background: 'rgba(245, 200, 66, 0.1)', borderColor: 'rgba(245, 200, 66, 0.3)', color: Y }}
+                    whileTap={{ scale: 0.97 }}
                   >
                     Log In
-                  </button>
-                  <button
+                  </motion.button>
+                  <motion.button
                     onClick={() => navigate('/login?tab=signup')}
                     style={{
-                      background: Y,
+                      background: `linear-gradient(135deg, ${Y} 0%, ${Y_DARK} 100%)`,
                       border: 'none',
-                      borderRadius: 10,
-                      padding: '9px 20px',
-                      fontSize: 13,
+                      borderRadius: 12,
+                      padding: '10px 22px',
+                      fontSize: 13.5,
                       fontWeight: 700,
                       color: '#130d04',
                       cursor: 'pointer',
                       fontFamily: PP,
-                      boxShadow: '0 4px 14px rgba(245, 200, 66, 0.25)',
+                      boxShadow: '0 6px 20px rgba(245, 200, 66, 0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
                     }}
+                    whileHover={{ scale: 1.02, boxShadow: '0 10px 28px rgba(245, 200, 66, 0.5), inset 0 1px 0 rgba(255,255,255,0.25)' }}
+                    whileTap={{ scale: 0.97 }}
                   >
                     Sign Up
-                  </button>
+                  </motion.button>
                 </>
               )}
             </div>
@@ -699,39 +736,68 @@ export default function AboutTheCrunch() {
               transition={{ delay: 0.65, duration: 0.6 }}
               style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}
             >
-              <button
+              <motion.button
                 onClick={goMenu}
                 style={{
                   background: `linear-gradient(135deg, ${Y} 0%, ${Y_DARK} 100%)`,
                   border: 'none',
-                  borderRadius: 12,
-                  padding: isMobile ? '13px 28px' : '15px 36px',
-                  fontSize: 13.5,
+                  borderRadius: 14,
+                  padding: isMobile ? '14px 32px' : '16px 40px',
+                  fontSize: 14,
                   fontWeight: 800,
                   color: '#120d04',
                   cursor: 'pointer',
                   fontFamily: PP,
-                  boxShadow: '0 6px 20px rgba(245, 200, 66, 0.3)',
+                  boxShadow: '0 8px 24px rgba(245, 200, 66, 0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
+                  position: 'relative',
+                  overflow: 'hidden',
                 }}
+                whileHover={isMobile ? { scale: 1.02 } : {
+                  scale: 1.03,
+                  boxShadow: '0 16px 40px rgba(245, 200, 66, 0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+                  y: -2,
+                }}
+                whileTap={{ scale: 0.97 }}
               >
-                Order Online
-              </button>
-              <button
+                <span style={{ position: 'relative', zIndex: 1 }}>Order Online</span>
+                <motion.div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 50%)',
+                    opacity: 0,
+                  }}
+                  initial={{ opacity: 0 }}
+                  whileHover={{ opacity: 1 }}
+                />
+              </motion.button>
+              <motion.button
                 onClick={() => document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' })}
                 style={{
                   background: 'rgba(255, 255, 255, 0.04)',
+                  backdropFilter: 'blur(16px)',
                   border: `1px solid ${BORDER}`,
-                  borderRadius: 12,
-                  padding: isMobile ? '13px 24px' : '15px 30px',
-                  fontSize: 13.5,
+                  borderRadius: 14,
+                  padding: isMobile ? '14px 28px' : '16px 34px',
+                  fontSize: 14,
                   fontWeight: 600,
                   color: CR,
                   cursor: 'pointer',
                   fontFamily: PP,
+                  position: 'relative',
+                  overflow: 'hidden',
                 }}
+                whileHover={isMobile ? { background: 'rgba(255,255,255,0.08)' } : {
+                  background: 'rgba(245, 200, 66, 0.1)',
+                  borderColor: 'rgba(245, 200, 66, 0.4)',
+                  color: Y,
+                  y: -2,
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+                }}
+                whileTap={{ scale: 0.97 }}
               >
-                Our Heritage
-              </button>
+                <span style={{ position: 'relative', zIndex: 1 }}>Our Heritage</span>
+              </motion.button>
             </motion.div>
           </motion.div>
 
@@ -744,20 +810,73 @@ export default function AboutTheCrunch() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              perspective: 1000,
             }}
           >
             <motion.div
-              style={{ position: 'absolute', inset: 0, y: imageTranslateY, scale: imageScale }}
-              initial={{ opacity: 0, scale: 1.05 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                y: imageTranslateY,
+                scale: imageScale,
+                transformStyle: 'preserve-3d',
+              }}
+              initial={{ opacity: 0, scale: 1.05, rotateX: -5 }}
+              animate={{ opacity: 1, scale: 1, rotateX: 0 }}
+              transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}
+              whileHover={isMobile ? {} : {
+                rotateX: 2,
+                rotateY: -2,
+                scale: 1.01,
+                transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] }
+              }}
             >
               <img
                 src={IMG_HERO}
                 alt="Golden Boneless Fried Chicken"
-                style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', display: 'block' }}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  objectPosition: 'center',
+                  display: 'block',
+                  filter: 'drop-shadow(0 30px 60px rgba(0,0,0,0.5))',
+                  transform: 'translateZ(50px)',
+                }}
               />
-              <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at center, transparent 40%, #080706 95%)' }} />
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'radial-gradient(circle at center, transparent 35%, rgba(8,7,6,0.3) 60%, #080706 95%)',
+                transform: 'translateZ(20px)',
+              }} />
+              {/* Floating golden particles */}
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                transform: 'translateZ(30px)',
+                pointerEvents: 'none',
+              }}>
+                {[...Array(8)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{ opacity: [0, 0.3, 0], scale: [0, 1, 0], x: ['-20%', '20%', '-10%'], y: ['20%', '-20%', '10%'] }}
+                    transition={{ duration: 6 + i * 0.8, repeat: Infinity, delay: i * 0.5, ease: 'easeInOut' }}
+                    style={{
+                      position: 'absolute',
+                      top: `${15 + i * 10}%`,
+                      left: `${10 + i * 12}%`,
+                      width: 4,
+                      height: 4,
+                      borderRadius: '50%',
+                      background: Y,
+                      boxShadow: `0 0 12px ${Y}, 0 0 24px ${Y}`,
+                      filter: 'blur(1px)',
+                    }}
+                  />
+                ))}
+              </div>
             </motion.div>
 
             {/* Stat Badges Floating */}
@@ -769,8 +888,9 @@ export default function AboutTheCrunch() {
                 right: isMobile ? 20 : 'auto',
                 display: 'grid',
                 gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(3, auto)',
-                gap: 10,
+                gap: 12,
                 zIndex: 10,
+                perspective: 1000,
               }}
             >
               <StatCard value="250+" label="Branches" />
@@ -806,33 +926,92 @@ export default function AboutTheCrunch() {
               alignItems: 'center',
             }}
           >
-            {/* Story Image */}
-            <Reveal dir={isTablet ? 'up' : 'left'}>
-              <div style={{ position: 'relative' }}>
-                <div style={{ borderRadius: 24, overflow: 'hidden', height: isMobile ? 280 : isTablet ? 380 : 460, border: `1px solid ${BORDER}` }}>
+            {/* Story Image (Enhanced 3D) */}
+            <Reveal dir={isTablet ? 'up' : 'left'} className="story-image-wrapper">
+              <div style={{ position: 'relative', perspective: 1000, transformStyle: 'preserve-3d' }}>
+                <motion.div
+                  style={{
+                    borderRadius: 28,
+                    overflow: 'hidden',
+                    height: isMobile ? 300 : isTablet ? 400 : 480,
+                    border: `1px solid ${BORDER}`,
+                    boxShadow: '0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03)',
+                    transformStyle: 'preserve-3d',
+                  }}
+                  whileHover={isMobile ? { y: -6 } : {
+                    y: -12,
+                    rotateX: 5,
+                    rotateY: -5,
+                    boxShadow: '0 40px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 80px rgba(245, 200, 66, 0.1)',
+                    transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] }
+                  }}
+                  whileTap={{ scale: 0.99 }}
+                >
                   <img
                     src={IMG_STORY}
                     alt="The Crunch Boneless Chicken"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      objectPosition: 'center',
+                      display: 'block',
+                      transform: 'translateZ(20px) scale(1.02)',
+                      transition: 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+                    }}
                   />
-                </div>
-                {/* Floating Heritage Tag */}
-                <div
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: 'linear-gradient(180deg, transparent 40%, rgba(8,7,6,0.6) 100%)',
+                    transform: 'translateZ(10px)',
+                  }} />
+                </motion.div>
+                {/* Ambient glow behind image */}
+                <motion.div
                   style={{
                     position: 'absolute',
-                    bottom: -16,
-                    right: 24,
-                    background: Y,
-                    borderRadius: 16,
-                    padding: '14px 22px',
-                    boxShadow: '0 12px 30px rgba(0,0,0,0.5)',
+                    inset: '10% 5% 20% 5%',
+                    borderRadius: 28,
+                    background: `radial-gradient(ellipse at center, rgba(245, 200, 66, 0.12) 0%, transparent 70%)`,
+                    filter: 'blur(40px)',
+                    zIndex: -1,
+                    transform: 'translateZ(-20px)',
+                  }}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.5, duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+                />
+                {/* Floating Heritage Tag (Enhanced) */}
+                <motion.div
+                  style={{
+                    position: 'absolute',
+                    bottom: -18,
+                    right: 28,
+                    background: `linear-gradient(135deg, ${Y} 0%, ${Y_DARK} 100%)`,
+                    borderRadius: 20,
+                    padding: '18px 28px',
+                    boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 40px rgba(245, 200, 66, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)',
+                    transform: 'translateZ(40px) rotateY(-5deg) rotateX(5deg)',
+                    transformStyle: 'preserve-3d',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                  }}
+                  initial={{ opacity: 0, y: 20, rotateZ: -5 }}
+                  animate={{ opacity: 1, y: 0, rotateZ: 0 }}
+                  transition={{ delay: 0.7, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+                  whileHover={isMobile ? {} : {
+                    rotateY: 0,
+                    rotateX: 0,
+                    scale: 1.05,
+                    boxShadow: '0 28px 60px rgba(0,0,0,0.7), 0 0 60px rgba(245, 200, 66, 0.4), inset 0 1px 0 rgba(255,255,255,0.25)',
+                    transition: { duration: 0.3 }
                   }}
                 >
-                  <div style={{ fontFamily: PP, fontSize: 32, fontWeight: 900, color: '#130d04', lineHeight: 1 }}>7</div>
-                  <div style={{ fontFamily: PP, fontSize: 9, fontWeight: 800, color: 'rgba(19, 13, 4, 0.65)', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: 4 }}>
+                  <div style={{ fontFamily: PP, fontSize: 36, fontWeight: 900, color: '#130d04', lineHeight: 1, textShadow: '0 2px 8px rgba(19,13,4,0.2)' }}>7</div>
+                  <div style={{ fontFamily: PP, fontSize: 9.5, fontWeight: 800, color: 'rgba(19, 13, 4, 0.7)', letterSpacing: '0.16em', textTransform: 'uppercase', marginTop: 6 }}>
                     House Glazes
                   </div>
-                </div>
+                </motion.div>
               </div>
             </Reveal>
 
@@ -933,23 +1112,41 @@ export default function AboutTheCrunch() {
               </Reveal>
               <Reveal dir={isTablet ? 'up' : 'right'} delay={0.22}>
                 <div style={{ display: 'flex', justifyContent: isTablet ? 'flex-start' : 'flex-end' }}>
-                  <button
+                  <motion.button
                     onClick={goMenu}
                     style={{
-                      background: Y,
+                      background: `linear-gradient(135deg, ${Y} 0%, ${Y_DARK} 100%)`,
                       border: 'none',
-                      borderRadius: 12,
-                      padding: '15px 38px',
-                      fontSize: 14,
+                      borderRadius: 14,
+                      padding: '16px 42px',
+                      fontSize: 14.5,
                       fontWeight: 800,
                       color: '#130d04',
                       cursor: 'pointer',
                       fontFamily: PP,
-                      boxShadow: '0 6px 24px rgba(245, 200, 66, 0.25)',
+                      boxShadow: '0 10px 30px rgba(245, 200, 66, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
+                      position: 'relative',
+                      overflow: 'hidden',
                     }}
+                    whileHover={isMobile ? { scale: 1.02 } : {
+                      scale: 1.03,
+                      boxShadow: '0 18px 48px rgba(245, 200, 66, 0.55), inset 0 1px 0 rgba(255,255,255,0.25)',
+                      y: -3,
+                    }}
+                    whileTap={{ scale: 0.97 }}
                   >
-                    Explore Our Menu
-                  </button>
+                    <span style={{ position: 'relative', zIndex: 1 }}>Explore Our Menu</span>
+                    <motion.div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 50%)',
+                        opacity: 0,
+                      }}
+                      initial={{ opacity: 0 }}
+                      whileHover={{ opacity: 1 }}
+                    />
+                  </motion.button>
                 </div>
               </Reveal>
             </div>
@@ -975,27 +1172,102 @@ export default function AboutTheCrunch() {
               </div>
             </Reveal>
 
-            {/* Grid Pillars */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : 'repeat(3, 1fr)', gap: 20 }}>
+            {/* Grid Pillars (Enhanced 3D Cards) */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : 'repeat(3, 1fr)', gap: 24, perspective: 1000 }}>
               {PILLARS.map((p, idx) => (
-                <Reveal key={p.no} delay={idx * 0.06}>
+                <Reveal key={p.no} delay={idx * 0.08} dir="up">
                   <motion.div
-                    whileHover={{ y: -5, borderColor: 'rgba(245, 200, 66, 0.35)', background: '#171410' }}
                     style={{
-                      background: 'rgba(18, 15, 12, 0.95)',
+                      background: 'linear-gradient(145deg, rgba(22, 19, 16, 0.98) 0%, rgba(18, 15, 12, 0.95) 100%)',
                       border: `1px solid ${BORDER}`,
-                      borderRadius: 18,
-                      padding: '28px 24px',
+                      borderRadius: 20,
+                      padding: '32px 28px',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: 12,
+                      gap: 14,
                       height: '100%',
-                      transition: 'all 0.25s ease',
+                      transition: 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+                      boxShadow: '0 12px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)',
+                      transformStyle: 'preserve-3d',
+                      position: 'relative',
+                      overflow: 'hidden',
                     }}
+                    whileHover={isMobile ? { y: -4, background: '#1a1714' } : {
+                      y: -10,
+                      rotateX: 4,
+                      rotateY: -4,
+                      borderColor: 'rgba(245, 200, 66, 0.4)',
+                      background: 'linear-gradient(145deg, rgba(26, 22, 18, 1) 0%, rgba(22, 19, 16, 0.98) 100%)',
+                      boxShadow: '0 28px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 60px rgba(245, 200, 66, 0.08)',
+                      scale: 1.015,
+                      transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] }
+                    }}
+                    whileTap={{ scale: 0.985 }}
                   >
-                    <span style={{ fontFamily: PP, fontSize: 13, fontWeight: 800, color: Y, letterSpacing: '0.08em' }}>{p.no}</span>
-                    <h3 style={{ fontFamily: PP, fontSize: 17, fontWeight: 800, color: CR, margin: 0 }}>{p.title}</h3>
-                    <p style={{ fontFamily: PP, fontSize: 13, color: CR_MUTED, lineHeight: 1.75, fontWeight: 300, margin: 0 }}>{p.desc}</p>
+                    {/* Glow accent line at top */}
+                    <motion.div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: '10%',
+                        right: '10%',
+                        height: 2,
+                        background: `linear-gradient(90deg, transparent, ${Y}, transparent)`,
+                        opacity: 0,
+                        borderRadius: '2px 2px 0 0',
+                      }}
+                      initial={{ opacity: 0, scaleX: 0 }}
+                      animate={{ opacity: 1, scaleX: 1 }}
+                      transition={{ delay: idx * 0.08 + 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, transform: 'translateZ(10px)' }}>
+                      <span style={{
+                        fontFamily: PP,
+                        fontSize: 36,
+                        fontWeight: 900,
+                        color: Y,
+                        letterSpacing: '0.02em',
+                        lineHeight: 1,
+                        textShadow: '0 2px 12px rgba(245, 200, 66, 0.25)',
+                        background: `linear-gradient(180deg, ${Y} 0%, ${Y_DARK} 100%)`,
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
+                      }}>{p.no}</span>
+                      <div style={{ flex: 1 }} />
+                    </div>
+                    <motion.h3
+                      style={{
+                        fontFamily: PP,
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: CR,
+                        margin: 0,
+                        lineHeight: 1.3,
+                        transform: 'translateZ(10px)',
+                      }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.08 + 0.4, duration: 0.5 }}
+                    >
+                      {p.title}
+                    </motion.h3>
+                    <motion.p
+                      style={{
+                        fontFamily: PP,
+                        fontSize: 13.5,
+                        color: CR_MUTED,
+                        lineHeight: 1.75,
+                        fontWeight: 300,
+                        margin: 0,
+                        transform: 'translateZ(10px)',
+                      }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.08 + 0.5, duration: 0.5 }}
+                    >
+                      {p.desc}
+                    </motion.p>
                   </motion.div>
                 </Reveal>
               ))}
@@ -1013,30 +1285,61 @@ export default function AboutTheCrunch() {
             justifyContent: 'center',
             overflow: 'hidden',
             zIndex: 1,
+            perspective: 1000,
           }}
         >
-          <div style={{ position: 'absolute', inset: 0 }}>
-            <img
-              src={IMG_HERO}
-              alt="Crispy Fried Chicken"
+          <div style={{ position: 'absolute', inset: 0, transformStyle: 'preserve-3d' }}>
+            <motion.div
               style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                objectPosition: 'center',
+                position: 'absolute',
+                inset: 0,
+                transform: 'translateZ(-50px) scale(1.1)',
                 filter: 'brightness(0.25) saturate(1.2)',
-                display: 'block',
               }}
+              initial={{ opacity: 0, scale: 1.1 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 1.8, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <img
+                src={IMG_HERO}
+                alt="Crispy Fried Chicken"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  objectPosition: 'center',
+                  display: 'block',
+                }}
+              />
+            </motion.div>
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'radial-gradient(ellipse at center, transparent 15%, rgba(8,7,6,0.4) 50%, #080706 95%)',
+              transform: 'translateZ(-20px)',
+            }} />
+            {/* Ambient golden glow layers */}
+            <motion.div
+              style={{
+                position: 'absolute',
+                inset: '15% 10% 25% 10%',
+                borderRadius: '50%',
+                background: `radial-gradient(ellipse at center, rgba(245, 200, 66, 0.08) 0%, transparent 70%)`,
+                filter: 'blur(80px)',
+                transform: 'translateZ(-30px)',
+              }}
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.3, duration: 2, ease: [0.16, 1, 0.3, 1] }}
             />
-            <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at center, transparent 20%, #080706 90%)' }} />
           </div>
 
-          <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: isMobile ? '0 24px' : '0 40px', maxWidth: 760 }}>
+          <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: isMobile ? '0 24px' : '0 40px', maxWidth: 760, transform: 'translateZ(50px)' }}>
             <Reveal>
               <span style={{ fontFamily: PP, fontSize: 11, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: Y, display: 'block', marginBottom: 16 }}>
                 Fairview Flagship Store
               </span>
-              <h2
+              <motion.h2
                 style={{
                   fontFamily: PP,
                   fontWeight: 900,
@@ -1046,49 +1349,90 @@ export default function AboutTheCrunch() {
                   fontSize: isMobile ? 'clamp(36px, 10vw, 54px)' : 'clamp(44px, 6vw, 84px)',
                   margin: '0 0 20px',
                 }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
               >
                 Craving <span style={{ color: Y, fontStyle: 'italic' }}>The Crunch?</span>
-              </h2>
-              <p style={{ fontFamily: PP, fontSize: isMobile ? 14 : 16, color: CR_MUTED, maxWidth: 460, margin: '0 auto 36px', lineHeight: 1.7, fontWeight: 300 }}>
+              </motion.h2>
+              <motion.p
+                style={{ fontFamily: PP, fontSize: isMobile ? 14 : 16, color: CR_MUTED, maxWidth: 460, margin: '0 auto 36px', lineHeight: 1.7, fontWeight: 300 }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.7 }}
+              >
                 Drop by our Fairview branch or place an order online. Savor golden boneless fried chicken coated in your favorite house glaze today.
-              </p>
+              </motion.p>
 
-              <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <button
+              <motion.div
+                style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.7 }}
+              >
+                <motion.button
                   onClick={goMenu}
                   style={{
-                    background: Y,
+                    background: `linear-gradient(135deg, ${Y} 0%, ${Y_DARK} 100%)`,
                     border: 'none',
-                    borderRadius: 12,
-                    padding: isMobile ? '13px 32px' : '15px 40px',
-                    fontSize: 14,
+                    borderRadius: 14,
+                    padding: isMobile ? '14px 36px' : '16px 44px',
+                    fontSize: 14.5,
                     fontWeight: 800,
                     color: '#130d04',
                     cursor: 'pointer',
                     fontFamily: PP,
-                    boxShadow: '0 6px 20px rgba(245, 200, 66, 0.35)',
+                    boxShadow: '0 10px 30px rgba(245, 200, 66, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
+                    position: 'relative',
+                    overflow: 'hidden',
                   }}
+                  whileHover={isMobile ? { scale: 1.02 } : {
+                    scale: 1.03,
+                    boxShadow: '0 18px 48px rgba(245, 200, 66, 0.55), inset 0 1px 0 rgba(255,255,255,0.25)',
+                    y: -3,
+                  }}
+                  whileTap={{ scale: 0.97 }}
                 >
-                  Order Now
-                </button>
-                <button
+                  <span style={{ position: 'relative', zIndex: 1 }}>Order Now</span>
+                  <motion.div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 50%)',
+                      opacity: 0,
+                    }}
+                    initial={{ opacity: 0 }}
+                    whileHover={{ opacity: 1 }}
+                  />
+                </motion.button>
+                <motion.button
                   onClick={goProducts}
                   style={{
                     background: 'rgba(255, 255, 255, 0.06)',
-                    backdropFilter: 'blur(12px)',
+                    backdropFilter: 'blur(16px)',
                     border: `1px solid ${BORDER}`,
-                    borderRadius: 12,
-                    padding: isMobile ? '13px 28px' : '15px 36px',
-                    fontSize: 14,
+                    borderRadius: 14,
+                    padding: isMobile ? '14px 32px' : '16px 40px',
+                    fontSize: 14.5,
                     fontWeight: 600,
                     color: CR,
                     cursor: 'pointer',
                     fontFamily: PP,
+                    position: 'relative',
+                    overflow: 'hidden',
                   }}
+                  whileHover={isMobile ? { background: 'rgba(255,255,255,0.1)' } : {
+                    background: 'rgba(245, 200, 66, 0.12)',
+                    borderColor: 'rgba(245, 200, 66, 0.5)',
+                    color: Y,
+                    y: -3,
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.5), 0 0 40px rgba(245, 200, 66, 0.15)',
+                  }}
+                  whileTap={{ scale: 0.97 }}
                 >
-                  Explore Storefront
-                </button>
-              </div>
+                  <span style={{ position: 'relative', zIndex: 1 }}>Explore Storefront</span>
+                </motion.button>
+              </motion.div>
             </Reveal>
           </div>
         </section>

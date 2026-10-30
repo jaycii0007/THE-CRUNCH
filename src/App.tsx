@@ -240,7 +240,7 @@ export default function App() {
   return (
     <Routes>
       {/* ── Public ───────────────────────────────────────────── */}
-      <Route path="/" element={<Navigate to="/products" replace />} />
+      <Route path="/" element={<AboutTheCrunch />} />
 
       {/* /login is only for guests — logged-in users are redirected to their home */}
       <Route
