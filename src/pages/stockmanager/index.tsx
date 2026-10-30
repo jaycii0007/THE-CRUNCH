@@ -115,12 +115,6 @@ const RAW_MATERIAL_CATEGORIES = [
   "Ingredients",
   "Aromatics",
 ] as const;
-const ROLE_LABELS: Record<string, string> = {
-  administrator: "Administrator",
-  cashier: "Cashier",
-  inventory_manager: "Stock Manager",
-  customer: "Customer",
-};
 const STATUS_BADGE: Record<StockStatus, string> = {
   critical: "bg-orange-100 text-orange-600",
   low: "bg-yellow-100 text-yellow-700",
@@ -327,10 +321,6 @@ export default function StockManager() {
     const username = String(user?.username ?? "").trim();
     return fullName || username;
   }, [user]);
-  const currentStaffRoleLabel = useMemo(() => {
-    const role = String(user?.role ?? "").trim().toLowerCase();
-    return ROLE_LABELS[role] ?? "User";
-  }, [user?.role]);
 
   const { addNotification } = useNotifications();
   const showToast = useCallback(
