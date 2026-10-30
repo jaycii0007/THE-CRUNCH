@@ -14,18 +14,26 @@ export function SupplierProductsModal({
   allProducts,
   loading,
   onClose,
-  onSaveProducts,
+  onSaveDetails,
   onRemoveProduct,
 }: {
   supplier: Supplier;
   allProducts: Product[];
   loading: boolean;
   onClose: () => void;
-  onSaveProducts: (supplier_id: number, products: string[]) => Promise<void>;
+  onSaveDetails: (
+    supplier_id: number,
+    details: Partial<Omit<Supplier, "supplier_id">>,
+  ) => Promise<void>;
   onRemoveProduct: (supplier_id: number, product_name: string) => Promise<void>;
 }) {
   const [productInput, setProductInput] = useState("");
   const [pendingProducts, setPendingProducts] = useState<string[]>([]);
+  const [supplierName, setSupplierName] = useState(supplier.supplier_name);
+  const [contactNumber, setContactNumber] = useState(
+    supplier.contact_number ?? "",
+  );
+  const [email, setEmail] = useState(supplier.email ?? "");
 
   const existingProducts = useMemo(
     () => parseSupplierProducts(supplier.products_supplied),
@@ -73,11 +81,13 @@ export function SupplierProductsModal({
   };
 
   const handleSave = async () => {
-    if (pendingProducts.length === 0) {
-      onClose();
-      return;
-    }
-    await onSaveProducts(supplier.supplier_id, pendingProducts);
+    if (!supplierName.trim()) return;
+    await onSaveDetails(supplier.supplier_id, {
+      supplier_name: supplierName.trim(),
+      contact_number: contactNumber.trim(),
+      email: email.trim(),
+      products_supplied: combinedProducts.join(", "),
+    });
   };
 
   return (
@@ -104,14 +114,35 @@ export function SupplierProductsModal({
           <CloseBtn onClick={onClose} />
         </div>
         <div className="p-6 space-y-5">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-            <p className="text-sm font-semibold text-slate-800">
-              {supplier.supplier_name}
-            </p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {supplier.contact_number}
-              {supplier.email ? ` - ${supplier.email}` : ""}
-            </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="sm:col-span-2 text-xs font-semibold text-slate-500">
+              Company Name
+              <input
+                value={supplierName}
+                onChange={(event) => setSupplierName(event.target.value)}
+                maxLength={120}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:ring-2 focus:ring-slate-200"
+              />
+            </label>
+            <label className="text-xs font-semibold text-slate-500">
+              Contact Number
+              <input
+                value={contactNumber}
+                onChange={(event) => setContactNumber(event.target.value)}
+                maxLength={50}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:ring-2 focus:ring-slate-200"
+              />
+            </label>
+            <label className="text-xs font-semibold text-slate-500">
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                maxLength={254}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:ring-2 focus:ring-slate-200"
+              />
+            </label>
           </div>
 
           <div>
@@ -205,7 +236,7 @@ export function SupplierProductsModal({
             disabled={loading}
             className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-60"
           >
-            {loading ? "Saving..." : "Save Products"}
+            {loading ? "Saving..." : "Save Supplier"}
           </button>
         </div>
       </motion.div>

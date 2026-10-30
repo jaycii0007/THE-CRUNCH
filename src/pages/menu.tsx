@@ -35,7 +35,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { api, apiCall, resolveAssetUrl } from "../lib/api";
+import { api, resolveAssetUrl } from "../lib/api";
 import {
   fetchGeneralSettings,
   GENERAL_SETTINGS_DEFAULTS,
@@ -45,10 +45,13 @@ import {
   formatInSettingsTimezone,
 } from "../lib/restaurantSettings";
 import { Sidebar } from "@/components/Sidebar";
-import { UserIdentityBanner } from "@/components/UserIdentityBanner";
 import { useViewport } from "@/hooks/use-tablet";
 import { useAuth } from "../context/authcontext";
-import { canSettlePersistedOrders } from "../lib/permissions";
+import {
+  canCancelPersistedOrders,
+  canRefundPersistedOrders,
+  normalizeRole,
+} from "../lib/permissions";
 import {
   clampOrderItemQuantity,
   getEffectiveMaxQuantity,
@@ -58,6 +61,7 @@ import {
   getSettlementAction as getRefundSettlementAction,
   type RefundOrderLike,
 } from "@/lib/refundEligibility";
+import { isFinalizedSale } from "@/lib/financialStatus";
 import {
   buildKotHtml,
   buildReceiptHtml,
@@ -94,7 +98,7 @@ const DATETIME: Intl.DateTimeFormatOptions = {
   ...TIME,
 };
 
-type PaymentMethod = "cash" | "gcash_onsite";
+type PaymentMethod = "cash" | "gcash_onsite" | "grabfood" | "foodpanda" | "other";
 type OrderTypeVal = "dine-in" | "take-out" | "delivery";
 type ToastType = "success" | "error" | "info" | "warning";
 type Settle = "refund" | "cancel";
@@ -125,11 +129,6 @@ interface CartItem extends MenuItem {
   quantity: number;
   note?: string;
 }
-interface TableItem {
-  id: number;
-  number: number;
-  status: "available" | "occupied";
-}
 interface OnlineOrder {
   id: number;
   orderNumber: string;
@@ -140,6 +139,7 @@ interface OnlineOrder {
   handoverTimestamp?: string | null;
   riderName?: string | null;
   paymentMethod?: string | null;
+  paymentReference?: string | null;
   paymentStatus?: string | null;
   prepStartedAt?: string | number | null;
   startedAt?: string | number | null;
@@ -158,6 +158,8 @@ interface ShiftOrder {
   prepStartedAt?: string | number | null;
   startedAt?: string | number | null;
   readyAt?: string | number | null;
+  refundRequestId?: number | null;
+  refundRequestStatus?: "Pending" | "Ignored" | "Actioned" | null;
   items: { name: string; quantity: number; price: number }[];
 }
 
@@ -192,6 +194,9 @@ const paymentLabel = (m?: string | null) => {
   if (["cash on pickup", "cash_on_pickup"].includes(n)) return "Cash on Pickup";
   if (["gcash_onsite", "e-payment", "onsite e-payment"].includes(n))
     return "E-Payment";
+  if (n === "grabfood") return "GrabFood";
+  if (n === "foodpanda") return "foodpanda";
+  if (n === "other") return "Other platform";
   return m ?? "—";
 };
 
@@ -241,13 +246,6 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
     image: p.image ? resolveAssetUrl(String(p.image)) : null,
   }));
 };
-
-const mapTables = (data: Record<string, any>[]): TableItem[] =>
-  data.map((t) => ({
-    id: Number(t.id ?? t.table_id),
-    number: Number(t.number ?? t.table_number ?? t.id),
-    status: t.status === "occupied" ? "occupied" : "available",
-  }));
 
 /* ───────────────────────── shared UI ───────────────────────── */
 
@@ -786,6 +784,62 @@ function ConfirmModal({
   );
 }
 
+function RefundRequestModal({
+  order,
+  reason,
+  setReason,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  order: ShiftOrder | null;
+  reason: string;
+  setReason: (value: string) => void;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const trimmedReason = reason.trim();
+  return (
+    <Modal show={!!order} max="max-w-md" onClose={busy ? undefined : onCancel}>
+      <div className="p-6">
+        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-amber-200 bg-amber-50">
+          <RotateCcw className="h-5 w-5 text-amber-700" />
+        </div>
+        <p className="mb-1.5 text-lg font-semibold">Request refund</p>
+        <p className="text-sm leading-relaxed text-neutral-500">
+          Send {order?.orderNumber} to the Administrator for review. The kitchen will pause this order until the request is ignored or actioned.
+        </p>
+        <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-neutral-500" htmlFor="refund-request-reason">
+          Reason
+        </label>
+        <textarea
+          id="refund-request-reason"
+          value={reason}
+          maxLength={500}
+          rows={4}
+          disabled={busy}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Explain why the customer is requesting a refund."
+          className="mt-2 w-full resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-sm outline-none focus:border-neutral-900 disabled:opacity-60"
+        />
+        <p className="mt-1 text-right text-xs text-neutral-400">{reason.length}/500</p>
+      </div>
+      <div className="space-y-2 px-6 pb-6">
+        <button
+          className={`${B.red} flex items-center justify-center gap-2`}
+          disabled={busy || !trimmedReason}
+          onClick={onConfirm}
+        >
+          {busy && <Spinner size={14} light />}
+          Send refund request
+        </button>
+        <button className={B.ghost} disabled={busy} onClick={onCancel}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
 function ProceedModal({
   order,
   busy,
@@ -875,6 +929,7 @@ function ProceedModal({
 function HandoverModal({
   order,
   rider,
+  staffName,
   setRider,
   saving,
   onConfirm,
@@ -882,12 +937,13 @@ function HandoverModal({
 }: {
   order: OnlineOrder | null;
   rider: string;
+  staffName: string;
   setRider: (v: string) => void;
   saving: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const { money, time } = useFmt();
+  const { money } = useFmt();
   return (
     <Modal
       show={!!order}
@@ -914,9 +970,21 @@ function HandoverModal({
               />
             </div>
             <div className="space-y-1.5 rounded-xl border border-neutral-100 bg-neutral-50 p-3.5 text-sm">
+              <p className="flex justify-between gap-4">
+                <span className="text-neutral-500">Platform</span>
+                <b>{paymentLabel(order.paymentMethod)}</b>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span className="text-neutral-500">Booking reference</span>
+                <b className="break-all text-right">{order.paymentReference || "—"}</b>
+              </p>
               <p className="flex justify-between">
                 <span className="text-neutral-500">Handover time</span>
-                <b>{time(new Date().toISOString())}</b>
+                <b>Recorded automatically</b>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span className="text-neutral-500">Confirmed by</span>
+                <b className="text-right">{staffName}</b>
               </p>
               <p className="flex justify-between">
                 <span className="text-neutral-500">Amount</span>
@@ -1436,30 +1504,36 @@ function HistoryModal({
   orders,
   loading,
   settlingId,
-  canSettle,
+  requestingId,
+  canCancel,
+  canRefund,
+  canRequestRefund,
   onClose,
   onSettle,
+  onRequestRefund,
   onReprint,
 }: {
   show: boolean;
   orders: ShiftOrder[];
   loading: boolean;
   settlingId: number | null;
-  canSettle: boolean;
+  requestingId: number | null;
+  canCancel: boolean;
+  canRefund: boolean;
+  canRequestRefund: boolean;
   onClose: () => void;
   onSettle: (o: ShiftOrder) => void;
+  onRequestRefund: (o: ShiftOrder) => void;
   onReprint: (o: ShiftOrder) => void;
 }) {
   const { money, time } = useFmt();
   const [open, setOpen] = useState<number | null>(null);
-  const valid = orders.filter(
-    (o) => !["cancelled", "refunded"].includes(norm(o.status)),
-  );
+  const valid = orders.filter((o) => isFinalizedSale(o));
   const voidedCount = orders.filter(
     (o) => norm(o.status) === "cancelled",
   ).length;
   const stats = [
-    ["Orders", String(valid.length), ""],
+    ["Completed", String(valid.length), ""],
     [
       "Revenue",
       money(valid.reduce((s, o) => s + o.total, 0)),
@@ -1554,7 +1628,7 @@ function HistoryModal({
                     <Printer className="h-4 w-4 text-neutral-500" />
                   </button>
                 )}
-                {!cancelled && canSettle && action && (
+                {!cancelled && action && (action === "refund" ? canRefund : canCancel) && (
                   <button
                     className={`${iconBtn} !border-red-200 !bg-red-50`}
                     disabled={settlingId === o.id}
@@ -1569,6 +1643,28 @@ function HistoryModal({
                       <Ban className="h-4 w-4 text-red-600" />
                     )}
                   </button>
+                )}
+                {!settled && canRequestRefund && action === "refund" && !o.refundRequestStatus && (
+                  <button
+                    className={`${iconBtn} !w-auto gap-1.5 !border-amber-200 !bg-amber-50 px-3 text-xs font-semibold text-amber-800`}
+                    disabled={requestingId === o.id}
+                    title="Request administrator refund review"
+                    onClick={() => onRequestRefund(o)}
+                  >
+                    {requestingId === o.id ? <Spinner size={13} /> : <RotateCcw className="h-3.5 w-3.5" />}
+                    Request refund
+                  </button>
+                )}
+                {o.refundRequestStatus && (
+                  <Chip className={
+                    o.refundRequestStatus === "Pending"
+                      ? "bg-amber-100 text-amber-800"
+                      : o.refundRequestStatus === "Actioned"
+                        ? "bg-slate-700 text-white"
+                        : "bg-neutral-100 text-neutral-600"
+                  }>
+                    Refund {o.refundRequestStatus.toLowerCase()}
+                  </Chip>
                 )}
               </div>
               <Collapse open={open === o.id}>
@@ -1611,7 +1707,11 @@ export default function CashierView() {
 
   const u = user as Record<string, unknown> | null;
   const cashierId = Number(u?.userId) > 0 ? Number(u?.userId) : null;
-  const canManagePersistedSettlements = canSettlePersistedOrders(u?.role);
+  const canCancelPersisted = canCancelPersistedOrders(u?.role);
+  const canRefundPersisted = canRefundPersistedOrders(u?.role);
+  const canRequestRefund = normalizeRole(u?.role) === "cashier";
+  const canPerformSettlement = (action: Settle) =>
+    action === "refund" ? canRefundPersisted : canCancelPersisted;
   const cashierName = String(
     u?.fullName ??
       u?.full_name ??
@@ -1629,6 +1729,7 @@ export default function CashierView() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderType, setOrderType] = useState<OrderTypeVal>("dine-in");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [platformReference, setPlatformReference] = useState("");
   const [customerType, setCustomerType] = useState("");
   const [orderNote, setOrderNote] = useState("");
   const [showNote, setShowNote] = useState(false);
@@ -1640,9 +1741,6 @@ export default function CashierView() {
   const [settings, setSettings] = useState<GeneralRestaurantSettings>(
     GENERAL_SETTINGS_DEFAULTS,
   );
-  const [tables, setTables] = useState<TableItem[]>([]);
-  const [tablesSupported, setTablesSupported] = useState(true);
-  const [selectedTable, setSelectedTable] = useState<number | null>(null);
   const [isOnline, setIsOnline] = useState(
     typeof navigator === "undefined" || navigator.onLine,
   );
@@ -1664,6 +1762,9 @@ export default function CashierView() {
   const [shiftOrders, setShiftOrders] = useState<ShiftOrder[]>([]);
   const [shiftLoading, setShiftLoading] = useState(false);
   const [settlingId, setSettlingId] = useState<number | null>(null);
+  const [refundRequestOrder, setRefundRequestOrder] = useState<ShiftOrder | null>(null);
+  const [refundRequestReason, setRefundRequestReason] = useState("");
+  const [requestingRefundId, setRequestingRefundId] = useState<number | null>(null);
 
   // online orders
   const [review, setReview] = useState<OnlineOrder[]>([]);
@@ -1773,31 +1874,17 @@ export default function CashierView() {
   }, [toast]);
 
   useEffect(() => {
-    if (orderType !== "dine-in") {
-      setSelectedTable(null);
+    if (orderType === "delivery") {
+      if (!["grabfood", "foodpanda", "other"].includes(paymentMethod)) {
+        setPaymentMethod("grabfood");
+      }
       return;
     }
-    if (!tablesSupported) return;
-    let off = false;
-    apiCall<Record<string, any>[]>("/tables", {
-      method: "GET",
-      suppressErrorStatuses: [404],
-    })
-      .then((d) => !off && setTables(mapTables(d ?? [])))
-      .catch((e) => {
-        if (off) return;
-        if (e?.status === 404) setTablesSupported(false);
-        else
-          toast(
-            "warning",
-            "Could not load tables. Table selection unavailable.",
-          );
-        setTables([]);
-      });
-    return () => {
-      off = true;
-    };
-  }, [orderType, tablesSupported, toast]);
+    if (["grabfood", "foodpanda", "other"].includes(paymentMethod)) {
+      setPaymentMethod("cash");
+    }
+    setPlatformReference("");
+  }, [orderType, paymentMethod]);
 
   const refreshOrders = useCallback(async () => {
     if (document.hidden) return;
@@ -1863,7 +1950,7 @@ export default function CashierView() {
     label: string,
     onDone: (status: string) => void,
   ) => {
-    if (!canManagePersistedSettlements) return;
+    if (!canPerformSettlement(action)) return;
     const status = action === "refund" ? "Refunded" : "Cancelled";
     setSettlingId(id);
     try {
@@ -1896,18 +1983,52 @@ export default function CashierView() {
   };
 
   const settleShiftOrder = (o: ShiftOrder) => {
-    if (!canManagePersistedSettlements) return;
     const action = getSettlementAction(o.status, o.paymentStatus, o);
     if (!action)
       return toast(
         "warning",
         "Completed, refunded, or cancelled orders cannot be changed.",
       );
+    if (!canPerformSettlement(action)) return;
     return settle(o.id, action, `Order ${o.orderNumber}`, (status) =>
       setShiftOrders((p) =>
         p.map((e) => (e.id === o.id ? { ...e, status } : e)),
       ),
     );
+  };
+
+  const openRefundRequest = (order: ShiftOrder) => {
+    setRefundRequestReason("");
+    setRefundRequestOrder(order);
+  };
+
+  const submitRefundRequest = async () => {
+    const order = refundRequestOrder;
+    const reason = refundRequestReason.trim();
+    if (!order || !reason || requestingRefundId !== null) return;
+    setRequestingRefundId(order.id);
+    try {
+      const result = await api.post<{ request: { id: number; status: "Pending" } }>(
+        "/refund-requests",
+        { orderId: order.id, reason },
+      );
+      setShiftOrders((current) => current.map((entry) =>
+        entry.id === order.id
+          ? {
+              ...entry,
+              refundRequestId: result.request.id,
+              refundRequestStatus: result.request.status,
+            }
+          : entry,
+      ));
+      setRefundRequestOrder(null);
+      setRefundRequestReason("");
+      toast("success", `Refund request for ${order.orderNumber} sent to the Administrator.`);
+    } catch (error) {
+      toast("error", error instanceof Error ? error.message : "Failed to send the refund request.");
+    } finally {
+      setRequestingRefundId(null);
+    }
   };
 
   const confirmProceed = async () => {
@@ -1943,12 +2064,10 @@ export default function CashierView() {
     const o = handoverOrder,
       name = rider.trim();
     if (!o || !name) return;
-    const handoverTimestamp = new Date().toISOString();
     setSavingHandover(true);
     try {
       await patchOrder(o.id, {
         status: "Completed",
-        handoverTimestamp,
         riderName: name,
       });
       setDelivery((p) => p.filter((x) => x.id !== o.id));
@@ -1956,7 +2075,7 @@ export default function CashierView() {
         {
           ...o,
           trackingStatus: "Completed",
-          handoverTimestamp,
+          handoverTimestamp: new Date().toISOString(),
           riderName: name,
         },
         ...p.filter((x) => x.id !== o.id),
@@ -2058,12 +2177,12 @@ export default function CashierView() {
     setCart([]);
     setOrderType("dine-in");
     setPaymentMethod("cash");
+    setPlatformReference("");
     setCustomerType(
       discountTypes.find((item) => Number(item.percentage || 0) <= 0)?.name ??
         discountTypes[0]?.name ??
         "",
     );
-    setSelectedTable(null);
     setOrderNote("");
     setShowNote(false);
     setShowDiscounts(false);
@@ -2153,6 +2272,18 @@ export default function CashierView() {
       setDiscountAuthError("");
       return;
     }
+    if (orderType === "delivery") {
+      const reference = platformReference.trim();
+      if (!/^[A-Za-z0-9-]{5,15}$/.test(reference)) {
+        toast(
+          "error",
+          "Platform reference must be 5 to 15 letters, numbers, or hyphens.",
+        );
+        return;
+      }
+      void placeOrder({ tendered: pricing.amountDue });
+      return;
+    }
     setShowAmount(true);
   };
 
@@ -2172,14 +2303,11 @@ export default function CashierView() {
     const { discountAmount, taxAmount, amountDue } = pricing;
     const change = Math.max(0, tendered - amountDue);
     const isCash = paymentMethod === "cash";
-    const table =
-      orderType === "dine-in"
-        ? tables.find((t) => t.id === selectedTable)
-        : undefined;
+    const isThirdPartyDelivery = orderType === "delivery";
 
     try {
       let proofImageUrl: string | undefined;
-      if (!isCash) {
+      if (!isCash && !isThirdPartyDelivery) {
         if (!file)
           throw new Error("Please upload the onsite e-payment proof first.");
         const form = new FormData();
@@ -2216,7 +2344,10 @@ export default function CashierView() {
         total: amountDue,
         order_type: orderType,
         payment_method: paymentMethod,
-        ...(!isCash && {
+        ...(isThirdPartyDelivery && {
+          payment_reference: platformReference.trim(),
+        }),
+        ...(!isCash && !isThirdPartyDelivery && {
           payment_status: "Paid",
           proof_image_url: proofImageUrl,
         }),
@@ -2230,17 +2361,11 @@ export default function CashierView() {
         discount_amount: discountAmount,
         vat_amount: taxAmount,
         vat_exempt_amount: 0,
-        table_id: table?.id ?? null,
-        ...(table && { table_number: table.number }),
         ...(isCash && { cash_tendered: tendered, change_amount: change }),
         ...(orderNote.trim() && { order_note: orderNote.trim() }),
       });
 
       setDone(res.receipt);
-      if (table)
-        setTables((p) =>
-          p.map((t) => (t.id === table.id ? { ...t, status: "occupied" } : t)),
-        );
       void loadProducts();
     } catch (e) {
       console.error("Order failed:", e);
@@ -2290,7 +2415,6 @@ export default function CashierView() {
           <div className="shrink-0 px-4 pt-6 sm:px-8 sm:pt-7">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <h1 className="text-2xl font-semibold">Menu</h1>
-              <UserIdentityBanner className="order-3 w-full sm:order-2 sm:w-auto" />
               <div className="flex flex-wrap items-center gap-2">
                 <Pill onClick={() => setShowHistory(true)}>
                   <History className="h-4 w-4" />
@@ -2340,7 +2464,7 @@ export default function CashierView() {
                       showPay
                       actions={
                         <>
-                          {canManagePersistedSettlements && action && (
+                          {action && canPerformSettlement(action) && (
                             <button
                               className={ACT.red}
                               disabled={settlingId === o.id}
@@ -2590,12 +2714,39 @@ export default function CashierView() {
                 <Select
                   value={paymentMethod}
                   onChange={(v) => setPaymentMethod(v as PaymentMethod)}
-                  options={[
-                    { value: "cash", label: "Cash" },
-                    { value: "gcash_onsite", label: "E-Payment" },
-                  ]}
+                  options={orderType === "delivery"
+                    ? [
+                        { value: "grabfood", label: "GrabFood" },
+                        { value: "foodpanda", label: "foodpanda" },
+                        { value: "other", label: "Other platform" },
+                      ]
+                    : [
+                        { value: "cash", label: "Cash" },
+                        { value: "gcash_onsite", label: "E-Payment" },
+                      ]}
                 />
               </div>
+              {orderType === "delivery" && (
+                <div className="mb-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                  <label className={`${eyebrow} mb-1.5 block`} htmlFor="platform-reference">
+                    Platform reference
+                  </label>
+                  <input
+                    id="platform-reference"
+                    value={platformReference}
+                    onChange={(event) => setPlatformReference(
+                      event.target.value.replace(/[^A-Za-z0-9-]/g, "").slice(0, 15),
+                    )}
+                    minLength={5}
+                    maxLength={15}
+                    placeholder="e.g. GF-123456"
+                    className="w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm uppercase outline-none focus:border-neutral-900"
+                  />
+                  <p className="mt-1 text-xs text-neutral-400">
+                    Enter 5–15 letters, numbers, or hyphens. The full reference is saved.
+                  </p>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setShowDiscounts(true)}
@@ -2611,22 +2762,6 @@ export default function CashierView() {
                     : "Select"}
                 </span>
               </button>
-              {orderType === "dine-in" && tables.length > 0 && (
-                <div className="mb-2">
-                  <Select
-                    value={selectedTable === null ? "" : String(selectedTable)}
-                    onChange={(v) => setSelectedTable(v ? Number(v) : null)}
-                    options={[
-                      { value: "", label: "Select table…" },
-                      ...tables.map((t) => ({
-                        value: String(t.id),
-                        label: `Table ${t.number}${t.status === "occupied" ? " (occupied)" : ""}`,
-                      })),
-                    ]}
-                  />
-                </div>
-              )}
-
               <button
                 onClick={() => setShowNote((p) => !p)}
                 className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}
@@ -2719,6 +2854,7 @@ export default function CashierView() {
       <HandoverModal
         order={handoverOrder}
         rider={rider}
+        staffName={cashierName}
         setRider={setRider}
         saving={savingHandover}
         onConfirm={() => void confirmHandover()}
@@ -2730,14 +2866,31 @@ export default function CashierView() {
         }}
       />
       <SuccessModal receipt={done} cashier={cashierName} onClose={resetOrder} />
+      <RefundRequestModal
+        order={refundRequestOrder}
+        reason={refundRequestReason}
+        setReason={setRefundRequestReason}
+        busy={requestingRefundId !== null}
+        onConfirm={() => void submitRefundRequest()}
+        onCancel={() => {
+          if (requestingRefundId === null) {
+            setRefundRequestOrder(null);
+            setRefundRequestReason("");
+          }
+        }}
+      />
       <HistoryModal
         show={showHistory}
         orders={shiftOrders}
         loading={shiftLoading}
         settlingId={settlingId}
-        canSettle={canManagePersistedSettlements}
+        requestingId={requestingRefundId}
+        canCancel={canCancelPersisted}
+        canRefund={canRefundPersisted}
+        canRequestRefund={canRequestRefund}
         onClose={() => setShowHistory(false)}
         onSettle={(o) => void settleShiftOrder(o)}
+        onRequestRefund={openRefundRequest}
         onReprint={(o) => void reprint(o)}
       />
 

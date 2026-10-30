@@ -124,7 +124,7 @@ interface LoginResponse {
   userId: number;
   username: string;
   email: string;
-  role: "administrator" | "cashier" | "cook" | "inventory_manager" | "customer";
+  role: "administrator" | "cashier" | "inventory_manager" | "customer";
   email_verified: boolean;
 }
 

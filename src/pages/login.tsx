@@ -22,7 +22,6 @@ const HOME_PAGE_PATH = "/";
 const ROLE_REDIRECT_PATHS: Record<string, string> = {
   administrator: "/dashboard",
   cashier: "/orders",
-  cook: "/orders",
   inventory_manager: "/inventory",
   customer: "/products",
 };

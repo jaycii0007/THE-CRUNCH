@@ -36,15 +36,13 @@ import UsersMenu from "./pages/usersmenu";
 type Role =
   | "administrator"
   | "cashier"
-  | "cook"
   | "inventory_manager"
   | "customer"
   | null;
 
 const ROLE_MAP: Record<string, string> = {
   administrator: "/dashboard",
-  cashier: "/orders",
-  cook: "/orders",
+  cashier: "/menu",
   inventory_manager: "/inventory",
   customer: "/products",
 };

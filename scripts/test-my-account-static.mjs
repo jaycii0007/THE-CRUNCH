@@ -16,10 +16,11 @@ const settings = read("src/pages/settings.tsx");
 
 assert.match(app, /path="\/my-account"/);
 assert.match(app, /element=\{isAuth \? <MyAccount \/> : <Navigate to="\/login" replace \/>\}/);
-assert.match(permissions, /STAFF_ROLES = \["administrator", "cashier", "cook", "inventory_manager"\]/);
-assert.match(permissions, /cook:\s*\{[\s\S]*?orders:\s*true/);
-assert.match(login, /cook:\s*"\/orders"/);
-assert.match(staffAccounts, /"administrator", "cashier", "cook", "inventory_manager"/);
+assert.match(permissions, /STAFF_ROLES = \["administrator", "cashier", "inventory_manager"\]/);
+assert.doesNotMatch(permissions, /cook:\s*\{/);
+assert.doesNotMatch(login, /cook:\s*"\/orders"/);
+assert.match(staffAccounts, /"administrator", "cashier", "inventory_manager"/);
+assert.doesNotMatch(staffAccounts, /role:\s*"cook"/);
 assert.match(sidebar, /to="\/my-account"/);
 
 assert.match(account, /api\.get<OwnAccount>\("\/users\/me"\)/);

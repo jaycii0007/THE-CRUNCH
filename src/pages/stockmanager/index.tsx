@@ -65,7 +65,7 @@ import {
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "alerts", label: "Alerts" },
+  { id: "alerts", label: "Monitor Stock" },
   { id: "suppliers", label: "Suppliers" },
   { id: "purchases", label: "Purchase Orders" },
   { id: "purchase-history", label: "Purchase Order History" },
@@ -118,7 +118,6 @@ const RAW_MATERIAL_CATEGORIES = [
 const ROLE_LABELS: Record<string, string> = {
   administrator: "Administrator",
   cashier: "Cashier",
-  cook: "Cook",
   inventory_manager: "Stock Manager",
   customer: "Customer",
 };
@@ -1394,6 +1393,7 @@ export default function StockManager() {
                   poLoading={po.poLoading}
                   poHistoryDateFrom={po.poHistoryDateFrom}
                   poHistoryDateTo={po.poHistoryDateTo}
+                  poHistoryStatus={po.poHistoryStatus}
                   poHistoryFromInputRef={po.poHistoryFromInputRef}
                   poHistoryToInputRef={po.poHistoryToInputRef}
                   poHistoryPage={po.poHistoryPage}
@@ -1401,6 +1401,7 @@ export default function StockManager() {
                   poHistoryPageSize={po.poHistoryPageSize}
                   setPoHistoryDateFrom={po.setPoHistoryDateFrom}
                   setPoHistoryDateTo={po.setPoHistoryDateTo}
+                  setPoHistoryStatus={po.setPoHistoryStatus}
                   setPoHistoryPage={po.setPoHistoryPage}
                   setSelectedOrder={po.setSelectedOrder}
                   setPrintOrder={po.setPrintOrder}
@@ -1447,6 +1448,10 @@ export default function StockManager() {
                 }
                 onClose={() => po.setSelectedOrder(null)}
                 onStatusChange={po.handlePOStatusChange}
+                onEdit={(order) => {
+                  po.setEditingOrder(order);
+                  po.setSelectedOrder(null);
+                }}
                 onDelete={po.handlePODelete}
                 onPrint={po.setPrintOrder}
               />
@@ -1478,14 +1483,18 @@ export default function StockManager() {
           )}
         </AnimatePresence>
         <AnimatePresence>
-          {po.prefillPOProduct !== undefined && (
+          {(po.prefillPOProduct !== undefined || po.editingOrder) && (
             <CreatePOModal
-              onClose={po.handleClosePOModal}
-              onCreate={po.handlePOCreate}
+              onClose={() => {
+                po.setEditingOrder(null);
+                po.handleClosePOModal();
+              }}
+              onCreate={po.editingOrder ? po.handlePOUpdate : po.handlePOCreate}
               quickOrderProducts={po.poQuickOrderProducts}
               allProducts={products}
               allSuppliers={supplier.suppliers}
               prefillProduct={po.prefillPOProduct}
+              initialOrder={po.editingOrder}
               onShowToast={showToast}
               isMenuFoodProduct={isMenuFoodProduct}
             />
@@ -1498,7 +1507,7 @@ export default function StockManager() {
               allProducts={products}
               loading={submitting}
               onClose={() => supplier.setEditingSupplier(null)}
-              onSaveProducts={supplier.saveSupplierProducts}
+              onSaveDetails={supplier.saveSupplierDetails}
               onRemoveProduct={supplier.handleRemoveSupplierProduct}
             />
           )}

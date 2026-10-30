@@ -3,13 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
-  Ban,
   Bell,
   CheckCircle2,
   ChefHat,
   ClipboardList,
   Clock,
-  CreditCard,
   Flame,
   Minus,
   PackageCheck,
@@ -22,12 +20,14 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { api } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
-import { UserIdentityBanner } from "@/components/UserIdentityBanner";
 import { useNotifications } from "@/lib/NotificationContext";
 import { useViewport } from "@/hooks/use-tablet";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { useAuth } from "../context/authcontext";
-import { canSettlePersistedOrders } from "../lib/permissions";
+import {
+  canCancelPersistedOrders,
+  canRefundPersistedOrders,
+} from "../lib/permissions";
 import { getSettlementAction as getRefundSettlementAction } from "@/lib/refundEligibility";
 import {
   fetchGeneralSettings,
@@ -90,12 +90,9 @@ interface OrderUpdateResponse {
 }
 
 interface OrderStatusCounts {
-  pendingPayment: number;
   queued: number;
   preparing: number;
   ready: number;
-  completed: number;
-  refunded: number;
 }
 
 type PendingAction = { orderId: string; action: "start" | "complete" } | null;
@@ -105,32 +102,22 @@ type PendingAction = { orderId: string; action: "start" | "complete" } | null;
 /* -------------------------------------------------------------------------- */
 
 const EMPTY_COUNTS: OrderStatusCounts = {
-  pendingPayment: 0,
   queued: 0,
   preparing: 0,
   ready: 0,
-  completed: 0,
-  refunded: 0,
 };
 
 const STATUS_TO_COUNT: Record<string, keyof OrderStatusCounts> = {
-  "pending payment": "pendingPayment",
   queued: "queued",
   preparing: "preparing",
   ready: "ready",
   "ready for pickup": "ready",
-  completed: "completed",
-  "picked up": "completed",
-  refunded: "refunded",
 };
 
 const STATS: { key: keyof OrderStatusCounts; label: string; icon: LucideIcon; tone: string }[] = [
-  { key: "pendingPayment", label: "Pending payment", icon: CreditCard, tone: "bg-slate-100 text-slate-600" },
   { key: "queued", label: "Queued", icon: ClipboardList, tone: "bg-slate-100 text-slate-600" },
   { key: "preparing", label: "Preparing", icon: Flame, tone: "bg-amber-50 text-amber-600" },
   { key: "ready", label: "Ready", icon: PackageCheck, tone: "bg-emerald-50 text-emerald-600" },
-  { key: "completed", label: "Completed", icon: CheckCircle2, tone: "bg-slate-100 text-slate-400" },
-  { key: "refunded", label: "Refunded", icon: Ban, tone: "bg-slate-100 text-slate-400" },
 ];
 
 const COLUMNS: { stage: Stage; title: string; icon: LucideIcon; accent: string; badge: string; empty: string }[] = [
@@ -276,14 +263,15 @@ interface TicketProps {
   nowMs: number;
   pendingAction: PendingAction;
   isSettling: boolean;
-  canSettle: boolean;
+  canCancel: boolean;
+  canRefund: boolean;
   onStart: (id: string) => void;
   onComplete: (order: OrderCard) => void;
   onAdjustTimer: (order: OrderCard, deltaMinutes: number) => void;
   onSettle: (order: OrderCard) => void;
 }
 
-function OrderTicket({ order, nowMs, pendingAction, isSettling, canSettle, onStart, onComplete, onAdjustTimer, onSettle }: TicketProps) {
+function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRefund, onStart, onComplete, onAdjustTimer, onSettle }: TicketProps) {
   const stage = getStage(order);
   const overdue = isOverdue(order, nowMs);
   const orderType = order.orderType || order.status;
@@ -399,7 +387,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canSettle, onSta
             </button>
           )}
 
-          {canSettle && settlement && (
+          {settlement && (settlement === "refund" ? canRefund : canCancel) && (
             <button
               onClick={() => onSettle(order)}
               disabled={settleLocked}
@@ -423,7 +411,8 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canSettle, onSta
 
 export default function Order() {
   const { user } = useAuth();
-  const canManagePersistedSettlements = canSettlePersistedOrders(user?.role);
+  const canCancelPersisted = canCancelPersistedOrders(user?.role);
+  const canRefundPersisted = canRefundPersistedOrders(user?.role);
   const [now, setNow] = useState(new Date());
   const [settings, setSettings] = useState(GENERAL_SETTINGS_DEFAULTS);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
@@ -445,15 +434,12 @@ export default function Order() {
 
     const request = (async () => {
       try {
-        const [queue, all] = await Promise.all([
-          api.get<OrderCard[]>("/orders/queue"),
-          api.get<{ status: string }[]>("/orders"),
-        ]);
+        const queue = await api.get<OrderCard[]>("/orders/queue");
         setOrders((queue ?? []).filter((o) => !o.isFinished));
 
         const next = { ...EMPTY_COUNTS };
-        (all ?? []).forEach((entry) => {
-          const key = STATUS_TO_COUNT[normalize(entry.status)];
+        (queue ?? []).forEach((entry) => {
+          const key = STATUS_TO_COUNT[normalize(entry.currentStatus)];
           if (key) next[key] += 1;
         });
         setCounts(next);
@@ -562,9 +548,9 @@ export default function Order() {
   };
 
   const handleSettle = async (order: OrderCard) => {
-    if (!canManagePersistedSettlements) return;
     const action = getSettlementAction(order);
     if (!action) return;
+    if (action === "refund" ? !canRefundPersisted : !canCancelPersisted) return;
     setSettlingId(order.id);
     try {
       const update = await api.patch<OrderUpdateResponse>(`/orders/${order.id}`, {
@@ -623,8 +609,6 @@ export default function Order() {
                 </p>
               </div>
             </div>
-
-            <UserIdentityBanner className="order-3 w-full sm:order-2 sm:w-auto" />
 
             <div className="order-2 grid w-full grid-cols-2 gap-3 sm:order-3 sm:grid-cols-3 lg:flex lg:w-auto">
               {STATS.map(({ key, label, icon: Icon, tone }) => (
@@ -689,7 +673,8 @@ export default function Order() {
                               nowMs={now.getTime()}
                               pendingAction={pendingAction}
                               isSettling={settlingId === order.id}
-                              canSettle={canManagePersistedSettlements}
+                              canCancel={canCancelPersisted}
+                              canRefund={canRefundPersisted}
                               onStart={handleStart}
                               onComplete={handleComplete}
                               onAdjustTimer={handleAdjustTimer}

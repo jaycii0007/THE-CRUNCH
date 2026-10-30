@@ -14,6 +14,7 @@ export function PurchaseHistoryTab({
   poLoading,
   poHistoryDateFrom,
   poHistoryDateTo,
+  poHistoryStatus,
   poHistoryFromInputRef,
   poHistoryToInputRef,
   poHistoryPage,
@@ -21,6 +22,7 @@ export function PurchaseHistoryTab({
   poHistoryPageSize,
   setPoHistoryDateFrom,
   setPoHistoryDateTo,
+  setPoHistoryStatus,
   setPoHistoryPage,
   setSelectedOrder,
   setPrintOrder,
@@ -34,6 +36,7 @@ export function PurchaseHistoryTab({
   poLoading: boolean;
   poHistoryDateFrom: string;
   poHistoryDateTo: string;
+  poHistoryStatus: "All" | "Received" | "Cancelled";
   poHistoryFromInputRef: React.RefObject<HTMLInputElement | null>;
   poHistoryToInputRef: React.RefObject<HTMLInputElement | null>;
   poHistoryPage: number;
@@ -41,6 +44,7 @@ export function PurchaseHistoryTab({
   poHistoryPageSize: number;
   setPoHistoryDateFrom: React.Dispatch<React.SetStateAction<string>>;
   setPoHistoryDateTo: React.Dispatch<React.SetStateAction<string>>;
+  setPoHistoryStatus: React.Dispatch<React.SetStateAction<"All" | "Received" | "Cancelled">>;
   setPoHistoryPage: React.Dispatch<React.SetStateAction<number>>;
   setSelectedOrder: React.Dispatch<React.SetStateAction<PurchaseOrder | null>>;
   setPrintOrder: React.Dispatch<React.SetStateAction<PurchaseOrder | null>>;
@@ -70,7 +74,7 @@ export function PurchaseHistoryTab({
               value: filteredCompletedPOs.length,
               accent: "emerald",
               summary: "historyCompleted" as const,
-              sub: "ordered, received, or cancelled",
+              sub: "received or cancelled",
             },
             {
               label: "Received",
@@ -108,10 +112,22 @@ export function PurchaseHistoryTab({
                   Purchase Order History
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Ordered, received, and cancelled purchase orders
+                  Received and cancelled purchase orders
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <select
+                  value={poHistoryStatus}
+                  onChange={(event) => setPoHistoryStatus(
+                    event.target.value as "All" | "Received" | "Cancelled",
+                  )}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 outline-none focus:border-slate-900"
+                  aria-label="Purchase order history status"
+                >
+                  <option value="All">All</option>
+                  <option value="Received">Received</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
                 <span className="text-sm text-slate-400">from</span>
                 <button
                   type="button"

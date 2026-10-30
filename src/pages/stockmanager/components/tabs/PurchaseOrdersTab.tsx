@@ -103,7 +103,7 @@ export function PurchaseOrdersTab({
         <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[
             {
-              label: "Active Drafts",
+              label: "Active Orders",
               value: filteredPOs.length,
               accent: "slate",
               summary: "poDraft" as const,
@@ -114,7 +114,7 @@ export function PurchaseOrdersTab({
               value: filteredPOs.reduce((sum, order) => sum + order.items.length, 0),
               accent: "yellow",
               summary: "poDraft" as const,
-              sub: "lines across active drafts",
+              sub: "lines across active orders",
             },
             {
               label: "Units Requested",
@@ -125,7 +125,7 @@ export function PurchaseOrdersTab({
               ),
               accent: "blue",
               summary: "poDraft" as const,
-              sub: "inventory units in active drafts",
+              sub: "inventory units in active orders",
             },
           ].map((k) => (
             <KPICard
@@ -244,7 +244,7 @@ export function PurchaseOrdersTab({
           <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
             <div className="px-5 py-4 border-b border-slate-50">
               <p className="font-semibold text-slate-800 text-sm">
-                Draft Purchase Orders
+                Active Purchase Orders
               </p>
               <p className="text-xs text-slate-400 mt-0.5">
                 {filteredPOs.length} order
@@ -267,7 +267,7 @@ export function PurchaseOrdersTab({
                   Loading purchase orders{"\u2026"}
                 </div>
               ) : filteredPOs.length === 0 ? (
-                <EmptyState message="No draft purchase orders found." />
+                <EmptyState message="No active purchase orders found." />
               ) : (
                 filteredPOs.map((order, i) => {
                   const itemCountText =

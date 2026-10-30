@@ -5,7 +5,6 @@ import { useAuth } from "@/context/authcontext";
 const ROLE_LABELS: Record<string, string> = {
   administrator: "Administrator",
   cashier: "Cashier",
-  cook: "Cook",
   inventory_manager: "Stock Manager",
   customer: "Customer",
 };

@@ -16,7 +16,6 @@ import {
 } from "recharts";
 import { Card } from "@/components/ui/card";
 import { Sidebar } from "@/components/Sidebar";
-import { UserIdentityBanner } from "@/components/UserIdentityBanner";
 import { api } from "@/lib/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import {
@@ -848,8 +847,6 @@ export default function AdminDashboard() {
                 Dashboard
               </p>
             </div>
-
-            <UserIdentityBanner className="order-3 w-full sm:order-2 sm:w-auto" />
 
             <div className="order-2 flex w-full shrink-0 flex-col items-stretch gap-3 sm:order-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
               <span className="text-sm font-medium uppercase tracking-wide text-gray-400">Sales Report</span>

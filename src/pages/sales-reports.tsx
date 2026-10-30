@@ -42,7 +42,10 @@ import { ReceiptViewerModal } from "@/components/receipt-viewer-modal";
 import type { ReceiptDto } from "@/lib/receipt";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { useAuth } from "@/context/authcontext";
-import { canSettlePersistedOrders } from "@/lib/permissions";
+import {
+  canCancelPersistedOrders,
+  canRefundPersistedOrders,
+} from "@/lib/permissions";
 import { isFinalizedSale } from "@/lib/financialStatus";
 import { getSettlementAction as getRefundSettlementAction } from "@/lib/refundEligibility";
 
@@ -67,7 +70,8 @@ type OrderStatusFilter =
   | "Pending"
   | "Cancelled"
   | "Refunded";
-type PaymentMethodFilter = "All" | "Cash" | "GCash" | "Cash on Pickup";
+type PaymentMethodFilter = "All" | "Cash" | "GCash" | "Cash on Pickup" | "GrabFood" | "foodpanda" | "Other";
+type DeliveryPlatformFilter = "All" | "GrabFood" | "foodpanda" | "Other";
 type OrderTypeFilter = "All" | "Dine In" | "Take Out" | "Delivery";
 
 interface SaleLog {
@@ -85,6 +89,12 @@ interface SaleLog {
   status: Status;
   paymentMethod: string;
   paymentStatus: string;
+  paymentReference?: string;
+  createdAt?: string;
+  paymentDate?: string | null;
+  riderName?: string;
+  handoverTimestamp?: string | null;
+  handoverStaffName?: string;
   proofImageUrl?: string;
   operator: string;
   cashierName: string;
@@ -99,6 +109,8 @@ interface Order {
   items: { name: string; price: number; quantity: number }[];
   total: number;
   date: string;
+  createdAt?: string;
+  paymentDate?: string | null;
   time: string;
   orderType: string;
   status: Status;
@@ -111,6 +123,8 @@ interface Order {
   cashierName?: string;
   riderName?: string;
   handoverTimestamp?: string | null;
+  handoverStaffName?: string | null;
+  paymentReference?: string | null;
   proofImageUrl?: string | null;
 }
 
@@ -124,6 +138,8 @@ interface RawOrderRow {
   payment_reference?: string;
   paymentId?: number;
   payment_id?: number;
+  paymentDate?: string;
+  payment_date?: string;
   total?: number;
   date?: string;
   orderType?: string;
@@ -151,6 +167,8 @@ interface RawOrderRow {
   rider_name?: string;
   handoverTimestamp?: string;
   handover_timestamp?: string;
+  handoverStaffName?: string;
+  handover_staff_name?: string;
 }
 
 // --- Constants ---
@@ -416,6 +434,9 @@ function normalizePaymentMethod(value?: string | null): PaymentMethodFilter {
   ) {
     return "GCash";
   }
+  if (normalized === "grabfood" || normalized === "grab food") return "GrabFood";
+  if (normalized === "foodpanda" || normalized === "food panda") return "foodpanda";
+  if (normalized === "other" || normalized === "other platform") return "Other";
   return "Cash";
 }
 
@@ -519,6 +540,7 @@ function processRawRows(rows: RawOrderRow[]): {
     rows: RawOrderRow[];
     total: number;
     date: string;
+    paymentDate: string | null;
     orderType: string;
     status: string;
     paymentMethod: string;
@@ -526,6 +548,8 @@ function processRawRows(rows: RawOrderRow[]): {
     cashierName: string;
     riderName: string;
     handoverTimestamp: string | null;
+    handoverStaffName: string | null;
+    paymentReference: string | null;
     proofImageUrl: string | null;
     orderNumber: string;
     transactionId: string;
@@ -542,6 +566,8 @@ function processRawRows(rows: RawOrderRow[]): {
         rows: [],
         total: Number(r.total) || 0,
         date: r.date ?? "",
+        paymentDate:
+          String(r.paymentDate ?? r.payment_date ?? "").trim() || null,
         orderType: r.orderType ?? r.order_type ?? "Order",
         status: r.status ?? "",
         paymentMethod: normalizePaymentMethod(
@@ -563,6 +589,11 @@ function processRawRows(rows: RawOrderRow[]): {
         handoverTimestamp:
           String(r.handoverTimestamp ?? r.handover_timestamp ?? "").trim() ||
           null,
+        handoverStaffName:
+          String(r.handoverStaffName ?? r.handover_staff_name ?? "").trim() ||
+          null,
+        paymentReference:
+          String(r.paymentReference ?? r.payment_reference ?? "").trim() || null,
         proofImageUrl:
           String(r.proofImageUrl ?? r.proof_image_url ?? "").trim() || null,
         orderNumber: String(r.orderNumber ?? r.order_number ?? "").trim(),
@@ -577,12 +608,16 @@ function processRawRows(rows: RawOrderRow[]): {
     const handoverTimestamp = String(
       r.handoverTimestamp ?? r.handover_timestamp ?? "",
     ).trim();
+    const handoverStaffName = String(
+      r.handoverStaffName ?? r.handover_staff_name ?? "",
+    ).trim();
     const proofImageUrl = String(
       r.proofImageUrl ?? r.proof_image_url ?? "",
     ).trim();
 
     if (riderName) orderMap[r.id].riderName = riderName;
     if (handoverTimestamp) orderMap[r.id].handoverTimestamp = handoverTimestamp;
+    if (handoverStaffName) orderMap[r.id].handoverStaffName = handoverStaffName;
     if (proofImageUrl) orderMap[r.id].proofImageUrl = proofImageUrl;
 
     orderMap[r.id].rows.push(r);
@@ -593,7 +628,15 @@ function processRawRows(rows: RawOrderRow[]): {
 
   for (const [idStr, order] of Object.entries(orderMap)) {
     const orderId = Number(idStr);
-    const orderDate = order.date ? new Date(order.date) : new Date();
+    const createdDate = order.date ? new Date(order.date) : new Date();
+    const financialTimestamp =
+      order.handoverTimestamp ||
+      order.readyAt ||
+      order.paymentDate ||
+      order.date;
+    const orderDate = financialTimestamp
+      ? new Date(financialTimestamp)
+      : createdDate;
     const status = normalizeStatus(order.status);
     const productNames = order.rows
       .map((r) => r.productName)
@@ -621,6 +664,12 @@ function processRawRows(rows: RawOrderRow[]): {
       status,
       paymentMethod: order.paymentMethod,
       paymentStatus: formatPaymentStatus(order.paymentStatus),
+      paymentReference: order.paymentReference || undefined,
+      createdAt: order.date || undefined,
+      paymentDate: order.paymentDate,
+      riderName: order.riderName || undefined,
+      handoverTimestamp: order.handoverTimestamp,
+      handoverStaffName: order.handoverStaffName || undefined,
       proofImageUrl: order.proofImageUrl || undefined,
       operator: order.cashierName,
       cashierName: order.cashierName,
@@ -637,7 +686,9 @@ function processRawRows(rows: RawOrderRow[]): {
         quantity: Number(r.quantity) || 1,
       })),
       total: order.total,
-      date: order.date ?? "",
+      date: financialTimestamp || order.date || "",
+      createdAt: order.date || undefined,
+      paymentDate: order.paymentDate,
       time: formatDisplayTime(orderDate),
       orderType: order.orderType,
       status,
@@ -650,6 +701,8 @@ function processRawRows(rows: RawOrderRow[]): {
       cashierName: order.cashierName,
       riderName: order.riderName || undefined,
       handoverTimestamp: order.handoverTimestamp,
+      handoverStaffName: order.handoverStaffName,
+      paymentReference: order.paymentReference,
       proofImageUrl: order.proofImageUrl,
     };
   }
@@ -678,6 +731,15 @@ function triggerPrint(
   );
   const cashOnPickupSales = paidCompleted.filter(
     (l) => normalizePaymentMethod(l.paymentMethod) === "Cash on Pickup",
+  );
+  const grabFoodSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "GrabFood",
+  );
+  const foodpandaSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "foodpanda",
+  );
+  const otherPlatformSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Other",
   );
   const now = new Date();
   const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
@@ -728,8 +790,10 @@ function triggerPrint(
           <td>${fmtDate}</td>
           <td>${o.time}</td>
           <td style="max-width:200px">${o.items.map((it) => `${it.name} ×${it.quantity}`).join(", ")}</td>
+          <td>${o.orderType === "delivery" ? (o.paymentReference ?? "—") : "—"}</td>
           <td>${o.orderType === "delivery" ? (o.riderName ?? "—") : "—"}</td>
           <td>${o.orderType === "delivery" ? fmtHandover : "—"}</td>
+          <td>${o.orderType === "delivery" ? (o.handoverStaffName ?? "—") : "—"}</td>
           <td>${o.cashierName ?? "—"}</td>
           <td style="text-transform:capitalize;color:${DEEP}">${o.paymentCategory}</td>
           <td style="text-align:right;font-weight:700">${formatReportCurrency(o.total, restaurantSettings)}</td>
@@ -859,21 +923,36 @@ function triggerPrint(
           )}</p>
           <p class="summary-card-sub">${cashOnPickupSales.length > 0 ? `${cashSales.length} cash · ${cashOnPickupSales.length} pickup cash` : `${cashSales.length} orders`}</p>
         </div>
+        <div class="summary-card">
+          <p class="summary-card-label">GrabFood Sales</p>
+          <p class="summary-card-value">${formatReportCurrency(grabFoodSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${grabFoodSales.length} orders</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">foodpanda Sales</p>
+          <p class="summary-card-value">${formatReportCurrency(foodpandaSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${foodpandaSales.length} orders</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">Other Platform Sales</p>
+          <p class="summary-card-value">${formatReportCurrency(otherPlatformSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${otherPlatformSales.length} orders</p>
+        </div>
       </div>
       <p class="section-title">Completed Orders (${completedOrders.length})</p>
       <table>
-        <colgroup><col/><col/><col/><col/><col/><col/><col/><col/><col/></colgroup>
+        <colgroup><col/><col/><col/><col/><col/><col/><col/><col/><col/><col/><col/></colgroup>
         <thead>
           <tr>
             <th>Txn ID</th><th>Date</th><th>Time</th><th>Items</th>
-            <th>Rider</th><th>Handover</th><th>Cashier</th><th>Payment</th>
+            <th>Reference</th><th>Rider</th><th>Handover</th><th>Confirmed By</th><th>Cashier</th><th>Payment</th>
             <th style="text-align:right">Amount</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
         <tfoot>
           <tr>
-            <td colspan="8" style="text-align:right;color:#0f172a">Total Revenue</td>
+            <td colspan="10" style="text-align:right;color:#0f172a">Total Revenue</td>
             <td style="text-align:right;color:${DEEP};font-size:15px">${formatReportCurrency(revenue, restaurantSettings)}</td>
           </tr>
         </tfoot>
@@ -2114,6 +2193,12 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
   const cashOnPickupSales = paidCompleted.filter(
     (l) => normalizePaymentMethod(l.paymentMethod) === "Cash on Pickup",
   );
+  const platformSales = (["GrabFood", "foodpanda", "Other"] as const).map((method) => ({
+    method,
+    logs: paidCompleted.filter(
+      (log) => normalizePaymentMethod(log.paymentMethod) === method,
+    ),
+  }));
 
   // First card is the one strong block (solid deep green); the rest stay white.
   const stats = [
@@ -2178,6 +2263,13 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
           },
         ]
       : []),
+    ...platformSales.map(({ method, logs: methodLogs }) => ({
+      label: method,
+      value: formatReportCurrency(
+        methodLogs.reduce((sum, log) => sum + log.total, 0),
+      ),
+      count: methodLogs.length,
+    })),
   ];
 
   return (
@@ -2461,8 +2553,28 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
             >
               {[
                 { label: "Transaction ID", value: log.transactionId },
+                {
+                  label: "Order Created",
+                  value: log.createdAt
+                    ? `${formatDisplayDate(new Date(log.createdAt))} ${formatDisplayTime(log.createdAt)}`
+                    : "—",
+                },
+                { label: "Sale Recorded", value: `${log.date} ${log.time}` },
                 { label: "Cashier", value: log.cashierName },
                 { label: "Payment Method", value: log.paymentMethod },
+                ...(String(log.category).toLowerCase() === "delivery"
+                  ? [
+                      { label: "Platform Reference", value: log.paymentReference || "—" },
+                      { label: "Rider", value: log.riderName || "—" },
+                      {
+                        label: "Handover",
+                        value: log.handoverTimestamp
+                          ? `${formatDisplayDate(new Date(log.handoverTimestamp))} ${formatDisplayTime(log.handoverTimestamp)}`
+                          : "—",
+                      },
+                      { label: "Confirmed By", value: log.handoverStaffName || "—" },
+                    ]
+                  : []),
                 {
                   label: "Payment Status",
                   value: formatPaymentStatus(log.paymentStatus),
@@ -2841,12 +2953,14 @@ const paymentBadgeStyle: Record<
 
 function OrderRow({
   order,
-  canSettle,
+  canCancel,
+  canRefund,
   onSettle,
   onViewReceipt,
 }: {
   order: Order;
-  canSettle: boolean;
+  canCancel: boolean;
+  canRefund: boolean;
   onSettle: (order: Order, action: SettlementAction) => void;
   onViewReceipt: (order: Order) => void;
 }) {
@@ -2869,7 +2983,9 @@ function OrderRow({
 
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
   const settlementAction = getOrderSettlementAction(order);
-  const showSettlement = canSettle && settlementAction !== null;
+  const showSettlement =
+    settlementAction !== null &&
+    (settlementAction === "refund" ? canRefund : canCancel);
   const isDelivery = order.orderType === "delivery";
   const orderTypeLabel = formatOrderType(order.orderType);
 
@@ -3005,11 +3121,17 @@ function OrderRow({
                     {[
                       { label: "Transaction ID", value: order.transactionId },
                       { label: "Order Number", value: order.orderNumber },
-                      { label: "Date", value: fmtDate(order.date) },
-                      { label: "Time", value: fmtTime(order.date) },
+                      {
+                        label: "Order Created",
+                        value: order.createdAt
+                          ? `${fmtDate(order.createdAt)} ${fmtTime(order.createdAt)}`
+                          : "—",
+                      },
+                      { label: "Sale Recorded", value: `${fmtDate(order.date)} ${fmtTime(order.date)}` },
                       { label: "Cashier", value: order.cashierName || "—" },
                       ...(isDelivery
                         ? [
+                            { label: "Platform Reference", value: order.paymentReference || "—" },
                             { label: "Rider", value: order.riderName || "—" },
                             {
                               label: "Handover",
@@ -3018,6 +3140,7 @@ function OrderRow({
                                   ? "—"
                                   : `${fmtDate(order.handoverTimestamp)} ${fmtTime(order.handoverTimestamp)}`,
                             },
+                            { label: "Confirmed By", value: order.handoverStaffName || "—" },
                           ]
                         : []),
                       { label: "Total Qty", value: `${totalQty} pcs` },
@@ -3286,6 +3409,16 @@ const ORDER_PAYMENT_FILTERS: PaymentMethodFilter[] = [
   "Cash",
   "GCash",
   "Cash on Pickup",
+  "GrabFood",
+  "foodpanda",
+  "Other",
+];
+
+const DELIVERY_PLATFORM_FILTERS: DeliveryPlatformFilter[] = [
+  "All",
+  "GrabFood",
+  "foodpanda",
+  "Other",
 ];
 
 const ORDER_TYPE_FILTERS: OrderTypeFilter[] = [
@@ -3306,13 +3439,15 @@ const statusActiveColor: Record<OrderStatusFilter, string> = {
 function OrdersTab({
   orders,
   loading,
-  canSettle,
+  canCancel,
+  canRefund,
   onSettle,
   onViewReceipt,
 }: {
   orders: Order[];
   loading: boolean;
-  canSettle: boolean;
+  canCancel: boolean;
+  canRefund: boolean;
   onSettle: (order: Order, action: SettlementAction) => void;
   onViewReceipt: (order: Order) => void;
 }) {
@@ -3326,6 +3461,9 @@ function OrdersTab({
     useState<PaymentMethodFilter>("All");
   const [orderTypeFilter, setOrderTypeFilter] =
     useState<OrderTypeFilter>("All");
+  const [cashierFilter, setCashierFilter] = useState("All");
+  const [deliveryPlatformFilter, setDeliveryPlatformFilter] =
+    useState<DeliveryPlatformFilter>("All");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<"from" | "to">("from");
   const [pickerInitial, setPickerInitial] = useState<Date>(now);
@@ -3381,12 +3519,26 @@ function OrdersTab({
           (o) =>
             normalizePaymentMethod(o.paymentCategory) === paymentMethodFilter,
         );
-  const filtered =
+  const orderTypeFiltered =
     orderTypeFilter === "All"
       ? paymentFiltered
       : paymentFiltered.filter(
           (o) => formatOrderType(o.orderType) === orderTypeFilter,
         );
+  const cashierOptions = [
+    "All",
+    ...Array.from(new Set(orders.map((order) => order.cashierName || "Unknown"))).sort(),
+  ];
+  const cashierFiltered = cashierFilter === "All"
+    ? orderTypeFiltered
+    : orderTypeFiltered.filter((order) => (order.cashierName || "Unknown") === cashierFilter);
+  const filtered = deliveryPlatformFilter === "All"
+    ? cashierFiltered
+    : cashierFiltered.filter(
+        (order) =>
+          order.orderType === "delivery" &&
+          normalizePaymentMethod(order.paymentCategory) === deliveryPlatformFilter,
+      );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ORDER_PAGE_SIZE));
 
@@ -3490,7 +3642,7 @@ function OrdersTab({
           </div>
         </div>
 
-        <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-5">
           <FilterChips
             label="Order Status"
             options={ORDER_STATUS_FILTERS}
@@ -3516,6 +3668,24 @@ function OrdersTab({
             active={orderTypeFilter}
             onChange={(t) => {
               setOrderTypeFilter(t);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Cashier"
+            options={cashierOptions}
+            active={cashierFilter}
+            onChange={(cashier) => {
+              setCashierFilter(cashier);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Delivery Platform"
+            options={DELIVERY_PLATFORM_FILTERS}
+            active={deliveryPlatformFilter}
+            onChange={(platform) => {
+              setDeliveryPlatformFilter(platform);
               setCurrentPage(1);
             }}
           />
@@ -3568,7 +3738,8 @@ function OrdersTab({
                   <OrderRow
                     key={order.id}
                     order={order}
-                    canSettle={canSettle}
+                    canCancel={canCancel}
+                    canRefund={canRefund}
                     onSettle={onSettle}
                     onViewReceipt={onViewReceipt}
                   />
@@ -3595,7 +3766,8 @@ function OrdersTab({
 
 export default function SalesReports() {
   const { user } = useAuth();
-  const canManagePersistedSettlements = canSettlePersistedOrders(user?.role);
+  const canCancelPersisted = canCancelPersistedOrders(user?.role);
+  const canRefundPersisted = canRefundPersistedOrders(user?.role);
   const now = new Date();
   const { width, isMobile, isTablet } = useViewport();
   const isNarrow = width < 980;
@@ -3629,6 +3801,13 @@ export default function SalesReports() {
   const [logFromDate, setLogFromDate] = useState<Date | null>(null);
   const [logToDate, setLogToDate] = useState<Date | null>(null);
   const [activeLogQuick, setActiveLogQuick] = useState<QuickKey | null>("all");
+  const [logPaymentFilter, setLogPaymentFilter] =
+    useState<PaymentMethodFilter>("All");
+  const [logOrderTypeFilter, setLogOrderTypeFilter] =
+    useState<OrderTypeFilter>("All");
+  const [logCashierFilter, setLogCashierFilter] = useState("All");
+  const [logDeliveryPlatformFilter, setLogDeliveryPlatformFilter] =
+    useState<DeliveryPlatformFilter>("All");
   const [logPickerOpen, setLogPickerOpen] = useState(false);
   const [logPickerTarget, setLogPickerTarget] = useState<"from" | "to">("from");
   const [logPickerInitial, setLogPickerInitial] = useState<Date>(now);
@@ -3690,7 +3869,15 @@ export default function SalesReports() {
   // Reset log page when search/date filters change
   useEffect(() => {
     setLogPage(1);
-  }, [search, logFromDate, logToDate]);
+  }, [
+    search,
+    logFromDate,
+    logToDate,
+    logPaymentFilter,
+    logOrderTypeFilter,
+    logCashierFilter,
+    logDeliveryPlatformFilter,
+  ]);
 
   // Log date picker handlers
   function openLogDatePicker(target: "from" | "to") {
@@ -3736,9 +3923,13 @@ export default function SalesReports() {
 
   // Persisted order settlement handler
   async function handleRefundConfirm() {
-    if (!canManagePersistedSettlements) return;
     const orderId = refundLog?.orderId ?? refundOrder?.id;
     if (orderId == null) return;
+    if (
+      settlementAction === "refund"
+        ? !canRefundPersisted
+        : !canCancelPersisted
+    ) return;
 
     setRefundLoading(true);
     try {
@@ -3786,7 +3977,41 @@ export default function SalesReports() {
     logToDate,
   );
 
+  const logCashierOptions = [
+    "All",
+    ...Array.from(
+      new Set(completedLogs.map((log) => log.cashierName || "Unknown")),
+    ).sort(),
+  ];
+
   const filteredLogs = dateFilteredLogs.filter((l) => {
+    if (
+      logPaymentFilter !== "All" &&
+      normalizePaymentMethod(l.paymentMethod) !== logPaymentFilter
+    ) {
+      return false;
+    }
+    if (
+      logOrderTypeFilter !== "All" &&
+      formatOrderType(l.category) !== logOrderTypeFilter
+    ) {
+      return false;
+    }
+    if (
+      logCashierFilter !== "All" &&
+      (l.cashierName || "Unknown") !== logCashierFilter
+    ) {
+      return false;
+    }
+    if (
+      logDeliveryPlatformFilter !== "All" &&
+      !(
+        String(l.category).toLowerCase() === "delivery" &&
+        normalizePaymentMethod(l.paymentMethod) === logDeliveryPlatformFilter
+      )
+    ) {
+      return false;
+    }
     const q = search.toLowerCase().trim();
     if (!q) return true;
     return (
@@ -4242,6 +4467,33 @@ export default function SalesReports() {
               ))}
             </div>
 
+            <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-4">
+              <FilterChips
+                label="Payment Method"
+                options={ORDER_PAYMENT_FILTERS}
+                active={logPaymentFilter}
+                onChange={setLogPaymentFilter}
+              />
+              <FilterChips
+                label="Order Type"
+                options={ORDER_TYPE_FILTERS}
+                active={logOrderTypeFilter}
+                onChange={setLogOrderTypeFilter}
+              />
+              <FilterChips
+                label="Cashier"
+                options={logCashierOptions}
+                active={logCashierFilter}
+                onChange={setLogCashierFilter}
+              />
+              <FilterChips
+                label="Delivery Platform"
+                options={DELIVERY_PLATFORM_FILTERS}
+                active={logDeliveryPlatformFilter}
+                onChange={setLogDeliveryPlatformFilter}
+              />
+            </div>
+
             {/* Log list */}
             <motion.div
               initial={{ opacity: 0, y: 12 }}
@@ -4389,7 +4641,8 @@ export default function SalesReports() {
             <OrdersTab
               orders={orders}
               loading={isLoading}
-              canSettle={canManagePersistedSettlements}
+              canCancel={canCancelPersisted}
+              canRefund={canRefundPersisted}
               onSettle={(order, action) => {
                 setSettlementAction(action);
                 setRefundOrder(order);

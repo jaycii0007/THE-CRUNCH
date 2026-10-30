@@ -14,7 +14,7 @@ import { api } from "./api";
 /* -------------------------------------------------------------------------- */
 
 // Staff roles that can use the back office.
-export const STAFF_ROLES = ["administrator", "cashier", "cook", "inventory_manager"] as const;
+export const STAFF_ROLES = ["administrator", "cashier", "inventory_manager"] as const;
 export const SUPERUSER_ROLE = "administrator" as const;
 
 // One permission per back-office page.
@@ -61,16 +61,6 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
     salesReports: true,
     settings: false,
   },
-  cook: {
-    overview: false,
-    orders: true,
-    menuManagement: false,
-    menus: false,
-    stockManager: false,
-    userAccounts: false,
-    salesReports: false,
-    settings: false,
-  },
   inventory_manager: {
     overview: true,
     orders: true,
@@ -87,7 +77,6 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
 const REQUIRED_PERMISSIONS: Record<NonNullRole, PermissionKey[]> = {
   administrator: [...PERMISSION_KEYS],
   cashier: ["overview", "orders"],
-  cook: ["orders"],
   inventory_manager: ["orders"],
 };
 
@@ -151,7 +140,7 @@ export function normalizeRole(value: unknown): NonNullRole | "customer" | null {
 let loadedPermissions: PermissionsMap | null = null;
 let permissionsRequest: Promise<PermissionsMap> | null = null;
 
-// Every staff role can open the orders view; Cook remains kitchen-only.
+// Every current staff role can open the Cook View workflow.
 export const COOK_VIEW_ROLES: readonly NonNullRole[] = STAFF_ROLES;
 
 // Latest permissions loaded from the API during this session, or the defaults.
@@ -197,8 +186,16 @@ export function isSuperuserRole(value: unknown): boolean {
 }
 
 export function canSettlePersistedOrders(value: unknown): boolean {
+  return canCancelPersistedOrders(value);
+}
+
+export function canCancelPersistedOrders(value: unknown): boolean {
   const role = normalizeRole(value);
   return role === SUPERUSER_ROLE || role === "inventory_manager";
+}
+
+export function canRefundPersistedOrders(value: unknown): boolean {
+  return normalizeRole(value) === SUPERUSER_ROLE;
 }
 
 export function hasPagePermission(

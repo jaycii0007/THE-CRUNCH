@@ -56,10 +56,12 @@ export function usePurchaseOrders({
   const [receivingOrder, setReceivingOrder] = useState<PurchaseOrder | null>(
     null,
   );
+  const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   const [poLoading, setPoLoading] = useState(false);
   const [poError, setPoError] = useState<string | null>(null);
   const [poHistoryDateFrom, setPoHistoryDateFrom] = useState("");
   const [poHistoryDateTo, setPoHistoryDateTo] = useState("");
+  const [poHistoryStatus, setPoHistoryStatus] = useState<"All" | "Received" | "Cancelled">("All");
   const [poHistoryPage, setPoHistoryPage] = useState(1);
   const poHistoryFromInputRef = useRef<HTMLInputElement | null>(null);
   const poHistoryToInputRef = useRef<HTMLInputElement | null>(null);
@@ -109,23 +111,24 @@ export function usePurchaseOrders({
   }, [criticalStock, lowStock]);
 
   const filteredPOs = useMemo(
-    () => poOrders.filter((o) => o.status === "Draft"),
+    () => poOrders.filter((o) => o.status !== "Received" && o.status !== "Cancelled"),
     [poOrders],
   );
   const completedPOs = useMemo(
-    () => poOrders.filter((o) => o.status !== "Draft"),
+    () => poOrders.filter((o) => o.status === "Received" || o.status === "Cancelled"),
     [poOrders],
   );
   const filteredCompletedPOs = useMemo(
     () =>
       completedPOs.filter((o) =>
+        (poHistoryStatus === "All" || o.status === poHistoryStatus) &&
         isDateInRange(
           o.receivedDate ?? o.date,
           poHistoryDateFrom,
           poHistoryDateTo,
         ),
       ),
-    [completedPOs, poHistoryDateFrom, poHistoryDateTo],
+    [completedPOs, poHistoryDateFrom, poHistoryDateTo, poHistoryStatus],
   );
   const poHistoryTotalPages = Math.max(
     1,
@@ -144,7 +147,7 @@ export function usePurchaseOrders({
 
   useEffect(() => {
     setPoHistoryPage(1);
-  }, [poHistoryDateFrom, poHistoryDateTo]);
+  }, [poHistoryDateFrom, poHistoryDateTo, poHistoryStatus]);
 
   useEffect(() => {
     setPoHistoryPage((current) => Math.min(current, poHistoryTotalPages));
@@ -333,16 +336,57 @@ export function usePurchaseOrders({
     [addNotification, showToast, suppliers, setSuppliers],
   );
 
+  const handlePOUpdate = useCallback(
+    async (
+      draft: Omit<PurchaseOrder, "id">,
+      meta: { supplierId: number; itemNames: string[] },
+    ) => {
+      if (!editingOrder || editingOrder.status !== "Draft") {
+        throw new Error("Only draft purchase orders can be edited.");
+      }
+      setPoLoading(true);
+      try {
+        void meta;
+        const editableDraft = {
+          supplier: draft.supplier,
+          contact: draft.contact,
+          date: draft.date,
+          deliveryDate: draft.deliveryDate,
+          notes: draft.notes,
+          items: draft.items,
+        };
+        const updated = await api.po.updateDraft(editingOrder.id, editableDraft);
+        setPoOrders((current) =>
+          current.map((order) => (order.id === updated.id ? updated : order)),
+        );
+        setSelectedOrder(updated);
+        setEditingOrder(null);
+        showToast("Purchase order draft updated.", "success");
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : "Failed to update purchase order.",
+          "error",
+        );
+        throw err;
+      } finally {
+        setPoLoading(false);
+      }
+    },
+    [editingOrder, showToast],
+  );
+
   return {
     poOrders,
     poLoaded,
     selectedOrder,
     printOrder,
     receivingOrder,
+    editingOrder,
     poLoading,
     poError,
     poHistoryDateFrom,
     poHistoryDateTo,
+    poHistoryStatus,
     poHistoryPage,
     poHistoryFromInputRef,
     poHistoryToInputRef,
@@ -361,11 +405,14 @@ export function usePurchaseOrders({
     handlePODelete,
     handleConfirmReceivePO,
     handlePOCreate,
+    handlePOUpdate,
     setSelectedOrder,
     setPrintOrder,
     setReceivingOrder,
+    setEditingOrder,
     setPoHistoryDateFrom,
     setPoHistoryDateTo,
+    setPoHistoryStatus,
     setPoHistoryPage,
     setPrefillPOProduct,
   };

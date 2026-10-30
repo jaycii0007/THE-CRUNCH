@@ -18,8 +18,7 @@ type Notice = { tone: "success" | "error"; text: string } | null;
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,100}$/;
 const HOME_BY_ROLE: Record<string, string> = {
   administrator: "/dashboard",
-  cashier: "/orders",
-  cook: "/orders",
+  cashier: "/menu",
   inventory_manager: "/inventory",
   customer: "/products",
 };
@@ -194,7 +193,7 @@ export default function MyAccount() {
               <UserRound className="h-6 w-6" />
             </span>
             <div>
-              <h1 className="text-2xl font-bold">My Account</h1>
+              <h1 className="text-2xl font-bold">My Profile</h1>
               <p className="mt-1 text-sm text-slate-300">Update your own sign-in details securely.</p>
             </div>
           </div>

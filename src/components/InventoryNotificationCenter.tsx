@@ -5,6 +5,7 @@ import { apiCall } from "@/lib/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { normalizeRole } from "@/lib/permissions";
 import { requestStockManagerTab, STOCK_MANAGER_PATH } from "@/pages/stockmanager/navigation";
+import { useConfirm, useNotifications } from "@/lib/NotificationContext";
 
 type AlertSeverity = "out" | "critical" | "low";
 type NotificationTab = "unread" | "read";
@@ -78,8 +79,10 @@ function createdAt(notification: UnifiedNotification) {
   return notification.item.created_at;
 }
 
-export function InventoryNotificationCenter({ role }: { role: unknown }) {
+export function InventoryNotificationCenter({ role, embedded = false }: { role: unknown; embedded?: boolean }) {
   const navigate = useNavigate();
+  const confirm = useConfirm();
+  const { addNotification } = useNotifications();
   const normalizedRole = normalizeRole(role);
   const enabled = normalizedRole === "administrator" || normalizedRole === "inventory_manager";
   const [open, setOpen] = useState(false);
@@ -93,6 +96,7 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
   const [markingKey, setMarkingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedRefund, setSelectedRefund] = useState<StaffNotification | null>(null);
+  const [refundAction, setRefundAction] = useState<"ignore" | "refund" | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -144,9 +148,9 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
   });
 
   const allNotifications = useMemo<UnifiedNotification[]>(() => {
-    const visibleInventory = normalizedRole === "inventory_manager"
-      ? inventoryAlerts.filter((alert) => alert.severity === "critical" || alert.severity === "out")
-      : normalizedRole === "administrator" ? inventoryAlerts : [];
+    const visibleInventory = normalizedRole === "inventory_manager" || normalizedRole === "administrator"
+      ? inventoryAlerts
+      : [];
     const visibleStaff = staffNotifications.filter((notification) => {
       if (notification.category === "refund_request") return normalizedRole === "administrator";
       return normalizedRole === "administrator" || normalizedRole === "inventory_manager";
@@ -223,15 +227,61 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
       setSelectedRefund(notification.item);
       return;
     }
-    requestStockManagerTab("purchases");
+    requestStockManagerTab(notification.source === "inventory" ? "alerts" : "purchases");
     navigate(STOCK_MANAGER_PATH);
   }, [markAsRead, navigate]);
+
+  const notify = useCallback((label: string, type: "success" | "error") => {
+    addNotification({ id: crypto.randomUUID(), label, type });
+  }, [addNotification]);
+
+  const reviewRefund = useCallback(async (action: "ignore" | "refund") => {
+    if (!selectedRefund || refundAction) return;
+    const requestId = Number(selectedRefund.metadata.requestId);
+    const orderId = Number(selectedRefund.metadata.orderId ?? selectedRefund.entity_id);
+    if (!Number.isSafeInteger(requestId) || requestId <= 0 || !Number.isSafeInteger(orderId) || orderId <= 0) {
+      notify("This refund notification is missing its order details. Refresh and try again.", "error");
+      return;
+    }
+    const accepted = await confirm({
+      title: action === "refund" ? "Take action on refund request?" : "Ignore refund request?",
+      message: action === "refund"
+        ? "The server will recheck payment and preparation status before refunding and restoring inventory."
+        : "The request will be marked ignored and the original order will return to Cook View immediately.",
+      confirmLabel: action === "refund" ? "Confirm refund" : "Ignore request",
+      cancelLabel: "Cancel",
+      danger: action === "refund",
+    });
+    if (!accepted) return;
+    setRefundAction(action);
+    try {
+      if (action === "refund") {
+        await apiCall(`/orders/${orderId}`, {
+          method: "PATCH",
+          body: { status: "Refunded" },
+        });
+        notify("Refund completed and the request was actioned.", "success");
+      } else {
+        await apiCall(`/refund-requests/${requestId}/ignore`, {
+          method: "PATCH",
+          body: {},
+        });
+        notify("Refund request ignored. The order returned to Cook View.", "success");
+      }
+      setSelectedRefund(null);
+      await loadNotifications();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Unable to review the refund request.", "error");
+    } finally {
+      if (mounted.current) setRefundAction(null);
+    }
+  }, [confirm, loadNotifications, notify, refundAction, selectedRefund]);
 
   if (!enabled) return null;
 
   return (
     <>
-      <div className="fixed right-4 top-4 z-40 font-['Poppins',sans-serif] sm:right-6 sm:top-6">
+      <div className={`${embedded ? "relative" : "fixed right-4 top-4 z-40 sm:right-6 sm:top-6"} font-['Poppins',sans-serif]`}>
         <button
           type="button"
           onClick={() => setOpen((current) => !current)}
@@ -373,10 +423,18 @@ export function InventoryNotificationCenter({ role }: { role: unknown }) {
                 <dd className="mt-1 font-semibold text-slate-800">{selectedRefund.status || "Pending"}</dd>
               </div>
             </dl>
-            <div className="mt-5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              This notification is read-only. Refund approval and settlement are not available here.
-            </div>
-            <button type="button" onClick={() => setSelectedRefund(null)} className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Close</button>
+            {selectedRefund.status === "Pending" ? (
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button type="button" disabled={refundAction !== null} onClick={() => void reviewRefund("ignore")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  {refundAction === "ignore" ? "Ignoring…" : "Ignore"}
+                </button>
+                <button type="button" disabled={refundAction !== null} onClick={() => void reviewRefund("refund")} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                  {refundAction === "refund" ? "Refunding…" : "Take Action"}
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setSelectedRefund(null)} className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Close</button>
+            )}
           </div>
         </div>
       )}

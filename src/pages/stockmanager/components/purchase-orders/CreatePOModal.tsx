@@ -37,11 +37,12 @@ type DraftItem = {
   category: string;
   unit: string;
   quantity: string;
+  unitCost: string;
   nameTouched: boolean;
   quantityTouched: boolean;
 };
 
-type ItemErrors = { name?: string; quantity?: string };
+type ItemErrors = { name?: string; quantity?: string; unitCost?: string };
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -161,6 +162,7 @@ export function CreatePOModal({
   allProducts,
   allSuppliers,
   prefillProduct,
+  initialOrder,
   onShowToast,
   isMenuFoodProduct,
 }: {
@@ -179,6 +181,7 @@ export function CreatePOModal({
     unit: string;
     supplier: string;
   } | null;
+  initialOrder?: PurchaseOrder | null;
   onShowToast: (message: string, type: "success" | "error") => void;
   isMenuFoodProduct: (p: Pick<Product, "item_type">) => boolean;
 }) {
@@ -191,6 +194,7 @@ export function CreatePOModal({
     category: "",
     unit: "",
     quantity: "",
+    unitCost: "",
     nameTouched: false,
     quantityTouched: false,
     ...overrides,
@@ -229,16 +233,36 @@ export function CreatePOModal({
 
   // ---- Form state ---------------------------------------------------------
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | "">(() => {
-    if (!prefillProduct?.supplier) return "";
+    const supplierName = initialOrder?.supplier || prefillProduct?.supplier;
+    if (!supplierName) return "";
     const found = allSuppliers.find(
-      (s) => normalize(s.supplier_name) === normalize(prefillProduct.supplier),
+      (s) => normalize(s.supplier_name) === normalize(supplierName),
     );
     return found?.supplier_id ?? "";
   });
   const [supplierTouched, setSupplierTouched] = useState(false);
-  const [deliveryDate, setDeliveryDate] = useState(today);
-  const [notes, setNotes] = useState("");
+  const [deliveryDate, setDeliveryDate] = useState(
+    initialOrder?.deliveryDate || today,
+  );
+  const [notes, setNotes] = useState(initialOrder?.notes || "");
   const [items, setItems] = useState<DraftItem[]>(() => {
+    if (initialOrder) {
+      return initialOrder.items.map((item) =>
+        makeItem({
+          productId: item.productId ?? null,
+          name: item.name,
+          category: item.category,
+          unit: item.unit,
+          quantity: String(item.quantity),
+          unitCost:
+            item.unitCost === null || item.unitCost === undefined
+              ? ""
+              : String(item.unitCost),
+          nameTouched: true,
+          quantityTouched: true,
+        }),
+      );
+    }
     if (prefillProduct) {
       // Use the live inventory record when we can find it, so the
       // suggested quantity matches the current stock level.
@@ -325,6 +349,18 @@ export function CreatePOModal({
         errors.quantity = `Enter a whole number from 1 to ${PURCHASE_ORDER_QUANTITY_MAX}.`;
       }
 
+      if (item.unitCost.trim()) {
+        const unitCost = Number(item.unitCost);
+        if (
+          !Number.isFinite(unitCost) ||
+          unitCost < 0 ||
+          unitCost > 99999999.99 ||
+          !/^\d+(?:\.\d{0,2})?$/.test(item.unitCost)
+        ) {
+          errors.unitCost = "Enter a valid unit price with up to 2 decimals.";
+        }
+      }
+
       return errors;
     });
   }, [items, productById, productByName]);
@@ -339,13 +375,14 @@ export function CreatePOModal({
   const isValid =
     !supplierError &&
     !deliveryDateError &&
-    itemErrors.every((e) => !e.name && !e.quantity);
+    itemErrors.every((e) => !e.name && !e.quantity && !e.unitCost);
 
   // The first thing blocking the Save button, shown next to it.
   const blockingMessage = useMemo(() => {
     if (supplierError) return supplierError;
     for (let i = 0; i < itemErrors.length; i++) {
-      const message = itemErrors[i].name || itemErrors[i].quantity;
+      const message =
+        itemErrors[i].name || itemErrors[i].quantity || itemErrors[i].unitCost;
       if (message) return `Item ${i + 1}: ${message}`;
     }
     return deliveryDateError;
@@ -355,6 +392,14 @@ export function CreatePOModal({
   const totalUnits = items.reduce((sum, item) => {
     const quantity = toNumber(item.quantity);
     return sum + (Number.isFinite(quantity) && quantity > 0 ? quantity : 0);
+  }, 0);
+  const totalCost = items.reduce((sum, item) => {
+    const quantity = toNumber(item.quantity);
+    const unitCost = toNumber(item.unitCost);
+    return sum +
+      (Number.isFinite(quantity) && Number.isFinite(unitCost)
+        ? quantity * unitCost
+        : 0);
   }, 0);
 
   // ---- Focus handling -----------------------------------------------------
@@ -516,6 +561,19 @@ export function CreatePOModal({
     markDirty();
   };
 
+  const handleUnitCostChange = (uid: number, rawValue: string) => {
+    const cleaned = sanitizeNumberInput(rawValue, {
+      allowDecimal: true,
+      maxDigits: 10,
+    });
+    const [whole, decimals = ""] = cleaned.split(".");
+    const unitCost = cleaned.includes(".")
+      ? `${whole}.${decimals.slice(0, 2)}`
+      : whole;
+    updateItem(uid, { unitCost });
+    markDirty();
+  };
+
   // Choosing a suggestion fills the row, suggests a quantity if the field is
   // empty, and moves focus to the quantity input.
   const applyProductToItem = (uid: number, product: Product) => {
@@ -633,6 +691,7 @@ export function CreatePOModal({
         category: product ? product.category : item.category,
         unit: product ? product.unit : item.unit,
         quantity: toNumber(item.quantity),
+        unitCost: item.unitCost.trim() ? toNumber(item.unitCost) : 0,
       };
     });
 
@@ -642,7 +701,7 @@ export function CreatePOModal({
         {
           supplier: supplierName,
           contact,
-          date: today,
+          date: initialOrder?.date || today,
           deliveryDate,
           status: "Draft",
           notes: notes.trim(),
@@ -693,7 +752,7 @@ export function CreatePOModal({
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
           <div>
             <h2 id="create-po-title" className="text-lg font-semibold text-gray-800">
-              New Purchase Order
+              {initialOrder ? `Edit ${initialOrder.id}` : "New Purchase Order"}
             </h2>
             {prefillProduct && (
               <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
@@ -899,6 +958,7 @@ export function CreatePOModal({
                   const quantityError = item.quantityTouched
                     ? errors.quantity
                     : undefined;
+                  const unitCostError = errors.unitCost;
                   const isMatched = !!(
                     (item.productId && productById.get(item.productId)) ||
                     productByName.get(normalize(item.name))
@@ -1026,8 +1086,8 @@ export function CreatePOModal({
                         </p>
                       )}
 
-                      {/* Qty first, then Unit */}
-                      <div className="grid grid-cols-2 gap-2 mt-2">
+                      {/* Quantity, inventory unit, and supplier unit price */}
+                      <div className="grid grid-cols-1 gap-2 mt-2 sm:grid-cols-3">
                         <div className="min-w-0">
                           <label
                             htmlFor={`po-item-qty-${item.uid}`}
@@ -1072,10 +1132,38 @@ export function CreatePOModal({
                             className="w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-slate-50 text-slate-500 placeholder-gray-300 cursor-not-allowed focus:outline-none"
                           />
                         </div>
+                        <div className="min-w-0">
+                          <label
+                            htmlFor={`po-item-cost-${item.uid}`}
+                            className="block text-[11px] text-gray-400 mb-1"
+                          >
+                            Unit Price (PHP)
+                          </label>
+                          <input
+                            id={`po-item-cost-${item.uid}`}
+                            type="text"
+                            inputMode="decimal"
+                            value={item.unitCost}
+                            onChange={(event) =>
+                              handleUnitCostChange(item.uid, event.target.value)
+                            }
+                            onKeyDown={(event) =>
+                              blockInvalidNumberKeys(event, { allowDecimal: true })
+                            }
+                            placeholder="0.00"
+                            aria-invalid={!!unitCostError}
+                            className={fieldClass(!!unitCostError)}
+                          />
+                        </div>
                       </div>
                       {quantityError && (
                         <p role="alert" className="mt-1 text-[11px] text-red-500">
                           {quantityError}
+                        </p>
+                      )}
+                      {unitCostError && (
+                        <p role="alert" className="mt-1 text-[11px] text-red-500">
+                          {unitCostError}
                         </p>
                       )}
                     </motion.div>
@@ -1113,6 +1201,7 @@ export function CreatePOModal({
             <span className="text-slate-500">
               {items.length} item{items.length !== 1 ? "s" : ""} {"\u00B7"}{" "}
               {totalUnits} unit{totalUnits !== 1 ? "s" : ""} total
+              {totalCost > 0 && ` · PHP ${totalCost.toFixed(2)}`}
             </span>
             {!isValid && blockingMessage && (
               <span className="text-amber-600 text-right truncate">
@@ -1141,7 +1230,7 @@ export function CreatePOModal({
                   Saving...
                 </>
               ) : (
-                "Save as Draft"
+                initialOrder ? "Save Changes" : "Save as Draft"
               )}
             </button>
           </div>

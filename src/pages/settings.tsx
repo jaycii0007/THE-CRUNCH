@@ -99,6 +99,8 @@ function useViewportWatcher(): Viewport {
 /* -------------------------------------------------------------------------- */
 
 export type TabKey =
+  | "profile"
+  | "master_data"
   | "business"
   | "ordering"
   | "inventory"
@@ -303,6 +305,12 @@ const accentButton = (disabled = false): CSSProperties => ({
   textAlign: "center", transition: "all .15s",
   opacity: disabled ? 0.55 : 1,
   cursor: disabled ? "not-allowed" : "pointer",
+});
+
+const secondaryButton = (): CSSProperties => ({
+  fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600, borderRadius: 9,
+  padding: "7px 10px", border: "1px solid #ddd8d2", background: "#fff",
+  color: "#5a5652", cursor: "pointer",
 });
 
 /* -------------------------------------------------------------------------- */
@@ -541,6 +549,178 @@ export function InventoryTab(p: TabProps) {
   );
 }
 
+function ProfileTab() {
+  return (
+    <Section>
+      <FR label="Signed-in account" last>
+        <a href="/my-account" style={{ ...accentButton(), display: "inline-block", textDecoration: "none" }}>
+          Open My Profile
+        </a>
+      </FR>
+      <Hint>Update your own display name and password on the secure profile page.</Hint>
+    </Section>
+  );
+}
+
+interface InventoryCategorySetting {
+  category_id: number;
+  name: string;
+  date_tracking_type: "none" | "expiry" | "shelf_life";
+  is_active: boolean | number;
+}
+
+interface InventoryUnitSetting {
+  unit_id: number;
+  name: string;
+  abbreviation: string | null;
+  is_active: boolean | number;
+}
+
+function CategoriesUnitsTab() {
+  const [categories, setCategories] = useState<InventoryCategorySetting[]>([]);
+  const [units, setUnits] = useState<InventoryUnitSetting[]>([]);
+  const [categoryName, setCategoryName] = useState("");
+  const [unitName, setUnitName] = useState("");
+  const [unitAbbreviation, setUnitAbbreviation] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [nextCategories, nextUnits] = await Promise.all([
+        api.get<InventoryCategorySetting[]>("/settings/inventory-categories"),
+        api.get<InventoryUnitSetting[]>("/settings/inventory-units"),
+      ]);
+      setCategories(nextCategories);
+      setUnits(nextUnits);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Failed to load categories and units.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const createCategory = async () => {
+    const name = categoryName.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.post<InventoryCategorySetting>("/settings/inventory-categories", {
+        name,
+        date_tracking_type: "none",
+      });
+      setCategories((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setCategoryName("");
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Failed to add category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createUnit = async () => {
+    const name = unitName.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.post<InventoryUnitSetting>("/settings/inventory-units", {
+        name,
+        abbreviation: unitAbbreviation.trim() || null,
+      });
+      setUnits((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setUnitName("");
+      setUnitAbbreviation("");
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Failed to add unit.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleCategory = async (category: InventoryCategorySetting) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const updated = await api.patch<InventoryCategorySetting>(
+        `/settings/inventory-categories/${category.category_id}`,
+        { is_active: !Boolean(category.is_active) },
+      );
+      setCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to update category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleUnit = async (unit: InventoryUnitSetting) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const updated = await api.patch<InventoryUnitSetting>(
+        `/settings/inventory-units/${unit.unit_id}`,
+        { is_active: !Boolean(unit.is_active) },
+      );
+      setUnits((current) => current.map((item) => item.unit_id === updated.unit_id ? updated : item));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to update unit.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) return <div style={{ ...S.panel, height: 180, opacity: 0.6 }} />;
+
+  const rowStyle: CSSProperties = {
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+    padding: "10px 0", borderBottom: "1px solid #f0ede8",
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {error && <ErrorPanel message={error} onRetry={load} />}
+      <Section>
+        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>Inventory Categories</h3>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <SI value={categoryName} onChange={setCategoryName} placeholder="Category name" />
+          <button type="button" onClick={() => void createCategory()} disabled={busy || !categoryName.trim()} style={accentButton(busy || !categoryName.trim())}>Add</button>
+        </div>
+        {categories.map((category) => (
+          <div key={category.category_id} style={rowStyle}>
+            <span style={typo("0.8rem", INK, 500)}>{category.name}</span>
+            <button type="button" disabled={busy} onClick={() => void toggleCategory(category)} style={secondaryButton()}>
+              {Boolean(category.is_active) ? "Active" : "Inactive"}
+            </button>
+          </div>
+        ))}
+      </Section>
+      <Section>
+        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>Inventory Units</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(90px, .4fr) auto", gap: 8, marginBottom: 10 }}>
+          <SI value={unitName} onChange={setUnitName} placeholder="Unit name" />
+          <SI value={unitAbbreviation} onChange={setUnitAbbreviation} placeholder="Abbrev." />
+          <button type="button" onClick={() => void createUnit()} disabled={busy || !unitName.trim()} style={accentButton(busy || !unitName.trim())}>Add</button>
+        </div>
+        {units.map((unit) => (
+          <div key={unit.unit_id} style={rowStyle}>
+            <span style={typo("0.8rem", INK, 500)}>{unit.name}{unit.abbreviation ? ` (${unit.abbreviation})` : ""}</span>
+            <button type="button" disabled={busy} onClick={() => void toggleUnit(unit)} style={secondaryButton()}>
+              {Boolean(unit.is_active) ? "Active" : "Inactive"}
+            </button>
+          </div>
+        ))}
+      </Section>
+    </div>
+  );
+}
+
 export function OrderingTab(p: TabProps) {
   return (
     <>
@@ -630,10 +810,13 @@ const formatPermissionLabel = (key: string) =>
 function usePermissionMatrix() {
   const [matrix, setMatrix] = useState<PermissionMatrix | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setMatrix(null);
     setError(null);
+    setNotice(null);
     api.get<Record<string, unknown>>("/settings/permissions")
       .then((data) => {
         if (!data || typeof data !== "object") throw new Error("Invalid permissions response");
@@ -649,11 +832,44 @@ function usePermissionMatrix() {
     load();
   }, [load]);
 
-  return { matrix, error, reload: load };
+  const toggle = (role: string, page: string) => {
+    if (role === "administrator") return;
+    setMatrix((current) => current ? {
+      ...current,
+      [role]: {
+        ...current[role],
+        [page]: current[role]?.[page] !== true,
+      },
+    } : current);
+    setNotice(null);
+  };
+
+  const save = async () => {
+    if (!matrix || saving) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api.put<Record<string, unknown>>("/settings/permissions", {
+        permissions: matrix,
+      });
+      const raw = "permissions" in response ? response.permissions : response;
+      setMatrix(normalizePermissionsMap(
+        (raw as Partial<PermissionsMap> | null | undefined) ?? null,
+      ) as unknown as PermissionMatrix);
+      setNotice("Role permissions saved.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to save permissions.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return { matrix, error, saving, notice, reload: load, toggle, save };
 }
 
 export function RolesTab() {
-  const { matrix, error, reload } = usePermissionMatrix();
+  const { matrix, error, saving, notice, reload, toggle, save } = usePermissionMatrix();
   const isMobile = useViewport() === "mobile";
 
   if (error) return <ErrorPanel message={error} onRetry={reload} />;
@@ -691,17 +907,21 @@ export function RolesTab() {
                   const allowed = matrix[role]?.[page] === true;
                   return (
                     <td key={role} style={{ padding: `10px ${cellX}px`, textAlign: "center" }}>
-                      <span
+                      <button
+                        type="button"
+                        onClick={() => toggle(role, page)}
+                        disabled={role === "administrator" || saving}
                         style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
                           width: 20, height: 20, borderRadius: 5, fontSize: "0.68rem", fontWeight: 700,
                           background: allowed ? "rgba(224,90,30,.1)" : "#f5f4f2",
                           color: allowed ? ACCENT : "#c8c4be",
+                          border: "none", cursor: role === "administrator" ? "not-allowed" : "pointer",
                         }}
                         aria-label={allowed ? "Allowed" : "Not allowed"}
                       >
                         {allowed ? "✓" : "—"}
-                      </span>
+                      </button>
                     </td>
                   );
                 })}
@@ -710,7 +930,11 @@ export function RolesTab() {
           </tbody>
         </table>
       </div>
-      <Hint>Shows which pages each role can open in the main menu, as currently saved in the system.</Hint>
+      <Hint>Administrator access is fixed. Select a Cashier or Inventory Manager cell, then save.</Hint>
+      {notice && <p style={{ ...typo("0.76rem", SUCCESS, 500), marginTop: 12 }}>{notice}</p>}
+      <button type="button" onClick={() => void save()} disabled={saving} style={{ ...accentButton(saving), marginTop: 14 }}>
+        {saving ? "Saving..." : "Save Role Permissions"}
+      </button>
     </Section>
   );
 }
@@ -878,32 +1102,32 @@ export interface NavGroup {
 
 export const NAV_GROUPS: NavGroup[] = [
   {
+    label: "Account",
+    items: [{ key: "profile", label: "My Profile" }],
+  },
+  {
     label: "Store",
     items: [
-      { key: "business", label: "Business Info" },
-      { key: "ordering", label: "Online Ordering" },
-      { key: "inventory", label: "Inventory" },
-      { key: "billing", label: "Tax & Charges" },
+      { key: "business", label: "Store Information" },
     ],
   },
   {
     label: "Admin",
-    items: [
-      { key: "roles", label: "Roles & Permissions" },
-      { key: "security", label: "Security" },
-    ],
+    items: [{ key: "roles", label: "Role Permissions" }],
   },
   {
-    label: "System",
+    label: "Inventory",
     items: [
-      { key: "notifications", label: "Notifications" },
-      { key: "feedback", label: "Customer Feedback" },
+      { key: "master_data", label: "Categories & Units" },
+      { key: "inventory", label: "Inventory Thresholds" },
     ],
   },
 ];
 
 // Page title and description shown above each tab.
 export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
+  profile:       { title: "My Profile",              desc: "Update your own account details and password." },
+  master_data:   { title: "Categories & Units",      desc: "Maintain the category and unit choices used by inventory forms." },
   business:      { title: "Business Information",    desc: "Restaurant identity, contact details, and operating hours." },
   ordering:      { title: "Online Ordering",         desc: "Accept online orders, set a minimum order, and control the store status." },
   inventory:     { title: "Inventory Configuration", desc: "Low and critical stock thresholds." },
@@ -1117,28 +1341,6 @@ function useSettings() {
   return { values, loading, saving, error, notice, setField, save };
 }
 
-// Loads customer feedback through the API.
-function useFeedback() {
-  const [feedback, setFeedback] = useState<FeedbackEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    api.get<FeedbackEntry[]>("/feedback")
-      .then(setFeedback)
-      .catch(() => setError("Failed to load feedback. Please try again."))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  return { feedback, loading, error, reload: load };
-}
-
 /* -------------------------------------------------------------------------- */
 /* Page                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -1186,9 +1388,8 @@ function AccessMessage({ status, onRetry }: { status: AccessStatus; onRetry: () 
 
 // The settings menu and the selected tab. Only mounted for administrators.
 function SettingsPanel() {
-  const [activeTab, setActiveTab] = useState<TabKey>("business");
+  const [activeTab, setActiveTab] = useState<TabKey>("profile");
   const settings = useSettings();
-  const feedback = useFeedback();
   const viewport = useViewport();
   const isMobile = viewport === "mobile";
   const isTablet = viewport === "tablet";
@@ -1197,7 +1398,7 @@ function SettingsPanel() {
   const tabProps: TabProps = { s: settings.values, set: settings.setField };
 
   // Tabs that do not edit restaurant settings have no save button.
-  const showSave = !["roles", "feedback"].includes(activeTab);
+  const showSave = activeTab === "business" || activeTab === "inventory";
 
   // One status line: error first, then loading, then the save confirmation.
   const status = [
@@ -1208,22 +1409,12 @@ function SettingsPanel() {
 
   const renderTab = () => {
     switch (activeTab) {
+      case "profile":       return <ProfileTab />;
+      case "master_data":   return <CategoriesUnitsTab />;
       case "business":      return <BusinessTab {...tabProps} />;
-      case "ordering":      return <OrderingTab {...tabProps} />;
       case "inventory":     return <InventoryTab {...tabProps} />;
-      case "billing":       return <BillingTab {...tabProps} />;
-      case "notifications": return <NotifTab {...tabProps} />;
       case "roles":         return <RolesTab />;
-      case "security":      return <SecurityTab {...tabProps} />;
-      case "feedback":
-        return (
-          <FeedbackTab
-            feedback={feedback.feedback}
-            loading={feedback.loading}
-            error={feedback.error}
-            onRetry={feedback.reload}
-          />
-        );
+      default:               return <ProfileTab />;
     }
   };
 
@@ -1239,7 +1430,7 @@ function SettingsPanel() {
     >
       {/* Settings menu */}
       {isMobile ? (
-        <MobileTabs active={activeTab} feedbackCount={feedback.feedback.length} onSelect={setActiveTab} />
+        <MobileTabs active={activeTab} feedbackCount={0} onSelect={setActiveTab} />
       ) : (
         <div
           style={{
@@ -1253,7 +1444,7 @@ function SettingsPanel() {
               key={group.label}
               group={group}
               active={activeTab}
-              feedbackCount={feedback.feedback.length}
+              feedbackCount={0}
               onSelect={setActiveTab}
             />
           ))}

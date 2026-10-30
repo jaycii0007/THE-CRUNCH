@@ -314,7 +314,8 @@ export function SuppliersTab({
                         </button>
                         <button
                           onClick={() => removeSupplier(s.supplier_id)}
-                          className="text-xs text-slate-300 hover:text-red-400 transition-colors font-medium"
+                          disabled={submitting}
+                          className="text-xs text-slate-300 hover:text-red-400 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Remove
                         </button>

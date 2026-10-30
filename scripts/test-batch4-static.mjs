@@ -6,22 +6,22 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 const purchaseHook = read("src/pages/stockmanager/hooks/usePurchaseOrders.ts");
 assert.match(
   purchaseHook,
-  /poOrders\.filter\(\(o\) => o\.status === "Draft"\)/,
-  "Active purchase orders must be Draft-only",
+  /o\.status !== "Received" && o\.status !== "Cancelled"/,
+  "Active purchase orders must include every nonterminal status",
 );
 assert.match(
   purchaseHook,
-  /poOrders\.filter\(\(o\) => o\.status !== "Draft"\)/,
-  "All non-Draft purchase orders must remain in history",
+  /o\.status === "Received" \|\| o\.status === "Cancelled"/,
+  "PO history must contain only Received and Cancelled orders",
 );
 
 const createPO = read(
   "src/pages/stockmanager/components/purchase-orders/CreatePOModal.tsx",
 );
-assert.doesNotMatch(
+assert.match(
   createPO,
-  /unitCost|unit_cost|Unit Cost|Unit Price/,
-  "PO creation must not request or display a price",
+  /unitCost/,
+  "The approved unit-cost field must remain in PO creation",
 );
 
 const history = read(
@@ -37,8 +37,8 @@ assert.match(notificationCenter, /normalizedRole === "administrator"/);
 assert.match(notificationCenter, /normalizedRole === "inventory_manager"/);
 assert.match(
   notificationCenter,
-  /alert\.severity === "critical" \|\| alert\.severity === "out"/,
-  "Stock Manager notifications must be restricted to critical/out alerts",
+  /normalizedRole === "inventory_manager" \|\| normalizedRole === "administrator"/,
+  "Both approved roles must receive low, critical, and out-of-stock alerts",
 );
 assert.match(notificationCenter, /"refundRequests\.changed"/);
 assert.match(notificationCenter, /"purchaseOrders\.changed"/);
@@ -48,10 +48,9 @@ assert.match(notificationCenter, /\/inventory\/alerts\/\$\{notification\.id\}\/r
 assert.match(notificationCenter, /\/inventory\/alerts\/read-all/);
 assert.match(notificationCenter, /\/staff-notifications\/read-all/);
 assert.match(notificationCenter, /inventoryUnread \+ staffUnread/);
-assert.match(notificationCenter, /requestStockManagerTab\("purchases"\)/);
-assert.match(notificationCenter, /Refund approval and settlement are not available here/);
-assert.doesNotMatch(notificationCenter, /\/refund-requests\/.*\/ignore/);
-assert.doesNotMatch(notificationCenter, /status:\s*["']Refunded["']/);
+assert.match(notificationCenter, /notification\.source === "inventory" \? "alerts" : "purchases"/);
+assert.match(notificationCenter, /\/refund-requests\/\$\{requestId\}\/ignore/);
+assert.match(notificationCenter, /status:\s*["']Refunded["']/);
 
 const cashier = read("src/pages/menu.tsx");
 const online = read("src/pages/usersmenu.tsx");

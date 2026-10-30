@@ -210,6 +210,7 @@ export function useSuppliers({
   }
 
   async function removeSupplier(id: number) {
+    setSubmitting(true);
     try {
       await api.deleteSupplier(id);
       setSuppliers((prev) => prev.filter((s) => s.supplier_id !== id));
@@ -219,6 +220,8 @@ export function useSuppliers({
         err instanceof Error ? err.message : "Failed to remove supplier.",
         "error",
       );
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -253,6 +256,32 @@ export function useSuppliers({
           : "Failed to update supplier products.",
         "error",
       );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function saveSupplierDetails(
+    supplierId: number,
+    details: Partial<Omit<Supplier, "supplier_id">>,
+  ) {
+    setSubmitting(true);
+    try {
+      const updated = await api.updateSupplier(supplierId, details);
+      setSuppliers((current) =>
+        current.map((supplier) =>
+          supplier.supplier_id === supplierId ? updated : supplier,
+        ),
+      );
+      setEditingSupplier(null);
+      showToast("Supplier updated successfully.", "success");
+      void fetchSupplierHistory();
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to update supplier.",
+        "error",
+      );
+      throw err;
     } finally {
       setSubmitting(false);
     }
@@ -314,6 +343,7 @@ export function useSuppliers({
     addProductToSupplierForm,
     removeSupplier,
     saveSupplierProducts,
+    saveSupplierDetails,
     handleRemoveSupplierProduct,
     setSupplierSearch,
     setHistorySearch,

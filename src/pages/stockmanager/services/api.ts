@@ -44,9 +44,15 @@ export async function apiFetch<T>(
     headers,
   });
   if (!res.ok) {
-    throw new Error(
-      `API ${res.status}: ${await res.text().catch(() => "Unknown error")}`,
-    );
+    const responseText = await res.text().catch(() => "");
+    let message = responseText.trim();
+    try {
+      const payload = responseText ? JSON.parse(responseText) : null;
+      message = String(payload?.message || payload?.error || "").trim();
+    } catch {
+      // Keep the plain-text response when the server did not return JSON.
+    }
+    throw new Error(message || `Request failed (HTTP ${res.status}).`);
   }
   return res.json();
 }
@@ -87,6 +93,14 @@ export const api = {
   postSupplier: (body: Omit<Supplier, "supplier_id">) =>
     apiFetch<Supplier>("/suppliers", {
       method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateSupplier: (
+    id: number,
+    body: Partial<Omit<Supplier, "supplier_id">>,
+  ) =>
+    apiFetch<Supplier>(`/suppliers/${id}`, {
+      method: "PUT",
       body: JSON.stringify(body),
     }),
   mergeSupplierProducts: (supplier_id: number, products: string[]) =>
@@ -229,6 +243,11 @@ export const api = {
     create: (body: Omit<PurchaseOrder, "id">) =>
       apiFetch<PurchaseOrder>("/purchase-orders", {
         method: "POST",
+        body: JSON.stringify(body),
+      }),
+    updateDraft: (id: string, body: Omit<PurchaseOrder, "id" | "status">) =>
+      apiFetch<PurchaseOrder>(`/purchase-orders/${id}`, {
+        method: "PUT",
         body: JSON.stringify(body),
       }),
     updateStatus: (id: string, status: POStatus) =>

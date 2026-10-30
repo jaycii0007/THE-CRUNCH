@@ -5,7 +5,6 @@ import {
   type ReactNode, type CSSProperties, type ChangeEvent, type FocusEvent, type ButtonHTMLAttributes,
 } from "react";
 import { Sidebar } from "@/components/Sidebar";
-import { UserIdentityBanner } from "@/components/UserIdentityBanner";
 import { api, apiCall, resolveAssetUrl } from "@/lib/api";
 import { motion } from "framer-motion";
 import { useNotifications } from "@/lib/NotificationContext";
@@ -68,11 +67,11 @@ const SHADOW = {
    Types
    ──────────────────────────────────────────────────────────────────────── */
 
-type ManualOverrideMode = "Auto" | "Force Available" | "Force Out of Stock";
+type ManualOverrideMode = "Auto" | "Force Out of Stock";
 type ToastType = "success" | "error" | "warning" | "info";
 type Toast = (label: string, type?: ToastType) => void;
 
-const OVERRIDE_MODES: ManualOverrideMode[] = ["Auto", "Force Available", "Force Out of Stock"];
+const OVERRIDE_MODES: ManualOverrideMode[] = ["Auto", "Force Out of Stock"];
 
 interface IngredientRow {
   product_id?: number;
@@ -164,11 +163,12 @@ function toOverrideMode(manualOverride: unknown, manualStatus: unknown): ManualO
     manualOverride === 1 ||
     String(manualOverride ?? "").trim().toLowerCase() === "true";
   if (!isManual) return "Auto";
-  return String(manualStatus ?? "").trim().toLowerCase() === "out of stock" ? "Force Out of Stock" : "Force Available";
+  // Legacy Force Available rows behave as Auto until an approved production
+  // data cleanup converts them. The UI only exposes the two supported modes.
+  return String(manualStatus ?? "").trim().toLowerCase() === "out of stock" ? "Force Out of Stock" : "Auto";
 }
 
 function toOverridePayload(mode: ManualOverrideMode) {
-  if (mode === "Force Available") return { manual_override: true, manual_status: "Available" };
   if (mode === "Force Out of Stock") return { manual_override: true, manual_status: "Out of Stock" };
   return { manual_override: false, manual_status: "Available" };
 }
@@ -350,14 +350,14 @@ function TextInput({ label, value, onChange, placeholder }: { label: string; val
 }
 
 // Numbers only (no minus sign, no letters). `decimal` allows one dot.
-function cleanNumber(raw: string, decimal: boolean) {
+function cleanNumber(raw: string, decimal: boolean, maxDecimals = 4) {
   const digits = raw.replace(decimal ? /[^\d.]/g : /[^\d]/g, "");
   if (!decimal) return digits;
   const [whole, ...rest] = digits.split(".");
-  return rest.length ? `${whole}.${rest.join("")}` : whole;
+  return rest.length ? `${whole}.${rest.join("").slice(0, maxDecimals)}` : whole;
 }
 
-function NumberInput({ label, value, onChange, placeholder, decimal = true }: { label?: string; value: string; onChange: (value: string) => void; placeholder?: string; decimal?: boolean }) {
+function NumberInput({ label, value, onChange, placeholder, decimal = true, maxDecimals = 4 }: { label?: string; value: string; onChange: (value: string) => void; placeholder?: string; decimal?: boolean; maxDecimals?: number }) {
   const input = (
     <input
       {...inputProps}
@@ -365,7 +365,7 @@ function NumberInput({ label, value, onChange, placeholder, decimal = true }: { 
       inputMode={decimal ? "decimal" : "numeric"}
       value={value}
       placeholder={placeholder}
-      onChange={(e) => onChange(cleanNumber(e.target.value, decimal))}
+      onChange={(e) => onChange(cleanNumber(e.target.value, decimal, maxDecimals))}
     />
   );
   return label ? <Field label={label}>{input}</Field> : input;
@@ -534,6 +534,9 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState(item && item.image !== PLACEHOLDER_IMG ? item.image : "");
   const [saving, setSaving] = useState(false);
+  const safeClose = () => {
+    if (!saving) onClose();
+  };
   const set = (patch: Partial<FormValues>) => setValues((current) => ({ ...current, ...patch }));
 
   // The current category is always selectable, even if Settings no longer lists it
@@ -605,7 +608,7 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
     <Modal
       eyebrow={isEdit ? `Menu code ${item.menuCode}` : "New menu item"}
       title={isEdit ? `Edit ${item.name}` : "Add menu item"}
-      onClose={onClose}
+      onClose={safeClose}
       footer={<>
         <Button variant="ghost" onClick={onClose} disabled={saving}>Discard</Button>
         <Button variant="solid" onClick={() => void submit()} disabled={saving}>
@@ -622,7 +625,7 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
             {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
           </select>
         </Field>
-        <NumberInput label={"Price (\u20B1) *"} placeholder="0.00" value={values.price} onChange={(price) => set({ price })} />
+        <NumberInput label={"Price (\u20B1) *"} placeholder="0.00" value={values.price} onChange={(price) => set({ price })} maxDecimals={2} />
       </div>
       {isEdit && (
         item.hasRecipe ? (
@@ -696,7 +699,7 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
       </label>
       {values.isPromotional && (
         <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
-          <NumberInput label="Promo price" placeholder="0.00" value={values.promoPrice} onChange={(promoPrice) => set({ promoPrice })} />
+          <NumberInput label="Promo price" placeholder="0.00" value={values.promoPrice} onChange={(promoPrice) => set({ promoPrice })} maxDecimals={2} />
           <TextInput label="Promo label" placeholder="e.g. Summer special" value={values.promoLabel} onChange={(promoLabel) => set({ promoLabel })} />
         </div>
       )}
@@ -747,6 +750,7 @@ function MenuAdminTab() {
   const [formTarget, setFormTarget] = useState<MenuItem | "new" | null>(null); // which item the form is open for
   const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [availabilitySavingId, setAvailabilitySavingId] = useState<number | null>(null);
 
   const term = search.trim().toLowerCase();
   const visible = items.filter((item) =>
@@ -763,13 +767,17 @@ function MenuAdminTab() {
   const markedOutCount = items.filter((item) => item.availabilityStatus === "Out of Stock").length;
 
   async function toggleAvailability(item: MenuItem) {
+    if (availabilitySavingId !== null) return;
     const next: ManualOverrideMode = item.overrideMode === "Auto" ? "Force Out of Stock" : "Auto";
     try {
+      setAvailabilitySavingId(item.id);
       await tryEndpoints([`/products/${item.rawProductId ?? item.id}`], "PUT", { ...toOverridePayload(next), override_mode: next });
       await reload();
       toast(`"${item.name}" override set to ${next}.`, "success");
     } catch (error) {
       toast(`Failed to update availability: ${errorText(error)}`, "error");
+    } finally {
+      setAvailabilitySavingId(null);
     }
   }
 
@@ -935,8 +943,8 @@ function MenuAdminTab() {
                       <td className="px-4 py-3.5">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" small onClick={() => setFormTarget(item)}>Edit</Button>
-                          <Button variant="ghost" small onClick={() => void toggleAvailability(item)}>
-                            {item.overrideMode === "Auto" ? "Force out" : "Set auto"}
+                          <Button variant="ghost" small disabled={availabilitySavingId !== null} onClick={() => void toggleAvailability(item)}>
+                            {availabilitySavingId === item.id ? "Saving..." : item.overrideMode === "Auto" ? "Force out" : "Set auto"}
                           </Button>
                           <Button variant="danger" small onClick={() => setDeleteTarget(item)}>Delete</Button>
                         </div>
@@ -1014,7 +1022,6 @@ export default function Inventory() {
               Manage menu items, prices, categories, ingredients, promotions and availability.
             </p>
           </div>
-          <UserIdentityBanner className="order-3 w-full sm:order-2 sm:w-auto" />
           <div className="flex select-none items-center gap-3 rounded-2xl px-4 py-2.5" style={cardStyle}>
             <div className="grid h-9 w-9 place-items-center rounded-xl" style={{ background: T.deepSoft }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none">

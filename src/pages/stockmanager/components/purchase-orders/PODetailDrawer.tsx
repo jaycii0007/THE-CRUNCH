@@ -33,6 +33,7 @@ export function PODetailDrawer({
   inventoryCategoryDateTrackingLookup,
   onClose,
   onStatusChange,
+  onEdit,
   onDelete,
   onPrint,
 }: {
@@ -44,6 +45,7 @@ export function PODetailDrawer({
   >;
   onClose: () => void;
   onStatusChange: (id: string, status: POStatus) => void;
+  onEdit: (order: PurchaseOrder) => void;
   onDelete: (id: string) => void;
   onPrint: (order: PurchaseOrder) => void;
 }) {
@@ -68,6 +70,15 @@ export function PODetailDrawer({
           <h2 className="text-lg font-semibold text-gray-800">{order.id}</h2>
         </div>
         <div className="flex items-center gap-2">
+          {order.status === "Draft" && (
+            <button
+              onClick={() => onEdit(order)}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 transition-colors"
+              title="Edit draft purchase order"
+            >
+              Edit
+            </button>
+          )}
           <button
             onClick={() => onPrint(order)}
             className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 transition-colors"
