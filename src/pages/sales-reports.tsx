@@ -4163,7 +4163,7 @@ export default function SalesReports() {
             ? "78px 14px 24px"
             : isTablet
               ? "84px 18px 28px"
-              : "40px 40px 40px 88px",
+              : "112px 40px 40px 88px",
         }}
       >
         {/* Header */}

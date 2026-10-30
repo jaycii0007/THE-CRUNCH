@@ -843,7 +843,7 @@ export default function StockManager() {
         {/* MOBILE FIX: the header is only sticky on large screens (lg:sticky).
             On a phone it used to stay pinned and take up almost half the screen. */}
         <header className="bg-white border-b border-slate-100 relative z-30 shadow-sm lg:sticky lg:top-0">
-          <div className="flex flex-wrap items-start gap-3 px-4 py-3 pt-20 md:px-6 md:pt-24 lg:flex-nowrap lg:items-center lg:gap-4 lg:px-8 lg:pt-4 lg:pl-24">
+          <div className="flex flex-wrap items-start gap-3 px-4 py-3 pt-20 md:px-6 md:pt-24 lg:flex-nowrap lg:items-center lg:gap-4 lg:px-8 lg:pt-24 lg:pl-24">
             <div className="min-w-0 flex-1">
               <h2 className="text-base font-semibold leading-tight text-slate-800">
                 Stock Manager
@@ -857,17 +857,6 @@ export default function StockManager() {
                 })}
               </p>
             </div>
-            <div className="order-3 basis-full sm:order-2 sm:basis-auto lg:order-2 lg:mx-auto">
-              <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 shadow-sm">
-                <span className="font-medium text-slate-500">Logged in:</span>
-                <span className="font-semibold text-slate-800">
-                  {currentStaffDisplayName || "Unknown User"}
-                </span>
-                <span className="text-slate-400">
-                  ({currentStaffRoleLabel})
-                </span>
-              </div>
-            </div>
             <div className="order-2 ml-auto flex flex-wrap items-center justify-end gap-3 sm:order-3 lg:order-3">
               {dashboard.attentionItems.length > 0 && (
                 <button
@@ -875,7 +864,8 @@ export default function StockManager() {
                   className="px-3.5 py-1.5 rounded-full bg-red-100 text-red-600 text-xs font-semibold border border-red-200 animate-pulse"
                 >
                   {dashboard.attentionItems.length} item
-                  {dashboard.attentionItems.length > 1 ? "s" : ""} need attention
+                  {dashboard.attentionItems.length > 1 ? "s" : ""} need
+                  attention
                 </button>
               )}
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
@@ -902,7 +892,7 @@ export default function StockManager() {
                     ? po.poOrders.filter((o) => o.status === "Draft").length
                     : t.id === "purchase-history"
                       ? po.completedPOs.length
-                        : 0;
+                      : 0;
               const active = activeTab === t.id;
               return (
                 <button
@@ -990,41 +980,41 @@ export default function StockManager() {
                   dashboardSubTab={dashboard.dashboardSubTab}
                   onSummarySelect={dashboard.selectDashboardSummary}
                   mainStockContent={
-                      <div
-                        id="dashboard-main-stock"
-                        className="scroll-mt-44"
-                        style={{ scrollMarginTop: "180px" }}
-                      >
-                        <motion.div variants={itemVariants}>
-                          <SectionCard
-                            title="Main Stock Levels"
-                            subtitle="Raw materials added from Stock Manager"
-                          >
-                            <div className="px-4 pt-4 flex flex-col md:flex-row md:items-center gap-3 md:justify-between">
-                              <input
-                                type="text"
-                                value={dashboard.dashboardSearch}
-                                onChange={(e) =>
-                                  dashboard.setDashboardSearch(e.target.value)
-                                }
-                                placeholder="Search by item name or category..."
-                                className="w-full md:w-96 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
-                              />
-                              <button
-                                onClick={() => {
-                                  setEditingMaterial(null);
-                                  setRawMaterialForm(BLANK_RAW_MATERIAL);
-                                  setShowRawMaterialForm(true);
-                                }}
-                                className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors"
-                              >
-                                Add Material
-                              </button>
-                            </div>
-                            {/* MOBILE FIX: the table sits inside a scroll box with a minimum width.
+                    <div
+                      id="dashboard-main-stock"
+                      className="scroll-mt-44"
+                      style={{ scrollMarginTop: "180px" }}
+                    >
+                      <motion.div variants={itemVariants}>
+                        <SectionCard
+                          title="Main Stock Levels"
+                          subtitle="Raw materials added from Stock Manager"
+                        >
+                          <div className="px-4 pt-4 flex flex-col md:flex-row md:items-center gap-3 md:justify-between">
+                            <input
+                              type="text"
+                              value={dashboard.dashboardSearch}
+                              onChange={(e) =>
+                                dashboard.setDashboardSearch(e.target.value)
+                              }
+                              placeholder="Search by item name or category..."
+                              className="w-full md:w-96 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                            />
+                            <button
+                              onClick={() => {
+                                setEditingMaterial(null);
+                                setRawMaterialForm(BLANK_RAW_MATERIAL);
+                                setShowRawMaterialForm(true);
+                              }}
+                              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors"
+                            >
+                              Add Material
+                            </button>
+                          </div>
+                          {/* MOBILE FIX: the table sits inside a scroll box with a minimum width.
                                 Before, the page clipped it (main has overflow-hidden),
                                 so columns were cut off on phones. Now you can swipe sideways. */}
-                            <div className="overflow-x-auto">
+                          <div className="overflow-x-auto">
                             <table className="w-full min-w-[760px] text-sm">
                               <thead>
                                 <tr className="border-b border-slate-100">
@@ -1047,7 +1037,9 @@ export default function StockManager() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {(dashboard.dashboardFilteredProducts ?? []).map((p, i) => {
+                                {(
+                                  dashboard.dashboardFilteredProducts ?? []
+                                ).map((p, i) => {
                                   const shelfLifeStatus = p.isRawMaterial
                                     ? getShelfLifeStatus({
                                         usableUntil: p.usableUntil,
@@ -1175,7 +1167,8 @@ export default function StockManager() {
                                     </tr>
                                   );
                                 })}
-                                {(dashboard.dashboardFilteredProducts?.length ?? 0) === 0 && (
+                                {(dashboard.dashboardFilteredProducts?.length ??
+                                  0) === 0 && (
                                   <tr>
                                     <td
                                       colSpan={7}
@@ -1187,61 +1180,65 @@ export default function StockManager() {
                                 )}
                               </tbody>
                             </table>
-                            </div>
-                          </SectionCard>
-                        </motion.div>
-                      </div>
-                      }
+                          </div>
+                        </SectionCard>
+                      </motion.div>
+                    </div>
+                  }
                   lastUpdatesContent={
                     // MOBILE FIX: one column on phones, two columns only on large screens.
                     <motion.div
                       variants={itemVariants}
                       className="grid grid-cols-1 gap-4 lg:grid-cols-2"
                     >
-                        <div
-                          id="dashboard-last-updates"
-                          className="scroll-mt-44"
-                          style={{ scrollMarginTop: "180px" }}
+                      <div
+                        id="dashboard-last-updates"
+                        className="scroll-mt-44"
+                        style={{ scrollMarginTop: "180px" }}
+                      >
+                        <SectionCard
+                          title="Last Inventory Updates"
+                          subtitle="Most recently updated items"
                         >
-                          <SectionCard
-                            title="Last Inventory Updates"
-                            subtitle="Most recently updated items"
-                          >
-                            <div className="divide-y divide-slate-50">
-                              {[...products]
-                                .sort(
-                                  (a, b) =>
-                                    new Date(b.last_update).getTime() -
-                                    new Date(a.last_update).getTime(),
-                                )
-                                .slice(0, 6)
-                                .map((p, i) => (
-                                  <motion.div
-                                    key={p.inventory_id}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ delay: i * 0.07 }}
-                                    className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/70 transition-colors"
-                                  >
-                                    <div>
-                                      <p className="text-sm font-medium text-slate-700">
-                                        {p.product_name}
-                                      </p>
-                                      <p className="text-xs text-slate-400 mt-0.5">
-                                        {p.supplier_name}
-                                      </p>
-                                    </div>
-                                    <span className="text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
-                                      {formatInSettingsTimezone(p.last_update, restaurantSettings, {
+                          <div className="divide-y divide-slate-50">
+                            {[...products]
+                              .sort(
+                                (a, b) =>
+                                  new Date(b.last_update).getTime() -
+                                  new Date(a.last_update).getTime(),
+                              )
+                              .slice(0, 6)
+                              .map((p, i) => (
+                                <motion.div
+                                  key={p.inventory_id}
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  transition={{ delay: i * 0.07 }}
+                                  className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/70 transition-colors"
+                                >
+                                  <div>
+                                    <p className="text-sm font-medium text-slate-700">
+                                      {p.product_name}
+                                    </p>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                      {p.supplier_name}
+                                    </p>
+                                  </div>
+                                  <span className="text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
+                                    {formatInSettingsTimezone(
+                                      p.last_update,
+                                      restaurantSettings,
+                                      {
                                         month: "short",
                                         day: "numeric",
-                                      })}
-                                    </span>
-                                  </motion.div>
-                                ))}
-                            </div>
-                          </SectionCard>
-                        </div>
+                                      },
+                                    )}
+                                  </span>
+                                </motion.div>
+                              ))}
+                          </div>
+                        </SectionCard>
+                      </div>
                     </motion.div>
                   }
                 />
@@ -1298,40 +1295,42 @@ export default function StockManager() {
               {activeTab === "suppliers" &&
                 !supplier.supplierError &&
                 !supplier.supplierLoading && (
-                <SuppliersTab
-                  pageVariants={pageVariants}
-                  staggerVariants={staggerVariants}
-                  itemVariants={itemVariants}
-                  showSupplierForm={supplier.showSupplierForm}
-                  supplierForm={supplier.supplierForm}
-                  supplierProductInput={supplier.supplierProductInput}
-                  supplierProductSuggestions={supplier.supplierProductSuggestions}
-                  filteredSuppliers={supplier.filteredSuppliers}
-                  supplierSearch={supplier.supplierSearch}
-                  historySearch={supplier.historySearch}
-                  historyDateFrom={supplier.historyDateFrom}
-                  historyDateTo={supplier.historyDateTo}
-                  historyLoading={supplier.historyLoading}
-                  filteredHistory={supplier.filteredHistory}
-                  supplierFields={supplier.supplierFields}
-                  submitting={submitting}
-                  setShowSupplierForm={supplier.setShowSupplierForm}
-                  setSupplierProductInput={supplier.setSupplierProductInput}
-                  setSupplierForm={supplier.setSupplierForm}
-                  setSupplierSearch={supplier.setSupplierSearch}
-                  setHistorySearch={supplier.setHistorySearch}
-                  setHistoryDateFrom={supplier.setHistoryDateFrom}
-                  setHistoryDateTo={supplier.setHistoryDateTo}
-                  setEditingSupplier={supplier.setEditingSupplier}
-                  addProductToSupplierForm={supplier.addProductToSupplierForm}
-                  addSupplier={supplier.addSupplier}
-                  removeSupplier={supplier.removeSupplier}
-                  handleRemoveSupplierProduct={
-                    supplier.handleRemoveSupplierProduct
-                  }
-                  fetchSupplierHistory={supplier.fetchSupplierHistory}
-                />
-              )}
+                  <SuppliersTab
+                    pageVariants={pageVariants}
+                    staggerVariants={staggerVariants}
+                    itemVariants={itemVariants}
+                    showSupplierForm={supplier.showSupplierForm}
+                    supplierForm={supplier.supplierForm}
+                    supplierProductInput={supplier.supplierProductInput}
+                    supplierProductSuggestions={
+                      supplier.supplierProductSuggestions
+                    }
+                    filteredSuppliers={supplier.filteredSuppliers}
+                    supplierSearch={supplier.supplierSearch}
+                    historySearch={supplier.historySearch}
+                    historyDateFrom={supplier.historyDateFrom}
+                    historyDateTo={supplier.historyDateTo}
+                    historyLoading={supplier.historyLoading}
+                    filteredHistory={supplier.filteredHistory}
+                    supplierFields={supplier.supplierFields}
+                    submitting={submitting}
+                    setShowSupplierForm={supplier.setShowSupplierForm}
+                    setSupplierProductInput={supplier.setSupplierProductInput}
+                    setSupplierForm={supplier.setSupplierForm}
+                    setSupplierSearch={supplier.setSupplierSearch}
+                    setHistorySearch={supplier.setHistorySearch}
+                    setHistoryDateFrom={supplier.setHistoryDateFrom}
+                    setHistoryDateTo={supplier.setHistoryDateTo}
+                    setEditingSupplier={supplier.setEditingSupplier}
+                    addProductToSupplierForm={supplier.addProductToSupplierForm}
+                    addSupplier={supplier.addSupplier}
+                    removeSupplier={supplier.removeSupplier}
+                    handleRemoveSupplierProduct={
+                      supplier.handleRemoveSupplierProduct
+                    }
+                    fetchSupplierHistory={supplier.fetchSupplierHistory}
+                  />
+                )}
 
               {/* ===== Purchase Orders ===== */}
               {activeTab === "purchases" && po.poError && (
@@ -1341,7 +1340,7 @@ export default function StockManager() {
                     void po.fetchPurchaseOrders();
                   }}
                 />
-                )}
+              )}
               {activeTab === "purchases" && !po.poError && (
                 <PurchaseOrdersTab
                   pageVariants={pageVariants}
@@ -1413,7 +1412,9 @@ export default function StockManager() {
         </main>
 
         <AnimatePresence>
-          {activeTab === "dashboard" && showDashboardBackToTop && !isLoading && (
+          {activeTab === "dashboard" &&
+            showDashboardBackToTop &&
+            !isLoading && (
               <motion.button
                 initial={{ opacity: 0, y: 16, scale: 0.92 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}

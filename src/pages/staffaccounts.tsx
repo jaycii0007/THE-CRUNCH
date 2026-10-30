@@ -592,7 +592,7 @@ export default function StaffAccounts() {
     ? "78px 14px 22px"
     : isTablet
       ? "84px 18px 28px"
-      : "32px 36px 32px 88px";
+      : "112px 36px 32px 88px";
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
