@@ -225,26 +225,39 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
     )
       latest.set(key, p);
   }
-  return [...latest.values()].map((p) => ({
-    id: Number(p.product_id ?? p.id),
-    name: String(p.product_name ?? p.name ?? `Product #${p.id}`),
-    price: Number(p.price ?? 0),
-    category: String(p.category ?? "UNCATEGORIZED").toUpperCase(),
-    remainingStock: Math.max(
-      0,
-      Math.floor(
-        Number(
-          p.available_servings ??
-            p.remainingStock ??
-            p.stock ??
-            p.quantity ??
-            0,
-        ),
-      ) || 0,
-    ),
-    availabilityStatus: String(p.availability_status ?? "Available"),
-    image: p.image ? resolveAssetUrl(String(p.image)) : null,
-  }));
+  return [...latest.values()].map((p) => {
+    const rawImage = String(p.image ?? '').trim();
+    const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : null;
+    // Debug: log actual API image values for duplicate investigation
+    if (import.meta.env.DEV && rawImage) {
+      console.log('[menu:mapProducts]', {
+        id: p.product_id ?? p.id,
+        name: p.product_name ?? p.name,
+        rawImage,
+        resolvedImg,
+      });
+    }
+    return {
+      id: Number(p.product_id ?? p.id),
+      name: String(p.product_name ?? p.name ?? `Product #${p.id}`),
+      price: Number(p.price ?? 0),
+      category: String(p.category ?? "UNCATEGORIZED").toUpperCase(),
+      remainingStock: Math.max(
+        0,
+        Math.floor(
+          Number(
+            p.available_servings ??
+              p.remainingStock ??
+              p.stock ??
+              p.quantity ??
+              0,
+          ),
+        ) || 0,
+      ),
+      availabilityStatus: String(p.availability_status ?? "Available"),
+      image: resolvedImg,
+    };
+  });
 };
 
 /* ───────────────────────── shared UI ───────────────────────── */
@@ -603,10 +616,23 @@ const ProductCard = memo(
               src={item.image}
               alt={item.name}
               className="h-full w-full object-cover"
+              onError={(e) => {
+                if (import.meta.env.DEV) {
+                  console.error('[menu:ProductCard:error]', { name: item.name, id: item.id, src: item.image });
+                }
+                const img = e.currentTarget;
+                img.style.display = 'none';
+                const next = img.nextElementSibling as HTMLElement | null;
+                if (next) next.style.display = '';
+              }}
+              onLoad={() => {
+                if (import.meta.env.DEV) {
+                  console.log('[menu:ProductCard:loaded]', { name: item.name, id: item.id, src: item.image });
+                }
+              }}
             />
-          ) : (
-            <UtensilsCrossed className="h-8 w-8 text-neutral-300" />
-          )}
+          ) : null}
+          {!item.image && <UtensilsCrossed className="h-8 w-8 text-neutral-300" />}
         </div>
         {out && (
           <span className="absolute left-2.5 top-2.5 rounded-full bg-red-800 px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-white">
@@ -664,10 +690,23 @@ const CartRow = memo(
                 src={item.image}
                 alt={item.name}
                 className="h-full w-full object-cover"
+                onError={(e) => {
+                  if (import.meta.env.DEV) {
+                    console.error('[menu:CartRow:error]', { name: item.name, id: item.id, src: item.image });
+                  }
+                  const img = e.currentTarget;
+                  img.style.display = 'none';
+                  const next = img.nextElementSibling as HTMLElement | null;
+                  if (next) next.style.display = '';
+                }}
+                onLoad={() => {
+                  if (import.meta.env.DEV) {
+                    console.log('[menu:CartRow:loaded]', { name: item.name, id: item.id, src: item.image });
+                  }
+                }}
               />
-            ) : (
-              <UtensilsCrossed className="h-5 w-5 text-neutral-300" />
-            )}
+            ) : null}
+            {!item.image && <UtensilsCrossed className="h-5 w-5 text-neutral-300" />}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-neutral-800">

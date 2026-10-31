@@ -86,10 +86,27 @@ export function resolveAssetUrl(value?: string | null): string {
   if (!normalized) return "/img/placeholder.jpg";
   if (/^data:image\//i.test(normalized)) return normalized;
   if (/^https?:\/\//i.test(normalized)) return normalized;
+  // Handle /api/upload-product-image/files/... - backend serves uploaded product images via this endpoint
+  if (normalized.startsWith("/api/upload-product-image/files/")) {
+    return resolveBackendUrl(normalized);
+  }
+  // Handle /uploads/... (with leading slash)
   if (normalized.startsWith("/uploads")) {
     return resolveBackendUrl(normalized);
   }
+  // Handle uploads/... (without leading slash) - common backend format
+  if (normalized.startsWith("uploads/")) {
+    return resolveBackendUrl("/" + normalized);
+  }
+  // Handle ./uploads/... or ../uploads/... (relative paths)
+  if (normalized.startsWith("./uploads/") || normalized.startsWith("../uploads/")) {
+    return resolveBackendUrl("/" + normalized.replace(/^\.\.?\//, ""));
+  }
   if (normalized.startsWith("/img")) return normalized;
+  // Handle bare filenames (e.g., "chickenhoneygarlic.jpg") - try local /img/ assets
+  if (/\.(jpe?g|png|webp|gif)$/i.test(normalized) && !normalized.includes("/")) {
+    return "/img/" + normalized;
+  }
   return "/img/placeholder.jpg";
 }
 

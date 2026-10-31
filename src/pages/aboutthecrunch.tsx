@@ -24,79 +24,6 @@ const BORDER = 'rgba(255, 255, 255, 0.07)';
 const IMG_HERO = '/img/crunch22.png';
 const IMG_STORY = '/img/chickchicken.png';
 
-// ── Floating Warm Embers Canvas ───────────────────────────────────────────
-function EmberCanvas() {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv) return;
-    const ctx = cv.getContext('2d');
-    if (!ctx) return;
-
-    let W = 0, H = 0, raf = 0;
-    type Ember = { x: number; y: number; vy: number; vx: number; r: number; alpha: number; pulse: number };
-    let embers: Ember[] = [];
-
-    const resize = () => {
-      W = cv.width = cv.offsetWidth;
-      H = cv.height = cv.offsetHeight;
-      embers = Array.from({ length: 42 }, () => ({
-        x: Math.random() * W,
-        y: Math.random() * H,
-        vy: -(Math.random() * 0.45 + 0.15),
-        vx: (Math.random() - 0.5) * 0.25,
-        r: Math.random() * 1.8 + 0.6,
-        alpha: Math.random() * 0.4 + 0.1,
-        pulse: Math.random() * Math.PI * 2,
-      }));
-    };
-
-    const draw = () => {
-      ctx.clearRect(0, 0, W, H);
-      embers.forEach(e => {
-        e.y += e.vy;
-        e.x += e.vx;
-        e.pulse += 0.02;
-
-        if (e.y < -10) {
-          e.y = H + 10;
-          e.x = Math.random() * W;
-        }
-        if (e.x < 0) e.x = W;
-        if (e.x > W) e.x = 0;
-
-        const currentAlpha = e.alpha * (0.6 + 0.4 * Math.sin(e.pulse));
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(245, 200, 66, ${currentAlpha})`;
-        ctx.shadowColor = Y;
-        ctx.shadowBlur = 6;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      });
-      raf = requestAnimationFrame(draw);
-    };
-
-    const ro = new ResizeObserver(resize);
-    ro.observe(cv);
-    resize();
-    draw();
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, []);
-
-  return (
-    <canvas
-      ref={ref}
-      style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}
-    />
-  );
-}
-
 // ── Top Scroll Progress Bar ────────────────────────────────────────────────
 function ScrollProgressBar() {
   const [progress, setProgress] = useState(0);
@@ -123,34 +50,6 @@ function ScrollProgressBar() {
         }}
       />
     </div>
-  );
-}
-
-// ── Ambient Mouse Spotlight ────────────────────────────────────────────────
-function AmbientSpotlight() {
-  const [pos, setPos] = useState({ x: 50, y: 50 });
-
-  useEffect(() => {
-    const handleMove = (e: MouseEvent) => {
-      setPos({
-        x: (e.clientX / window.innerWidth) * 100,
-        y: (e.clientY / window.innerHeight) * 100,
-      });
-    };
-    window.addEventListener('mousemove', handleMove, { passive: true });
-    return () => window.removeEventListener('mousemove', handleMove);
-  }, []);
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        pointerEvents: 'none',
-        zIndex: 0,
-        background: `radial-gradient(650px circle at ${pos.x}% ${pos.y}%, rgba(245, 200, 66, 0.04) 0%, transparent 70%)`,
-      }}
-    />
   );
 }
 
@@ -329,6 +228,7 @@ export default function AboutTheCrunch() {
   const textTranslateY = useTransform(scrollYProgress, [0, 1], ['0%', '15%']);
   const imageTranslateY = useTransform(scrollYProgress, [0, 1], ['0%', '12%']);
   const imageScale = useTransform(scrollYProgress, [0, 1], [1, 1.06]);
+  const imageRotateX = useTransform(scrollYProgress, [0, 1], ['0deg', '3deg']);
 
   const goMenu = () => navigate('/usersmenu?showOrderModal=true');
   const goProducts = () => {
@@ -362,9 +262,7 @@ export default function AboutTheCrunch() {
             background: 'radial-gradient(ellipse at center, transparent 40%, rgba(8,7,6,0.3) 80%, rgba(8,7,6,0.5) 100%)',
           }}
         />
-        <EmberCanvas />
         <ScrollProgressBar />
-        <AmbientSpotlight />
 
         {/* ── Fixed Navigation Bar ────────────────────────────────────────── */}
         <motion.header
@@ -658,8 +556,46 @@ export default function AboutTheCrunch() {
             alignItems: 'center',
             paddingTop: isMobile ? 84 : 70,
             zIndex: 1,
+            perspective: 1000,
           }}
         >
+          {/* Atmospheric depth layers - subtle, no infinite loops */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: -20,
+              pointerEvents: 'none',
+              zIndex: 0,
+              background: `
+                radial-gradient(ellipse 60% 50% at 20% 20%, rgba(245, 200, 66, 0.08) 0%, transparent 60%),
+                radial-gradient(ellipse 50% 60% at 80% 80%, rgba(255, 180, 40, 0.06) 0%, transparent 55%),
+                ${BG}
+              `,
+            }}
+          />
+          <motion.div
+            style={{
+              position: 'absolute',
+              inset: -10,
+              pointerEvents: 'none',
+              zIndex: 0,
+              opacity: 0,
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.6 }}
+            transition={{ delay: 0.8, duration: 1.2, ease: 'easeOut' }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+                opacity: 0.02,
+                mixBlendMode: 'overlay',
+              }}
+            />
+          </motion.div>
+
           {/* Left Text Content */}
           <motion.div
             style={{
@@ -670,12 +606,16 @@ export default function AboutTheCrunch() {
               padding: isMobile ? '40px 24px' : isTablet ? '60px 48px' : '0 64px 60px 64px',
               position: 'relative',
               zIndex: 2,
+              transformStyle: 'preserve-3d',
             }}
+            initial={{ opacity: 0, y: 40, rotateX: -8 }}
+            animate={{ opacity: 1, y: 0, rotateX: 0 }}
+            transition={{ delay: 0.1, duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
           >
             <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
+              initial={{ opacity: 0, y: 15, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -686,6 +626,7 @@ export default function AboutTheCrunch() {
                 borderRadius: 999,
                 width: 'fit-content',
                 marginBottom: 20,
+                transform: 'translateZ(20px)',
               }}
             >
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: Y }} />
@@ -695,9 +636,9 @@ export default function AboutTheCrunch() {
             </motion.div>
 
             <motion.h1
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0, y: 30, rotateX: -5 }}
+              animate={{ opacity: 1, y: 0, rotateX: 0 }}
+              transition={{ delay: 0.3, duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
               style={{
                 fontFamily: PP,
                 fontWeight: 900,
@@ -706,6 +647,8 @@ export default function AboutTheCrunch() {
                 fontSize: isMobile ? 'clamp(46px, 12vw, 68px)' : 'clamp(52px, 5.5vw, 84px)',
                 color: CR,
                 margin: '0 0 24px',
+                transform: 'translateZ(30px)',
+                textShadow: '0 4px 30px rgba(0,0,0,0.5)',
               }}
             >
               The <span style={{ color: Y, fontStyle: 'italic' }}>Crunch</span>
@@ -716,15 +659,16 @@ export default function AboutTheCrunch() {
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5, duration: 0.7 }}
+              transition={{ delay: 0.45, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
               style={{
                 fontFamily: PP,
                 fontSize: isMobile ? 14 : 15.5,
                 color: CR_MUTED,
-                lineHeight: 1.8,
-                maxWidth: 460,
+                lineHeight: 1.85,
+                maxWidth: 480,
                 fontWeight: 300,
                 marginBottom: 36,
+                transform: 'translateZ(20px)',
               }}
             >
               Home of authentic Filipino boneless fried chicken. Crafted daily with our secret spice rubs, hand-spun in signature glazes, and serving over 250+ communities nationwide.
@@ -733,8 +677,8 @@ export default function AboutTheCrunch() {
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.65, duration: 0.6 }}
-              style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}
+              transition={{ delay: 0.6, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              style={{ display: 'flex', gap: 14, flexWrap: 'wrap', transform: 'translateZ(20px)' }}
             >
               <motion.button
                 onClick={goMenu}
@@ -751,13 +695,15 @@ export default function AboutTheCrunch() {
                   boxShadow: '0 8px 24px rgba(245, 200, 66, 0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
                   position: 'relative',
                   overflow: 'hidden',
+                  transform: 'translateZ(10px)',
                 }}
                 whileHover={isMobile ? { scale: 1.02 } : {
                   scale: 1.03,
                   boxShadow: '0 16px 40px rgba(245, 200, 66, 0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
                   y: -2,
+                  rotateX: 3,
                 }}
-                whileTap={{ scale: 0.97 }}
+                whileTap={{ scale: 0.97, rotateX: 0 }}
               >
                 <span style={{ position: 'relative', zIndex: 1 }}>Order Online</span>
                 <motion.div
@@ -786,6 +732,7 @@ export default function AboutTheCrunch() {
                   fontFamily: PP,
                   position: 'relative',
                   overflow: 'hidden',
+                  transform: 'translateZ(10px)',
                 }}
                 whileHover={isMobile ? { background: 'rgba(255,255,255,0.08)' } : {
                   background: 'rgba(245, 200, 66, 0.1)',
@@ -793,15 +740,16 @@ export default function AboutTheCrunch() {
                   color: Y,
                   y: -2,
                   boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+                  rotateX: 3,
                 }}
-                whileTap={{ scale: 0.97 }}
+                whileTap={{ scale: 0.97, rotateX: 0 }}
               >
                 <span style={{ position: 'relative', zIndex: 1 }}>Our Heritage</span>
               </motion.button>
             </motion.div>
           </motion.div>
 
-          {/* Right Hero Image + Badges */}
+          {/* Right Hero Image + Badges - Premium Cinematic Composition */}
           <div
             style={{
               position: 'relative',
@@ -811,23 +759,49 @@ export default function AboutTheCrunch() {
               alignItems: 'center',
               justifyContent: 'center',
               perspective: 1000,
+              transformStyle: 'preserve-3d',
             }}
           >
+            {/* Depth layer - subtle glow behind image */}
             <motion.div
               style={{
                 position: 'absolute',
-                inset: 0,
+                inset: '10% 5% 20% 5%',
+                borderRadius: 32,
+                background: `radial-gradient(ellipse at center, rgba(245, 200, 66, 0.12) 0%, transparent 70%)`,
+                filter: 'blur(60px)',
+                zIndex: 0,
+                transform: 'translateZ(-40px)',
+              }}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.4, duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+            />
+
+            {/* Main image with 3D entrance and scroll parallax */}
+            <motion.div
+              style={{
+                position: 'relative',
+                width: isMobile ? '90%' : isTablet ? '85%' : '75%',
+                maxWidth: 600,
+                aspectRatio: '4/3',
+                borderRadius: 28,
+                overflow: 'hidden',
+                transformStyle: 'preserve-3d',
+                boxShadow: '0 40px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 100px rgba(245, 200, 66, 0.08)',
+                border: '1px solid rgba(255,255,255,0.05)',
                 y: imageTranslateY,
                 scale: imageScale,
-                transformStyle: 'preserve-3d',
+                rotateX: imageRotateX,
               }}
-              initial={{ opacity: 0, scale: 1.05, rotateX: -5 }}
-              animate={{ opacity: 1, scale: 1, rotateX: 0 }}
-              transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0, y: 60, rotateX: -12, scale: 0.92 }}
+              animate={{ opacity: 1, y: 0, rotateX: 0, scale: 1 }}
+              transition={{ delay: 0.3, duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
               whileHover={isMobile ? {} : {
-                rotateX: 2,
-                rotateY: -2,
-                scale: 1.01,
+                rotateX: 4,
+                rotateY: -4,
+                scale: 1.015,
+                boxShadow: '0 60px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 140px rgba(245, 200, 66, 0.15)',
                 transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] }
               }}
             >
@@ -837,49 +811,38 @@ export default function AboutTheCrunch() {
                 style={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'contain',
+                  objectFit: 'cover',
                   objectPosition: 'center',
                   display: 'block',
-                  filter: 'drop-shadow(0 30px 60px rgba(0,0,0,0.5))',
-                  transform: 'translateZ(50px)',
+                  transform: 'translateZ(40px) scale(1.02)',
+                  transition: 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}
               />
               <div style={{
                 position: 'absolute',
                 inset: 0,
-                background: 'radial-gradient(circle at center, transparent 35%, rgba(8,7,6,0.3) 60%, #080706 95%)',
+                background: 'linear-gradient(180deg, transparent 35%, rgba(8,7,6,0.4) 65%, #080706 95%)',
                 transform: 'translateZ(20px)',
               }} />
-              {/* Floating golden particles */}
-              <div style={{
-                position: 'absolute',
-                inset: 0,
-                transform: 'translateZ(30px)',
-                pointerEvents: 'none',
-              }}>
-                {[...Array(8)].map((_, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, scale: 0 }}
-                    animate={{ opacity: [0, 0.3, 0], scale: [0, 1, 0], x: ['-20%', '20%', '-10%'], y: ['20%', '-20%', '10%'] }}
-                    transition={{ duration: 6 + i * 0.8, repeat: Infinity, delay: i * 0.5, ease: 'easeInOut' }}
-                    style={{
-                      position: 'absolute',
-                      top: `${15 + i * 10}%`,
-                      left: `${10 + i * 12}%`,
-                      width: 4,
-                      height: 4,
-                      borderRadius: '50%',
-                      background: Y,
-                      boxShadow: `0 0 12px ${Y}, 0 0 24px ${Y}`,
-                      filter: 'blur(1px)',
-                    }}
-                  />
-                ))}
-              </div>
+              {/* Subtle accent line */}
+              <motion.div
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: '15%',
+                  right: '15%',
+                  height: 2,
+                  background: `linear-gradient(90deg, transparent, ${Y}, transparent)`,
+                  transform: 'translateZ(30px)',
+                  opacity: 0,
+                }}
+                initial={{ opacity: 0, scaleX: 0 }}
+                animate={{ opacity: 1, scaleX: 1 }}
+                transition={{ delay: 1.0, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+              />
             </motion.div>
 
-            {/* Stat Badges Floating */}
+            {/* Stat Badges - Enhanced 3D Cards */}
             <div
               style={{
                 position: 'absolute',
@@ -890,7 +853,6 @@ export default function AboutTheCrunch() {
                 gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(3, auto)',
                 gap: 12,
                 zIndex: 10,
-                perspective: 1000,
               }}
             >
               <StatCard value="250+" label="Branches" />

@@ -175,13 +175,24 @@ function mapMenuRows(rows: InventoryMenuRow[]): Recipe[] {
     const stock = Math.max(0, Math.floor(Number(row.available_servings ?? row.remainingStock ?? row.mainStock ?? row.stock ?? 0)) || 0);
     const hasFlag = row.available !== undefined && row.available !== null;
     const flagOk = hasFlag ? row.available === true || row.available === 1 : !isUnavailable(row.availability_status);
+    const rawImage = String(row.image ?? '').trim();
+    const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : PLACEHOLDER_IMG;
+    // Debug: log actual API image values for duplicate investigation
+    if (import.meta.env.DEV && rawImage) {
+      console.log('[usersmenu:mapMenuRows]', {
+        id,
+        name: row.product_name ?? row.name,
+        rawImage,
+        resolvedImg,
+      });
+    }
     return {
       id, stock,
       name: String(row.product_name ?? row.name ?? `Product #${id}`),
       description: String(row.description ?? "").trim(),
       price: Number(row.price ?? 0),
       category: normalizeCategory(row.category),
-      image: resolveAssetUrl(String(row.image || PLACEHOLDER_IMG)),
+      image: resolvedImg,
       available: stock > 0 && flagOk,
       nutrition: mapNutrition(row),
     };
@@ -234,9 +245,30 @@ const Badge = ({ children, tone = "neutral" }: { children: ReactNode; tone?: "ne
 // Image with one safe fallback (no error loop). `fill` makes it cover its parent.
 function Img({ src, alt = "", size, ratio, fill }: { src: string; alt?: string; size?: number; ratio?: string; fill?: boolean }) {
   const [failed, setFailed] = useState(false);
+
+  // Reset error state when src changes so a newly valid image can load
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
   return (
     <div style={{ width: size ?? "100%", height: fill ? "100%" : size, aspectRatio: ratio, borderRadius: fill ? 0 : 8, overflow: "hidden", flexShrink: 0, background: C.surfaceAlt }}>
-      <img src={failed ? PLACEHOLDER_IMG : src} alt={alt} onError={() => setFailed(true)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      <img
+        src={failed ? PLACEHOLDER_IMG : src}
+        alt={alt}
+        onError={() => {
+          if (import.meta.env.DEV) {
+            console.error('[Img:error]', { alt, src: failed ? PLACEHOLDER_IMG : src });
+          }
+          setFailed(true);
+        }}
+        onLoad={() => {
+          if (import.meta.env.DEV) {
+            console.log('[Img:loaded]', { alt, src });
+          }
+        }}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
     </div>
   );
 }

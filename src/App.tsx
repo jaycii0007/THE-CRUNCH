@@ -21,7 +21,7 @@ import Menu from "./pages/menu";
 import Order from "./pages/Order";
 import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
-import Products from "./pages/products";
+import Products from "./pages/Products";
 import Settings from "./pages/settings";
 import MyAccount from "./pages/my-account";
 

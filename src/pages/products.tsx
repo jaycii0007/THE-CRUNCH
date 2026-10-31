@@ -32,17 +32,30 @@ const normCat = (v: unknown): Category => {
 
 const mapProducts = (data: unknown[]): Product[] =>
   data
-    .map((r: any) => ({
-      id: Number(r?.id ?? r?.product_id ?? 0),
-      name: String(r?.name ?? r?.product_name ?? '').trim(),
-      category: normCat(r?.category),
-      rating: Number(r?.rating ?? 0),
-      badge: String(r?.badge ?? '').trim(),
-      description: String(r?.description ?? '').trim(),
-      price: Number(r?.price ?? 0),
-      spicy: Boolean(r?.spicy),
-      img: typeof (r?.image ?? r?.img) === 'string' && String(r?.image ?? r?.img).trim() ? resolveAssetUrl(String(r?.image ?? r?.img).trim()) : '',
-    }))
+    .map((r: any) => {
+      const rawImage = String(r?.image ?? r?.img ?? '').trim();
+      const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : '';
+      // Debug: log actual API image values for duplicate investigation
+      if (import.meta.env.DEV && rawImage) {
+        console.log('[mapProducts]', {
+          id: r?.id ?? r?.product_id,
+          name: r?.name ?? r?.product_name,
+          rawImage,
+          resolvedImg,
+        });
+      }
+      return {
+        id: Number(r?.id ?? r?.product_id ?? 0),
+        name: String(r?.name ?? r?.product_name ?? '').trim(),
+        category: normCat(r?.category),
+        rating: Number(r?.rating ?? 0),
+        badge: String(r?.badge ?? '').trim(),
+        description: String(r?.description ?? '').trim(),
+        price: Number(r?.price ?? 0),
+        spicy: Boolean(r?.spicy),
+        img: resolvedImg,
+      };
+    })
     .filter(p => p.id > 0 && p.name)
 
 const timeLeft = (d?: string) => {
@@ -114,38 +127,151 @@ body{background:var(--bg)}
 .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted);padding:0 4px}
 .dot{width:7px;height:7px;border-radius:50%}
 .burger{display:none;background:none;border:0;color:var(--text);cursor:pointer;padding:8px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:28px}
+@media (min-width: 1200px){.grid{grid-template-columns:repeat(auto-fill,minmax(380px,1fr))}}
+@media (min-width: 1440px){.grid{grid-template-columns:repeat(auto-fill,minmax(400px,1fr))}}
+@media (max-width: 1024px){.grid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:24px}}
+@media (max-width: 768px){.grid{grid-template-columns:repeat(auto-fill,minmax(100%,1fr));gap:20px}}
+@media (max-width: 480px){.grid{gap:16px}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
 .card:hover{border-color:rgba(245,200,66,.35);transform:translateY(-4px)}
 .thumb{position:relative;aspect-ratio:4/3;background:#1a1712;overflow:hidden}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .chip{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--muted)}
 .chip-gold{background:var(--gold);color:#15120a}
-.tabs{position:sticky;top:${NAV_H}px;z-index:50;background:rgba(11,10,8,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
-.tabs-in{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.tabs{position:sticky;top:${NAV_H}px;z-index:50;background:rgba(11,10,8,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+.tabs-in{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding: 8px 0}
 .tabs-in::-webkit-scrollbar{display:none}
-.tab{position:relative;background:none;border:0;padding:16px 14px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap}
-.tab.on{color:var(--gold);font-weight:600}
-.tab.on::after{content:'';position:absolute;left:10px;right:10px;bottom:0;height:2px;background:var(--gold);border-radius:2px}
+.tab{position:relative;background:none;border:0;padding:14px 20px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap;border-radius:12px;transition:color 0.2s ease, background 0.2s ease}
+.tab:hover{color:var(--text);background:rgba(255,255,255,0.04)}
+.tab.on{color:var(--gold);font-weight:600;background:rgba(245,200,66,0.1)}
+.tab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:6px;width:24px;height:3px;background:var(--gold);border-radius:2px;box-shadow:0 0 12px var(--gold)}
+/* Section header improvements */
+.section-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12;margin-bottom:28}
+.section-title{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-0.025em;line-height:1.1;margin:0}
+.section-subtitle{color:var(--muted);font-size:clamp(13px,1.6vw,14px);line-height:1.6;margin:0}
 .h2{font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-.025em;line-height:1.1}
 .sub{color:var(--muted);font-size:14px;line-height:1.6}
 .section{margin-top:100px}
 .skel{border-radius:16px;background:linear-gradient(90deg,#141210,#1c1915,#141210);background-size:200% 100%;animation:sh 1.4s infinite}
 .fixed-btn{position:fixed;bottom:22px;right:22px;z-index:90}
-.input{width:100%;font:inherit;font-size:14px;color:var(--text);background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:10px;padding:11px 14px;outline:none;transition:border-color .15s}
-.input:focus{border-color:rgba(245,200,66,.5)}
+.input{width:100%;font:inherit;font-size:14px;color:var(--text);background:rgba(255,255,255,0.04);border:1px solid var(--line);border-radius:12px;padding:14px 18px;outline:none;transition:border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease}
+.input:focus{border-color:rgba(245,200,66,0.5);background:rgba(255,255,255,0.06);box-shadow:0 0 0 4px rgba(245,200,66,0.15)}
 .input option{color:#111}
 @keyframes sh{to{background-position:-200% 0}}
 @media(max-width:768px){.links,.status.hide-m{display:none}.burger{display:flex}.grid{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 `
 
+// Normalize product name for lookup (lowercase, remove special chars)
+// Used by FoodPreviewGallery to match local images to products
+function normalizeProductName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// All verified local food images (for gallery)
+const VERIFIED_LOCAL_FOOD_IMAGES = [
+  { filename: 'chickenhoneygarlic.jpg', displayName: 'Honey Garlic Chicken', path: '/img/chickenhoneygarlic.jpg' },
+  { filename: 'chickenteriyaki.jpg', displayName: 'Teriyaki Chicken', path: '/img/chickenteriyaki.jpg' },
+  { filename: 'chickentexasbbq.jpg', displayName: 'Texas BBQ Chicken', path: '/img/chickentexasbbq.jpg' },
+  { filename: 'chickenspicekstyle.jpg', displayName: 'Spicy K-Style Chicken', path: '/img/chickenspicekstyle.jpg' },
+  { filename: 'chickenspecialcheese.jpg', displayName: 'Special Cheese Chicken', path: '/img/chickenspecialcheese.jpg' },
+  { filename: 'chickengarlicparmesan.jpg', displayName: 'Garlic Parmesan Chicken', path: '/img/chickengarlicparmesan.jpg' },
+  { filename: 'chickenskin.jpg', displayName: 'Chicken Skin', path: '/img/chickenskin.jpg' },
+  { filename: 'chicken poppers 2.jpg', displayName: 'Chicken Poppers', path: '/img/chicken poppers 2.jpg' },
+  { filename: 'chickchicken.png', displayName: 'Classic Fried Chicken', path: '/img/chickchicken.png' },
+  { filename: 'chicken1.jpg', displayName: 'Signature Chicken', path: '/img/chicken1.jpg' },
+] as const;
+
 const Skel = ({ h }: { h: number }) => <div className="skel" style={{ height: h }} />
 
-function Photo({ src, alt, priority = false, style }: { src?: string; alt: string; priority?: boolean; style?: React.CSSProperties }) {
+function Photo({ src, alt, priority = false, style, className }: { src?: string; alt: string; priority?: boolean; style?: React.CSSProperties; className?: string }) {
   const [bad, setBad] = useState(false)
-  if (!src || bad) return <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: 'var(--muted)', fontSize: 12 }}>No image</div>
-  return <img src={src} alt={alt} loading={priority ? 'eager' : 'lazy'} onError={() => setBad(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', ...style }} />
+  const [loading, setLoading] = useState(true)
+
+  // Reset error state when src changes so a newly valid image can load
+  useEffect(() => {
+    setBad(false)
+    setLoading(true)
+  }, [src])
+
+  // For preview gallery: use LOCAL_IMAGE_MAP as verified local fallback
+  // For product cards: rely ONLY on API-provided image (src), no static fallback
+  const effectiveSrc = src;
+
+  if (!effectiveSrc || bad) {
+    return (
+      <div
+        className={className}
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'grid',
+          placeItems: 'center',
+          color: 'var(--muted)',
+          fontSize: 12,
+          background: '#1a1712',
+          ...style
+        }}
+        role="img"
+        aria-label={`${alt} - image not available`}
+      >
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 17"/>
+        </svg>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {/* Loading placeholder */}
+      {loading && (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            background: 'linear-gradient(90deg, #141210 25%, #1c1915 50%, #141210 75%)',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 1.4s infinite',
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+          }}
+        />
+      )}
+      <img
+        src={effectiveSrc}
+        alt={alt}
+        loading={priority ? 'eager' : 'lazy'}
+        onError={(e) => {
+          if (import.meta.env.DEV) {
+            console.error('[Photo:error]', { alt, src: effectiveSrc, productId: (e.currentTarget as HTMLImageElement).dataset?.productId });
+          }
+          setBad(true);
+          setLoading(false);
+        }}
+        onLoad={() => {
+          if (import.meta.env.DEV) {
+            console.log('[Photo:loaded]', { alt, src: effectiveSrc });
+          }
+          setLoading(false);
+        }}
+        className={className}
+        data-product-id={alt}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          opacity: loading ? 0 : 1,
+          transition: 'opacity 0.4s ease-out',
+          ...style
+        }}
+      />
+    </>
+  )
 }
 
 // ── Animated Components ────────────────────────────────────────────────────
@@ -161,34 +287,199 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
     <motion.article
       className="card"
       variants={fadeUp}
-      whileHover={{ y: -6, transition: { duration: 0.25 } }}
+      whileHover={{
+        y: -8,
+        boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)',
+        transition: { duration: 0.3, ease: easeOut },
+      }}
+      whileTap={{ scale: 0.99 }}
       layout
+      style={{
+        background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
+        border: '1px solid var(--line)',
+        borderRadius: 20,
+        overflow: 'hidden',
+        position: 'relative',
+      }}
     >
-      <div className="thumb">
-        <Photo src={p.img} alt={p.name} />
-        {p.badge && <span className="chip chip-gold" style={{ position: 'absolute', top: 12, left: 12 }}>{p.badge}</span>}
-        {p.spicy && (
-          <span style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,.6)', borderRadius: '50%', width: 28, height: 28, display: 'grid', placeItems: 'center' }} aria-label="Spicy">
-            <Flame size={14} color="#ef4444" />
+      {/* Image container with proper aspect ratio to prevent layout shift */}
+      <motion.div
+        className="thumb"
+        whileHover={{ opacity: 1 }}
+        style={{
+          aspectRatio: '4/3',
+          background: '#1a1712',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        <Photo src={p.img} alt={p.name} priority={false} />
+
+        {/* Gradient overlay for text readability on hover */}
+        <motion.div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(180deg, transparent 55%, rgba(11,10,8,0.85) 100%)',
+            opacity: 0,
+            transition: 'opacity 0.3s ease',
+          }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+        />
+
+        {/* Badge - top left */}
+        {p.badge && (
+          <span
+            className="chip chip-gold"
+            style={{
+              position: 'absolute',
+              top: 14,
+              left: 14,
+              zIndex: 2,
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '5px 12px',
+              borderRadius: 9999,
+              boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
+            }}
+          >
+            {p.badge}
           </span>
         )}
-      </div>
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-          <h3 style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.25 }}>{p.name}</h3>
-          {p.rating > 0 && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600, color: 'var(--gold)' }}>
-              <Star size={12} fill="currentColor" />{p.rating.toFixed(1)}
-            </span>
-          )}
+
+        {/* Spicy indicator - top right */}
+        {p.spicy && (
+          <span
+            style={{
+              position: 'absolute',
+              top: 14,
+              right: 14,
+              zIndex: 2,
+              background: 'rgba(0,0,0,0.7)',
+              borderRadius: '50%',
+              width: 32,
+              height: 32,
+              display: 'grid',
+              placeItems: 'center',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}
+            aria-label="Spicy level"
+          >
+            <Flame size={16} color="#f87171" />
+          </span>
+        )}
+
+        {/* Rating badge - bottom left on hover */}
+        {p.rating > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.2 }}
+            style={{
+              position: 'absolute',
+              bottom: 14,
+              left: 14,
+              zIndex: 2,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '6px 12px',
+              background: 'rgba(11,10,8,0.9)',
+              backdropFilter: 'blur(12px)',
+              borderRadius: 9999,
+              border: '1px solid rgba(245,200,66,0.3)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+            }}
+          >
+            <Star size={13} fill="var(--gold)" color="var(--gold)" />
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)' }}>{p.rating.toFixed(1)}</span>
+          </motion.div>
+        )}
+      </motion.div>
+
+      {/* Content area */}
+      <div style={{
+        padding: 'clamp(18px,3vw,24px)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        flex: 1,
+        minHeight: 160,
+      }}>
+        {/* Name & category */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+          <h3 style={{
+            fontSize: 'clamp(17px,2.2vw,20px)',
+            fontWeight: 700,
+            lineHeight: 1.25,
+            color: 'var(--text)',
+            letterSpacing: '-0.015em',
+            margin: 0,
+          }}>
+            {p.name}
+          </h3>
         </div>
-        {p.description && <p className="sub" style={{ fontSize: 13.5, flex: 1 }}>{p.description}</p>}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-          <span style={{ fontSize: 22, fontWeight: 800 }}>{fmt(p.price)}</span>
-          <motion.button className="btn btn-gold" onClick={onOrder} whileTap={{ scale: 0.97 }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px' }}>
-            <ShoppingBag size={15} />
+
+        {/* Description */}
+        {p.description && (
+          <p style={{
+            fontSize: 'clamp(13px,1.6vw,14.5px)',
+            lineHeight: 1.55,
+            color: 'var(--muted)',
+            margin: 0,
+            flex: 1,
+            display: '-webkit-box',
+            WebkitLineClamp: 3,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+          }}>
+            {p.description}
+          </p>
+        )}
+
+        {/* Price & Order button */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: 'auto',
+          paddingTop: 8,
+          borderTop: '1px solid rgba(255,255,255,0.04)',
+        }}>
+          <span style={{
+            fontSize: 'clamp(22px,2.8vw,26px)',
+            fontWeight: 800,
+            color: 'var(--text)',
+            letterSpacing: '-0.02em',
+            fontFamily: 'Inter, system-ui, sans-serif',
+          }}>
+            {fmt(p.price)}
+          </span>
+          <motion.button
+            className="btn btn-gold"
+            onClick={onOrder}
+            whileTap={{ scale: 0.96 }}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '14px 24px',
+              fontSize: 'clamp(13px,1.6vw,14.5px)',
+              fontWeight: 600,
+              borderRadius: 12,
+              background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
+              color: '#15120a',
+              border: 'none',
+              boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
+            }}
+            aria-label={`Order ${p.name}`}
+          >
+            <ShoppingBag size={16} />
             <span>Order Now</span>
-            <ArrowRight size={15} />
+            <ArrowRight size={16} style={{ transition: 'transform 0.2s ease' }} />
           </motion.button>
         </div>
       </div>
@@ -199,17 +490,45 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
 function PromoCard({ p }: { p: Promo }) {
   const left = timeLeft(p.validUntil)
   return (
-    <motion.article className="card" variants={fadeUp} whileHover={{ y: -6, transition: { duration: 0.25 } }}>
-      <div className="thumb" style={{ aspectRatio: '16/9' }}>
+    <motion.article
+      className="card"
+      variants={fadeUp}
+      whileHover={{ y: -8, boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)', transition: { duration: 0.3, ease: easeOut } }}
+      whileTap={{ scale: 0.99 }}
+      style={{
+        background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
+        border: '1px solid var(--line)',
+        borderRadius: 20,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <div style={{ aspectRatio: '16/9', position: 'relative', overflow: 'hidden', background: '#1a1712' }}>
         <Photo src={p.img ? resolveAssetUrl(p.img) : ''} alt={p.title} />
-        {p.badge && <span className="chip chip-gold" style={{ position: 'absolute', top: 12, left: 12 }}>{p.badge}</span>}
-        {p.discount && <span className="chip chip-gold" style={{ position: 'absolute', bottom: 12, right: 12, fontSize: 13 }}>{p.discount}</span>}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 40%, rgba(11,10,8,0.95) 100%)' }} />
+        {p.badge && <span className="chip chip-gold" style={{ position: 'absolute', top: 16, left: 16, fontSize: 12, padding: '6px 14px', fontWeight: 700, boxShadow: '0 4px 16px rgba(245,200,66,0.3)' }}>{p.badge}</span>}
+        {p.discount && <span className="chip chip-gold" style={{ position: 'absolute', bottom: 16, right: 16, fontSize: 13, fontWeight: 700, padding: '6px 14px', boxShadow: '0 4px 16px rgba(245,200,66,0.3)' }}>{p.discount}</span>}
       </div>
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 700 }}>{p.title}</h3>
-        {p.subtitle && <p style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--gold)' }}>{p.subtitle}</p>}
-        <p className="sub" style={{ fontSize: 13.5, flex: 1 }}>{p.description}</p>
-        {left && <span className="chip" style={{ alignSelf: 'flex-start', marginTop: 4, color: '#f87171' }}>{left}</span>}
+      <div style={{ padding: 'clamp(20px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+        <h3 style={{ fontSize: 'clamp(18px,2.2vw,21px)', fontWeight: 700, lineHeight: 1.2, margin: 0, color: 'var(--text)' }}>{p.title}</h3>
+        {p.subtitle && <p style={{ fontSize: 'clamp(13px,1.6vw,14.5px)', fontWeight: 500, color: 'var(--gold)', margin: 0 }}>{p.subtitle}</p>}
+        <p className="sub" style={{ fontSize: 'clamp(13px,1.6vw,14.5px)', lineHeight: 1.55, flex: 1, margin: 0, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.description}</p>
+        {left && <span className="chip" style={{ alignSelf: 'flex-start', marginTop: 4, color: '#f87171', fontSize: 11, fontWeight: 600 }}>{left}</span>}
+        <motion.button className="btn btn-gold" style={{
+          marginTop: 'auto',
+          padding: '14px 24px',
+          fontSize: 'clamp(13px,1.6vw,14.5px)',
+          fontWeight: 600,
+          borderRadius: 12,
+          background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
+          color: '#15120a',
+          border: 'none',
+          boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
+          width: 'fit-content',
+        }} whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }}>
+          Order Now
+        </motion.button>
       </div>
     </motion.article>
   )
@@ -223,10 +542,28 @@ function FlavorCard({ f, open, onToggle }: { f: Flavor; open: boolean; onToggle:
       animate={open ? 'show' : 'hidden'}
       transition={{ duration: 0.3, ease: easeOut }}
     >
-      <button onClick={onToggle} aria-expanded={open} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--card)', color: 'var(--text)', border: `1px solid ${open ? f.accent || 'var(--gold)' : 'var(--line)'}`, borderRadius: open ? '12px 12px 0 0' : 12, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 20px',
+          background: 'var(--card)',
+          color: 'var(--text)',
+          border: `1px solid ${open ? f.accent || 'var(--gold)' : 'var(--line)'}`,
+          borderRadius: open ? '16px 16px 0 0' : 16,
+          cursor: 'pointer',
+          fontSize: 'clamp(14px,1.8vw,15px)',
+          fontWeight: 600,
+          transition: 'border-color 0.2s ease, background 0.2s ease',
+        }}
+      >
         {f.name}
         <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronDown size={15} />
+          <ChevronDown size={18} style={{ color: open ? f.accent || 'var(--gold)' : 'var(--muted)' }} />
         </motion.div>
       </button>
       <AnimatePresence>
@@ -235,11 +572,20 @@ function FlavorCard({ f, open, onToggle }: { f: Flavor; open: boolean; onToggle:
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
-            style={{ border: `1px solid ${f.accent || 'var(--gold)'}`, borderTop: 0, borderRadius: '0 0 12px 12px', overflow: 'hidden', background: 'var(--card)' }}
+            transition={{ duration: 0.3, ease: easeOut }}
+            style={{
+              border: `1px solid ${f.accent || 'var(--gold)'}`,
+              borderTop: 0,
+              borderRadius: '0 0 16px 16px',
+              overflow: 'hidden',
+              background: 'var(--card)',
+              boxShadow: 'inset 0 -1px 0 rgba(255,255,255,0.03)',
+            }}
           >
-            <div className="thumb" style={{ aspectRatio: '16/9' }}><Photo src={f.img ? resolveAssetUrl(f.img) : ''} alt={f.name} /></div>
-            {f.desc && <p className="sub" style={{ padding: 16, fontSize: 13.5 }}>{f.desc}</p>}
+            <div className="thumb" style={{ aspectRatio: '16/9', background: '#1a1712' }}>
+              <Photo src={f.img ? resolveAssetUrl(f.img) : ''} alt={f.name} />
+            </div>
+            {f.desc && <p className="sub" style={{ padding: 20, fontSize: 'clamp(13px,1.6vw,14.5px)', lineHeight: 1.6, margin: 0 }}>{f.desc}</p>}
           </motion.div>
         )}
       </AnimatePresence>
@@ -249,15 +595,50 @@ function FlavorCard({ f, open, onToggle }: { f: Flavor; open: boolean; onToggle:
 
 function MenuCard({ s }: { s: MenuSection }) {
   return (
-    <motion.div className="card" variants={fadeUp} style={{ padding: 24 }}>
-      <h3 style={{ fontSize: 20, fontWeight: 700 }}>{s.title}</h3>
-      {s.subtext && <p className="sub" style={{ fontSize: 13, marginTop: 4 }}>{s.subtext}</p>}
-      <div style={{ marginTop: 16 }}>
+    <motion.div className="card" variants={fadeUp} style={{
+      padding: 'clamp(20px,3vw,28px)',
+      background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
+      border: '1px solid var(--line)',
+      borderRadius: 20,
+      boxShadow: '0 4px 24px rgba(0,0,0,0.2)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 12 }}>
+        <h3 style={{ fontSize: 'clamp(19px,2.4vw,22px)', fontWeight: 700, margin: 0, color: 'var(--text)', letterSpacing: '-0.02em' }}>{s.title}</h3>
+      </div>
+      {s.subtext && <p className="sub" style={{ fontSize: 'clamp(13px,1.6vw,14px)', marginTop: 4, marginBottom: 16, color: 'var(--muted)' }}>{s.subtext}</p>}
+      <div style={{ marginTop: 8 }}>
         {s.items.map(it => (
-          <div key={`${s.id}-${it.name}-${it.price}`} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderTop: '1px solid var(--line)' }}>
-            {it.img && <div className="thumb" style={{ width: 48, height: 48, aspectRatio: '1', borderRadius: 8, flexShrink: 0 }}><Photo src={resolveAssetUrl(it.img)} alt={it.name} /></div>}
-            <span style={{ flex: 1, fontSize: 14.5 }}>{it.name} {it.tag && <span className="chip chip-gold" style={{ marginLeft: 8 }}>{it.tag}</span>}</span>
-            <span style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--gold)' }}>{fmt(it.price)}</span>
+          <div key={`${s.id}-${it.name}-${it.price}`} style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            padding: '16px 0',
+            borderTop: '1px solid rgba(255,255,255,0.04)',
+            transition: 'background 0.2s ease',
+            borderRadius: 12,
+            margin: '0 -8px',
+            paddingLeft: 8,
+            paddingRight: 8,
+          }}>
+            {it.img && (
+              <div className="thumb" style={{
+                width: 56,
+                height: 56,
+                aspectRatio: '1',
+                borderRadius: 12,
+                flexShrink: 0,
+                overflow: 'hidden',
+                background: '#1a1712',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+              }}>
+                <Photo src={resolveAssetUrl(it.img)} alt={it.name} />
+              </div>
+            )}
+            <span style={{ flex: 1, fontSize: 'clamp(14px,1.8vw,15.5px)', color: 'var(--text)', fontWeight: 500 }}>
+              {it.name}
+              {it.tag && <span className="chip chip-gold" style={{ marginLeft: 10, fontSize: 10.5, fontWeight: 600, padding: '4px 10px' }}>{it.tag}</span>}
+            </span>
+            <span style={{ fontWeight: 700, fontSize: 'clamp(15px,1.9vw,17px)', color: 'var(--gold)', whiteSpace: 'nowrap' }}>{fmt(it.price)}</span>
           </div>
         ))}
       </div>
@@ -268,38 +649,40 @@ function MenuCard({ s }: { s: MenuSection }) {
 // ── Hero Section ──────────────────────────────────────────────────────────
 function HeroSection() {
   return (
-    <section style={{ position: 'relative', width: '100%', borderRadius: 24, overflow: 'hidden', background: '#1a1712' }}>
+    <section style={{ position: 'relative', width: '100%', borderRadius: 28, overflow: 'hidden', background: '#1a1712', boxShadow: '0 20px 60px -20px rgba(0,0,0,0.5)' }}>
       {/* Background image with gradient overlay */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
         <div style={{ width: '100%', height: '100%' }}>
           <Photo src={HERO_IMAGE} alt="The Crunch - Golden Boneless Fried Chicken" priority />
         </div>
         {/* Dark gradient overlay - covers full height for text readability */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(11,10,8,0.85) 0%, rgba(11,10,8,0.6) 35%, rgba(11,10,8,0.4) 60%, rgba(11,10,8,0.85) 100%)' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(11,10,8,0.9) 0%, rgba(11,10,8,0.6) 40%, rgba(11,10,8,0.35) 65%, rgba(11,10,8,0.9) 100%)' }} />
+        {/* Subtle gold accent line */}
+        <div style={{ position: 'absolute', bottom: 0, left: '10%', right: '10%', height: 1, background: 'linear-gradient(90deg, transparent, var(--gold), transparent)', opacity: 0.3 }} />
       </div>
 
       {/* Content - Flexbox layout, responsive */}
-      <div style={{ position: 'relative', zIndex: 2, padding: 'clamp(32px,6vw,60px) clamp(20px,5vw,64px)', display: 'flex', flexDirection: 'column', minHeight: 'clamp(280px,55vw,420px)' }}>
+      <div style={{ position: 'relative', zIndex: 2, padding: 'clamp(40px,7vw,72px) clamp(24px,5vw,72px)', display: 'flex', flexDirection: 'column', minHeight: 'clamp(320px,60vw,480px)' }}>
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: easeOut }}
-          style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1 }}
+          style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1 }}
         >
           <motion.span
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.15, duration: 0.4, ease: easeOut }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(245,200,66,0.15)', border: '1px solid rgba(245,200,66,0.3)', padding: 'clamp(8px,1.5vw,10px) clamp(16px,3vw,20px)', borderRadius: 999, fontSize: 'clamp(11px,2vw,13px)', fontWeight: 600, color: 'var(--gold)', width: 'fit-content', marginBottom: 'clamp(12px,2vw,20px)' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 10, background: 'rgba(245,200,66,0.15)', border: '1px solid rgba(245,200,66,0.3)', padding: 'clamp(10px,1.5vw,12px) clamp(18px,3vw,24px)', borderRadius: 999, fontSize: 'clamp(12px,2vw,14px)', fontWeight: 600, color: 'var(--gold)', width: 'fit-content', marginBottom: 'clamp(16px,2.5vw,24px)', letterSpacing: '0.02em' }}
           >
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--gold)', animation: 'pulse 2s infinite' }} />
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--gold)', animation: 'pulse 2s infinite', boxShadow: '0 0 12px var(--gold)' }} />
             Limited Time Offer
           </motion.span>
           <motion.h2
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.6, ease: easeOut }}
-            style={{ fontSize: 'clamp(28px,5.5vw,56px)', fontWeight: 800, letterSpacing: '-.03em', lineHeight: 1.1, marginBottom: 'clamp(12px,2vw,16px)' }}
+            style={{ fontSize: 'clamp(32px,6vw,64px)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginBottom: 'clamp(16px,2.5vw,20px)', color: 'var(--text)', fontFamily: 'Inter, system-ui, sans-serif' }}
           >
             Signature Glazed Chicken
           </motion.h2>
@@ -308,17 +691,17 @@ function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.45, duration: 0.6, ease: easeOut }}
             className="sub"
-            style={{ fontSize: 'clamp(14px,2.5vw,17px)', maxWidth: 480, marginBottom: 'clamp(20px,3vw,28px)', fontWeight: 400, lineHeight: 1.6 }}
+            style={{ fontSize: 'clamp(15px,2.5vw,19px)', maxWidth: 520, marginBottom: 'clamp(24px,3.5vw,32px)', fontWeight: 400, lineHeight: 1.7 }}
           >
             Hand-crafted daily with our secret spice rubs. Choose from 7 signature glazes — each bite delivers the perfect crunch.
           </motion.p>
           <motion.button
             className="btn btn-gold"
-            style={{ fontSize: 'clamp(14px,2vw,15px)', padding: 'clamp(14px,2.5vw,16px) clamp(24px,4vw,32px)', display: 'inline-flex', alignItems: 'center', gap: 10, width: 'fit-content' }}
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 30px rgba(245,200,66,0.4)' }}
-            whileTap={{ scale: 0.98 }}
+            style={{ fontSize: 'clamp(15px,2vw,16px)', padding: 'clamp(16px,2.5vw,18px) clamp(28px,4vw,40px)', display: 'inline-flex', alignItems: 'center', gap: 12, width: 'fit-content', borderRadius: 14, background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)', color: '#15120a', border: 'none', boxShadow: '0 6px 24px rgba(245,200,66,0.4)', fontWeight: 600 }}
+            whileHover={{ scale: 1.03, boxShadow: '0 12px 40px rgba(245,200,66,0.5)' }}
+            whileTap={{ scale: 0.97 }}
           >
-            <ShoppingBag size={18} /> Explore Menu <ArrowRight size={18} />
+            <ShoppingBag size={20} /> Explore Menu <ArrowRight size={20} />
           </motion.button>
         </motion.div>
 
@@ -327,16 +710,16 @@ function HeroSection() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6, duration: 0.5, ease: easeOut }}
-          style={{ display: 'flex', flexWrap: 'wrap', gap: 'clamp(8px,1.5vw,12px)', marginTop: 'clamp(16px,3vw,24px)', paddingTop: 'clamp(16px,3vw,20px)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
+          style={{ display: 'flex', flexWrap: 'wrap', gap: 'clamp(10px,1.5vw,14px)', marginTop: 'clamp(24px,4vw,32px)', paddingTop: 'clamp(20px,3.5vw,24px)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
         >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: 'clamp(8px,1.5vw,10px) clamp(12px,2vw,16px)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(11px,2vw,13px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            <CheckCircle size={14} color="var(--gold)" /> 7 Signature Glazes
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: 'clamp(10px,1.5vw,12px) clamp(16px,2.5vw,20px)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(12px,2vw,14px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap', transition: 'border-color 0.2s ease, color 0.2s ease' }}>
+            <CheckCircle size={16} color="var(--gold)" /> 7 Signature Glazes
           </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: 'clamp(8px,1.5vw,10px) clamp(12px,2vw,16px)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(11px,2vw,13px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            <CheckCircle size={14} color="var(--gold)" /> 250+ Branches Nationwide
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: 'clamp(10px,1.5vw,12px) clamp(16px,2.5vw,20px)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(12px,2vw,14px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap', transition: 'border-color 0.2s ease, color 0.2s ease' }}>
+            <CheckCircle size={16} color="var(--gold)" /> 250+ Branches Nationwide
           </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: 'clamp(8px,1.5vw,10px) clamp(12px,2vw,16px)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(11px,2vw,13px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            <CheckCircle size={14} color="var(--gold)" /> Fresh Daily, Never Frozen
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: 'clamp(10px,1.5vw,12px) clamp(16px,2.5vw,20px)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(12px,2vw,14px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap', transition: 'border-color 0.2s ease, color 0.2s ease' }}>
+            <CheckCircle size={16} color="var(--gold)" /> Fresh Daily, Never Frozen
           </span>
         </motion.div>
       </div>
@@ -356,31 +739,48 @@ function FeaturedStrip() {
     <section style={{ marginTop: 80 }}>
       <motion.div variants={fadeUp}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
-          <h2 className="h2">Featured Today</h2>
+          <h2 className="h2" style={{ fontSize: 'clamp(26px,4vw,36px)' }}>Featured Today</h2>
         </div>
       </motion.div>
       <motion.div
         variants={staggerContainer}
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 24 }}
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 24 }}
       >
         {featuredPromos.map((promo) => (
           <motion.article
             key={promo.title}
             variants={fadeUp}
-            style={{ position: 'relative', borderRadius: 20, overflow: 'hidden', background: 'var(--card)', border: '1px solid var(--line)' }}
-            whileHover={{ y: -8, boxShadow: '0 20px 40px rgba(0,0,0,0.4)', transition: { duration: 0.3 } }}
+            style={{
+              position: 'relative',
+              borderRadius: 20,
+              overflow: 'hidden',
+              background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
+              border: '1px solid var(--line)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+            }}
+            whileHover={{ y: -8, boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)', transition: { duration: 0.3, ease: easeOut } }}
+            whileTap={{ scale: 0.99 }}
           >
-            <div style={{ aspectRatio: '16/9', position: 'relative' }}>
+            <div style={{ aspectRatio: '16/9', position: 'relative', overflow: 'hidden' }}>
               <Photo src={promo.img} alt={promo.title} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 40%, rgba(11,10,8,0.95) 100%)' }} />
-              <span className="chip chip-gold" style={{ position: 'absolute', top: 16, left: 16, fontSize: 12, padding: '6px 14px' }}>{promo.badge}</span>
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 35%, rgba(11,10,8,0.95) 100%)' }} />
+              <span className="chip chip-gold" style={{ position: 'absolute', top: 16, left: 16, fontSize: 12, padding: '7px 16px', fontWeight: 700, borderRadius: 999, boxShadow: '0 4px 16px rgba(245,200,66,0.35)' }}>{promo.badge}</span>
             </div>
-            <div style={{ padding: 24 }}>
-              <h3 style={{ fontSize: 19, fontWeight: 700, marginBottom: 6 }}>{promo.title}</h3>
-              <p className="sub" style={{ fontSize: 13.5, marginBottom: 20 }}>{promo.desc}</p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--gold)' }}>{promo.price}</span>
-                <motion.button className="btn btn-gold" style={{ padding: '12px 24px', fontSize: 13 }} whileTap={{ scale: 0.97 }}>
+            <div style={{ padding: 'clamp(20px,3vw,28px)', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+              <h3 style={{ fontSize: 'clamp(19px,2.2vw,22px)', fontWeight: 700, margin: 0, color: 'var(--text)', lineHeight: 1.25 }}>{promo.title}</h3>
+              <p className="sub" style={{ fontSize: 'clamp(13px,1.6vw,14.5px)', lineHeight: 1.55, margin: 0, flex: 1, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{promo.desc}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <span style={{ fontSize: 'clamp(22px,2.8vw,26px)', fontWeight: 800, color: 'var(--gold)', letterSpacing: '-0.02em' }}>{promo.price}</span>
+                <motion.button className="btn btn-gold" style={{
+                  padding: '14px 24px',
+                  fontSize: 'clamp(13px,1.6vw,14.5px)',
+                  fontWeight: 600,
+                  borderRadius: 12,
+                  background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
+                  color: '#15120a',
+                  border: 'none',
+                  boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
+                }} whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }}>
                   Order Now
                 </motion.button>
               </div>
@@ -462,6 +862,113 @@ function FeedbackModal({ onClose, options, userId }: { onClose: () => void; opti
       </motion.div>
     </>
   )
+}
+
+// ── Food Preview Gallery ─────────────────────────────────────────────────────
+// Displays verified local food images. Images with matching products show price & Order Now.
+// Images without products are shown as preview only (no price, no Order Now).
+function FoodPreviewGallery({ products }: { products: Product[] }) {
+  const galleryItems = VERIFIED_LOCAL_FOOD_IMAGES.map(item => {
+    const normalized = normalizeProductName(item.displayName);
+    const matchedProduct = products.find(p => normalizeProductName(p.name) === normalized);
+    return {
+      ...item,
+      hasProduct: !!matchedProduct,
+      product: matchedProduct,
+    };
+  });
+
+  return (
+    <motion.section className="section" variants={staggerContainer} style={{ marginTop: 80 }}>
+      <div className="section-header">
+        <motion.h2 className="section-title" variants={fadeUp}>Food Preview Gallery</motion.h2>
+        <motion.p className="section-subtitle" variants={fadeUp}>
+          Verified food photography from our kitchen. Items with prices are available to order.
+        </motion.p>
+      </div>
+      <motion.div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))',
+          gap: 24
+        }}
+        variants={staggerContainer}
+        role="list"
+      >
+        {galleryItems.map((item) => (
+          <motion.article
+            key={item.filename}
+            variants={fadeUp}
+            role="listitem"
+            style={{
+              background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
+              border: '1px solid var(--line)',
+              borderRadius: 20,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+            whileHover={{ y: -8, boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)', transition: { duration: 0.3, ease: easeOut } }}
+            whileTap={{ scale: 0.99 }}
+          >
+            <div style={{ aspectRatio: '4/3', position: 'relative', overflow: 'hidden', background: '#1a1712' }}>
+              <Photo src={item.path} alt={item.displayName} priority={false} />
+              {!item.hasProduct && (
+                <span style={{
+                  position: 'absolute',
+                  top: 12,
+                  right: 12,
+                  background: 'rgba(245,200,66,0.9)',
+                  color: '#15120a',
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
+                }}>
+                  Preview Only
+                </span>
+              )}
+            </div>
+            <div style={{ padding: 'clamp(16px,2vw,20px)', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+              <h3 style={{ fontSize: 'clamp(16px,2vw,18px)', fontWeight: 700, margin: 0, color: 'var(--text)', lineHeight: 1.25 }}>
+                {item.displayName}
+              </h3>
+              {item.hasProduct && item.product && (
+                <>
+                  <p className="sub" style={{ fontSize: 'clamp(13px,1.5vw,14px)', lineHeight: 1.5, margin: 0, flex: 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {item.product.description || 'Hand-crafted with our signature spices.'}
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                    <span style={{ fontSize: 'clamp(20px,2.5vw,24px)', fontWeight: 800, color: 'var(--gold)', letterSpacing: '-0.02em' }}>
+                      {fmt(item.product.price)}
+                    </span>
+                    <motion.button className="btn btn-gold" style={{
+                      padding: '12px 20px',
+                      fontSize: 'clamp(12px,1.5vw,13.5px)',
+                      fontWeight: 600,
+                      borderRadius: 10,
+                      background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
+                      color: '#15120a',
+                      border: 'none',
+                      boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
+                    }} whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }}>
+                      Order Now
+                    </motion.button>
+                  </div>
+                </>
+              )}
+              {!item.hasProduct && (
+                <p className="sub" style={{ fontSize: 'clamp(13px,1.5vw,14px)', lineHeight: 1.5, margin: 0, color: 'var(--muted)', marginTop: 'auto' }}>
+                  This item is not currently on the menu. Ask our staff about availability.
+                </p>
+              )}
+            </div>
+          </motion.article>
+        ))}
+      </motion.div>
+    </motion.section>
+  );
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
@@ -665,9 +1172,9 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
       <motion.main className="wrap" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ paddingTop: 40, paddingBottom: 120 }}>
         {/* PRODUCTS GRID */}
         <motion.section variants={staggerContainer}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
-            <motion.h2 className="h2" variants={fadeUp}>Our Menu</motion.h2>
-            <motion.p className="sub" variants={fadeUp} style={{ fontSize: 13 }}>{filtered.length} item{filtered.length !== 1 ? 's' : ''}</motion.p>
+          <div className="section-header">
+            <motion.h2 className="section-title" variants={fadeUp}>Our Menu</motion.h2>
+            <motion.p className="section-subtitle" variants={fadeUp}>{filtered.length} item{filtered.length !== 1 ? 's' : ''}</motion.p>
           </div>
 
           {loading.p ? (
@@ -692,50 +1199,48 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
         </motion.section>
 
         {/* PROMOS */}
-        {(loading.r || promos.length > 0) && (
+        {!loading.r && promos.length > 0 && (
           <motion.section className="section" variants={staggerContainer}>
-            <motion.h2 className="h2" variants={fadeUp}>Deals & Promos</motion.h2>
-            <motion.p className="sub" variants={fadeUp} style={{ marginTop: 8, marginBottom: 32 }}>Current offers and limited-time specials.</motion.p>
-            {loading.r ? (
-              <div className="grid" role="status" aria-label="Loading promotions">
-                {Array.from({ length: 3 }).map((_, i) => <motion.div key={i} variants={fadeUp}><Skel h={300} /></motion.div>)}
-              </div>
-            ) : (
-              <motion.div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))' }} variants={staggerContainer} role="list">
-                {[...featured, ...regular].map(p => (
-                  <motion.div key={p.id} variants={fadeUp} role="listitem">
-                    <PromoCard p={p} />
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
+            <div className="section-header">
+              <motion.h2 className="section-title" variants={fadeUp}>Deals & Promos</motion.h2>
+              <motion.p className="section-subtitle" variants={fadeUp}>Current offers and limited-time specials.</motion.p>
+            </div>
+            <motion.div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))' }} variants={staggerContainer} role="list">
+              {[...featured, ...regular].map(p => (
+                <motion.div key={p.id} variants={fadeUp} role="listitem">
+                  <PromoCard p={p} />
+                </motion.div>
+              ))}
+            </motion.div>
           </motion.section>
         )}
 
         {/* FLAVORS */}
-        {(loading.f || flavors.length > 0) && (
+        {!loading.f && flavors.length > 0 && (
           <motion.section className="section" variants={staggerContainer}>
-            <motion.h2 className="h2" variants={fadeUp}>Signature Flavors</motion.h2>
-            <motion.p className="sub" variants={fadeUp} style={{ marginTop: 8, marginBottom: 32 }}>Available on every chicken order. Tap a flavor to preview it.</motion.p>
-            <motion.div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(170px,1fr))', gap: 12 }} variants={staggerContainer} role="list">
-              {loading.f
-                ? Array.from({ length: 6 }).map((_, i) => <motion.div key={i} variants={fadeUp} role="listitem"><Skel h={46} /></motion.div>)
-                : flavors.map(f => (
-                    <motion.div key={f.name} variants={fadeUp} role="listitem">
-                      <FlavorCard f={f} open={expanded === f.name} onToggle={() => setExpanded(expanded === f.name ? null : f.name)} />
-                    </motion.div>
-                  ))}
+            <div className="section-header">
+              <motion.h2 className="section-title" variants={fadeUp}>Signature Flavors</motion.h2>
+              <motion.p className="section-subtitle" variants={fadeUp}>Available on every chicken order. Tap a flavor to preview it.</motion.p>
+            </div>
+            <motion.div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 14 }} variants={staggerContainer} role="list">
+              {flavors.map(f => (
+                <motion.div key={f.name} variants={fadeUp} role="listitem">
+                  <FlavorCard f={f} open={expanded === f.name} onToggle={() => setExpanded(expanded === f.name ? null : f.name)} />
+                </motion.div>
+              ))}
             </motion.div>
           </motion.section>
         )}
 
         {/* FULL MENU */}
-        {(loading.m || sections.length > 0) && (
+        {!loading.m && sections.length > 0 && (
           <motion.section className="section" variants={staggerContainer}>
-            <motion.h2 className="h2" variants={fadeUp}>Full Menu</motion.h2>
-            <motion.p className="sub" variants={fadeUp} style={{ marginTop: 8, marginBottom: 32 }}>Everything we serve, by section.</motion.p>
+            <div className="section-header">
+              <motion.h2 className="section-title" variants={fadeUp}>Full Menu</motion.h2>
+              <motion.p className="section-subtitle" variants={fadeUp}>Everything we serve, by section.</motion.p>
+            </div>
             <motion.div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,460px),1fr))', gap: 24 }} variants={staggerContainer} role="list">
-              {loading.m ? Array.from({ length: 4 }).map((_, i) => <motion.div key={i} variants={fadeUp} role="listitem"><Skel h={300} /></motion.div>) : sections.map(s => (
+              {sections.map(s => (
                 <motion.div key={s.id} variants={fadeUp} role="listitem">
                   <MenuCard s={s} />
                 </motion.div>
@@ -743,6 +1248,9 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
             </motion.div>
           </motion.section>
         )}
+
+        {/* FOOD PREVIEW GALLERY - Frontend-only preview of verified local food images */}
+        <FoodPreviewGallery products={products} />
       </motion.main>
 
       {/* FOOTER */}
