@@ -20,8 +20,6 @@ const GOLD_DARK = '#B8953A';
 const GOLD_LIGHT = '#E8D4A0';
 const CREAM = '#F5F0E8';
 const GOLD_TEXT = '#15120a';
-const CHARCOAL = '#282823';
-const GREY_FOG = '#595C56';
 
 // Derived palette values (synced)
 const Y = GOLD;
@@ -30,7 +28,6 @@ const Y_LIGHT = GOLD_LIGHT;
 const CR = CREAM;
 const CR_MUTED = 'rgba(245, 240, 232, 0.65)';
 const BG = BLACK;
-const CARD_BG = '#1F1D1A';
 const BORDER = 'rgba(89, 92, 86, 0.25)';
 
 const IMG_HERO = '/img/crunch22.png';

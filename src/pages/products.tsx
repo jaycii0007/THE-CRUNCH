@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Flame, ChevronDown, MapPin, Star, X, MessageSquare, Send, CheckCircle, Menu, User, ShoppingBag, ArrowRight, Clock } from 'lucide-react'
+import { Search, Flame, MapPin, Star, X, MessageSquare, Send, CheckCircle, Menu, User, ShoppingBag, ArrowRight, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useViewport } from '@/hooks/use-tablet'
 import { api, resolveAssetUrl } from '@/lib/api'
@@ -304,7 +304,6 @@ const easeOut = [0.16, 1, 0.3, 1] as const
 const staggerContainer = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } }
 const fadeUp = { hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: easeOut } } }
 const fadeIn = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { duration: 0.5 } } }
-const scaleIn = { hidden: { opacity: 0, scale: 0.95 }, show: { opacity: 1, scale: 1, transition: { duration: 0.5, ease: easeOut } } }
 
 // ── Cards ──────────────────────────────────────────────────────────────────
 function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
@@ -556,65 +555,6 @@ function PromoCard({ p }: { p: Promo }) {
         </motion.button>
       </div>
     </motion.article>
-  )
-}
-
-function FlavorCard({ f, open, onToggle }: { f: Flavor; open: boolean; onToggle: () => void }) {
-  return (
-    <motion.div
-      style={{ gridColumn: open ? 'span 2' : 'span 1' }}
-      variants={scaleIn}
-      animate={open ? 'show' : 'hidden'}
-      transition={{ duration: 0.3, ease: easeOut }}
-    >
-      <button
-        onClick={onToggle}
-        aria-expanded={open}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px 20px',
-          background: 'var(--card)',
-          color: 'var(--text)',
-          border: `1px solid ${open ? f.accent || 'var(--gold)' : 'var(--line)'}`,
-          borderRadius: open ? '16px 16px 0 0' : 16,
-          cursor: 'pointer',
-          fontSize: 'clamp(14px,1.8vw,15px)',
-          fontWeight: 600,
-          transition: 'border-color 0.2s ease, background 0.2s ease',
-        }}
-      >
-        {f.name}
-        <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronDown size={18} style={{ color: open ? f.accent || 'var(--gold)' : 'var(--muted)' }} />
-        </motion.div>
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: easeOut }}
-            style={{
-              border: `1px solid ${f.accent || 'var(--gold)'}`,
-              borderTop: 0,
-              borderRadius: '0 0 16px 16px',
-              overflow: 'hidden',
-              background: 'var(--card)',
-              boxShadow: 'inset 0 -1px 0 rgba(255,255,255,0.03)',
-            }}
-          >
-            <div className="thumb" style={{ aspectRatio: '16/9', background: '#1a1712' }}>
-              <Photo src={f.img ? resolveAssetUrl(f.img) : ''} alt={f.name} />
-            </div>
-            {f.desc && <p className="sub" style={{ padding: 20, fontSize: 'clamp(13px,1.6vw,14.5px)', lineHeight: 1.6, margin: 0 }}>{f.desc}</p>}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
   )
 }
 
@@ -1362,15 +1302,15 @@ function VerticalAdPoster({
           }}
         />
 
-        {/* Bottom gradient fade for text legibility */}
+        {/* Bottom gradient fade for text legibility - taller to accommodate content */}
         <div
           style={{
             position: 'absolute',
             bottom: 0,
             left: 0,
             right: 0,
-            height: '45%',
-            background: 'linear-gradient(180deg, transparent 0%, rgba(11,10,8,0.6) 50%, rgba(11,10,8,0.95) 100%)',
+            height: '60%',
+            background: 'linear-gradient(180deg, transparent 0%, rgba(11,10,8,0.4) 30%, rgba(11,10,8,0.85) 60%, rgba(11,10,8,0.98) 100%)',
             pointerEvents: 'none',
             zIndex: 4,
           }}
@@ -1477,31 +1417,37 @@ function VerticalAdPoster({
           }}
         />
 
-        {/* Layer 4: Product information integrated into poster */}
+        {/* Layer 4: Product information integrated into poster - Structured bottom panel */}
         <div
           style={{
             position: 'absolute',
             bottom: 0,
             left: 0,
             right: 0,
-            padding: 'clamp(20px, 4vw, 32px)',
+            padding: 'clamp(18px, 3.5vw, 28px)',
             zIndex: 10,
             display: 'flex',
             flexDirection: 'column',
-            gap: 'clamp(6px, 1vw, 10px)',
+            gap: 0,
+            minHeight: '55%',
+            justifyContent: 'flex-end',
           }}
         >
-          {/* Title - Large editorial style */}
+          {/* Title - Large editorial style, clamped to 3 lines */}
           <h3
             style={{
-              fontSize: 'clamp(22px, 4.5vw, 36px)',
+              fontSize: 'clamp(18px, 3.5vw, 28px)',
               fontWeight: 800,
-              lineHeight: 1.05,
+              lineHeight: 1.15,
               margin: 0,
               color: 'var(--text)',
-              letterSpacing: '-0.025em',
+              letterSpacing: '-0.02em',
               textShadow: '0 2px 24px rgba(0,0,0,0.5)',
               fontFamily: 'Inter, system-ui, sans-serif',
+              display: '-webkit-box',
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
             }}
           >
             {title}
@@ -1511,69 +1457,75 @@ function VerticalAdPoster({
           {subtitle && (
             <motion.p
               style={{
-                fontSize: 'clamp(12px, 1.4vw, 14px)',
-                fontWeight: 500,
+                fontSize: 'clamp(11px, 1.2vw, 13px)',
+                fontWeight: 600,
                 color: 'var(--gold)',
-                margin: 0,
-                letterSpacing: '0.08em',
+                margin: '8px 0 0 0',
+                letterSpacing: '0.06em',
                 textTransform: 'uppercase',
                 textShadow: '0 1px 8px rgba(0,0,0,0.4)',
+                display: '-webkit-box',
+                WebkitLineClamp: 1,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
               }}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25, duration: 0.5, ease: easeOut }}
+              transition={{ delay: 0.2, duration: 0.4, ease: easeOut }}
             >
               {subtitle}
             </motion.p>
           )}
 
-          {/* Description - When space permits */}
+          {/* Description - When space permits, clamped to 2 lines */}
           {description && (
             <motion.p
               className="sub"
               style={{
-                fontSize: 'clamp(12px, 1.3vw, 13.5px)',
+                fontSize: 'clamp(11.5px, 1.2vw, 13px)',
                 lineHeight: 1.5,
-                margin: 'clamp(4px, 0.5vw, 8px) 0 0 0',
-                color: 'rgba(244,241,236,0.75)',
+                margin: '6px 0 0 0',
+                color: 'rgba(244,241,236,0.78)',
                 display: '-webkit-box',
-                WebkitLineClamp: 3,
+                WebkitLineClamp: 2,
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
                 textShadow: '0 1px 4px rgba(0,0,0,0.4)',
               }}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.5, ease: easeOut }}
+              transition={{ delay: 0.3, duration: 0.4, ease: easeOut }}
             >
               {description}
             </motion.p>
           )}
 
-          {/* Price - Integrated into composition */}
+          {/* Price - Integrated into composition, always on own line with proper spacing */}
           {showPrice && price && (
             <motion.div
               style={{
-                marginTop: 'clamp(8px, 1.5vw, 14px)',
-                paddingTop: 'clamp(10px, 1.5vw, 14px)',
-                borderTop: '1px solid rgba(245,200,66,0.2)',
+                marginTop: 'auto',
+                paddingTop: 'clamp(12px, 2vw, 16px)',
+                borderTop: '1px solid rgba(245,200,66,0.18)',
                 display: 'flex',
                 alignItems: 'baseline',
                 justifyContent: 'space-between',
                 gap: 16,
+                minHeight: '48px',
               }}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.45, duration: 0.5, ease: easeOut }}
+              transition={{ delay: 0.4, duration: 0.4, ease: easeOut }}
             >
               <span
                 style={{
-                  fontSize: 'clamp(24px, 4vw, 34px)',
+                  fontSize: 'clamp(20px, 3.5vw, 30px)',
                   fontWeight: 800,
                   color: 'var(--gold)',
-                  letterSpacing: '-0.02em',
+                  letterSpacing: '-0.015em',
                   fontFamily: 'Inter, system-ui, sans-serif',
                   textShadow: '0 2px 16px rgba(245,200,66,0.25)',
+                  flexShrink: 0,
                 }}
               >
                 {typeof price === 'number' ? `₱${price}` : price}
@@ -1584,11 +1536,16 @@ function VerticalAdPoster({
                   flex: 1,
                   height: 1,
                   background: 'linear-gradient(90deg, var(--gold) 0%, transparent 100%)',
-                  opacity: 0.3,
+                  opacity: 0.25,
                   minWidth: 40,
                 }}
               />
             </motion.div>
+          )}
+
+          {/* Spacer for non-priced cards to maintain visual balance */}
+          {!showPrice && (
+            <div style={{ marginTop: 'auto', minHeight: '48px' }} />
           )}
         </div>
       </div>
@@ -1745,6 +1702,8 @@ function FeedbackModal({ onClose, options, userId }: { onClose: () => void; opti
 // Displays verified local food images as premium vertical campaign posters.
 // Images with matching products show price; preview-only items show no price.
 function FoodPreviewGallery({ products }: { products: Product[] }) {
+  const { isMobile, isTablet, isCompactDesktop } = useViewport()
+
   // Accent color mapping for each food item to give each poster its own character
   const accentMap: Record<string, string> = {
     'Honey Garlic Chicken': '#f5c842',
@@ -1770,41 +1729,52 @@ function FoodPreviewGallery({ products }: { products: Product[] }) {
     };
   });
 
+  // Responsive column count based on viewport
+  // isMobile: < 768px, isTablet: < 1024px, isCompactDesktop: < 1280px
+  const getColumns = () => {
+    if (isMobile) return 1
+    if (isTablet) return 2
+    if (isCompactDesktop) return 4
+    return 5
+  }
+
   return (
     <motion.section className="section" variants={staggerContainer} style={{ marginTop: 80, background: BLACK }}>
-      <div className="section-header">
+      <div className="section-header" style={{ maxWidth: 1280, margin: '0 auto 28px', padding: '0 24px' }}>
         <motion.h2 className="section-title" variants={fadeUp}>Food Preview Gallery</motion.h2>
         <motion.p className="section-subtitle" variants={fadeUp}>
           Verified food photography from our kitchen. Prices shown where available — visit Our Menu to order.
         </motion.p>
       </div>
-      <motion.div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))',
-          gap: 'clamp(18px, 2.5vw, 24px)',
-          perspective: '1200px',
-        }}
-        variants={staggerContainer}
-        role="list"
-      >
-        {galleryItems.map((item) => (
-          <VerticalAdPoster
-            key={item.filename}
-            image={item.path}
-            title={item.displayName}
-            subtitle={item.hasProduct ? 'Available to order' : 'Preview only'}
-            description={item.hasProduct && item.product
-              ? item.product.description || 'Hand-crafted with our signature spices.'
-              : 'This item is not currently on the menu. Ask our staff about availability.'}
-            badge={item.hasProduct ? 'On Menu' : 'Preview'}
-            price={item.hasProduct && item.product ? fmt(item.product.price) : undefined}
-            showPrice={item.hasProduct}
-            accentColor={item.accent}
-            bgWords={item.displayName.toUpperCase().split(' ').slice(0, 2).join(' ')}
-          />
-        ))}
-      </motion.div>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px' }}>
+        <motion.div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${getColumns()}, 1fr)`,
+            gap: 'clamp(18px, 2vw, 24px)',
+            perspective: '1200px',
+          }}
+          variants={staggerContainer}
+          role="list"
+        >
+          {galleryItems.map((item) => (
+            <VerticalAdPoster
+              key={item.filename}
+              image={item.path}
+              title={item.displayName}
+              subtitle={item.hasProduct ? 'Available to order' : 'Preview only'}
+              description={item.hasProduct && item.product
+                ? item.product.description || 'Hand-crafted with our signature spices.'
+                : 'This item is not currently on the menu. Ask our staff about availability.'}
+              badge={item.hasProduct ? 'On Menu' : 'Preview'}
+              price={item.hasProduct && item.product ? fmt(item.product.price) : undefined}
+              showPrice={item.hasProduct}
+              accentColor={item.accent}
+              bgWords={item.displayName.toUpperCase().split(' ').slice(0, 2).join(' ')}
+            />
+          ))}
+        </motion.div>
+      </div>
     </motion.section>
   );
 }
@@ -1818,12 +1788,11 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
   const { user } = useAuth()
 
   const [products, setProducts] = useState<Product[]>([])
-  const [flavors, setFlavors] = useState<Flavor[]>([])
+  const [_flavors, setFlavors] = useState<Flavor[]>([])
   const [promos, setPromos] = useState<Promo[]>([])
   const [loading, setLoading] = useState({ p: true, f: true, r: true })
   const [category, setCategory] = useState<Category>('All')
   const [search, setSearch] = useState('')
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -2048,23 +2017,6 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
               {[...featured, ...regular].map(p => (
                 <motion.div key={p.id} variants={fadeUp} role="listitem">
                   <PromoCard p={p} />
-                </motion.div>
-              ))}
-            </motion.div>
-          </motion.section>
-        )}
-
-        {/* FLAVORS */}
-        {!loading.f && flavors.length > 0 && (
-          <motion.section className="section" variants={staggerContainer} style={{ background: BLACK }}>
-            <div className="section-header">
-              <motion.h2 className="section-title" variants={fadeUp}>Signature Flavors</motion.h2>
-              <motion.p className="section-subtitle" variants={fadeUp}>Available on every chicken order. Tap a flavor to preview it.</motion.p>
-            </div>
-            <motion.div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 14 }} variants={staggerContainer} role="list">
-              {flavors.map(f => (
-                <motion.div key={f.name} variants={fadeUp} role="listitem">
-                  <FlavorCard f={f} open={expanded === f.name} onToggle={() => setExpanded(expanded === f.name ? null : f.name)} />
                 </motion.div>
               ))}
             </motion.div>
