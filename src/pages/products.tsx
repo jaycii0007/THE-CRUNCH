@@ -15,8 +15,6 @@ type Category = (typeof CATEGORIES)[number]
 
 interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string }
 interface Flavor { name: string; accent: string; desc: string; img: string }
-interface MenuItem { name: string; price: number; tag?: string; img?: string }
-interface MenuSection { id: string; title: string; subtext?: string; items: MenuItem[] }
 interface Promo { id: string; title: string; subtitle?: string; description: string; img: string; badge?: string; validUntil?: string; discount?: string; highlight?: boolean }
 
 const fmt = (v: number) => formatCurrencyAmount(v)
@@ -620,59 +618,6 @@ function FlavorCard({ f, open, onToggle }: { f: Flavor; open: boolean; onToggle:
   )
 }
 
-function MenuCard({ s }: { s: MenuSection }) {
-  return (
-    <motion.div className="card" variants={fadeUp} style={{
-      padding: 'clamp(20px,3vw,28px)',
-      background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
-      border: '1px solid var(--line)',
-      borderRadius: 20,
-      boxShadow: '0 4px 24px rgba(0,0,0,0.2)',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 12 }}>
-        <h3 style={{ fontSize: 'clamp(19px,2.4vw,22px)', fontWeight: 700, margin: 0, color: 'var(--text)', letterSpacing: '-0.02em' }}>{s.title}</h3>
-      </div>
-      {s.subtext && <p className="sub" style={{ fontSize: 'clamp(13px,1.6vw,14px)', marginTop: 4, marginBottom: 16, color: 'var(--muted)' }}>{s.subtext}</p>}
-      <div style={{ marginTop: 8 }}>
-        {s.items.map(it => (
-          <div key={`${s.id}-${it.name}-${it.price}`} style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            padding: '16px 0',
-            borderTop: '1px solid rgba(255,255,255,0.04)',
-            transition: 'background 0.2s ease',
-            borderRadius: 12,
-            margin: '0 -8px',
-            paddingLeft: 8,
-            paddingRight: 8,
-          }}>
-            {it.img && (
-              <div className="thumb" style={{
-                width: 56,
-                height: 56,
-                aspectRatio: '1',
-                borderRadius: 12,
-                flexShrink: 0,
-                overflow: 'hidden',
-                background: BLACK,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-              }}>
-                <Photo src={resolveAssetUrl(it.img)} alt={it.name} />
-              </div>
-            )}
-            <span style={{ flex: 1, fontSize: 'clamp(14px,1.8vw,15.5px)', color: 'var(--text)', fontWeight: 500 }}>
-              {it.name}
-              {it.tag && <span className="chip chip-gold" style={{ marginLeft: 10, fontSize: 10.5, fontWeight: 600, padding: '4px 10px' }}>{it.tag}</span>}
-            </span>
-            <span style={{ fontWeight: 700, fontSize: 'clamp(15px,1.9vw,17px)', color: 'var(--gold)', whiteSpace: 'nowrap' }}>{fmt(it.price)}</span>
-          </div>
-        ))}
-      </div>
-    </motion.div>
-  )
-}
-
 // ── Hero Section: Signature Glazed Chicken — Premium Black & Gold ─────────────
 function HeroSection() {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
@@ -707,16 +652,6 @@ function HeroSection() {
     if (isMobile || reduceMotion) return
     setMousePos({ x: 0, y: 0 })
   }, [isMobile, reduceMotion])
-
-  // Steam/Smoke wisp data for procedural 2D animation
-  const steamWisps = useMemo(() => [
-    { id: 1, delay: 0, duration: 10, startX: 22, startY: 82, driftX: -6, scale: 1.1, opacity: 0.18 },
-    { id: 2, delay: 1.8, duration: 12, startX: 78, startY: 88, driftX: 8, scale: 0.85, opacity: 0.14 },
-    { id: 3, delay: 3.5, duration: 9, startX: 48, startY: 92, driftX: -4, scale: 1.0, opacity: 0.12 },
-    { id: 4, delay: 5.2, duration: 11, startX: 62, startY: 78, driftX: 5, scale: 0.75, opacity: 0.15 },
-    { id: 5, delay: 7, duration: 10, startX: 32, startY: 85, driftX: -5, scale: 0.95, opacity: 0.11 },
-    { id: 6, delay: 2.2, duration: 13, startX: 55, startY: 80, driftX: 3, scale: 0.8, opacity: 0.1 },
-  ], [])
 
   return (
     <motion.section
@@ -967,11 +902,11 @@ function HeroSection() {
         </motion.div>
       </motion.div>
 
-      {/* Layer 5: 2D Steam/Smoke Effects - smooth looping */}
+      {/* Layer 5: 2D Smoke Effects - smooth looping cinematic smoke */}
       {!reduceMotion && (
         <>
-          {steamWisps.map((wisp) => (
-            <SteamWisp key={wisp.id} wisp={wisp} goldColor={GOLD} />
+          {SMOKE_LAYERS.map((layer) => (
+            <SmokeLayer key={layer.id} {...layer} reduceMotion={reduceMotion} />
           ))}
         </>
       )}
@@ -1177,59 +1112,106 @@ function HeroSection() {
   )
 }
 
-// ── Steam Wisp Component (Lightweight 2D Smoke/Steam) ─────────────────────────
-function SteamWisp({ wisp, goldColor }: { wisp: any; goldColor: string }) {
-  const [animKey, setAnimKey] = useState(0)
+// ── Smoke Component (Realistic 2D Cinematic Smoke/Steam) ────────────────────────
+// Organic, soft white-gray cloud layers that drift seamlessly
+function SmokeLayer({
+  id,
+  startX,
+  startY,
+  driftX,
+  driftY,
+  scale,
+  opacity,
+  duration,
+  delay,
+  reduceMotion,
+}: {
+  id: number;
+  startX: number;
+  startY: number;
+  driftX: number;
+  driftY: number;
+  scale: number;
+  opacity: number;
+  duration: number;
+  delay: number;
+  reduceMotion: boolean;
+}) {
+  if (reduceMotion) return null;
 
-  useEffect(() => {
-    const interval = setInterval(() => setAnimKey(k => k + 1), (wisp.duration + wisp.delay) * 1000)
-    return () => clearInterval(interval)
-  }, [wisp.duration, wisp.delay])
+  // Pre-computed organic cloud shapes using CSS border-radius for soft plumes
+  const shapes = [
+    '45% 55% 60% 40% / 50% 60% 55% 45%',
+    '55% 45% 50% 50% / 55% 50% 60% 40%',
+    '40% 60% 55% 45% / 60% 55% 50% 50%',
+    '50% 50% 45% 55% / 45% 55% 60% 40%',
+  ];
+  const shape = shapes[id % shapes.length];
+
+  // Soft white-gray smoke colors
+  const smokeColors = [
+    'rgba(255,255,255,0.18)',  // Soft white
+    'rgba(230,230,235,0.16)',  // Light gray-white
+    'rgba(210,215,220,0.14)',  // Muted gray-white
+    'rgba(200,205,210,0.12)',  // Subtle gray
+  ];
+  const baseColor = smokeColors[id % smokeColors.length];
 
   return (
     <motion.div
-      key={animKey}
       style={{
         position: 'absolute',
-        left: `${wisp.startX}%`,
-        top: `${wisp.startY}%`,
-        width: 'clamp(50px, 10vw, 120px)',
-        height: 'clamp(50px, 10vw, 120px)',
+        left: `${startX}%`,
+        top: `${startY}%`,
+        width: `clamp(80px, 14vw, 200px)`,
+        height: `clamp(60px, 10vw, 160px)`,
         pointerEvents: 'none',
-        zIndex: 5,
-        transformOrigin: 'center bottom',
-        filter: 'blur(20px)',
-        opacity: 0,
+        zIndex: 3,
+        transformOrigin: 'center center',
+        willChange: 'transform, opacity',
       }}
       initial={false}
       animate={{
-        opacity: [0, wisp.opacity, wisp.opacity * 0.5, 0],
-        y: [0, -100, -180, -260],
-        x: [0, wisp.driftX * 0.5, wisp.driftX, wisp.driftX * 1.1],
-        scale: [wisp.scale * 0.4, wisp.scale, wisp.scale * 1.25, wisp.scale * 1.4],
-        rotate: [0, -2, 4, -1.5],
-        borderRadius: ['50% 50% 50% 50% / 60% 60% 40% 40%', '40% 60% 60% 40% / 50% 50% 50% 50%', '60% 40% 50% 50% / 40% 60% 50% 50%'],
+        opacity: [0, opacity, opacity * 0.7, opacity * 0.3, 0],
+        y: [0, driftY * 0.3, driftY * 0.6, driftY * 0.85, driftY],
+        x: [0, driftX * 0.25, driftX * 0.55, driftX * 0.8, driftX],
+        scale: [scale * 0.5, scale * 0.85, scale * 1.1, scale * 1.25, scale * 1.35],
+        rotate: [0, driftX * 0.3, driftX * -0.2, driftX * 0.15, 0],
+        borderRadius: [shape, shape, shape, shape, shape],
       }}
       transition={{
-        duration: wisp.duration,
-        delay: wisp.delay,
-        ease: 'easeOut',
+        duration,
+        delay,
+        ease: [0.25, 0.46, 0.45, 0.94], // Custom easing for natural feel
         repeat: Infinity,
-        repeatDelay: 0.5,
+        repeatDelay: 0,
       }}
     >
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          background: `radial-gradient(ellipse 60% 50% at 50% 40%, ${goldColor} 0%, ${goldColor}50 25%, ${goldColor}15 55%, transparent 100%)`,
-          borderRadius: '50% 50% 50% 50% / 60% 60% 40% 40%',
-          animation: 'steamMorph 10s ease-in-out infinite',
-        }}
-      />
+      {/* Multi-layered plume for depth - each layer slightly offset */}
+      {[0, 1, 2].map((layerIdx) => (
+        <div
+          key={layerIdx}
+          style={{
+            position: 'absolute',
+            inset: `${layerIdx * 4}%`,
+            background: `radial-gradient(ellipse 55% 50% at 50% 45%, ${baseColor} 0%, ${baseColor} 20%, ${baseColor.replace(/[\d.]+\)$/, '0)')} 70%, transparent 100%)`,
+            borderRadius: shape,
+            filter: `blur(${8 + layerIdx * 4}px)`,
+            opacity: 1 - layerIdx * 0.15,
+          }}
+        />
+      ))}
     </motion.div>
-  )
+  );
 }
+
+// Smoke configuration - 4 layers with varied timing for seamless looping
+const SMOKE_LAYERS = [
+  { id: 0, startX: 18, startY: 85, driftX: -12, driftY: -140, scale: 1.15, opacity: 0.22, duration: 14, delay: 0 },
+  { id: 1, startX: 75, startY: 88, driftX: 10, driftY: -160, scale: 0.95, opacity: 0.18, duration: 18, delay: 2.5 },
+  { id: 2, startX: 45, startY: 90, driftX: -6, driftY: -130, scale: 1.05, opacity: 0.15, duration: 22, delay: 5 },
+  { id: 3, startX: 60, startY: 82, driftX: 8, driftY: -150, scale: 0.85, opacity: 0.12, duration: 26, delay: 7.5 },
+] as const;
 
 // ── Vertical Advertisement Poster Component ──────────────────────────────────
 function VerticalAdPoster({
@@ -1837,9 +1819,8 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
 
   const [products, setProducts] = useState<Product[]>([])
   const [flavors, setFlavors] = useState<Flavor[]>([])
-  const [sections, setSections] = useState<MenuSection[]>([])
   const [promos, setPromos] = useState<Promo[]>([])
-  const [loading, setLoading] = useState({ p: true, f: true, m: true, r: true })
+  const [loading, setLoading] = useState({ p: true, f: true, r: true })
   const [category, setCategory] = useState<Category>('All')
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -1879,14 +1860,13 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
 
   useEffect(() => {
     let cancelled = false
-    const load = <T,>(url: string, key: 'p' | 'f' | 'm' | 'r', set: (d: T[]) => void, map?: (d: unknown[]) => T[]) =>
+    const load = <T,>(url: string, key: 'p' | 'f' | 'r', set: (d: T[]) => void, map?: (d: unknown[]) => T[]) =>
       api.get<unknown[]>(url)
         .then((d: unknown) => { if (!cancelled) { const r = Array.isArray(d) ? d : []; set(map ? map(r) : (r as T[])) } })
         .catch(() => { })
         .finally(() => { if (!cancelled) setLoading(s => ({ ...s, [key]: false })) })
     load<Product>('/api/products?item_type=menu_item', 'p', setProducts, mapProducts)
     load<Flavor>('/api/flavors', 'f', setFlavors)
-    load<MenuSection>('/api/menu-sections', 'm', setSections)
     load<Promo>('/api/promos', 'r', setPromos)
     return () => { cancelled = true }
   }, [])
@@ -1999,6 +1979,9 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
         </div>
       </section>
 
+      {/* FOOD PREVIEW GALLERY - Moved up to appear after Hero */}
+      <FoodPreviewGallery products={products} />
+
       {/* FEATURED STRIP */}
       <motion.section variants={staggerContainer} style={{ padding: '0 var(--pad) 60px', background: BLACK }}>
         <div className="wrap">
@@ -2088,25 +2071,6 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
           </motion.section>
         )}
 
-        {/* FULL MENU */}
-        {!loading.m && sections.length > 0 && (
-          <motion.section className="section" variants={staggerContainer} style={{ background: BLACK }}>
-            <div className="section-header">
-              <motion.h2 className="section-title" variants={fadeUp}>Full Menu</motion.h2>
-              <motion.p className="section-subtitle" variants={fadeUp}>Everything we serve, by section.</motion.p>
-            </div>
-            <motion.div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,460px),1fr))', gap: 24 }} variants={staggerContainer} role="list">
-              {sections.map(s => (
-                <motion.div key={s.id} variants={fadeUp} role="listitem">
-                  <MenuCard s={s} />
-                </motion.div>
-              ))}
-            </motion.div>
-          </motion.section>
-        )}
-
-        {/* FOOD PREVIEW GALLERY - Frontend-only preview of verified local food images */}
-        <FoodPreviewGallery products={products} />
       </motion.main>
 
       {/* FOOTER */}
