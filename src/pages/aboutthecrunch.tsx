@@ -13,13 +13,25 @@ if (typeof document !== 'undefined' && !document.getElementById('crunch-fonts'))
 }
 
 const PP = "'Poppins', sans-serif";
-const Y = '#f5c842';
-const Y_DARK = '#d9aa2b';
-const CR = '#f5f2eb';
-const CR_MUTED = 'rgba(245, 242, 235, 0.52)';
-const BG = '#080706';
-const CARD_BG = '#120f0c';
-const BORDER = 'rgba(255, 255, 255, 0.07)';
+// Synced with products.tsx: Black & Gold palette
+const BLACK = '#1A1A1A';
+const GOLD = '#C9A84C';
+const GOLD_DARK = '#B8953A';
+const GOLD_LIGHT = '#E8D4A0';
+const CREAM = '#F5F0E8';
+const GOLD_TEXT = '#15120a';
+const CHARCOAL = '#282823';
+const GREY_FOG = '#595C56';
+
+// Derived palette values (synced)
+const Y = GOLD;
+const Y_DARK = GOLD_DARK;
+const Y_LIGHT = GOLD_LIGHT;
+const CR = CREAM;
+const CR_MUTED = 'rgba(245, 240, 232, 0.65)';
+const BG = BLACK;
+const CARD_BG = '#1F1D1A';
+const BORDER = 'rgba(89, 92, 86, 0.25)';
 
 const IMG_HERO = '/img/crunch22.png';
 const IMG_STORY = '/img/chickchicken.png';
@@ -43,7 +55,7 @@ function ScrollProgressBar() {
       <div
         style={{
           height: '100%',
-          background: `linear-gradient(90deg, ${Y} 0%, #ffde6b 100%)`,
+          background: `linear-gradient(90deg, ${Y} 0%, ${Y_LIGHT} 100%)`,
           width: `${progress * 100}%`,
           boxShadow: `0 0 10px ${Y}`,
           transition: 'width 0.08s linear',
@@ -106,7 +118,7 @@ function StatCard({ value, label, sub }: { value: string; label: string; sub?: s
   return (
     <motion.div
       style={{
-        background: 'rgba(16, 13, 10, 0.9)',
+        background: 'rgba(26, 26, 26, 0.9)',
         backdropFilter: 'blur(20px)',
         border: `1px solid ${BORDER}`,
         borderRadius: 18,
@@ -149,7 +161,7 @@ function MarqueeBanner() {
       style={{
         overflow: 'hidden',
         height: 52,
-        background: `linear-gradient(90deg, ${Y} 0%, #fbd559 100%)`,
+        background: `linear-gradient(90deg, ${Y} 0%, ${Y_LIGHT} 100%)`,
         display: 'flex',
         alignItems: 'center',
         position: 'relative',
@@ -171,7 +183,7 @@ function MarqueeBanner() {
               fontWeight: 800,
               letterSpacing: '0.18em',
               textTransform: 'uppercase',
-              color: '#130d04',
+              color: `${GOLD_TEXT}`,
               padding: '0 32px',
               display: 'inline-flex',
               alignItems: 'center',
@@ -280,7 +292,7 @@ export default function AboutTheCrunch() {
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: isMobile ? '0 20px' : '0 40px',
-            background: scrolled || menuOpen ? 'rgba(8, 7, 6, 0.95)' : 'transparent',
+            background: scrolled || menuOpen ? 'rgba(26, 26, 26, 0.95)' : 'transparent',
             backdropFilter: scrolled || menuOpen ? 'blur(24px)' : 'none',
             borderBottom: scrolled ? `1px solid ${BORDER}` : '1px solid transparent',
             transition: 'background 0.3s ease, border-color 0.3s ease',
@@ -356,7 +368,7 @@ export default function AboutTheCrunch() {
                     padding: '10px 22px',
                     fontSize: 13.5,
                     fontWeight: 700,
-                    color: '#130d04',
+                    color: `${GOLD_TEXT}`,
                     cursor: 'pointer',
                     fontFamily: PP,
                     boxShadow: '0 4px 16px rgba(245, 200, 66, 0.3)',
@@ -395,7 +407,7 @@ export default function AboutTheCrunch() {
                       padding: '10px 22px',
                       fontSize: 13.5,
                       fontWeight: 700,
-                      color: '#130d04',
+                      color: `${GOLD_TEXT}`,
                       cursor: 'pointer',
                       fontFamily: PP,
                       boxShadow: '0 6px 20px rgba(245, 200, 66, 0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
@@ -495,7 +507,7 @@ export default function AboutTheCrunch() {
                       padding: 14,
                       fontSize: 14,
                       fontWeight: 700,
-                      color: '#130d04',
+                      color: `${GOLD_TEXT}`,
                       cursor: 'pointer',
                       fontFamily: PP,
                     }}
@@ -531,7 +543,7 @@ export default function AboutTheCrunch() {
                         padding: 14,
                         fontSize: 14,
                         fontWeight: 700,
-                        color: '#130d04',
+                        color: `${GOLD_TEXT}`,
                         cursor: 'pointer',
                         fontFamily: PP,
                       }}
@@ -567,8 +579,8 @@ export default function AboutTheCrunch() {
               pointerEvents: 'none',
               zIndex: 0,
               background: `
-                radial-gradient(ellipse 60% 50% at 20% 20%, rgba(245, 200, 66, 0.08) 0%, transparent 60%),
-                radial-gradient(ellipse 50% 60% at 80% 80%, rgba(255, 180, 40, 0.06) 0%, transparent 55%),
+                radial-gradient(ellipse 60% 50% at 20% 20%, ${Y}14 0%, transparent 60%),
+                radial-gradient(ellipse 50% 60% at 80% 80%, ${Y_DARK}10 0%, transparent 55%),
                 ${BG}
               `,
             }}
@@ -689,7 +701,7 @@ export default function AboutTheCrunch() {
                   padding: isMobile ? '14px 32px' : '16px 40px',
                   fontSize: 14,
                   fontWeight: 800,
-                  color: '#120d04',
+                  color: `${GOLD_TEXT}`,
                   cursor: 'pointer',
                   fontFamily: PP,
                   boxShadow: '0 8px 24px rgba(245, 200, 66, 0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
@@ -821,7 +833,7 @@ export default function AboutTheCrunch() {
               <div style={{
                 position: 'absolute',
                 inset: 0,
-                background: 'linear-gradient(180deg, transparent 35%, rgba(8,7,6,0.4) 65%, #080706 95%)',
+                background: `linear-gradient(180deg, transparent 35%, rgba(8,7,6,0.4) 65%, ${BLACK} 95%)`,
                 transform: 'translateZ(20px)',
               }} />
               {/* Subtle accent line */}
@@ -869,7 +881,7 @@ export default function AboutTheCrunch() {
         <section
           id="story"
           style={{
-            background: CARD_BG,
+            background: BLACK,
             padding: isMobile ? '70px 0' : '110px 0',
             position: 'relative',
             zIndex: 1,
@@ -969,7 +981,7 @@ export default function AboutTheCrunch() {
                     transition: { duration: 0.3 }
                   }}
                 >
-                  <div style={{ fontFamily: PP, fontSize: 36, fontWeight: 900, color: '#130d04', lineHeight: 1, textShadow: '0 2px 8px rgba(19,13,4,0.2)' }}>7</div>
+                  <div style={{ fontFamily: PP, fontSize: 36, fontWeight: 900, color: `${GOLD_TEXT}`, lineHeight: 1, textShadow: '0 2px 8px rgba(19,13,4,0.2)' }}>7</div>
                   <div style={{ fontFamily: PP, fontSize: 9.5, fontWeight: 800, color: 'rgba(19, 13, 4, 0.7)', letterSpacing: '0.16em', textTransform: 'uppercase', marginTop: 6 }}>
                     House Glazes
                   </div>
@@ -1026,7 +1038,7 @@ export default function AboutTheCrunch() {
         </section>
 
         {/* ── Mission Statement ───────────────────────────────────────────── */}
-        <section style={{ background: '#090706', padding: isMobile ? '70px 0' : '100px 0', position: 'relative', zIndex: 1 }}>
+        <section style={{ background: BLACK, padding: isMobile ? '70px 0' : '100px 0', position: 'relative', zIndex: 1 }}>
           <div style={{ maxWidth: 1220, margin: '0 auto', padding: isMobile ? '0 24px' : '0 48px' }}>
             <Reveal>
               <span style={{ fontFamily: PP, fontSize: 11, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: Y, display: 'block', marginBottom: 28 }}>
@@ -1083,7 +1095,7 @@ export default function AboutTheCrunch() {
                       padding: '16px 42px',
                       fontSize: 14.5,
                       fontWeight: 800,
-                      color: '#130d04',
+                      color: `${GOLD_TEXT}`,
                       cursor: 'pointer',
                       fontFamily: PP,
                       boxShadow: '0 10px 30px rgba(245, 200, 66, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
@@ -1116,7 +1128,7 @@ export default function AboutTheCrunch() {
         </section>
 
         {/* ── Pillars / What Sets Us Apart ─────────────────────────────────── */}
-        <section style={{ background: CARD_BG, padding: isMobile ? '70px 0' : '100px 0', position: 'relative', zIndex: 1, borderTop: `1px solid ${BORDER}` }}>
+        <section style={{ background: BLACK, padding: isMobile ? '70px 0' : '100px 0', position: 'relative', zIndex: 1, borderTop: `1px solid ${BORDER}` }}>
           <div style={{ maxWidth: 1220, margin: '0 auto', padding: isMobile ? '0 24px' : '0 48px' }}>
             <Reveal>
               <div style={{ display: 'flex', flexDirection: isTablet ? 'column' : 'row', justifyContent: 'space-between', alignItems: isTablet ? 'flex-start' : 'flex-end', marginBottom: 48, gap: 16 }}>
@@ -1140,7 +1152,7 @@ export default function AboutTheCrunch() {
                 <Reveal key={p.no} delay={idx * 0.08} dir="up">
                   <motion.div
                     style={{
-                      background: 'linear-gradient(145deg, rgba(22, 19, 16, 0.98) 0%, rgba(18, 15, 12, 0.95) 100%)',
+                      background: BLACK,
                       border: `1px solid ${BORDER}`,
                       borderRadius: 20,
                       padding: '32px 28px',
@@ -1154,7 +1166,7 @@ export default function AboutTheCrunch() {
                       position: 'relative',
                       overflow: 'hidden',
                     }}
-                    whileHover={isMobile ? { y: -4, background: '#1a1714' } : {
+                    whileHover={isMobile ? { y: -4, background: BLACK } : {
                       y: -10,
                       rotateX: 4,
                       rotateY: -4,
@@ -1248,6 +1260,7 @@ export default function AboutTheCrunch() {
             overflow: 'hidden',
             zIndex: 1,
             perspective: 1000,
+            background: BLACK,
           }}
         >
           <div style={{ position: 'absolute', inset: 0, transformStyle: 'preserve-3d' }}>
@@ -1277,7 +1290,7 @@ export default function AboutTheCrunch() {
             <div style={{
               position: 'absolute',
               inset: 0,
-              background: 'radial-gradient(ellipse at center, transparent 15%, rgba(8,7,6,0.4) 50%, #080706 95%)',
+              background: `radial-gradient(ellipse at center, transparent 15%, rgba(8,7,6,0.4) 50%, ${BLACK} 95%)`,
               transform: 'translateZ(-20px)',
             }} />
             {/* Ambient golden glow layers */}
@@ -1341,7 +1354,7 @@ export default function AboutTheCrunch() {
                     padding: isMobile ? '14px 36px' : '16px 44px',
                     fontSize: 14.5,
                     fontWeight: 800,
-                    color: '#130d04',
+                    color: `${GOLD_TEXT}`,
                     cursor: 'pointer',
                     fontFamily: PP,
                     boxShadow: '0 10px 30px rgba(245, 200, 66, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
@@ -1400,7 +1413,7 @@ export default function AboutTheCrunch() {
         </section>
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
-        <footer style={{ background: '#060504', borderTop: `1px solid ${BORDER}`, padding: isMobile ? '50px 24px 32px' : '64px 48px 36px', position: 'relative', zIndex: 1 }}>
+        <footer style={{ background: BLACK, borderTop: `1px solid ${BORDER}`, padding: isMobile ? '50px 24px 32px' : '64px 48px 36px', position: 'relative', zIndex: 1 }}>
           <div style={{ maxWidth: 1220, margin: '0 auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : '2fr 1fr 1fr', gap: isMobile ? 36 : 48, marginBottom: 44 }}>
               <div>

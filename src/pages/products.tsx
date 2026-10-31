@@ -68,17 +68,27 @@ const timeLeft = (d?: string) => {
 }
 
 // ── Design Tokens ──────────────────────────────────────────────────────────
-const GOLD = '#f5c842'
-const GOLD_DARK = '#d9aa2b'
-const BG = '#0b0a08'
-const CARD_BG = '#131110'
-const BORDER = 'rgba(255,255,255,.08)'
-const TEXT = '#f4f1ec'
-const MUTED = 'rgba(244,241,236,.58)'
-const PAD = 'clamp(20px,5vw,64px)' // Wider side padding for desktop
+// THE CRUNCH Premium Color Palette (Approved) — Signature Glazed Hero uses Black/Gold
+const BLACK = '#1A1A1A'
+const GOLD = '#C9A84C'
+const GOLD_DARK = '#B8953A'
+const GOLD_LIGHT = '#E8D4A0'
+const CREAM = '#F5F0E8'
+const CHARCOAL = '#282823'
+const GREY_FOG = '#595C56'
+const BUTTER = '#E9BE5F'
+const BLOND = '#F5E8B6'
 
-// Hero image - use crunch22.png (pure photography, no embedded text)
-const HERO_IMAGE = '/img/crunch22.png'
+// Legacy aliases for backward compatibility
+const CARD_BG = BLACK
+const BORDER = 'rgba(89,92,86,0.25)'
+const TEXT = CREAM
+const MUTED = 'rgba(245,240,232,0.58)'
+const PAD = 'clamp(20px,5vw,64px)'
+
+// Hero images for Signature Glazed Chicken
+const HERO_IMAGE_1 = '/img/signatureglazed1.jpg'
+const HERO_IMAGE_2 = '/img/signatureglazed2.jpg'
 
 // Promotional images for featured strip (use ChatGPT images that are promotional)
 const PROMO_IMAGES = [
@@ -98,9 +108,16 @@ const CSS = `
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 :root{
+  --charcoal:${CHARCOAL};
+  --grey-fog:${GREY_FOG};
+  --butter:${BUTTER};
+  --blond:${BLOND};
+  --black:${BLACK};
   --gold:${GOLD};
   --gold-dark:${GOLD_DARK};
-  --bg:${BG};
+  --gold-light:${GOLD_LIGHT};
+  --cream:${CREAM};
+  --bg:${BLACK};
   --card:${CARD_BG};
   --line:${BORDER};
   --text:${TEXT};
@@ -110,20 +127,20 @@ html{scroll-behavior:smooth}
 body{background:var(--bg)}
 .pc{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 .pc button{font-family:inherit}
-.pc :focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.pc :focus-visible{outline:2px solid var(--butter);outline-offset:2px}
 .wrap{max-width:1440px;margin:0 auto;padding:0 var(--pad);width:100%}
 .nav{position:fixed;top:0;left:0;right:0;z-index:100;height:${NAV_H}px;display:flex;align-items:center;transition:background .25s,border-color .25s,box-shadow .25s;border-bottom:1px solid transparent}
-.nav.on{background:rgba(11,10,8,.92);backdrop-filter:blur(16px);border-bottom-color:var(--line);box-shadow:0 8px 30px rgba(0,0,0,.35)}
+.nav.on{background:rgba(26,26,26,.92);backdrop-filter:blur(16px);border-bottom-color:var(--line);box-shadow:0 8px 30px rgba(0,0,0,.35)}
 .nav-in{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .brand{display:flex;align-items:center;gap:10px;background:none;border:0;cursor:pointer;color:var(--text);font-weight:800;font-size:18px;letter-spacing:-.02em}
 .links{display:flex;align-items:center;gap:4px}
 .link{background:none;border:0;color:var(--muted);font-size:14px;font-weight:500;padding:8px 14px;border-radius:8px;cursor:pointer;transition:color .15s,background .15s}
-.link:hover{color:var(--text);background:rgba(255,255,255,.05)}
+.link:hover{color:var(--text);background:rgba(245,232,182,.08)}
 .btn{border:0;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:transform .15s,opacity .15s}
 .btn:active{transform:scale(.97)}
-.btn-gold{background:var(--gold);color:#15120a}
+.btn-gold{background:var(--butter);color:${CHARCOAL}}
 .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
-.btn-ghost:hover{background:rgba(255,255,255,.05)}
+.btn-ghost:hover{background:rgba(245,232,182,.08)}
 .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted);padding:0 4px}
 .dot{width:7px;height:7px;border-radius:50%}
 .burger{display:none;background:none;border:0;color:var(--text);cursor:pointer;padding:8px}
@@ -134,31 +151,41 @@ body{background:var(--bg)}
 @media (max-width: 768px){.grid{grid-template-columns:repeat(auto-fill,minmax(100%,1fr));gap:20px}}
 @media (max-width: 480px){.grid{gap:16px}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
-.card:hover{border-color:rgba(245,200,66,.35);transform:translateY(-4px)}
-.thumb{position:relative;aspect-ratio:4/3;background:#1a1712;overflow:hidden}
+.card:hover{border-color:rgba(233,190,95,.45);transform:translateY(-4px)}
+.thumb{position:relative;aspect-ratio:4/3;background:#1f1d1a;overflow:hidden}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.chip{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--muted)}
-.chip-gold{background:var(--gold);color:#15120a}
-.tabs{position:sticky;top:${NAV_H}px;z-index:50;background:rgba(11,10,8,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+.chip{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:rgba(89,92,86,0.3);color:var(--muted)}
+.chip-gold{background:var(--butter);color:${CHARCOAL}}
+.tabs{position:sticky;top:${NAV_H}px;z-index:50;background:rgba(26,26,26,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
 .tabs-in{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding: 8px 0}
 .tabs-in::-webkit-scrollbar{display:none}
 .tab{position:relative;background:none;border:0;padding:14px 20px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap;border-radius:12px;transition:color 0.2s ease, background 0.2s ease}
-.tab:hover{color:var(--text);background:rgba(255,255,255,0.04)}
-.tab.on{color:var(--gold);font-weight:600;background:rgba(245,200,66,0.1)}
-.tab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:6px;width:24px;height:3px;background:var(--gold);border-radius:2px;box-shadow:0 0 12px var(--gold)}
+.tab:hover{color:var(--text);background:rgba(245,232,182,.06)}
+.tab.on{color:var(--butter);font-weight:600;background:rgba(233,190,95,.12)}
+.tab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:6px;width:24px;height:3px;background:var(--butter);border-radius:2px;box-shadow:0 0 12px var(--butter)}
 /* Section header improvements */
 .section-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12;margin-bottom:28}
-.section-title{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-0.025em;line-height:1.1;margin:0}
+.section-title{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-0.025em;line-height:1.1;margin:0;color:var(--blond)}
 .section-subtitle{color:var(--muted);font-size:clamp(13px,1.6vw,14px);line-height:1.6;margin:0}
-.h2{font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-.025em;line-height:1.1}
+.h2{font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-.025em;line-height:1.1;color:var(--blond)}
 .sub{color:var(--muted);font-size:14px;line-height:1.6}
 .section{margin-top:100px}
-.skel{border-radius:16px;background:linear-gradient(90deg,#141210,#1c1915,#141210);background-size:200% 100%;animation:sh 1.4s infinite}
+.skel{border-radius:16px;background:linear-gradient(90deg,${CHARCOAL},${GREY_FOG},${CHARCOAL});background-size:200% 100%;animation:sh 1.4s infinite}
 .fixed-btn{position:fixed;bottom:22px;right:22px;z-index:90}
-.input{width:100%;font:inherit;font-size:14px;color:var(--text);background:rgba(255,255,255,0.04);border:1px solid var(--line);border-radius:12px;padding:14px 18px;outline:none;transition:border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease}
-.input:focus{border-color:rgba(245,200,66,0.5);background:rgba(255,255,255,0.06);box-shadow:0 0 0 4px rgba(245,200,66,0.15)}
+.input{width:100%;font:inherit;font-size:14px;color:var(--text);background:rgba(89,92,86,0.15);border:1px solid var(--line);border-radius:12px;padding:14px 18px;outline:none;transition:border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease}
+.input:focus{border-color:rgba(233,190,95,0.5);background:rgba(89,92,86,0.2);box-shadow:0 0 0 4px rgba(233,190,95,0.15)}
 .input option{color:#111}
 @keyframes sh{to{background-position:-200% 0}}
+@keyframes steamMorph{
+  0%,100%{border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;transform:translateX(0) scaleY(1)}
+  25%{border-radius:40% 60% 60% 40% / 50% 50% 50% 50%;transform:translateX(-4px) scaleY(1.05)}
+  50%{border-radius:60% 40% 50% 50% / 40% 60% 50% 50%;transform:translateX(4px) scaleY(0.95)}
+  75%{border-radius:50% 50% 40% 60% / 50% 50% 60% 40%;transform:translateX(-2px) scaleY(1.02)}
+}
+@keyframes pulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:0.6;transform:scale(0.9)}
+}
 @media(max-width:768px){.links,.status.hide-m{display:none}.burger{display:flex}.grid{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 `
@@ -210,16 +237,16 @@ function Photo({ src, alt, priority = false, style, className }: { src?: string;
           placeItems: 'center',
           color: 'var(--muted)',
           fontSize: 12,
-          background: '#1a1712',
+          background: BLACK,
           ...style
         }}
         role="img"
         aria-label={`${alt} - image not available`}
       >
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <path d="M21 15l-5-5L5 17"/>
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <path d="M21 15l-5-5L5 17" />
         </svg>
       </div>
     )
@@ -233,7 +260,7 @@ function Photo({ src, alt, priority = false, style, className }: { src?: string;
           style={{
             width: '100%',
             height: '100%',
-            background: 'linear-gradient(90deg, #141210 25%, #1c1915 50%, #141210 75%)',
+            background: 'linear-gradient(90deg, #1A1A1A 25%, #1A1A1A 50%, #1A1A1A 75%)',
             backgroundSize: '200% 100%',
             animation: 'shimmer 1.4s infinite',
             position: 'absolute',
@@ -308,7 +335,7 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
         whileHover={{ opacity: 1 }}
         style={{
           aspectRatio: '4/3',
-          background: '#1a1712',
+          background: BLACK,
           overflow: 'hidden',
           position: 'relative',
         }}
@@ -628,7 +655,7 @@ function MenuCard({ s }: { s: MenuSection }) {
                 borderRadius: 12,
                 flexShrink: 0,
                 overflow: 'hidden',
-                background: '#1a1712',
+                background: BLACK,
                 boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
               }}>
                 <Photo src={resolveAssetUrl(it.img)} alt={it.name} />
@@ -646,146 +673,1014 @@ function MenuCard({ s }: { s: MenuSection }) {
   )
 }
 
-// ── Hero Section ──────────────────────────────────────────────────────────
+// ── Hero Section: Signature Glazed Chicken — Premium Black & Gold ─────────────
 function HeroSection() {
-  return (
-    <section style={{ position: 'relative', width: '100%', borderRadius: 28, overflow: 'hidden', background: '#1a1712', boxShadow: '0 20px 60px -20px rgba(0,0,0,0.5)' }}>
-      {/* Background image with gradient overlay */}
-      <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
-        <div style={{ width: '100%', height: '100%' }}>
-          <Photo src={HERO_IMAGE} alt="The Crunch - Golden Boneless Fried Chicken" priority />
-        </div>
-        {/* Dark gradient overlay - covers full height for text readability */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(11,10,8,0.9) 0%, rgba(11,10,8,0.6) 40%, rgba(11,10,8,0.35) 65%, rgba(11,10,8,0.9) 100%)' }} />
-        {/* Subtle gold accent line */}
-        <div style={{ position: 'absolute', bottom: 0, left: '10%', right: '10%', height: 1, background: 'linear-gradient(90deg, transparent, var(--gold), transparent)', opacity: 0.3 }} />
-      </div>
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const [isMobile, setIsMobile] = useState(false)
+  const [reduceMotion, setReduceMotion] = useState(false)
 
-      {/* Content - Flexbox layout, responsive */}
-      <div style={{ position: 'relative', zIndex: 2, padding: 'clamp(40px,7vw,72px) clamp(24px,5vw,72px)', display: 'flex', flexDirection: 'column', minHeight: 'clamp(320px,60vw,480px)' }}>
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: easeOut }}
-          style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1 }}
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    const checkReduceMotion = () => setReduceMotion(
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    )
+    checkMobile()
+    checkReduceMotion()
+    window.addEventListener('resize', checkMobile)
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    mq.addEventListener?.('change', checkReduceMotion)
+    return () => {
+      window.removeEventListener('resize', checkMobile)
+      mq.removeEventListener?.('change', checkReduceMotion)
+    }
+  }, [])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isMobile || reduceMotion) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = ((e.clientX - rect.left) / rect.width - 0.5) * 2
+    const y = ((e.clientY - rect.top) / rect.height - 0.5) * 2
+    setMousePos({ x, y })
+  }, [isMobile, reduceMotion])
+
+  const handleMouseLeave = useCallback(() => {
+    if (isMobile || reduceMotion) return
+    setMousePos({ x: 0, y: 0 })
+  }, [isMobile, reduceMotion])
+
+  // Steam/Smoke wisp data for procedural 2D animation
+  const steamWisps = useMemo(() => [
+    { id: 1, delay: 0, duration: 10, startX: 22, startY: 82, driftX: -6, scale: 1.1, opacity: 0.18 },
+    { id: 2, delay: 1.8, duration: 12, startX: 78, startY: 88, driftX: 8, scale: 0.85, opacity: 0.14 },
+    { id: 3, delay: 3.5, duration: 9, startX: 48, startY: 92, driftX: -4, scale: 1.0, opacity: 0.12 },
+    { id: 4, delay: 5.2, duration: 11, startX: 62, startY: 78, driftX: 5, scale: 0.75, opacity: 0.15 },
+    { id: 5, delay: 7, duration: 10, startX: 32, startY: 85, driftX: -5, scale: 0.95, opacity: 0.11 },
+    { id: 6, delay: 2.2, duration: 13, startX: 55, startY: 80, driftX: 3, scale: 0.8, opacity: 0.1 },
+  ], [])
+
+  return (
+    <motion.section
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        position: 'relative',
+        width: '100%',
+        borderRadius: 28,
+        overflow: 'hidden',
+        background: BLACK,
+        boxShadow: '0 40px 100px -30px rgba(0,0,0,0.8), 0 0 0 1px rgba(201,168,76,0.15)',
+        isolation: 'isolate',
+      }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 1, ease: easeOut }}
+    >
+      {/* Base: Solid black with subtle gold radial glow */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: -80,
+          background: `radial-gradient(ellipse 70% 60% at 50% 35%, ${GOLD}1A 0%, ${BLACK} 55%, #0a0a0a 100%)`,
+          pointerEvents: 'none',
+          zIndex: 0,
+        }}
+      />
+
+      {/* Ambient gold rim light at top edge */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: '10%',
+          right: '10%',
+          height: '3px',
+          background: `linear-gradient(90deg, transparent, ${GOLD}40 20%, ${GOLD}80 50%, ${GOLD}40 80%, transparent)`,
+          pointerEvents: 'none',
+          zIndex: 1,
+          filter: 'blur(1px)',
+        }}
+      />
+
+      {/* Layer 1: Oversized background typography (editorial, subtle) */}
+      <motion.div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+          zIndex: 1,
+          overflow: 'hidden',
+        }}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.3, duration: 1.4, ease: easeOut }}
+        aria-hidden="true"
+      >
+        <div
+          style={{
+            fontSize: 'clamp(120px, 16vw, 280px)',
+            fontWeight: 900,
+            lineHeight: 0.78,
+            letterSpacing: '-0.045em',
+            color: `${GOLD}0D`,
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+            transform: 'rotate(-2.5deg)',
+            textShadow: `0 0 100px ${GOLD}15`,
+            userSelect: 'none',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
         >
+          <span style={{ opacity: 0.5 }}>SIGNATURE</span>
+          <span style={{ opacity: 0.7, marginLeft: '0.12em' }}>GLAZED</span>
+          <span style={{ opacity: 0.45, marginLeft: '0.08em' }}>CHICKEN</span>
+        </div>
+      </motion.div>
+
+      {/* Layer 2: Diagonal gold accent line */}
+      <motion.div
+        style={{
+          position: 'absolute',
+          top: '18%',
+          right: '-15%',
+          width: '130%',
+          height: '1.5px',
+          background: `linear-gradient(135deg, transparent 0%, ${GOLD}30 25%, ${GOLD}70 50%, ${GOLD}30 75%, transparent 100%)`,
+          transform: 'rotate(-10deg)',
+          transformOrigin: 'center',
+          pointerEvents: 'none',
+          zIndex: 2,
+        }}
+        initial={{ opacity: 0, scaleX: 0 }}
+        animate={{ opacity: 1, scaleX: 1 }}
+        transition={{ delay: 0.5, duration: 1.2, ease: easeOut }}
+      />
+
+      {/* Layer 3: Secondary image (supporting) - bottom right */}
+      <motion.div
+        style={{
+          position: 'absolute',
+          bottom: isMobile ? '8%' : '5%',
+          right: isMobile ? '4%' : '3%',
+          width: isMobile ? '48%' : '32%',
+          aspectRatio: '4/3',
+          borderRadius: '18px 6px 18px 6px',
+          overflow: 'hidden',
+          zIndex: 3,
+          boxShadow: `
+            0 24px 64px -16px rgba(0,0,0,0.85),
+            inset 0 1px 0 rgba(255,255,255,0.04),
+            0 0 0 1px ${GOLD}20,
+            0 0 40px -8px ${GOLD}10
+          `,
+          transform: reduceMotion ? 'none' : `perspective(1000px) rotateY(${mousePos.x * -2.5}deg) rotateX(${mousePos.y * 1.5}deg) translateZ(16px)`,
+          transition: reduceMotion ? 'none' : 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+        initial={{ opacity: 0, y: 50, scale: 0.93 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ delay: 0.6, duration: 1, ease: easeOut }}
+      >
+        <Photo
+          src={HERO_IMAGE_2}
+          alt="Signature glazed chicken - supporting view"
+          priority
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center',
+            transform: 'scale(1.03)',
+          }}
+        />
+        {/* Vignette for depth */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'radial-gradient(ellipse at center, transparent 45%, rgba(26,26,26,0.7) 100%)',
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Gold corner accents */}
+        <div style={{ position: 'absolute', top: 12, left: 12, width: 28, height: 28, borderTop: `2px solid ${GOLD}60`, borderLeft: `2px solid ${GOLD}60`, borderRadius: '6px 0 0 0', pointerEvents: 'none', zIndex: 4 }} />
+        <div style={{ position: 'absolute', bottom: 12, right: 12, width: 28, height: 28, borderBottom: `2px solid ${GOLD}40`, borderRight: `2px solid ${GOLD}40`, borderRadius: '0 0 0 6px', pointerEvents: 'none', zIndex: 4 }} />
+      </motion.div>
+
+      {/* Layer 4: Primary image (hero) - dominant, overlapping */}
+      <motion.div
+        style={{
+          position: 'absolute',
+          top: isMobile ? '6%' : '10%',
+          left: isMobile ? '4%' : '7%',
+          width: isMobile ? '72%' : '50%',
+          aspectRatio: '3/4',
+          borderRadius: '22px 10px 22px 10px',
+          overflow: 'hidden',
+          zIndex: 4,
+          boxShadow: `
+            0 40px 100px -20px rgba(0,0,0,0.9),
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            0 0 0 1.5px ${GOLD}35,
+            0 0 80px -15px ${GOLD}20
+          `,
+          transform: reduceMotion ? 'none' : `perspective(1000px) rotateY(${mousePos.x * 3.5}deg) rotateX(${mousePos.y * -2.5}deg) translateZ(32px)`,
+          transition: reduceMotion ? 'none' : 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+        initial={{ opacity: 0, y: 40, scale: 0.94 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ delay: 0.35, duration: 1.1, ease: easeOut }}
+      >
+        <Photo
+          src={HERO_IMAGE_1}
+          alt="Signature glazed chicken - hero view"
+          priority
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center top',
+            transform: 'scale(1.015)',
+          }}
+        />
+        {/* Bottom gradient fade for text legibility */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '45%',
+            background: 'linear-gradient(180deg, transparent 0%, rgba(26,26,26,0.35) 35%, rgba(10,10,10,0.98) 100%)',
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Top subtle gradient for depth */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '18%',
+            background: 'linear-gradient(180deg, rgba(10,10,10,0.35) 0%, transparent 100%)',
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Gold corner brackets - premium framing */}
+        <div style={{ position: 'absolute', top: 0, left: 0, width: 48, height: 48, borderTop: `2px solid ${GOLD}50`, borderLeft: `2px solid ${GOLD}50`, borderRadius: '22px 0 0 0', pointerEvents: 'none', zIndex: 5 }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, width: 48, height: 48, borderTop: `2px solid ${GOLD}50`, borderRight: `2px solid ${GOLD}50`, borderRadius: '0 22px 0 0', pointerEvents: 'none', zIndex: 5 }} />
+        <div style={{ position: 'absolute', bottom: 0, left: 0, width: 48, height: 48, borderBottom: `2px solid ${GOLD}30`, borderLeft: `2px solid ${GOLD}30`, borderRadius: '0 0 0 22px', pointerEvents: 'none', zIndex: 5 }} />
+        <div style={{ position: 'absolute', bottom: 0, right: 0, width: 48, height: 48, borderBottom: `2px solid ${GOLD}30`, borderRight: `2px solid ${GOLD}30`, borderRadius: '0 0 22px 0', pointerEvents: 'none', zIndex: 5 }} />
+        {/* "Hand-Glazed" badge on image */}
+        <motion.div
+          style={{
+            position: 'absolute',
+            top: 20,
+            right: 20,
+            zIndex: 6,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            background: `linear-gradient(135deg, rgba(26,26,26,0.95) 0%, rgba(10,10,10,0.98) 100%)`,
+            border: `1px solid ${GOLD}40`,
+            padding: '10px 16px',
+            borderRadius: 999,
+            fontSize: 'clamp(10px, 1.3vw, 12px)',
+            fontWeight: 600,
+            color: GOLD_LIGHT,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            backdropFilter: 'blur(16px)',
+            boxShadow: `0 8px 32px -8px ${GOLD}25, inset 0 1px 0 rgba(255,255,255,0.03)`,
+          }}
+          initial={{ opacity: 0, y: -16, scale: 0.85 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ delay: 0.8, duration: 0.7, ease: easeOut }}
+        >
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, animation: reduceMotion ? 'none' : 'pulse 2.2s infinite ease-in-out', boxShadow: `0 0 8px ${GOLD}` }} />
+          Hand-Glazed
+        </motion.div>
+      </motion.div>
+
+      {/* Layer 5: 2D Steam/Smoke Effects - smooth looping */}
+      {!reduceMotion && (
+        <>
+          {steamWisps.map((wisp) => (
+            <SteamWisp key={wisp.id} wisp={wisp} goldColor={GOLD} />
+          ))}
+        </>
+      )}
+
+      {/* Layer 6: Content - Text, CTA, Trust badges */}
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          padding: 'clamp(48px, 9vw, 96px) clamp(28px, 6vw, 96px)',
+          minHeight: 'clamp(480px, 70vw, 640px)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <motion.div
+          style={{
+            maxWidth: isMobile ? '100%' : '600px',
+            transform: reduceMotion ? 'none' : `translateZ(80px) translateX(${mousePos.x * -12}px) translateY(${mousePos.y * -8}px)`,
+            transition: reduceMotion ? 'none' : 'transform 0.9s cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+          initial={{ opacity: 0, y: 36 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7, duration: 1, ease: easeOut }}
+        >
+          {/* Premium badge pill */}
           <motion.span
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.15, duration: 0.4, ease: easeOut }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 10, background: 'rgba(245,200,66,0.15)', border: '1px solid rgba(245,200,66,0.3)', padding: 'clamp(10px,1.5vw,12px) clamp(18px,3vw,24px)', borderRadius: 999, fontSize: 'clamp(12px,2vw,14px)', fontWeight: 600, color: 'var(--gold)', width: 'fit-content', marginBottom: 'clamp(16px,2.5vw,24px)', letterSpacing: '0.02em' }}
+            initial={{ opacity: 0, x: -24 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.85, duration: 0.7, ease: easeOut }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 10,
+              background: `linear-gradient(135deg, ${GOLD}18 0%, ${GOLD}0A 100%)`,
+              border: `1px solid ${GOLD}35`,
+              padding: 'clamp(11px, 1.6vw, 13px) clamp(20px, 3.5vw, 28px)',
+              borderRadius: 999,
+              fontSize: 'clamp(11px, 1.7vw, 13px)',
+              fontWeight: 600,
+              color: GOLD_LIGHT,
+              width: 'fit-content',
+              marginBottom: 'clamp(18px, 3vw, 26px)',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              backdropFilter: 'blur(16px)',
+              boxShadow: `0 6px 32px -6px ${GOLD}20, inset 0 1px 0 rgba(255,255,255,0.02)`,
+            }}
           >
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--gold)', animation: 'pulse 2s infinite', boxShadow: '0 0 12px var(--gold)' }} />
-            Limited Time Offer
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: GOLD, animation: reduceMotion ? 'none' : 'pulse 2.5s infinite ease-in-out', boxShadow: `0 0 12px ${GOLD}` }} />
+            7 Signature Glazes
           </motion.span>
+
+          {/* Main Headline - editorial split styling */}
           <motion.h2
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.6, ease: easeOut }}
-            style={{ fontSize: 'clamp(32px,6vw,64px)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginBottom: 'clamp(16px,2.5vw,20px)', color: 'var(--text)', fontFamily: 'Inter, system-ui, sans-serif' }}
+            transition={{ delay: 1.0, duration: 0.9, ease: easeOut }}
+            style={{
+              fontSize: 'clamp(38px, 7.5vw, 80px)',
+              fontWeight: 800,
+              letterSpacing: '-0.035em',
+              lineHeight: 1.0,
+              marginBottom: 'clamp(14px, 2.5vw, 20px)',
+              fontFamily: 'Inter, system-ui, sans-serif',
+              textShadow: `0 4px 40px rgba(0,0,0,0.5)`,
+            }}
           >
-            Signature Glazed Chicken
+            <span style={{ display: 'block', color: CREAM }}>SIGNATURE</span>
+            <span style={{ display: 'block', color: GOLD, marginTop: '-0.04em' }}>GLAZED</span>
+            <span style={{ display: 'block', color: CREAM, opacity: 0.92, fontWeight: 700, fontSize: 'clamp(30px, 6vw, 62px)', marginTop: '-0.015em' }}>CHICKEN</span>
           </motion.h2>
+
+          {/* Supporting description */}
           <motion.p
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45, duration: 0.6, ease: easeOut }}
-            className="sub"
-            style={{ fontSize: 'clamp(15px,2.5vw,19px)', maxWidth: 520, marginBottom: 'clamp(24px,3.5vw,32px)', fontWeight: 400, lineHeight: 1.7 }}
+            transition={{ delay: 1.15, duration: 0.8, ease: easeOut }}
+            style={{
+              fontSize: 'clamp(15px, 2.3vw, 20px)',
+              maxWidth: 560,
+              marginBottom: 'clamp(32px, 4.5vw, 42px)',
+              fontWeight: 400,
+              lineHeight: 1.75,
+              color: `rgba(245,240,232,0.85)`,
+              textShadow: '0 1px 3px rgba(0,0,0,0.4)',
+            }}
           >
             Hand-crafted daily with our secret spice rubs. Choose from 7 signature glazes — each bite delivers the perfect crunch.
           </motion.p>
+
+          {/* Explore Menu CTA - Gold button */}
           <motion.button
-            className="btn btn-gold"
-            style={{ fontSize: 'clamp(15px,2vw,16px)', padding: 'clamp(16px,2.5vw,18px) clamp(28px,4vw,40px)', display: 'inline-flex', alignItems: 'center', gap: 12, width: 'fit-content', borderRadius: 14, background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)', color: '#15120a', border: 'none', boxShadow: '0 6px 24px rgba(245,200,66,0.4)', fontWeight: 600 }}
-            whileHover={{ scale: 1.03, boxShadow: '0 12px 40px rgba(245,200,66,0.5)' }}
+            style={{
+              fontSize: 'clamp(15px, 2vw, 17px)',
+              padding: 'clamp(17px, 2.8vw, 20px) clamp(36px, 6vw, 54px)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 14,
+              width: 'fit-content',
+              borderRadius: 16,
+              background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
+              color: BLACK,
+              border: 'none',
+              boxShadow: `0 10px 40px -6px ${GOLD}45, inset 0 1px 0 rgba(255,255,255,0.18), 0 0 0 1px ${GOLD}30`,
+              fontWeight: 600,
+              letterSpacing: '0.015em',
+              position: 'relative',
+              overflow: 'hidden',
+              transform: reduceMotion ? 'none' : `translateZ(100px) translateX(${mousePos.x * -18}px) translateY(${mousePos.y * -10}px)`,
+              transition: reduceMotion ? 'none' : 'transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, background 0.3s ease',
+            }}
+            whileHover={{
+              scale: 1.035,
+              boxShadow: `0 20px 56px -8px ${GOLD}55, inset 0 1px 0 rgba(255,255,255,0.22), 0 0 0 1px ${GOLD}50`,
+              background: `linear-gradient(135deg, ${GOLD_LIGHT} 0%, ${GOLD} 100%)`,
+              transition: { duration: 0.35, ease: easeOut },
+            }}
             whileTap={{ scale: 0.97 }}
+            onClick={() => window.location.href = '/usersmenu?showOrderModal=true'}
           >
-            <ShoppingBag size={20} /> Explore Menu <ArrowRight size={20} />
+            <ShoppingBag size={20} />
+            <span>Explore Menu</span>
+            <ArrowRight size={20} style={{ transition: 'transform 0.35s ease' }} />
           </motion.button>
         </motion.div>
 
-        {/* Trust badges - positioned below content, flex wrap for mobile */}
+        {/* Trust badges / pills - dark surfaces, gold borders */}
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6, duration: 0.5, ease: easeOut }}
-          style={{ display: 'flex', flexWrap: 'wrap', gap: 'clamp(10px,1.5vw,14px)', marginTop: 'clamp(24px,4vw,32px)', paddingTop: 'clamp(20px,3.5vw,24px)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
+          transition={{ delay: 1.3, duration: 0.7, ease: easeOut }}
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'clamp(12px, 1.8vw, 16px)',
+            marginTop: 'clamp(32px, 5vw, 44px)',
+            paddingTop: 'clamp(22px, 4vw, 28px)',
+            borderTop: `1px solid ${GOLD}18`,
+          }}
         >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: 'clamp(10px,1.5vw,12px) clamp(16px,2.5vw,20px)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(12px,2vw,14px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap', transition: 'border-color 0.2s ease, color 0.2s ease' }}>
-            <CheckCircle size={16} color="var(--gold)" /> 7 Signature Glazes
-          </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: 'clamp(10px,1.5vw,12px) clamp(16px,2.5vw,20px)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(12px,2vw,14px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap', transition: 'border-color 0.2s ease, color 0.2s ease' }}>
-            <CheckCircle size={16} color="var(--gold)" /> 250+ Branches Nationwide
-          </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: 'clamp(10px,1.5vw,12px) clamp(16px,2.5vw,20px)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'clamp(12px,2vw,14px)', fontWeight: 500, color: 'var(--muted)', whiteSpace: 'nowrap', transition: 'border-color 0.2s ease, color 0.2s ease' }}>
-            <CheckCircle size={16} color="var(--gold)" /> Fresh Daily, Never Frozen
-          </span>
+          {[
+            { icon: CheckCircle, text: '7 Signature Glazes' },
+            { icon: CheckCircle, text: '250+ Branches Nationwide' },
+            { icon: CheckCircle, text: 'Fresh Daily, Never Frozen' },
+          ].map((badge, i) => (
+            <motion.span
+              key={badge.text}
+              initial={{ opacity: 0, y: 12, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: 1.35 + i * 0.12, duration: 0.55, ease: easeOut }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: 'clamp(11px, 1.6vw, 13px) clamp(18px, 3vw, 22px)',
+                background: `rgba(26,26,26,0.8)`,
+                border: `1px solid ${GOLD}25`,
+                borderRadius: 999,
+                fontSize: 'clamp(12px, 2vw, 14px)',
+                fontWeight: 500,
+                color: `rgba(245,240,232,0.8)`,
+                whiteSpace: 'nowrap',
+                backdropFilter: 'blur(12px)',
+                transition: 'border-color 0.35s ease, color 0.35s ease, background 0.35s ease, box-shadow 0.35s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = `${GOLD}60`
+                e.currentTarget.style.color = GOLD_LIGHT
+                e.currentTarget.style.background = `rgba(201,168,76,0.12)`
+                e.currentTarget.style.boxShadow = `0 0 24px -4px ${GOLD}25`
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = `${GOLD}25`
+                e.currentTarget.style.color = `rgba(245,240,232,0.8)`
+                e.currentTarget.style.background = `rgba(26,26,26,0.8)`
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            >
+              <badge.icon size={16} color={GOLD} />
+              {badge.text}
+            </motion.span>
+          ))}
         </motion.div>
       </div>
-    </section>
+
+      {/* Bottom gold accent line */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: '10%',
+          right: '10%',
+          height: 1.5,
+          background: `linear-gradient(90deg, transparent, ${GOLD}35, ${GOLD}70 50%, ${GOLD}35, transparent)`,
+          opacity: 0.6,
+          pointerEvents: 'none',
+          zIndex: 5,
+        }}
+      />
+    </motion.section>
   )
 }
 
-// ── Featured Promo Strip ───────────────────────────────────────────────────
+// ── Steam Wisp Component (Lightweight 2D Smoke/Steam) ─────────────────────────
+function SteamWisp({ wisp, goldColor }: { wisp: any; goldColor: string }) {
+  const [animKey, setAnimKey] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => setAnimKey(k => k + 1), (wisp.duration + wisp.delay) * 1000)
+    return () => clearInterval(interval)
+  }, [wisp.duration, wisp.delay])
+
+  return (
+    <motion.div
+      key={animKey}
+      style={{
+        position: 'absolute',
+        left: `${wisp.startX}%`,
+        top: `${wisp.startY}%`,
+        width: 'clamp(50px, 10vw, 120px)',
+        height: 'clamp(50px, 10vw, 120px)',
+        pointerEvents: 'none',
+        zIndex: 5,
+        transformOrigin: 'center bottom',
+        filter: 'blur(20px)',
+        opacity: 0,
+      }}
+      initial={false}
+      animate={{
+        opacity: [0, wisp.opacity, wisp.opacity * 0.5, 0],
+        y: [0, -100, -180, -260],
+        x: [0, wisp.driftX * 0.5, wisp.driftX, wisp.driftX * 1.1],
+        scale: [wisp.scale * 0.4, wisp.scale, wisp.scale * 1.25, wisp.scale * 1.4],
+        rotate: [0, -2, 4, -1.5],
+        borderRadius: ['50% 50% 50% 50% / 60% 60% 40% 40%', '40% 60% 60% 40% / 50% 50% 50% 50%', '60% 40% 50% 50% / 40% 60% 50% 50%'],
+      }}
+      transition={{
+        duration: wisp.duration,
+        delay: wisp.delay,
+        ease: 'easeOut',
+        repeat: Infinity,
+        repeatDelay: 0.5,
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          background: `radial-gradient(ellipse 60% 50% at 50% 40%, ${goldColor} 0%, ${goldColor}50 25%, ${goldColor}15 55%, transparent 100%)`,
+          borderRadius: '50% 50% 50% 50% / 60% 60% 40% 40%',
+          animation: 'steamMorph 10s ease-in-out infinite',
+        }}
+      />
+    </motion.div>
+  )
+}
+
+// ── Vertical Advertisement Poster Component ──────────────────────────────────
+function VerticalAdPoster({
+  image,
+  title,
+  subtitle,
+  description,
+  badge,
+  price,
+  showPrice = true,
+  accentColor = GOLD,
+  bgWords = '',
+}: {
+  image: string;
+  title: string;
+  subtitle?: string;
+  description: string;
+  badge?: string;
+  price?: string | number;
+  showPrice?: boolean;
+  accentColor?: string;
+  bgWords?: string;
+}) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile once on mount
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Generate background typography from title
+  const bgTypography = bgWords || title.toUpperCase().split(' ').slice(0, 2).join(' ');
+
+  return (
+    <motion.article
+      variants={fadeUp}
+      style={{
+        position: 'relative',
+        borderRadius: 16,
+        overflow: 'visible',
+        background: BLACK,
+        border: '1px solid var(--line)',
+        boxShadow: '0 8px 32px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.02)',
+        transformStyle: 'preserve-3d',
+        transition: 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.4s cubic-bezier(0.22, 1, 0.36, 1), z-index 0s',
+        cursor: isMobile ? 'pointer' : 'default',
+        aspectRatio: '3/4',
+        isolation: 'isolate',
+      }}
+      whileHover={!isMobile ? {
+        y: -8,
+        z: 40,
+        scale: 1.035,
+        rotateX: -2,
+        rotateY: 1.5,
+        boxShadow: '0 32px 64px -16px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,200,66,0.2), 0 0 40px -8px rgba(245,200,66,0.12)',
+        transition: { duration: 0.4, ease: easeOut },
+        zIndex: 20,
+      } : {}}
+      whileTap={{ scale: 0.985, transition: { duration: 0.1 } }}
+      initial={{ opacity: 0, y: 30, rotateX: -5 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      transition={{ duration: 0.7, ease: easeOut }}
+    >
+      {/* Layer 1: Ambient background glow */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: -40,
+          background: `radial-gradient(ellipse at center, ${accentColor}15 0%, transparent 70%)`,
+          pointerEvents: 'none',
+          zIndex: 0,
+          borderRadius: '20px',
+        }}
+      />
+
+      {/* Layer 2: Oversized background typography */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+          zIndex: 1,
+          overflow: 'hidden',
+        }}
+        aria-hidden="true"
+      >
+        <motion.span
+          style={{
+            fontSize: 'clamp(120px, 25vw, 280px)',
+            fontWeight: 900,
+            lineHeight: 0.85,
+            letterSpacing: '-0.04em',
+            color: 'rgba(245,200,66,0.035)',
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+            transform: 'rotate(-2deg)',
+            textShadow: '0 0 80px rgba(245,200,66,0.08)',
+            userSelect: 'none',
+            fontFamily: 'Inter, system-ui, sans-serif',
+          }}
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.3, duration: 0.8, ease: easeOut }}
+        >
+          {bgTypography}
+        </motion.span>
+      </div>
+
+      {/* Layer 3: Full-bleed food photography - MAIN VISUAL */}
+      <div
+        style={{
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          overflow: 'hidden',
+          borderRadius: 16,
+          zIndex: 2,
+        }}
+      >
+        <Photo
+          src={image}
+          alt={title}
+          priority={true}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center top',
+            transition: 'transform 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+        />
+
+        {/* Subtle vignette for depth */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(11,10,8,0.35) 100%)',
+            pointerEvents: 'none',
+            zIndex: 3,
+          }}
+        />
+
+        {/* Bottom gradient fade for text legibility */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '45%',
+            background: 'linear-gradient(180deg, transparent 0%, rgba(11,10,8,0.6) 50%, rgba(11,10,8,0.95) 100%)',
+            pointerEvents: 'none',
+            zIndex: 4,
+          }}
+        />
+
+        {/* Top subtle gradient for badge legibility */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '25%',
+            background: 'linear-gradient(180deg, rgba(11,10,8,0.4) 0%, transparent 100%)',
+            pointerEvents: 'none',
+            zIndex: 4,
+          }}
+        />
+
+        {/* Badge - floating top left */}
+        {badge && (
+          <motion.span
+            className="chip chip-gold"
+            style={{
+              position: 'absolute',
+              top: 18,
+              left: 18,
+              zIndex: 10,
+              fontSize: 'clamp(10px, 1.2vw, 12px)',
+              fontWeight: 700,
+              padding: '7px 16px',
+              borderRadius: 999,
+              boxShadow: '0 8px 24px rgba(245,200,66,0.4), 0 0 0 1px rgba(245,200,66,0.25)',
+              letterSpacing: '0.03em',
+              textTransform: 'uppercase',
+              backdropFilter: 'blur(8px)',
+              background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
+              color: '#15120a',
+              border: '1px solid rgba(255,255,255,0.15)',
+            }}
+            initial={{ opacity: 0, y: -20, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ delay: 0.15, duration: 0.5, ease: easeOut }}
+          >
+            {badge}
+          </motion.span>
+        )}
+
+        {/* Accent corner brackets */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: 60,
+            height: 60,
+            borderTop: '2px solid rgba(245,200,66,0.25)',
+            borderLeft: '2px solid rgba(245,200,66,0.25)',
+            borderRadius: '16px 0 0 0',
+            pointerEvents: 'none',
+            zIndex: 5,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 60,
+            height: 60,
+            borderTop: '2px solid rgba(245,200,66,0.25)',
+            borderRight: '2px solid rgba(245,200,66,0.25)',
+            borderRadius: '0 16px 0 0',
+            pointerEvents: 'none',
+            zIndex: 5,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            width: 60,
+            height: 60,
+            borderBottom: '2px solid rgba(245,200,66,0.15)',
+            borderLeft: '2px solid rgba(245,200,66,0.15)',
+            borderRadius: '0 0 0 16px',
+            pointerEvents: 'none',
+            zIndex: 5,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: 60,
+            height: 60,
+            borderBottom: '2px solid rgba(245,200,66,0.15)',
+            borderRight: '2px solid rgba(245,200,66,0.15)',
+            borderRadius: '0 0 16px 0',
+            pointerEvents: 'none',
+            zIndex: 5,
+          }}
+        />
+
+        {/* Layer 4: Product information integrated into poster */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            padding: 'clamp(20px, 4vw, 32px)',
+            zIndex: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'clamp(6px, 1vw, 10px)',
+          }}
+        >
+          {/* Title - Large editorial style */}
+          <h3
+            style={{
+              fontSize: 'clamp(22px, 4.5vw, 36px)',
+              fontWeight: 800,
+              lineHeight: 1.05,
+              margin: 0,
+              color: 'var(--text)',
+              letterSpacing: '-0.025em',
+              textShadow: '0 2px 24px rgba(0,0,0,0.5)',
+              fontFamily: 'Inter, system-ui, sans-serif',
+            }}
+          >
+            {title}
+          </h3>
+
+          {/* Subtitle - Supporting context */}
+          {subtitle && (
+            <motion.p
+              style={{
+                fontSize: 'clamp(12px, 1.4vw, 14px)',
+                fontWeight: 500,
+                color: 'var(--gold)',
+                margin: 0,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                textShadow: '0 1px 8px rgba(0,0,0,0.4)',
+              }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25, duration: 0.5, ease: easeOut }}
+            >
+              {subtitle}
+            </motion.p>
+          )}
+
+          {/* Description - When space permits */}
+          {description && (
+            <motion.p
+              className="sub"
+              style={{
+                fontSize: 'clamp(12px, 1.3vw, 13.5px)',
+                lineHeight: 1.5,
+                margin: 'clamp(4px, 0.5vw, 8px) 0 0 0',
+                color: 'rgba(244,241,236,0.75)',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+              }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35, duration: 0.5, ease: easeOut }}
+            >
+              {description}
+            </motion.p>
+          )}
+
+          {/* Price - Integrated into composition */}
+          {showPrice && price && (
+            <motion.div
+              style={{
+                marginTop: 'clamp(8px, 1.5vw, 14px)',
+                paddingTop: 'clamp(10px, 1.5vw, 14px)',
+                borderTop: '1px solid rgba(245,200,66,0.2)',
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 16,
+              }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.45, duration: 0.5, ease: easeOut }}
+            >
+              <span
+                style={{
+                  fontSize: 'clamp(24px, 4vw, 34px)',
+                  fontWeight: 800,
+                  color: 'var(--gold)',
+                  letterSpacing: '-0.02em',
+                  fontFamily: 'Inter, system-ui, sans-serif',
+                  textShadow: '0 2px 16px rgba(245,200,66,0.25)',
+                }}
+              >
+                {typeof price === 'number' ? `₱${price}` : price}
+              </span>
+              {/* Subtle gold accent line */}
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: 'linear-gradient(90deg, var(--gold) 0%, transparent 100%)',
+                  opacity: 0.3,
+                  minWidth: 40,
+                }}
+              />
+            </motion.div>
+          )}
+        </div>
+      </div>
+
+      {/* Layer 5: Subtle golden rim light on hover (handled via whileHover box-shadow) */}
+    </motion.article>
+  )
+}
+
+// ── Featured Today — Premium Vertical Campaign Posters ──────────────────────
 function FeaturedStrip() {
   const featuredPromos = [
-    { img: PROMO_IMAGES[0], title: 'Family Bucket', desc: '8pc chicken + 2 large sides + 4 drinks', price: '₱699', badge: 'Best Value' },
-    { img: PROMO_IMAGES[1], title: 'Spicy Challenge', desc: 'Try our hottest glaze — free drink if you finish', price: '₱199', badge: 'New' },
-    { img: PROMO_IMAGES[2], title: 'Lunch Combo', desc: '2pc chicken + rice + drink', price: '₱249', badge: 'Mon–Fri 11–2' },
+    {
+      img: PROMO_IMAGES[0],
+      title: 'Family Bucket',
+      subtitle: 'Perfect for sharing',
+      desc: '8pc chicken + 2 large sides + 4 drinks',
+      price: '₱699',
+      badge: 'Best Value',
+      accent: '#f5c842',
+      bgWords: 'FAMILY BUCKET',
+    },
+    {
+      img: PROMO_IMAGES[1],
+      title: 'Spicy Challenge',
+      subtitle: 'Dare to try',
+      desc: 'Try our hottest glaze — free drink if you finish',
+      price: '₱199',
+      badge: 'New',
+      accent: '#f87171',
+      bgWords: 'SPICY CHALLENGE',
+    },
+    {
+      img: PROMO_IMAGES[2],
+      title: 'Lunch Combo',
+      subtitle: 'Mon–Fri 11 AM – 2 PM',
+      desc: '2pc chicken + rice + drink',
+      price: '₱249',
+      badge: 'Limited Time',
+      accent: '#f5c842',
+      bgWords: 'LUNCH COMBO',
+    },
   ]
 
   return (
     <section style={{ marginTop: 80 }}>
       <motion.div variants={fadeUp}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
-          <h2 className="h2" style={{ fontSize: 'clamp(26px,4vw,36px)' }}>Featured Today</h2>
+          <h2 className="h2" style={{ fontSize: 'clamp(28px,5vw,44px)' }}>Featured Today</h2>
+          <p className="sub" style={{ maxWidth: 420 }}>Hand-picked specials crafted for maximum flavor</p>
         </div>
       </motion.div>
       <motion.div
         variants={staggerContainer}
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 24 }}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))',
+          gap: 'clamp(20px, 3vw, 28px)',
+          perspective: '1200px',
+        }}
       >
         {featuredPromos.map((promo) => (
-          <motion.article
+          <VerticalAdPoster
             key={promo.title}
-            variants={fadeUp}
-            style={{
-              position: 'relative',
-              borderRadius: 20,
-              overflow: 'hidden',
-              background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
-              border: '1px solid var(--line)',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-            }}
-            whileHover={{ y: -8, boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)', transition: { duration: 0.3, ease: easeOut } }}
-            whileTap={{ scale: 0.99 }}
-          >
-            <div style={{ aspectRatio: '16/9', position: 'relative', overflow: 'hidden' }}>
-              <Photo src={promo.img} alt={promo.title} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 35%, rgba(11,10,8,0.95) 100%)' }} />
-              <span className="chip chip-gold" style={{ position: 'absolute', top: 16, left: 16, fontSize: 12, padding: '7px 16px', fontWeight: 700, borderRadius: 999, boxShadow: '0 4px 16px rgba(245,200,66,0.35)' }}>{promo.badge}</span>
-            </div>
-            <div style={{ padding: 'clamp(20px,3vw,28px)', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-              <h3 style={{ fontSize: 'clamp(19px,2.2vw,22px)', fontWeight: 700, margin: 0, color: 'var(--text)', lineHeight: 1.25 }}>{promo.title}</h3>
-              <p className="sub" style={{ fontSize: 'clamp(13px,1.6vw,14.5px)', lineHeight: 1.55, margin: 0, flex: 1, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{promo.desc}</p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                <span style={{ fontSize: 'clamp(22px,2.8vw,26px)', fontWeight: 800, color: 'var(--gold)', letterSpacing: '-0.02em' }}>{promo.price}</span>
-                <motion.button className="btn btn-gold" style={{
-                  padding: '14px 24px',
-                  fontSize: 'clamp(13px,1.6vw,14.5px)',
-                  fontWeight: 600,
-                  borderRadius: 12,
-                  background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
-                  color: '#15120a',
-                  border: 'none',
-                  boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
-                }} whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }}>
-                  Order Now
-                </motion.button>
-              </div>
-            </div>
-          </motion.article>
+            image={promo.img}
+            title={promo.title}
+            subtitle={promo.subtitle}
+            description={promo.desc}
+            badge={promo.badge}
+            price={promo.price}
+            showPrice={true}
+            accentColor={promo.accent}
+            bgWords={promo.bgWords}
+          />
         ))}
       </motion.div>
     </section>
@@ -864,10 +1759,24 @@ function FeedbackModal({ onClose, options, userId }: { onClose: () => void; opti
   )
 }
 
-// ── Food Preview Gallery ─────────────────────────────────────────────────────
-// Displays verified local food images. Images with matching products show price & Order Now.
-// Images without products are shown as preview only (no price, no Order Now).
+// ── Food Preview Gallery — Vertical Food Advertisement Posters ───────────────
+// Displays verified local food images as premium vertical campaign posters.
+// Images with matching products show price; preview-only items show no price.
 function FoodPreviewGallery({ products }: { products: Product[] }) {
+  // Accent color mapping for each food item to give each poster its own character
+  const accentMap: Record<string, string> = {
+    'Honey Garlic Chicken': '#f5c842',
+    'Teriyaki Chicken': '#fbbf24',
+    'Texas BBQ Chicken': '#fb923c',
+    'Spicy K-Style Chicken': '#f87171',
+    'Special Cheese Chicken': '#fde047',
+    'Garlic Parmesan Chicken': '#f5c842',
+    'Chicken Skin': '#d9aa2b',
+    'Chicken Poppers': '#fbbf24',
+    'Classic Fried Chicken': '#f5c842',
+    'Signature Chicken': '#fde047',
+  };
+
   const galleryItems = VERIFIED_LOCAL_FOOD_IMAGES.map(item => {
     const normalized = normalizeProductName(item.displayName);
     const matchedProduct = products.find(p => normalizeProductName(p.name) === normalized);
@@ -875,96 +1784,43 @@ function FoodPreviewGallery({ products }: { products: Product[] }) {
       ...item,
       hasProduct: !!matchedProduct,
       product: matchedProduct,
+      accent: accentMap[item.displayName] || '#f5c842',
     };
   });
 
   return (
-    <motion.section className="section" variants={staggerContainer} style={{ marginTop: 80 }}>
+    <motion.section className="section" variants={staggerContainer} style={{ marginTop: 80, background: BLACK }}>
       <div className="section-header">
         <motion.h2 className="section-title" variants={fadeUp}>Food Preview Gallery</motion.h2>
         <motion.p className="section-subtitle" variants={fadeUp}>
-          Verified food photography from our kitchen. Items with prices are available to order.
+          Verified food photography from our kitchen. Prices shown where available — visit Our Menu to order.
         </motion.p>
       </div>
       <motion.div
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))',
-          gap: 24
+          gap: 'clamp(18px, 2.5vw, 24px)',
+          perspective: '1200px',
         }}
         variants={staggerContainer}
         role="list"
       >
         {galleryItems.map((item) => (
-          <motion.article
+          <VerticalAdPoster
             key={item.filename}
-            variants={fadeUp}
-            role="listitem"
-            style={{
-              background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
-              border: '1px solid var(--line)',
-              borderRadius: 20,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-            whileHover={{ y: -8, boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)', transition: { duration: 0.3, ease: easeOut } }}
-            whileTap={{ scale: 0.99 }}
-          >
-            <div style={{ aspectRatio: '4/3', position: 'relative', overflow: 'hidden', background: '#1a1712' }}>
-              <Photo src={item.path} alt={item.displayName} priority={false} />
-              {!item.hasProduct && (
-                <span style={{
-                  position: 'absolute',
-                  top: 12,
-                  right: 12,
-                  background: 'rgba(245,200,66,0.9)',
-                  color: '#15120a',
-                  padding: '4px 10px',
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
-                }}>
-                  Preview Only
-                </span>
-              )}
-            </div>
-            <div style={{ padding: 'clamp(16px,2vw,20px)', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-              <h3 style={{ fontSize: 'clamp(16px,2vw,18px)', fontWeight: 700, margin: 0, color: 'var(--text)', lineHeight: 1.25 }}>
-                {item.displayName}
-              </h3>
-              {item.hasProduct && item.product && (
-                <>
-                  <p className="sub" style={{ fontSize: 'clamp(13px,1.5vw,14px)', lineHeight: 1.5, margin: 0, flex: 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {item.product.description || 'Hand-crafted with our signature spices.'}
-                  </p>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                    <span style={{ fontSize: 'clamp(20px,2.5vw,24px)', fontWeight: 800, color: 'var(--gold)', letterSpacing: '-0.02em' }}>
-                      {fmt(item.product.price)}
-                    </span>
-                    <motion.button className="btn btn-gold" style={{
-                      padding: '12px 20px',
-                      fontSize: 'clamp(12px,1.5vw,13.5px)',
-                      fontWeight: 600,
-                      borderRadius: 10,
-                      background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
-                      color: '#15120a',
-                      border: 'none',
-                      boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
-                    }} whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }}>
-                      Order Now
-                    </motion.button>
-                  </div>
-                </>
-              )}
-              {!item.hasProduct && (
-                <p className="sub" style={{ fontSize: 'clamp(13px,1.5vw,14px)', lineHeight: 1.5, margin: 0, color: 'var(--muted)', marginTop: 'auto' }}>
-                  This item is not currently on the menu. Ask our staff about availability.
-                </p>
-              )}
-            </div>
-          </motion.article>
+            image={item.path}
+            title={item.displayName}
+            subtitle={item.hasProduct ? 'Available to order' : 'Preview only'}
+            description={item.hasProduct && item.product
+              ? item.product.description || 'Hand-crafted with our signature spices.'
+              : 'This item is not currently on the menu. Ask our staff about availability.'}
+            badge={item.hasProduct ? 'On Menu' : 'Preview'}
+            price={item.hasProduct && item.product ? fmt(item.product.price) : undefined}
+            showPrice={item.hasProduct}
+            accentColor={item.accent}
+            bgWords={item.displayName.toUpperCase().split(' ').slice(0, 2).join(' ')}
+          />
         ))}
       </motion.div>
     </motion.section>
@@ -1026,7 +1882,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
     const load = <T,>(url: string, key: 'p' | 'f' | 'm' | 'r', set: (d: T[]) => void, map?: (d: unknown[]) => T[]) =>
       api.get<unknown[]>(url)
         .then((d: unknown) => { if (!cancelled) { const r = Array.isArray(d) ? d : []; set(map ? map(r) : (r as T[])) } })
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => { if (!cancelled) setLoading(s => ({ ...s, [key]: false })) })
     load<Product>('/api/products?item_type=menu_item', 'p', setProducts, mapProducts)
     load<Flavor>('/api/flavors', 'f', setFlavors)
@@ -1118,8 +1974,8 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
         </AnimatePresence>
       </motion.header>
 
-      {/* HERO SECTION — Single immersive hero with pure photography */}
-      <section style={{ paddingTop: NAV_H + 60, paddingBottom: 60, background: 'radial-gradient(ellipse at 20% 0%,rgba(245,200,66,.08),transparent 60%)' }}>
+      {/* HERO SECTION — Signature Glazed Chicken: Premium Black & Gold */}
+      <section style={{ paddingTop: NAV_H + 60, paddingBottom: 60, background: BLACK }}>
         <div className="wrap">
           <motion.div variants={fadeUp}>
             <HeroSection />
@@ -1144,7 +2000,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
       </section>
 
       {/* FEATURED STRIP */}
-      <motion.section variants={staggerContainer} style={{ padding: '0 var(--pad) 60px' }}>
+      <motion.section variants={staggerContainer} style={{ padding: '0 var(--pad) 60px', background: BLACK }}>
         <div className="wrap">
           <FeaturedStrip />
         </div>
@@ -1169,9 +2025,9 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
         </div>
       </div>
 
-      <motion.main className="wrap" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ paddingTop: 40, paddingBottom: 120 }}>
+      <motion.main className="wrap" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ paddingTop: 40, paddingBottom: 120, background: BLACK }}>
         {/* PRODUCTS GRID */}
-        <motion.section variants={staggerContainer}>
+        <motion.section variants={staggerContainer} style={{ background: BLACK }}>
           <div className="section-header">
             <motion.h2 className="section-title" variants={fadeUp}>Our Menu</motion.h2>
             <motion.p className="section-subtitle" variants={fadeUp}>{filtered.length} item{filtered.length !== 1 ? 's' : ''}</motion.p>
@@ -1200,7 +2056,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
 
         {/* PROMOS */}
         {!loading.r && promos.length > 0 && (
-          <motion.section className="section" variants={staggerContainer}>
+          <motion.section className="section" variants={staggerContainer} style={{ background: BLACK }}>
             <div className="section-header">
               <motion.h2 className="section-title" variants={fadeUp}>Deals & Promos</motion.h2>
               <motion.p className="section-subtitle" variants={fadeUp}>Current offers and limited-time specials.</motion.p>
@@ -1217,7 +2073,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
 
         {/* FLAVORS */}
         {!loading.f && flavors.length > 0 && (
-          <motion.section className="section" variants={staggerContainer}>
+          <motion.section className="section" variants={staggerContainer} style={{ background: BLACK }}>
             <div className="section-header">
               <motion.h2 className="section-title" variants={fadeUp}>Signature Flavors</motion.h2>
               <motion.p className="section-subtitle" variants={fadeUp}>Available on every chicken order. Tap a flavor to preview it.</motion.p>
@@ -1234,7 +2090,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
 
         {/* FULL MENU */}
         {!loading.m && sections.length > 0 && (
-          <motion.section className="section" variants={staggerContainer}>
+          <motion.section className="section" variants={staggerContainer} style={{ background: BLACK }}>
             <div className="section-header">
               <motion.h2 className="section-title" variants={fadeUp}>Full Menu</motion.h2>
               <motion.p className="section-subtitle" variants={fadeUp}>Everything we serve, by section.</motion.p>
@@ -1254,7 +2110,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
       </motion.main>
 
       {/* FOOTER */}
-      <footer style={{ borderTop: '1px solid var(--line)', padding: '48px 0 32px', marginTop: 60 }}>
+      <footer style={{ background: BLACK, borderTop: '1px solid var(--line)', padding: '48px 0 32px', marginTop: 60 }}>
         <div className="wrap">
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 28 }}>
             <div>
