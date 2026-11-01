@@ -27,6 +27,10 @@ interface InventoryAlertsResponse {
   unreadCount: number;
 }
 
+interface NotificationSettingsResponse {
+  lowStockAlertsEnabled?: boolean;
+}
+
 interface StaffNotification {
   notification_id: number;
   category: "refund_request" | "purchase_order" | "inventory_change";
@@ -110,8 +114,15 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
     if (!enabled) return;
     setLoading(true);
     try {
+      const settings = await apiCall<NotificationSettingsResponse>("/settings");
+      const inventoryAlertsEnabled = settings.lowStockAlertsEnabled !== false;
       const [inventoryResponse, staffResponse] = await Promise.all([
-        apiCall<InventoryAlertsResponse>("/inventory/alerts"),
+        inventoryAlertsEnabled
+          ? apiCall<InventoryAlertsResponse>("/inventory/alerts")
+          : Promise.resolve<InventoryAlertsResponse>({
+              notifications: [],
+              unreadCount: 0,
+            }),
         apiCall<StaffNotificationsResponse>("/staff-notifications"),
       ]);
       if (!mounted.current) return;

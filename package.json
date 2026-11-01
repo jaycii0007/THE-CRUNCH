@@ -15,6 +15,7 @@
     "test:account": "node scripts/test-my-account-static.mjs",
     "test:batch4": "node scripts/test-batch4-static.mjs",
     "test:inventory-notifications": "node scripts/test-inventory-change-notifications.mjs",
+    "test:inventory-stabilization": "node scripts/test-inventory-stabilization.mjs",
     "test:root-routing": "node scripts/test-root-routing.mjs",
     "test:po-wizard": "node scripts/test-purchase-order-wizard.mjs",
     "test:product-images": "node scripts/test-product-images.mjs",

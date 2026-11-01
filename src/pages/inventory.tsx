@@ -557,12 +557,10 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
     const warn = (message: string) => toast(message, "warning");
     const price = Number(values.price);
     const promoPrice = values.isPromotional && values.promoPrice.trim() ? Number(values.promoPrice) : null;
-    const stock = Number(values.stock || 0);
 
     if (!values.name.trim() || !values.category.trim() || !values.price.trim()) return warn("Please fill in Name, Category, and Price.");
     if (!Number.isFinite(price) || price < 1) return warn("Price must be at least \u20B11.");
     if (promoPrice !== null && (!Number.isFinite(promoPrice) || promoPrice < 1)) return warn("Promo price must be at least \u20B11.");
-    if (isEdit && !item.hasRecipe && (!Number.isFinite(stock) || stock < 0)) return warn("Stock quantity cannot be negative.");
 
     try {
       setSaving(true);
@@ -588,8 +586,6 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
 
       if (isEdit) {
         const payload: Record<string, unknown> = { ...shared, unit: item.unit || DEFAULT_UNIT };
-        const usesRecipe = item.hasRecipe || ingredients.length > 0;
-        if (!usesRecipe && stock !== item.stock) payload.quantity = stock; // only send stock if it changed
         if (image) payload.image = image;
         await tryEndpoints([`/products/${item.rawProductId ?? item.id}`], "PUT", payload);
         toast(`"${shared.name}" updated successfully.`, "success");
@@ -634,7 +630,14 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
             <div className={inputClass} style={inputStyle} aria-readonly="true">{Number(item.availableServings ?? 0)}</div>
           </Field>
         ) : (
-          <NumberInput label="Stock quantity" placeholder="0" value={values.stock} onChange={(stock) => set({ stock })} />
+          <Field label="Current stock (read-only)">
+            <div className={inputClass} style={inputStyle} aria-readonly="true">
+              {item.stock} {item.unit || DEFAULT_UNIT}
+            </div>
+            <p className="mt-1 text-[11px]" style={{ color: T.muted }}>
+              Stock changes only through authorized receiving and stock-movement workflows.
+            </p>
+          </Field>
         )
       )}
       <Field label="Description (optional)">
