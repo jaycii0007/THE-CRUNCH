@@ -5,7 +5,8 @@ import {
   type ReactNode, type CSSProperties, type ChangeEvent, type FocusEvent, type ButtonHTMLAttributes,
 } from "react";
 import { Sidebar } from "@/components/Sidebar";
-import { api, apiCall, resolveAssetUrl } from "@/lib/api";
+import { ProductImage } from "@/components/ProductImage";
+import { api, apiCall } from "@/lib/api";
 import { motion } from "framer-motion";
 import { useNotifications } from "@/lib/NotificationContext";
 import {
@@ -710,7 +711,7 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
         style={{ border: `1.5px dashed ${T.faint}`, background: T.surfaceMuted, minHeight: imagePreview ? "auto" : 88 }}
       >
         {imagePreview ? (
-          <img src={resolveAssetUrl(imagePreview)} alt="Preview" className="h-[140px] w-full object-cover" />
+          <ProductImage src={imagePreview} alt="Preview" className="h-[140px] w-full object-cover" />
         ) : (
           <span className="py-7 text-center text-[12px]" style={{ color: T.muted }}>Click to upload an image (PNG or JPG, up to 5MB)</span>
         )}
@@ -900,7 +901,7 @@ function MenuAdminTab() {
                             style={{ background: T.surfaceMuted, border: `1px solid ${T.line}`, boxShadow: SHADOW.raised }}
                           >
                             {item.image !== PLACEHOLDER_IMG
-                              ? <img src={resolveAssetUrl(item.image)} alt={item.name} className="h-full w-full object-cover" />
+                              ? <ProductImage src={item.image} alt={item.name} className="h-full w-full object-cover" />
                               : <span className="text-[13px] font-semibold" style={{ color: T.muted }}>{item.name.charAt(0).toUpperCase()}</span>}
                           </div>
                           <div className="min-w-0">

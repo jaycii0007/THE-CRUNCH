@@ -35,6 +35,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { ProductImage } from "@/components/ProductImage";
 import { api, resolveAssetUrl } from "../lib/api";
 import {
   fetchGeneralSettings,
@@ -612,24 +613,10 @@ const ProductCard = memo(
       >
         <div className="flex aspect-square w-full items-center justify-center overflow-hidden bg-neutral-100">
           {item.image ? (
-            <img
+            <ProductImage
               src={item.image}
               alt={item.name}
               className="h-full w-full object-cover"
-              onError={(e) => {
-                if (import.meta.env.DEV) {
-                  console.error('[menu:ProductCard:error]', { name: item.name, id: item.id, src: item.image });
-                }
-                const img = e.currentTarget;
-                img.style.display = 'none';
-                const next = img.nextElementSibling as HTMLElement | null;
-                if (next) next.style.display = '';
-              }}
-              onLoad={() => {
-                if (import.meta.env.DEV) {
-                  console.log('[menu:ProductCard:loaded]', { name: item.name, id: item.id, src: item.image });
-                }
-              }}
             />
           ) : null}
           {!item.image && <UtensilsCrossed className="h-8 w-8 text-neutral-300" />}
@@ -686,24 +673,10 @@ const CartRow = memo(
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100">
             {item.image ? (
-              <img
+              <ProductImage
                 src={item.image}
                 alt={item.name}
                 className="h-full w-full object-cover"
-                onError={(e) => {
-                  if (import.meta.env.DEV) {
-                    console.error('[menu:CartRow:error]', { name: item.name, id: item.id, src: item.image });
-                  }
-                  const img = e.currentTarget;
-                  img.style.display = 'none';
-                  const next = img.nextElementSibling as HTMLElement | null;
-                  if (next) next.style.display = '';
-                }}
-                onLoad={() => {
-                  if (import.meta.env.DEV) {
-                    console.log('[menu:CartRow:loaded]', { name: item.name, id: item.id, src: item.image });
-                  }
-                }}
               />
             ) : null}
             {!item.image && <UtensilsCrossed className="h-5 w-5 text-neutral-300" />}

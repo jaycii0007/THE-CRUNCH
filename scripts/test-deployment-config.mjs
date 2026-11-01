@@ -19,7 +19,7 @@ assert.doesNotMatch(stockApiSource, /import\.meta\.env\.VITE_API_URL/);
 assert.match(eventSource, /resolveBackendUrl\("\/api\/events\/stream"\)/);
 assert.match(
   productionEnv,
-  /^VITE_API_URL=https:\/\/crunch-backend-production\.up\.railway\.app$/m,
+  /^VITE_API_URL=https:\/\/crunch-backend-production-cb92\.up\.railway\.app\/?$/m,
 );
 assert.equal(redirects.trim(), "/* /index.html 200");
 

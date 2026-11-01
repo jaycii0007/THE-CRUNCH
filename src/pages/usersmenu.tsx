@@ -7,6 +7,7 @@ import { useAuth } from "../context/authcontext";
 import { useViewport } from "@/hooks/use-tablet";
 import { getEffectiveMaxQuantity } from "../lib/orderQuantity";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
+import { ProductImage } from "@/components/ProductImage";
 
 /**
  * ── BACKEND / API NOTES ──
@@ -244,29 +245,11 @@ const Badge = ({ children, tone = "neutral" }: { children: ReactNode; tone?: "ne
 
 // Image with one safe fallback (no error loop). `fill` makes it cover its parent.
 function Img({ src, alt = "", size, ratio, fill }: { src: string; alt?: string; size?: number; ratio?: string; fill?: boolean }) {
-  const [failed, setFailed] = useState(false);
-
-  // Reset error state when src changes so a newly valid image can load
-  useEffect(() => {
-    setFailed(false);
-  }, [src]);
-
   return (
     <div style={{ width: size ?? "100%", height: fill ? "100%" : size, aspectRatio: ratio, borderRadius: fill ? 0 : 8, overflow: "hidden", flexShrink: 0, background: C.surfaceAlt }}>
-      <img
-        src={failed ? PLACEHOLDER_IMG : src}
+      <ProductImage
+        src={src}
         alt={alt}
-        onError={() => {
-          if (import.meta.env.DEV) {
-            console.error('[Img:error]', { alt, src: failed ? PLACEHOLDER_IMG : src });
-          }
-          setFailed(true);
-        }}
-        onLoad={() => {
-          if (import.meta.env.DEV) {
-            console.log('[Img:loaded]', { alt, src });
-          }
-        }}
         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
       />
     </div>

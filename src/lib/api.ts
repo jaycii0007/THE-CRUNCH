@@ -5,6 +5,7 @@ const CLIENT_ENV = (import.meta as {
 const RAW_API_URL = CLIENT_ENV?.VITE_API_URL;
 
 const DEFAULT_LOCAL_API_ORIGIN = "http://localhost:5000";
+const LEGACY_PRODUCT_IMAGE_CACHE_VERSION = "20261102";
 
 function resolveApiOrigin(): string {
   const trimmed = String(RAW_API_URL || "")
@@ -85,10 +86,11 @@ export function resolveAssetUrl(value?: string | null): string {
   const normalized = String(value || "").trim();
   if (!normalized) return "/img/placeholder.jpg";
   if (/^data:image\//i.test(normalized)) return normalized;
+  if (/^blob:/i.test(normalized)) return normalized;
   if (/^https?:\/\//i.test(normalized)) return normalized;
   // Handle /api/upload-product-image/files/... - backend serves uploaded product images via this endpoint
   if (normalized.startsWith("/api/upload-product-image/files/")) {
-    return resolveBackendUrl(normalized);
+    return `${resolveBackendUrl(normalized)}?v=${LEGACY_PRODUCT_IMAGE_CACHE_VERSION}`;
   }
   // Handle /uploads/... (with leading slash)
   if (normalized.startsWith("/uploads")) {
