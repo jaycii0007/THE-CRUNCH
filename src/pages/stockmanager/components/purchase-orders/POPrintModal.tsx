@@ -225,7 +225,7 @@ export function POPrintModal({
                     </p>
                     <p>Received By: {order.receivedBy || "-"}</p>
                     <p>
-                      Received Date:{" "}
+                      Actual Receipt Date:{" "}
                       {order.receivedDate
                         ? fmtReceivedDate(order.receivedDate)
                         : "-"}

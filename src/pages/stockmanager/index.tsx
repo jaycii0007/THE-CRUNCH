@@ -120,11 +120,6 @@ const STATUS_BADGE: Record<StockStatus, string> = {
   low: "bg-yellow-100 text-yellow-700",
   normal: "bg-emerald-100 text-emerald-600",
 };
-const STATUS_BAR: Record<StockStatus, string> = {
-  critical: "bg-orange-400",
-  low: "bg-yellow-400",
-  normal: "bg-emerald-400",
-};
 const STATUS_DOT: Record<StockStatus, string> = {
   critical: "bg-orange-500",
   low: "bg-yellow-400",
@@ -1340,10 +1335,6 @@ export default function StockManager() {
                   criticalStock={criticalStock}
                   filteredPOs={po.filteredPOs}
                   poLoading={po.poLoading}
-                  products={products}
-                  stockAlertSettings={stockAlertSettings}
-                  statusDot={STATUS_DOT}
-                  statusBar={STATUS_BAR}
                   restockBanner={
                     <StockAlertRestockBanner
                       criticalItems={criticalStock}
@@ -1353,9 +1344,6 @@ export default function StockManager() {
                     />
                   }
                   onNewPO={() => po.setPrefillPOProduct(null)}
-                  onOrderNow={po.handleOrderNow}
-                  isMenuFoodProduct={isMenuFoodProduct}
-                  getStockStatus={getStockStatus}
                   onSelectOrder={po.setSelectedOrder}
                   onPrintOrder={po.setPrintOrder}
                   onDeleteOrder={po.handlePODelete}
@@ -1488,6 +1476,17 @@ export default function StockManager() {
               initialOrder={po.editingOrder}
               onShowToast={showToast}
               isMenuFoodProduct={isMenuFoodProduct}
+              onAddSupplier={() => {
+                po.setEditingOrder(null);
+                po.handleClosePOModal();
+                setTab("suppliers");
+                supplier.setShowSupplierForm(true);
+              }}
+              onAddMaterial={() => {
+                po.setEditingOrder(null);
+                po.handleClosePOModal();
+                setShowRawMaterialForm(true);
+              }}
             />
           )}
         </AnimatePresence>

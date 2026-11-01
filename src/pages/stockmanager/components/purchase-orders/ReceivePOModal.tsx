@@ -12,6 +12,13 @@ import {
 import { getPOItemDateTrackingType } from "../../utils/purchaseOrderUtils";
 import { getShelfLifeDurationMs } from "../../utils/stockUtils";
 
+function toLocalISODate(date: Date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function ReceivePOModal({
   order,
   loading,
@@ -34,6 +41,7 @@ export function ReceivePOModal({
   onConfirm: (details: {
     receiptNo: string;
     receivedBy: string;
+    receivedDate: string;
     itemExpiryDates: Record<number, string>;
     itemShelfLife: Record<
       number,
@@ -43,6 +51,10 @@ export function ReceivePOModal({
   onShowToast: (message: string, type: "success" | "error") => void;
 }) {
   const [receiptNo, setReceiptNo] = useState(order.receiptNo || "");
+  const today = toLocalISODate();
+  const [receivedDate, setReceivedDate] = useState(
+    order.receivedDate || today,
+  );
   const receivedBy = currentStaffName || order.receivedBy || "";
   const [itemExpiryDates, setItemExpiryDates] = useState<Record<number, string>>(
     () => Object.fromEntries(order.items.map((item) => [item.id, ""])),
@@ -71,6 +83,14 @@ export function ReceivePOModal({
         "Please enter who received the stock before completing the order.",
         "error",
       );
+      return;
+    }
+    if (!receivedDate) {
+      onShowToast("Please select the actual receipt date.", "error");
+      return;
+    }
+    if (receivedDate > today) {
+      onShowToast("Actual receipt date cannot be in the future.", "error");
       return;
     }
     const missing = order.items.filter((item) => {
@@ -111,6 +131,7 @@ export function ReceivePOModal({
     await onConfirm({
       receiptNo: receiptNo.trim(),
       receivedBy: receivedBy.trim(),
+      receivedDate,
       itemExpiryDates,
       itemShelfLife: Object.fromEntries(
         Object.entries(itemShelfLife).map(([itemId, value]) => [
@@ -159,10 +180,13 @@ export function ReceivePOModal({
           <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
             <p className="text-sm font-semibold text-slate-800">{order.id}</p>
             <p className="text-xs text-slate-500 mt-0.5">
-              {order.supplier} {"\u00B7"} Expected delivery {order.deliveryDate}
+              {order.supplier}
+              {order.deliveryDate && (
+                <> {"\u00B7"} Expected delivery {order.deliveryDate}</>
+              )}
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-xl border border-slate-100 px-4 py-4">
               <label className="text-xs font-semibold text-slate-500">
                 Receipt No.
@@ -172,6 +196,22 @@ export function ReceivePOModal({
                 value={receiptNo}
                 onChange={(e) => setReceiptNo(e.target.value)}
                 placeholder="e.g. DR-2026-001"
+                className="mt-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              />
+            </div>
+            <div className="rounded-xl border border-slate-100 px-4 py-4">
+              <label
+                htmlFor="po-actual-receipt-date"
+                className="text-xs font-semibold text-slate-500"
+              >
+                Actual Receipt Date
+              </label>
+              <input
+                id="po-actual-receipt-date"
+                type="date"
+                value={receivedDate}
+                max={today}
+                onChange={(event) => setReceivedDate(event.target.value)}
                 className="mt-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-200"
               />
             </div>

@@ -215,11 +215,13 @@ export function usePurchaseOrders({
     async ({
       receiptNo,
       receivedBy,
+      receivedDate,
       itemExpiryDates,
       itemShelfLife,
     }: {
       receiptNo: string;
       receivedBy: string;
+      receivedDate: string;
       itemExpiryDates: Record<number, string>;
       itemShelfLife: Record<
         number,
@@ -233,6 +235,7 @@ export function usePurchaseOrders({
           receivingOrder.id,
           receiptNo,
           receivedBy,
+          receivedDate,
           itemExpiryDates,
           itemShelfLife,
         );
@@ -313,7 +316,10 @@ export function usePurchaseOrders({
           }
         }
 
-        showToast("Purchase order created.", "success");
+        showToast(
+          "Purchase order created. Open it from Active Purchase Orders when it is ready to receive; stock changes only after receipt.",
+          "success",
+        );
 
         // Notify admin of new purchase order
         addNotification({

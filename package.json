@@ -11,8 +11,12 @@
     "test:sse-client": "node scripts/test-sse-client.mjs",
     "test:financial": "node scripts/test-financial-correctness.mjs",
     "test:refund-policy": "node scripts/test-refund-policy.mjs",
+    "test:suppliers": "node scripts/test-supplier-creation.mjs",
     "test:account": "node scripts/test-my-account-static.mjs",
     "test:batch4": "node scripts/test-batch4-static.mjs",
+    "test:inventory-notifications": "node scripts/test-inventory-change-notifications.mjs",
+    "test:root-routing": "node scripts/test-root-routing.mjs",
+    "test:po-wizard": "node scripts/test-purchase-order-wizard.mjs",
     "test:deployment": "node scripts/test-deployment-config.mjs"
   },
   "dependencies": {

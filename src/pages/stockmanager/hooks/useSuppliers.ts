@@ -15,7 +15,6 @@ import { parseSupplierProducts } from "../utils/supplierUtils";
 const BLANK_SUPPLIER: Omit<Supplier, "supplier_id"> = {
   supplier_name: "",
   contact_number: "",
-  product_id: 0,
   email: "",
   products_supplied: "",
 };

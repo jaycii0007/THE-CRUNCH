@@ -1083,7 +1083,7 @@ export default function Delicacy() {
                     </button>
                   )}
                   {isNarrowPhone && <Button small onClick={() => navigate("/my-account")}>Account</Button>}
-                  <Button small onClick={() => { logout(); navigate("/aboutthecrunch"); }}>Log out</Button>
+                  <Button small onClick={() => { logout(); navigate("/"); }}>Log out</Button>
                 </>
               )}
             </div>

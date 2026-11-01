@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   useEffect,
   useMemo,
@@ -16,20 +16,11 @@ import {
 } from "../../utils/inputUtils";
 import { parseSupplierProducts } from "../../utils/supplierUtils";
 
-// ---------------------------------------------------------------------------
-// Limits
-// ---------------------------------------------------------------------------
-const PURCHASE_ORDER_NAME_MAX_LENGTH = 100;
-const PURCHASE_ORDER_QUANTITY_MAX = 999;
-const MAX_SUGGESTIONS = 6;
+const NAME_MAX_LENGTH = 100;
+const QUANTITY_MAX = 999;
+const MAX_SUGGESTIONS = 7;
+let nextDraftItemUid = 1;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-// One row in the form. "uid" is a stable key so rows animate and keep focus
-// correctly when items are added or removed (an array index would not).
-// Quantity is kept as a string while typing and converted to a number on save.
 type DraftItem = {
   uid: number;
   productId: number | null;
@@ -37,124 +28,53 @@ type DraftItem = {
   category: string;
   unit: string;
   quantity: string;
-  unitCost: string;
+  // Retained only to avoid erasing a legacy draft's stored price when edited.
+  // New wizard rows omit it and the backend keeps its existing zero default.
+  unitCost?: number | null;
   nameTouched: boolean;
   quantityTouched: boolean;
 };
 
-type ItemErrors = { name?: string; quantity?: string; unitCost?: string };
+type ItemErrors = { name?: string; quantity?: string };
 
-// ---------------------------------------------------------------------------
-// Small helpers
-// ---------------------------------------------------------------------------
-
-// Lowercase + trim so "  Flour " and "flour" count as the same product.
 const normalize = (value: string) => value.trim().toLowerCase();
 
-// Today's date in the user's LOCAL timezone as YYYY-MM-DD.
-// (toISOString() uses UTC, which gives yesterday's date in the early morning
-// for users ahead of UTC, such as the Philippines.)
-function toLocalISODate(date: Date = new Date()): string {
+function toLocalISODate(date: Date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-// How many units are needed to get back up to the reorder point (at least 1).
-function getSuggestedQuantity(product: Product): number {
-  const shortfall = Math.ceil(
-    toNumber(product.reorderPoint) - toNumber(product.mainStock),
-  );
-  return Math.min(PURCHASE_ORDER_QUANTITY_MAX, Math.max(1, shortfall));
+function suggestedQuantity(product: Product) {
+  const shortfall = Math.ceil(toNumber(product.reorderPoint) - toNumber(product.mainStock));
+  return Math.min(QUANTITY_MAX, Math.max(1, shortfall));
 }
 
-// Shared input styling. Red border when the field has an error.
-const fieldClass = (hasError: boolean) =>
-  `w-full min-w-0 border rounded-lg px-3 py-2.5 text-sm text-gray-800 placeholder-gray-300 bg-white focus:outline-none focus:ring-2 transition-colors ${
-    hasError
+const fieldClass = (invalid = false) =>
+  `w-full min-w-0 rounded-lg border bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:ring-2 ${
+    invalid
       ? "border-red-300 focus:ring-red-100"
-      : "border-gray-200 focus:ring-gray-200"
+      : "border-slate-200 focus:border-slate-400 focus:ring-slate-100"
   }`;
 
-// ---------------------------------------------------------------------------
-// Icons
-// ---------------------------------------------------------------------------
-function TrashIcon() {
+function Spinner() {
   return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-      />
-    </svg>
-  );
-}
-
-function BoltIcon() {
-  return (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2.5}
-        d="M13 10V3L4 14h7v7l9-11h-7z"
-      />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2.5}
-        d="M12 4v16m8-8H4"
-      />
+    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>
   );
 }
 
 function CheckIcon() {
   return (
-    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={3}
-        d="M5 13l4 4L19 7"
-      />
+    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
     </svg>
   );
 }
 
-function Spinner() {
-  return (
-    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-90"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-      />
-    </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 export function CreatePOModal({
   onClose,
   onCreate,
@@ -165,6 +85,8 @@ export function CreatePOModal({
   initialOrder,
   onShowToast,
   isMenuFoodProduct,
+  onAddSupplier,
+  onAddMaterial,
 }: {
   onClose: () => void;
   onCreate: (
@@ -183,68 +105,72 @@ export function CreatePOModal({
   } | null;
   initialOrder?: PurchaseOrder | null;
   onShowToast: (message: string, type: "success" | "error") => void;
-  isMenuFoodProduct: (p: Pick<Product, "item_type">) => boolean;
+  isMenuFoodProduct: (product: Pick<Product, "item_type">) => boolean;
+  onAddSupplier: () => void;
+  onAddMaterial: () => void;
 }) {
-  // Counter used to give every item row a stable id.
-  const nextUid = useRef(1);
   const makeItem = (overrides: Partial<Omit<DraftItem, "uid">> = {}): DraftItem => ({
-    uid: nextUid.current++,
+    uid: nextDraftItemUid++,
     productId: null,
     name: "",
     category: "",
     unit: "",
     quantity: "",
-    unitCost: "",
+    unitCost: null,
     nameTouched: false,
     quantityTouched: false,
     ...overrides,
   });
 
-  // Today (local time). Used as the order date and the earliest delivery date.
   const today = useMemo(() => toLocalISODate(), []);
-
-  // ---- Lookups built from the data passed in by the parent ----------------
-
-  // Find any product by its (case-insensitive) name.
-  const productByName = useMemo(() => {
-    const map = new Map<string, Product>();
-    const duplicateNames = new Set<string>();
-    allProducts.forEach((p) => {
-      const key = normalize(p.product_name);
-      if (map.has(key)) {
-        map.delete(key);
-        duplicateNames.add(key);
-      } else if (!duplicateNames.has(key)) {
-        map.set(key, p);
-      }
-    });
-    return map;
-  }, [allProducts]);
   const productById = useMemo(
     () => new Map(allProducts.map((product) => [product.product_id, product])),
     [allProducts],
   );
-
-  // Products that can be suggested in the item field (menu food is excluded).
+  const productByName = useMemo(() => {
+    const result = new Map<string, Product>();
+    const duplicates = new Set<string>();
+    allProducts.forEach((product) => {
+      const key = normalize(product.product_name);
+      if (result.has(key)) {
+        result.delete(key);
+        duplicates.add(key);
+      } else if (!duplicates.has(key)) {
+        result.set(key, product);
+      }
+    });
+    return result;
+  }, [allProducts]);
   const orderableProducts = useMemo(
-    () => allProducts.filter((p) => !isMenuFoodProduct(p)),
+    () => allProducts.filter((product) => !isMenuFoodProduct(product)),
     [allProducts, isMenuFoodProduct],
   );
 
-  // ---- Form state ---------------------------------------------------------
-  const [selectedSupplierId, setSelectedSupplierId] = useState<number | "">(() => {
-    const supplierName = initialOrder?.supplier || prefillProduct?.supplier;
-    if (!supplierName) return "";
-    const found = allSuppliers.find(
-      (s) => normalize(s.supplier_name) === normalize(supplierName),
+  const initialSupplierId = useMemo(() => {
+    const name = initialOrder?.supplier || prefillProduct?.supplier;
+    if (!name) return "";
+    return (
+      allSuppliers.find((supplier) => normalize(supplier.supplier_name) === normalize(name))
+        ?.supplier_id ?? ""
     );
-    return found?.supplier_id ?? "";
-  });
+  }, [allSuppliers, initialOrder?.supplier, prefillProduct?.supplier]);
+
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [selectedSupplierId, setSelectedSupplierId] = useState<number | "">(initialSupplierId);
+  const initialSupplier = allSuppliers.find((supplier) => supplier.supplier_id === initialSupplierId);
+  const [supplierSearch, setSupplierSearch] = useState(initialSupplier?.supplier_name ?? "");
   const [supplierTouched, setSupplierTouched] = useState(false);
-  const [deliveryDate, setDeliveryDate] = useState(
-    initialOrder?.deliveryDate || today,
-  );
   const [notes, setNotes] = useState(initialOrder?.notes || "");
+  const [showRestockSuggestions, setShowRestockSuggestions] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [suggestionState, setSuggestionState] = useState<{
+    uid: number;
+    highlight: number;
+  } | null>(null);
+  const supplierSearchRef = useRef<HTMLInputElement>(null);
+  const pendingFocusId = useRef<string | null>(null);
+
   const [items, setItems] = useState<DraftItem[]>(() => {
     if (initialOrder) {
       return initialOrder.items.map((item) =>
@@ -254,332 +180,229 @@ export function CreatePOModal({
           category: item.category,
           unit: item.unit,
           quantity: String(item.quantity),
-          unitCost:
-            item.unitCost === null || item.unitCost === undefined
-              ? ""
-              : String(item.unitCost),
+          unitCost: item.unitCost,
           nameTouched: true,
           quantityTouched: true,
         }),
       );
     }
     if (prefillProduct) {
-      // Use the live inventory record when we can find it, so the
-      // suggested quantity matches the current stock level.
-      const match =
+      const product =
         productById.get(prefillProduct.productId) ??
         productByName.get(normalize(prefillProduct.name));
       return [
         makeItem({
-          productId: match?.product_id ?? prefillProduct.productId,
-          name: prefillProduct.name,
-          category: match?.category ?? prefillProduct.category,
-          unit: match?.unit ?? prefillProduct.unit,
-          quantity: match ? String(getSuggestedQuantity(match)) : "",
+          productId: product?.product_id ?? prefillProduct.productId,
+          name: product?.product_name ?? prefillProduct.name,
+          category: product?.category ?? prefillProduct.category,
+          unit: product?.unit ?? prefillProduct.unit,
+          quantity: product ? String(suggestedQuantity(product)) : "",
         }),
       ];
     }
     return [makeItem()];
   });
 
-  // ---- UI state -----------------------------------------------------------
-  const [showQuickOrder, setShowQuickOrder] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDirty, setIsDirty] = useState(false); // true once the user changes anything
-  // Which item's suggestion list is open, and which suggestion is highlighted.
-  const [suggestionState, setSuggestionState] = useState<{
-    uid: number;
-    highlight: number;
-  } | null>(null);
-
-  const markDirty = () => setIsDirty(true);
-
-  // ---- Supplier -----------------------------------------------------------
   const selectedSupplier = allSuppliers.find(
-    (s) => s.supplier_id === selectedSupplierId,
+    (supplier) => supplier.supplier_id === selectedSupplierId,
   );
   const supplierName = selectedSupplier?.supplier_name ?? "";
-  const contact = selectedSupplier?.contact_number ?? "";
-
-  const supplierProductNames = useMemo(
+  const supplierProducts = useMemo(
     () => parseSupplierProducts(selectedSupplier?.products_supplied),
     [selectedSupplier?.products_supplied],
   );
-  const supplierProductNameSet = useMemo(
-    () => new Set(supplierProductNames.map((name) => normalize(name))),
-    [supplierProductNames],
+  const supplierProductSet = useMemo(
+    () => new Set(supplierProducts.map(normalize)),
+    [supplierProducts],
   );
-
-  // Names already used in the order (used to block duplicates).
-  const usedNameSet = useMemo(
-    () => new Set(items.map((i) => normalize(i.name)).filter(Boolean)),
+  const usedProductNames = useMemo(
+    () => new Set(items.map((item) => normalize(item.name)).filter(Boolean)),
     [items],
   );
+  const filteredSuppliers = useMemo(() => {
+    const query = normalize(supplierSearch);
+    if (!query) return allSuppliers;
+    return allSuppliers.filter((supplier) =>
+      [supplier.supplier_name, supplier.contact_number, supplier.email]
+        .filter(Boolean)
+        .some((value) => normalize(String(value)).includes(query)),
+    );
+  }, [allSuppliers, supplierSearch]);
 
-  // ---- Validation ---------------------------------------------------------
   const itemErrors = useMemo<ItemErrors[]>(() => {
-    // Remembers which row first used a product, to report duplicates.
     const firstRowByName = new Map<string, number>();
-
-    return items.map((item, idx) => {
+    return items.map((item, index) => {
       const errors: ItemErrors = {};
       const key = normalize(item.name);
       const product =
         (item.productId ? productById.get(item.productId) : undefined) ??
         productByName.get(key);
-
-      if (!key) {
-        errors.name = "Enter an item name.";
-      } else if (!product) {
-        errors.name = "Pick a product from inventory.";
-      } else if (!String(product.unit ?? "").trim()) {
-        errors.name = "This product has no unit set in inventory.";
-      } else if (firstRowByName.has(key)) {
-        errors.name = `Already added as Item ${(firstRowByName.get(key) ?? 0) + 1}.`;
-      } else {
-        firstRowByName.set(key, idx);
-      }
+      if (!key) errors.name = "Select an inventory material.";
+      else if (!product) errors.name = "Pick a material from inventory.";
+      else if (!String(product.unit ?? "").trim()) errors.name = "This material has no inventory unit.";
+      else if (firstRowByName.has(key)) {
+        errors.name = `Already added as Material ${(firstRowByName.get(key) ?? 0) + 1}.`;
+      } else firstRowByName.set(key, index);
 
       const quantity = toNumber(item.quantity, Number.NaN);
-      if (
-        !Number.isInteger(quantity) ||
-        quantity < 1 ||
-        quantity > PURCHASE_ORDER_QUANTITY_MAX
-      ) {
-        errors.quantity = `Enter a whole number from 1 to ${PURCHASE_ORDER_QUANTITY_MAX}.`;
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > QUANTITY_MAX) {
+        errors.quantity = `Enter a whole number from 1 to ${QUANTITY_MAX}.`;
       }
-
-      if (item.unitCost.trim()) {
-        const unitCost = Number(item.unitCost);
-        if (
-          !Number.isFinite(unitCost) ||
-          unitCost < 0 ||
-          unitCost > 99999999.99 ||
-          !/^\d+(?:\.\d{0,2})?$/.test(item.unitCost)
-        ) {
-          errors.unitCost = "Enter a valid unit price with up to 2 decimals.";
-        }
-      }
-
       return errors;
     });
   }, [items, productById, productByName]);
 
-  const supplierError = selectedSupplierId === "" ? "Select a supplier." : "";
-  const deliveryDateError = !deliveryDate
-    ? "Choose a delivery date."
-    : deliveryDate < today
-      ? "Delivery date can't be before today."
-      : "";
-
-  const isValid =
-    !supplierError &&
-    !deliveryDateError &&
-    itemErrors.every((e) => !e.name && !e.quantity && !e.unitCost);
-
-  // The first thing blocking the Save button, shown next to it.
+  const supplierError = selectedSupplierId === "" ? "Select a supplier to continue." : "";
+  const itemsAreValid = itemErrors.every(
+    (error) => !error.name && !error.quantity,
+  );
+  const isValid = !supplierError && itemsAreValid;
+  const totalUnits = items.reduce((sum, item) => sum + Math.max(0, toNumber(item.quantity)), 0);
   const blockingMessage = useMemo(() => {
     if (supplierError) return supplierError;
-    for (let i = 0; i < itemErrors.length; i++) {
-      const message =
-        itemErrors[i].name || itemErrors[i].quantity || itemErrors[i].unitCost;
-      if (message) return `Item ${i + 1}: ${message}`;
+    const invalidIndex = itemErrors.findIndex((error) => Object.keys(error).length > 0);
+    if (invalidIndex >= 0) {
+      const error = itemErrors[invalidIndex];
+      return `Material ${invalidIndex + 1}: ${error.name || error.quantity}`;
     }
-    return deliveryDateError;
-  }, [supplierError, itemErrors, deliveryDateError]);
+    return "";
+  }, [itemErrors, supplierError]);
 
-  // Totals for the footer summary (only counts valid quantities).
-  const totalUnits = items.reduce((sum, item) => {
-    const quantity = toNumber(item.quantity);
-    return sum + (Number.isFinite(quantity) && quantity > 0 ? quantity : 0);
-  }, 0);
-  const totalCost = items.reduce((sum, item) => {
-    const quantity = toNumber(item.quantity);
-    const unitCost = toNumber(item.unitCost);
-    return sum +
-      (Number.isFinite(quantity) && Number.isFinite(unitCost)
-        ? quantity * unitCost
-        : 0);
-  }, 0);
+  const activeItem = suggestionState
+    ? items.find((item) => item.uid === suggestionState.uid)
+    : undefined;
+  const suggestions = useMemo(() => {
+    if (!activeItem) return [];
+    const query = normalize(activeItem.name);
+    const usedElsewhere = new Set(
+      items
+        .filter((item) => item.uid !== activeItem.uid)
+        .map((item) => normalize(item.name)),
+    );
+    const available = orderableProducts.filter(
+      (product) => !usedElsewhere.has(normalize(product.product_name)),
+    );
+    if (!query) {
+      const preferred = available.filter((product) =>
+        supplierProductSet.has(normalize(product.product_name)),
+      );
+      return (preferred.length > 0 ? preferred : available).slice(0, MAX_SUGGESTIONS);
+    }
+    if (productByName.has(query)) return [];
+    return available
+      .filter((product) => normalize(product.product_name).includes(query))
+      .sort((left, right) => {
+        const leftRank = supplierProductSet.has(normalize(left.product_name)) ? 0 : 1;
+        const rightRank = supplierProductSet.has(normalize(right.product_name)) ? 0 : 1;
+        return leftRank - rightRank || left.product_name.localeCompare(right.product_name);
+      })
+      .slice(0, MAX_SUGGESTIONS);
+  }, [activeItem, items, orderableProducts, productByName, supplierProductSet]);
+  const availableRestockProducts = useMemo(
+    () =>
+      quickOrderProducts.filter(
+        (product) => !usedProductNames.has(normalize(product.product_name)),
+      ),
+    [quickOrderProducts, usedProductNames],
+  );
 
-  // ---- Focus handling -----------------------------------------------------
-  // Set an element id here and it is focused after the next render.
-  const pendingFocusId = useRef<string | null>(null);
-  const supplierSelectRef = useRef<HTMLSelectElement>(null);
-
-  useEffect(() => {
-    if (!pendingFocusId.current) return;
-    const el = document.getElementById(pendingFocusId.current);
-    pendingFocusId.current = null;
-    el?.focus();
-    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [items]);
-
-  // Start on the supplier field when nothing is pre-selected.
-  useEffect(() => {
-    if (selectedSupplierId === "") supplierSelectRef.current?.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Stop the page behind the modal from scrolling while it is open.
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    supplierSearchRef.current?.focus();
     return () => {
       document.body.style.overflow = previous;
     };
   }, []);
 
-  // ---- Closing ------------------------------------------------------------
-  // Esc and backdrop clicks ask before throwing away unsaved changes.
+  useEffect(() => {
+    if (!pendingFocusId.current) return;
+    const element = document.getElementById(pendingFocusId.current);
+    pendingFocusId.current = null;
+    element?.focus();
+    element?.scrollIntoView({ block: "nearest" });
+  }, [items]);
+
   const requestClose = () => {
     if (isSubmitting) return;
-    if (isDirty && !window.confirm("Discard this purchase order? Your changes will be lost.")) {
-      return;
-    }
+    if (isDirty && !window.confirm("Discard this purchase order? Your changes will be lost.")) return;
     onClose();
   };
 
-  // Esc closes the quick-order panel first, then the modal.
-  // A ref keeps the listener up to date without re-subscribing every render.
-  const escapeHandlerRef = useRef<() => void>(() => {});
-  escapeHandlerRef.current = () => {
-    if (showQuickOrder) setShowQuickOrder(false);
-    else requestClose();
-  };
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      // Skip if something else (like the suggestion list) already handled Esc.
-      if (e.key === "Escape" && !e.defaultPrevented) escapeHandlerRef.current();
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) requestClose();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  });
 
-  // ---- Item helpers -------------------------------------------------------
-  const updateItem = (uid: number, patch: Partial<DraftItem>) =>
-    setItems((prev) =>
-      prev.map((item) => (item.uid === uid ? { ...item, ...patch } : item)),
+  const updateItem = (uid: number, patch: Partial<DraftItem>) => {
+    setItems((current) =>
+      current.map((item) => (item.uid === uid ? { ...item, ...patch } : item)),
     );
-
-  const removeItem = (uid: number) => {
-    setItems((prev) => (prev.length > 1 ? prev.filter((i) => i.uid !== uid) : prev));
-    markDirty();
   };
 
-  // Add rows to the end of the list. Completely empty rows are dropped first
-  // so adding a product doesn't leave a blank row behind.
-  const appendItems = (newItems: DraftItem[]) => {
-    setItems((prev) => [
-      ...prev.filter((i) => i.name.trim() || i.quantity.trim()),
-      ...newItems,
-    ]);
-    markDirty();
-  };
-
-  const buildItemFromProduct = (product: Product): DraftItem =>
+  const buildItem = (product: Product) =>
     makeItem({
       productId: product.product_id,
       name: product.product_name,
       category: product.category,
       unit: product.unit,
-      quantity: String(getSuggestedQuantity(product)),
+      quantity: String(suggestedQuantity(product)),
       nameTouched: true,
       quantityTouched: true,
     });
 
-  const addBlankItem = () => {
-    const item = makeItem();
-    pendingFocusId.current = `po-item-name-${item.uid}`;
-    setItems((prev) => [...prev, item]);
-    markDirty();
-  };
-
-  // Adds a product unless it is already in the order.
-  const addProductItem = (product: Product) => {
-    if (usedNameSet.has(normalize(product.product_name))) {
+  const addProduct = (product: Product) => {
+    if (usedProductNames.has(normalize(product.product_name))) {
       onShowToast(`${product.product_name} is already in this order.`, "error");
       return;
     }
-    appendItems([buildItemFromProduct(product)]);
+    setItems((current) => [
+      ...current.filter((item) => item.name.trim() || item.quantity.trim()),
+      buildItem(product),
+    ]);
+    setIsDirty(true);
   };
 
-  // Clicking a supplier product chip.
-  const addSupplierProductItem = (productName: string) => {
-    const match = productByName.get(normalize(productName));
-    if (match) {
-      addProductItem(match);
-      return;
-    }
-    if (usedNameSet.has(normalize(productName))) {
-      onShowToast(`${productName} is already in this order.`, "error");
-      return;
-    }
-    // Not in inventory: add it so the user sees the error and can fix it.
-    appendItems([makeItem({ name: productName, nameTouched: true })]);
+  const addSupplierProduct = (name: string) => {
+    const product = productByName.get(normalize(name));
+    if (product) addProduct(product);
+    else onShowToast(`${name} is not yet configured in Inventory Management.`, "error");
   };
 
-  // Products from the quick-order list that are not in the order yet.
-  const availableQuickOrder = useMemo(
-    () =>
-      quickOrderProducts.filter((p) => !usedNameSet.has(normalize(p.product_name))),
-    [quickOrderProducts, usedNameSet],
-  );
-
-  const addAllQuickOrder = () => {
-    if (availableQuickOrder.length === 0) return;
-    appendItems(availableQuickOrder.map(buildItemFromProduct));
-    setShowQuickOrder(false);
+  const addBlankItem = () => {
+    const item = makeItem();
+    pendingFocusId.current = `po-item-name-${item.uid}`;
+    setItems((current) => [...current, item]);
+    setIsDirty(true);
   };
 
-  // ---- Field handlers -----------------------------------------------------
-  const handleSupplierChange = (value: string) => {
-    setSelectedSupplierId(Number(value) || "");
-    markDirty();
-  };
-
-  // Typing a name: if it matches an inventory product exactly, the unit and
-  // category fill in automatically. Otherwise they are cleared.
-  const handleNameChange = (uid: number, rawValue: string) => {
-    const name = sanitizeShortTextInput(rawValue, PURCHASE_ORDER_NAME_MAX_LENGTH);
-    const match = productByName.get(normalize(name));
-    updateItem(uid, {
-      name,
-      productId: match?.product_id ?? null,
-      category: match?.category ?? "",
-      unit: match?.unit ?? "",
+  const addAllRestockProducts = () => {
+    setItems((current) => {
+      const existingNames = new Set(
+        current.map((item) => normalize(item.name)).filter(Boolean),
+      );
+      const additions = availableRestockProducts.filter((product) => {
+        const name = normalize(product.product_name);
+        if (existingNames.has(name)) return false;
+        existingNames.add(name);
+        return true;
+      });
+      return [
+        ...current.filter((item) => item.name.trim() || item.quantity.trim()),
+        ...additions.map(buildItem),
+      ];
     });
-    setSuggestionState({ uid, highlight: 0 });
-    markDirty();
+    setShowRestockSuggestions(false);
+    setIsDirty(true);
   };
 
-  const handleQuantityChange = (uid: number, rawValue: string) => {
-    const quantity = String(
-      sanitizeNumberInput(rawValue, { allowDecimal: false, maxDigits: 3 }),
-    );
-    updateItem(uid, { quantity });
-    markDirty();
-  };
-
-  const handleUnitCostChange = (uid: number, rawValue: string) => {
-    const cleaned = sanitizeNumberInput(rawValue, {
-      allowDecimal: true,
-      maxDigits: 10,
-    });
-    const [whole, decimals = ""] = cleaned.split(".");
-    const unitCost = cleaned.includes(".")
-      ? `${whole}.${decimals.slice(0, 2)}`
-      : whole;
-    updateItem(uid, { unitCost });
-    markDirty();
-  };
-
-  // Choosing a suggestion fills the row, suggests a quantity if the field is
-  // empty, and moves focus to the quantity input.
-  const applyProductToItem = (uid: number, product: Product) => {
+  const selectProduct = (uid: number, product: Product) => {
     pendingFocusId.current = `po-item-qty-${uid}`;
-    setItems((prev) =>
-      prev.map((item) =>
+    setItems((current) =>
+      current.map((item) =>
         item.uid === uid
           ? {
               ...item,
@@ -587,122 +410,91 @@ export function CreatePOModal({
               name: product.product_name,
               category: product.category,
               unit: product.unit,
+              unitCost:
+                item.productId === product.product_id ? item.unitCost : null,
               quantity: item.quantity.trim()
                 ? item.quantity
-                : String(getSuggestedQuantity(product)),
+                : String(suggestedQuantity(product)),
               nameTouched: true,
             }
           : item,
       ),
     );
     setSuggestionState(null);
-    markDirty();
+    setIsDirty(true);
   };
 
-  // ---- Suggestions for the item currently being edited ---------------------
-  const activeItem = suggestionState
-    ? items.find((i) => i.uid === suggestionState.uid)
-    : undefined;
-
-  const suggestions = useMemo<Product[]>(() => {
-    if (!activeItem) return [];
-
-    const query = normalize(activeItem.name);
-    // Don't offer products that are already used in another row.
-    const usedElsewhere = new Set(
-      items
-        .filter((i) => i.uid !== activeItem.uid)
-        .map((i) => normalize(i.name)),
-    );
-    const pool = orderableProducts.filter(
-      (p) => !usedElsewhere.has(normalize(p.product_name)),
-    );
-
-    // Empty field: offer the selected supplier's products.
-    if (!query) {
-      if (supplierProductNameSet.size === 0) return [];
-      return pool
-        .filter((p) => supplierProductNameSet.has(normalize(p.product_name)))
-        .sort((a, b) => a.product_name.localeCompare(b.product_name))
-        .slice(0, MAX_SUGGESTIONS);
-    }
-
-    // The name already matches a product exactly: nothing more to suggest.
-    if (productByName.has(query)) return [];
-
-    // Typing: match by name, supplier products first.
-    return pool
-      .filter((p) => normalize(p.product_name).includes(query))
-      .sort((a, b) => {
-        const aRank = supplierProductNameSet.has(normalize(a.product_name)) ? 0 : 1;
-        const bRank = supplierProductNameSet.has(normalize(b.product_name)) ? 0 : 1;
-        return aRank - bRank || a.product_name.localeCompare(b.product_name);
-      })
-      .slice(0, MAX_SUGGESTIONS);
-  }, [activeItem, items, orderableProducts, supplierProductNameSet, productByName]);
-
-  // Arrow keys move through suggestions, Enter picks, Esc closes the list.
-  const handleNameKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>, uid: number) => {
-    if (!suggestionState || suggestionState.uid !== uid || suggestions.length === 0) {
-      return;
-    }
-    const count = suggestions.length;
-    const current = Math.min(suggestionState.highlight, count - 1);
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSuggestionState({ uid, highlight: (current + 1) % count });
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSuggestionState({ uid, highlight: (current - 1 + count) % count });
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      applyProductToItem(uid, suggestions[current]);
-    } else if (e.key === "Escape") {
-      e.preventDefault(); // stops the modal-level Esc handler
+  const handleNameKeyDown = (
+    event: ReactKeyboardEvent<HTMLInputElement>,
+    uid: number,
+  ) => {
+    if (!suggestionState || suggestionState.uid !== uid || suggestions.length === 0) return;
+    const current = Math.min(suggestionState.highlight, suggestions.length - 1);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setSuggestionState({
+        uid,
+        highlight: (current + direction + suggestions.length) % suggestions.length,
+      });
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      selectProduct(uid, suggestions[current]);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
       setSuggestionState(null);
     }
   };
 
-  // ---- Save ---------------------------------------------------------------
-  const handleSubmit = async () => {
-    if (isSubmitting) return; // prevents double submits
-
-    // If something is invalid (for example via Ctrl+Enter), reveal every error.
-    if (!isValid) {
+  const goToMaterials = () => {
+    if (supplierError) {
       setSupplierTouched(true);
-      setItems((prev) =>
-        prev.map((i) => ({ ...i, nameTouched: true, quantityTouched: true })),
+      supplierSearchRef.current?.focus();
+      return;
+    }
+    setStep(2);
+  };
+
+  const goToReview = () => {
+    if (!itemsAreValid) {
+      setItems((current) =>
+        current.map((item) => ({ ...item, nameTouched: true, quantityTouched: true })),
       );
       onShowToast(blockingMessage || "Please fix the highlighted fields.", "error");
       return;
     }
+    setStep(3);
+  };
 
-    // Build the items from the inventory record so name, category and unit
-    // always match inventory exactly.
-    const poItems: POItem[] = items.map((item, idx) => {
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+    if (!isValid) {
+      onShowToast(blockingMessage || "Please fix the highlighted fields.", "error");
+      return;
+    }
+    const poItems: POItem[] = items.map((item, index) => {
       const product =
         (item.productId ? productById.get(item.productId) : undefined) ??
         productByName.get(normalize(item.name));
       return {
-        id: idx + 1,
+        id: index + 1,
         productId: product?.product_id ?? item.productId,
-        name: product ? product.product_name : item.name.trim(),
-        category: product ? product.category : item.category,
-        unit: product ? product.unit : item.unit,
+        name: product?.product_name ?? item.name.trim(),
+        category: product?.category ?? item.category,
+        unit: product?.unit ?? item.unit,
         quantity: toNumber(item.quantity),
-        unitCost: item.unitCost.trim() ? toNumber(item.unitCost) : 0,
+        ...(item.unitCost == null ? {} : { unitCost: item.unitCost }),
       };
     });
-
     setIsSubmitting(true);
     try {
       await onCreate(
         {
           supplier: supplierName,
-          contact,
+          contact: selectedSupplier?.contact_number ?? "",
           date: initialOrder?.date || today,
-          deliveryDate,
+          // Preserve a legacy draft's real date, but do not invent one for new POs.
+          deliveryDate: initialOrder?.deliveryDate,
           status: "Draft",
           notes: notes.trim(),
           items: poItems,
@@ -714,527 +506,246 @@ export function CreatePOModal({
       );
       onClose();
     } catch {
-      // The parent shows the error toast. Keep the form open and editable.
       setIsSubmitting(false);
     }
   };
 
-  // ---- Render -------------------------------------------------------------
+  const openSetupPage = (kind: "supplier" | "material") => {
+    if (isDirty && !window.confirm(`Leave this purchase order to add a ${kind}? Your draft will be discarded.`)) return;
+    if (kind === "supplier") onAddSupplier();
+    else onAddMaterial();
+  };
+
+  const steps = ["Supplier", "Materials", "Review"] as const;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      // Clicking the dark backdrop (not the dialog) closes the modal.
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) requestClose();
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3 backdrop-blur-sm sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <motion.div
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-po-title"
-        initial={{ scale: 0.96, opacity: 0 }}
+        initial={{ scale: 0.97, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.96, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 300, damping: 28 }}
-        // Ctrl/Cmd + Enter saves from anywhere in the form.
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            handleSubmit();
+        exit={{ scale: 0.97, opacity: 0 }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            if (step === 1) goToMaterials();
+            else if (step === 2) goToReview();
+            else void handleSubmit();
           }
         }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+        className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-          <div>
-            <h2 id="create-po-title" className="text-lg font-semibold text-gray-800">
-              {initialOrder ? `Edit ${initialOrder.id}` : "New Purchase Order"}
-            </h2>
-            {prefillProduct && (
-              <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
-                Pre-filled from stock alert: {prefillProduct.name}
-              </p>
-            )}
-          </div>
-          <CloseBtn onClick={onClose} />
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-5 space-y-5">
-          {/* Supplier + delivery date */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_12rem] gap-4">
-            <div className="min-w-0">
-              <label
-                htmlFor="po-supplier"
-                className="text-xs text-gray-400 font-medium block mb-1"
-              >
-                Supplier <span className="text-red-400">*</span>
-              </label>
-              <select
-                id="po-supplier"
-                ref={supplierSelectRef}
-                value={selectedSupplierId}
-                onChange={(e) => handleSupplierChange(e.target.value)}
-                onBlur={() => setSupplierTouched(true)}
-                aria-invalid={supplierTouched && !!supplierError}
-                className={fieldClass(supplierTouched && !!supplierError)}
-              >
-                <option value="">- Select a supplier -</option>
-                {allSuppliers.map((s) => (
-                  <option key={s.supplier_id} value={s.supplier_id}>
-                    {s.supplier_name}
-                  </option>
-                ))}
-              </select>
-              {supplierTouched && supplierError && (
-                <p role="alert" className="mt-1 text-[11px] text-red-500">
-                  {supplierError}
-                </p>
-              )}
+        <header className="border-b border-slate-100 px-5 py-4 sm:px-7">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 id="create-po-title" className="text-lg font-semibold text-slate-900">
+                {initialOrder ? `Edit ${initialOrder.id}` : "New Purchase Order"}
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-500">Step {step} of 3: {steps[step - 1]}</p>
             </div>
+            <CloseBtn onClick={requestClose} />
+          </div>
+          <ol aria-label="Purchase order progress" className="mt-4 grid grid-cols-3 gap-2">
+            {steps.map((label, index) => {
+              const number = index + 1;
+              const current = number === step;
+              return (
+                <li key={label} aria-current={current ? "step" : undefined}>
+                  <div className={`h-1.5 rounded-full ${number <= step ? "bg-slate-900" : "bg-slate-200"}`} />
+                  <div className={`mt-1.5 flex items-center gap-1.5 text-xs font-medium ${current ? "text-slate-900" : "text-slate-400"}`}>
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${number <= step ? "bg-slate-900 text-white" : "bg-slate-100"}`}>
+                      {number < step ? <CheckIcon /> : number}
+                    </span>
+                    <span className="hidden sm:inline">{label}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </header>
 
-            <div className="min-w-0">
-              <label
-                htmlFor="po-delivery-date"
-                className="text-xs text-gray-400 font-medium block mb-1"
-              >
-                Expected delivery <span className="text-red-400">*</span>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-7">
+          {step === 1 && (
+            <section aria-labelledby="supplier-step-title" className="mx-auto max-w-2xl">
+              <h3 id="supplier-step-title" className="text-base font-semibold text-slate-900">Choose a supplier</h3>
+              <p className="mt-1 text-sm text-slate-500">Search by company name, contact number, or email.</p>
+              <label htmlFor="po-supplier-search" className="mt-5 block text-xs font-medium text-slate-600">
+                Supplier <span className="text-red-500">*</span>
               </label>
               <input
-                id="po-delivery-date"
-                type="date"
-                min={today}
-                value={deliveryDate}
-                onChange={(e) => {
-                  setDeliveryDate(e.target.value);
-                  markDirty();
+                id="po-supplier-search"
+                ref={supplierSearchRef}
+                type="search"
+                value={supplierSearch}
+                onChange={(event) => {
+                  setSupplierSearch(event.target.value);
+                  if (selectedSupplier && event.target.value !== selectedSupplier.supplier_name) {
+                    setSelectedSupplierId("");
+                  }
+                  setIsDirty(true);
                 }}
-                aria-invalid={!!deliveryDateError}
-                className={fieldClass(!!deliveryDateError)}
+                onBlur={() => setSupplierTouched(true)}
+                placeholder="Search suppliers"
+                autoComplete="off"
+                aria-invalid={supplierTouched && !!supplierError}
+                className={`mt-1 ${fieldClass(supplierTouched && !!supplierError)}`}
               />
-              {deliveryDateError && (
-                <p role="alert" className="mt-1 text-[11px] text-red-500">
-                  {deliveryDateError}
-                </p>
-              )}
-            </div>
-          </div>
+              {supplierTouched && supplierError && <p role="alert" className="mt-1 text-xs text-red-500">{supplierError}</p>}
 
-          {/* Supplier details + clickable product chips */}
-          {selectedSupplier && (
-            <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 space-y-2">
-              <p className="text-sm font-semibold text-slate-800">
-                {selectedSupplier.supplier_name}
-              </p>
-              <p className="text-xs text-slate-500">
-                {selectedSupplier.contact_number}
-                {selectedSupplier.email && ` \u00B7 ${selectedSupplier.email}`}
-              </p>
-              {supplierProductNames.length > 0 && (
-                <div className="pt-1">
-                  <p className="text-[11px] text-slate-400 mb-1.5">
-                    Supplies these products. Click one to add it to the order.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {supplierProductNames.map((name) => {
-                      const added = usedNameSet.has(normalize(name));
-                      return (
-                        <button
-                          key={name}
-                          type="button"
-                          onClick={() => addSupplierProductItem(name)}
-                          disabled={added}
-                          className={`text-[11px] font-medium px-2 py-0.5 rounded-full border transition-colors flex items-center gap-1 ${
-                            added
-                              ? "bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default"
-                              : "bg-white border-slate-200 text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
-                          }`}
-                        >
-                          {added && <CheckIcon />}
-                          {name}
-                        </button>
-                      );
+              <div role="listbox" aria-label="Suppliers" className="mt-4 max-h-80 space-y-2 overflow-y-auto pr-1">
+                {filteredSuppliers.map((supplier) => {
+                  const selected = supplier.supplier_id === selectedSupplierId;
+                  return (
+                    <button
+                      key={supplier.supplier_id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      onClick={() => {
+                        setSelectedSupplierId(supplier.supplier_id);
+                        setSupplierSearch(supplier.supplier_name);
+                        setSupplierTouched(true);
+                        setIsDirty(true);
+                      }}
+                      className={`w-full rounded-xl border p-4 text-left transition ${selected ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-400"}`}
+                    >
+                      <span className="flex items-start justify-between gap-3">
+                        <span>
+                          <span className="block text-sm font-semibold text-slate-900">{supplier.supplier_name}</span>
+                          <span className="mt-1 block text-xs text-slate-500">{supplier.contact_number || "No phone number"}{supplier.email ? ` · ${supplier.email}` : ""}</span>
+                        </span>
+                        {selected && <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700">Selected</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+                {filteredSuppliers.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center">
+                    <p className="text-sm text-slate-600">No matching supplier found.</p>
+                    <button type="button" onClick={() => openSetupPage("supplier")} className="mt-3 text-sm font-semibold text-slate-900 underline underline-offset-4">Add a new supplier</button>
+                  </div>
+                )}
+              </div>
+              {allSuppliers.length > 0 && <button type="button" onClick={() => openSetupPage("supplier")} className="mt-4 text-xs font-semibold text-slate-600 hover:text-slate-900">Supplier not listed? Add Supplier</button>}
+            </section>
+          )}
+
+          {step === 2 && (
+            <section aria-labelledby="materials-step-title" className="space-y-5">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                <div>
+                  <h3 id="materials-step-title" className="text-base font-semibold text-slate-900">Add materials and quantities</h3>
+                  <p className="mt-1 text-sm text-slate-500">Search existing inventory materials. Units come from Inventory Management.</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-right"><p className="text-xs text-slate-400">Supplier</p><p className="text-sm font-semibold text-slate-800">{supplierName}</p></div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                Materials marked <span className="font-semibold text-amber-700">New to supplier</span> will be added to this supplier automatically after the PO is successfully created.
+              </div>
+
+              {supplierProducts.length > 0 && (
+                <div>
+                  <p className="mb-2 text-xs font-medium text-slate-500">Common materials from {supplierName}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {supplierProducts.map((name) => {
+                      const added = usedProductNames.has(normalize(name));
+                      return <button key={name} type="button" disabled={added} onClick={() => addSupplierProduct(name)} className={`rounded-full border px-3 py-1 text-xs font-medium ${added ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 hover:border-slate-400"}`}>{added ? "✓ " : "+ "}{name}</button>;
                     })}
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Items */}
-          <div>
-            <div className="flex items-center justify-between mb-2 gap-2">
-              <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-                Items ({items.length})
-              </span>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowQuickOrder((v) => !v)}
-                  disabled={quickOrderProducts.length === 0}
-                  aria-expanded={showQuickOrder}
-                  className="text-xs font-semibold text-amber-700 hover:text-amber-800 flex items-center gap-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <BoltIcon />
-                  Quick Order
-                </button>
-                <button
-                  type="button"
-                  onClick={addBlankItem}
-                  className="text-xs font-semibold text-gray-600 hover:text-gray-900 flex items-center gap-1 transition-colors"
-                >
-                  <PlusIcon />
-                  Add Item
-                </button>
-              </div>
-            </div>
-
-            {/* Quick order panel: products that need restocking */}
-            {showQuickOrder && quickOrderProducts.length > 0 && (
-              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 space-y-2">
-                <div className="flex items-center justify-between gap-2 px-0.5">
-                  <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide">
-                    Products needing reorder
-                  </p>
-                  {availableQuickOrder.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={addAllQuickOrder}
-                      className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 transition-colors"
-                    >
-                      Add all ({availableQuickOrder.length})
-                    </button>
-                  )}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Materials ({items.length})</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={() => setShowRestockSuggestions((value) => !value)} disabled={quickOrderProducts.length === 0} aria-expanded={showRestockSuggestions} className="text-xs font-semibold text-amber-700 disabled:opacity-40">Restock suggestions</button>
+                  <button type="button" onClick={addBlankItem} className="text-xs font-semibold text-slate-700">+ Add another</button>
+                  <button type="button" onClick={() => openSetupPage("material")} className="text-xs font-semibold text-slate-500 hover:text-slate-900">Add new material</button>
                 </div>
-
-                {availableQuickOrder.length === 0 ? (
-                  <p className="text-xs text-amber-700/80 px-0.5 py-1">
-                    Every product needing reorder is already in this order.
-                  </p>
-                ) : (
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {availableQuickOrder.map((product) => (
-                      <button
-                        key={product.product_id}
-                        type="button"
-                        onClick={() => addProductItem(product)}
-                        className="w-full text-left rounded-lg bg-white border border-amber-100 hover:border-amber-300 px-3 py-2 transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium text-slate-800 truncate">
-                            {product.product_name}
-                          </span>
-                          <span className="text-[11px] font-semibold text-amber-700 whitespace-nowrap">
-                            Need{" "}
-                            {Math.max(
-                              0,
-                              toNumber(product.reorderPoint) -
-                                toNumber(product.mainStock),
-                            )}{" "}
-                            {product.unit}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                          {product.category}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
-            )}
 
-            {/* Item rows */}
-            <div className="space-y-2">
-              <AnimatePresence initial={false}>
-                {items.map((item, idx) => {
-                  const errors = itemErrors[idx] ?? {};
+              {showRestockSuggestions && quickOrderProducts.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-amber-800">Low-stock restock suggestions</p>{availableRestockProducts.length > 1 && <button type="button" onClick={addAllRestockProducts} className="text-xs font-semibold text-amber-800">Add all ({availableRestockProducts.length})</button>}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {availableRestockProducts.map((product) => <button key={product.product_id} type="button" onClick={() => addProduct(product)} className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">+ {product.product_name} ({product.unit})</button>)}
+                    {availableRestockProducts.length === 0 && <p className="text-xs text-amber-700">All suggested materials are already included.</p>}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {items.map((item, index) => {
+                  const errors = itemErrors[index] ?? {};
                   const nameError = item.nameTouched ? errors.name : undefined;
-                  const quantityError = item.quantityTouched
-                    ? errors.quantity
-                    : undefined;
-                  const unitCostError = errors.unitCost;
-                  const isMatched = !!(
-                    (item.productId && productById.get(item.productId)) ||
-                    productByName.get(normalize(item.name))
-                  );
-                  const notListedBySupplier =
-                    isMatched &&
-                    !!selectedSupplier &&
-                    supplierProductNames.length > 0 &&
-                    !supplierProductNameSet.has(normalize(item.name));
-                  const showSuggestions =
-                    suggestionState?.uid === item.uid && suggestions.length > 0;
-                  const highlight = Math.min(
-                    suggestionState?.highlight ?? 0,
-                    Math.max(0, suggestions.length - 1),
-                  );
-
+                  const quantityError = item.quantityTouched ? errors.quantity : undefined;
+                  const matched = !!((item.productId && productById.get(item.productId)) || productByName.get(normalize(item.name)));
+                  const newAssociation = matched && !supplierProductSet.has(normalize(item.name));
+                  const showSuggestions = suggestionState?.uid === item.uid && suggestions.length > 0;
+                  const highlight = Math.min(suggestionState?.highlight ?? 0, Math.max(0, suggestions.length - 1));
                   return (
-                    <motion.div
-                      key={item.uid}
-                      initial={{ opacity: 0, y: -6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      className="rounded-lg border border-slate-100 p-3 min-w-0"
-                    >
-                      {/* Row header: label + remove button */}
-                      <div className="flex items-center justify-between mb-1">
-                        <label
-                          htmlFor={`po-item-name-${item.uid}`}
-                          className="block text-[11px] text-gray-400"
-                        >
-                          Item {idx + 1}
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.uid)}
-                          disabled={items.length === 1}
-                          aria-label={`Remove item ${idx + 1}`}
-                          title={
-                            items.length === 1
-                              ? "An order needs at least one item"
-                              : "Remove item"
-                          }
-                          className="text-gray-300 hover:text-red-400 disabled:opacity-20 disabled:hover:text-gray-300 transition-colors"
-                        >
-                          <TrashIcon />
-                        </button>
-                      </div>
-
-                      {/* Item name with suggestions */}
-                      <div className="relative">
-                        <input
-                          id={`po-item-name-${item.uid}`}
-                          value={item.name}
-                          onChange={(e) => handleNameChange(item.uid, e.target.value)}
-                          onKeyDown={(e) => handleNameKeyDown(e, item.uid)}
-                          onFocus={() =>
-                            setSuggestionState({ uid: item.uid, highlight: 0 })
-                          }
-                          onBlur={() => {
-                            updateItem(item.uid, { nameTouched: true });
-                            setSuggestionState((current) =>
-                              current?.uid === item.uid ? null : current,
-                            );
-                          }}
-                          maxLength={PURCHASE_ORDER_NAME_MAX_LENGTH}
-                          placeholder="Search or type an item name"
-                          autoComplete="off"
-                          role="combobox"
-                          aria-expanded={showSuggestions}
-                          aria-autocomplete="list"
-                          aria-controls={`po-item-suggestions-${item.uid}`}
-                          aria-invalid={!!nameError}
-                          className={fieldClass(!!nameError)}
-                        />
-                        {showSuggestions && (
-                          <div
-                            id={`po-item-suggestions-${item.uid}`}
-                            role="listbox"
-                            className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-slate-200 bg-white shadow-lg z-20 overflow-hidden"
-                          >
-                            {suggestions.map((product, sIdx) => (
-                              <button
-                                key={product.product_id}
-                                type="button"
-                                role="option"
-                                aria-selected={sIdx === highlight}
-                                // Keeps the input focused so the click registers.
-                                onMouseDown={(e) => e.preventDefault()}
-                                onMouseEnter={() =>
-                                  setSuggestionState({
-                                    uid: item.uid,
-                                    highlight: sIdx,
-                                  })
-                                }
-                                onClick={() => applyProductToItem(item.uid, product)}
-                                className={`w-full px-3 py-2 text-left text-xs text-slate-600 transition-colors ${
-                                  sIdx === highlight ? "bg-slate-100" : "hover:bg-slate-50"
-                                }`}
-                              >
-                                <span className="block font-medium text-slate-700">
-                                  {product.product_name}
-                                </span>
-                                <span className="block text-[11px] text-slate-400">
-                                  {product.category}
-                                  {product.unit ? ` \u00B7 ${product.unit}` : ""}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      {nameError && (
-                        <p role="alert" className="mt-1 text-[11px] text-red-500">
-                          {nameError}
-                        </p>
-                      )}
-                      {!nameError && isMatched && (
-                        <p className="mt-1 text-[11px] text-slate-400">
-                          {item.category}
-                          {notListedBySupplier && (
-                            <span className="ml-2 text-amber-600">
-                              Not on this supplier&apos;s product list
-                            </span>
-                          )}
-                        </p>
-                      )}
-
-                      {/* Quantity, inventory unit, and supplier unit price */}
-                      <div className="grid grid-cols-1 gap-2 mt-2 sm:grid-cols-3">
-                        <div className="min-w-0">
-                          <label
-                            htmlFor={`po-item-qty-${item.uid}`}
-                            className="block text-[11px] text-gray-400 mb-1"
-                          >
-                            Qty
-                          </label>
-                          <input
-                            id={`po-item-qty-${item.uid}`}
-                            type="text"
-                            inputMode="numeric"
-                            value={item.quantity}
-                            onChange={(e) =>
-                              handleQuantityChange(item.uid, e.target.value)
-                            }
-                            onKeyDown={(e) =>
-                              blockInvalidNumberKeys(e, { allowDecimal: false })
-                            }
-                            onBlur={() =>
-                              updateItem(item.uid, { quantityTouched: true })
-                            }
-                            placeholder="0"
-                            aria-invalid={!!quantityError}
-                            className={fieldClass(!!quantityError)}
-                          />
+                    <div key={item.uid} className="rounded-xl border border-slate-200 p-4">
+                      <div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-slate-500">Material {index + 1}</p><button type="button" onClick={() => { if (items.length > 1) { setItems((current) => current.filter((entry) => entry.uid !== item.uid)); setIsDirty(true); } }} disabled={items.length === 1} aria-label={`Remove material ${index + 1}`} className="text-xs font-semibold text-slate-400 hover:text-red-500 disabled:opacity-30">Remove</button></div>
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(16rem,1fr)_8rem_9rem]">
+                        <div className="relative">
+                          <label htmlFor={`po-item-name-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Inventory material</label>
+                          <input id={`po-item-name-${item.uid}`} value={item.name} onChange={(event) => { const name = sanitizeShortTextInput(event.target.value, NAME_MAX_LENGTH); const product = productByName.get(normalize(name)); updateItem(item.uid, { name, productId: product?.product_id ?? null, category: product?.category ?? "", unit: product?.unit ?? "", unitCost: product?.product_id === item.productId ? item.unitCost : null }); setSuggestionState({ uid: item.uid, highlight: 0 }); setIsDirty(true); }} onKeyDown={(event) => handleNameKeyDown(event, item.uid)} onFocus={() => setSuggestionState({ uid: item.uid, highlight: 0 })} onBlur={() => { updateItem(item.uid, { nameTouched: true }); setSuggestionState((current) => current?.uid === item.uid ? null : current); }} maxLength={NAME_MAX_LENGTH} placeholder="Search inventory" autoComplete="off" role="combobox" aria-expanded={showSuggestions} aria-autocomplete="list" aria-controls={`po-item-suggestions-${item.uid}`} aria-invalid={!!nameError} className={fieldClass(!!nameError)} />
+                          {showSuggestions && <div id={`po-item-suggestions-${item.uid}`} role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">{suggestions.map((product, suggestionIndex) => <button key={product.product_id} type="button" role="option" aria-selected={suggestionIndex === highlight} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSuggestionState({ uid: item.uid, highlight: suggestionIndex })} onClick={() => selectProduct(item.uid, product)} className={`w-full px-3 py-2 text-left text-xs ${suggestionIndex === highlight ? "bg-slate-100" : "hover:bg-slate-50"}`}><span className="block font-medium text-slate-800">{product.product_name}</span><span className="text-slate-400">{product.category} · {product.unit}</span></button>)}</div>}
+                          {nameError && <p role="alert" className="mt-1 text-[11px] text-red-500">{nameError}</p>}
+                          {!nameError && newAssociation && <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">New to supplier</span>}
                         </div>
-                        <div className="min-w-0">
-                          <label
-                            htmlFor={`po-item-unit-${item.uid}`}
-                            className="block text-[11px] text-gray-400 mb-1"
-                          >
-                            Unit
-                          </label>
-                          {/* Read-only: the unit always comes from the inventory product */}
-                          <input
-                            id={`po-item-unit-${item.uid}`}
-                            type="text"
-                            value={item.unit}
-                            readOnly
-                            tabIndex={-1}
-                            placeholder="Auto from material"
-                            className="w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-slate-50 text-slate-500 placeholder-gray-300 cursor-not-allowed focus:outline-none"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <label
-                            htmlFor={`po-item-cost-${item.uid}`}
-                            className="block text-[11px] text-gray-400 mb-1"
-                          >
-                            Unit Price (PHP)
-                          </label>
-                          <input
-                            id={`po-item-cost-${item.uid}`}
-                            type="text"
-                            inputMode="decimal"
-                            value={item.unitCost}
-                            onChange={(event) =>
-                              handleUnitCostChange(item.uid, event.target.value)
-                            }
-                            onKeyDown={(event) =>
-                              blockInvalidNumberKeys(event, { allowDecimal: true })
-                            }
-                            placeholder="0.00"
-                            aria-invalid={!!unitCostError}
-                            className={fieldClass(!!unitCostError)}
-                          />
-                        </div>
+                        <div><label htmlFor={`po-item-qty-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Quantity</label><input id={`po-item-qty-${item.uid}`} type="text" inputMode="numeric" value={item.quantity} onChange={(event) => { updateItem(item.uid, { quantity: String(sanitizeNumberInput(event.target.value, { allowDecimal: false, maxDigits: 3 })) }); setIsDirty(true); }} onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: false })} onBlur={() => updateItem(item.uid, { quantityTouched: true })} aria-invalid={!!quantityError} className={fieldClass(!!quantityError)} />{quantityError && <p role="alert" className="mt-1 text-[11px] text-red-500">{quantityError}</p>}</div>
+                        <div><label className="mb-1 block text-[11px] text-slate-500">Unit</label><input value={item.unit} readOnly tabIndex={-1} placeholder="From inventory" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500" /></div>
                       </div>
-                      {quantityError && (
-                        <p role="alert" className="mt-1 text-[11px] text-red-500">
-                          {quantityError}
-                        </p>
-                      )}
-                      {unitCostError && (
-                        <p role="alert" className="mt-1 text-[11px] text-red-500">
-                          {unitCostError}
-                        </p>
-                      )}
-                    </motion.div>
+                    </div>
                   );
                 })}
-              </AnimatePresence>
+              </div>
+
+              <div><label htmlFor="po-notes" className="mb-1 block text-xs font-medium text-slate-600">Notes (optional)</label><textarea id="po-notes" value={notes} onChange={(event) => { setNotes(event.target.value); setIsDirty(true); }} rows={2} placeholder="Special instructions for the supplier" className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-slate-100" /></div>
+            </section>
+          )}
+
+          {step === 3 && (
+            <section aria-labelledby="review-step-title" className="space-y-5">
+              <div><h3 id="review-step-title" className="text-base font-semibold text-slate-900">Review purchase order</h3><p className="mt-1 text-sm text-slate-500">Confirm the supplier, materials, and quantities before saving.</p></div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-400">Supplier</p><p className="mt-1 text-sm font-semibold text-slate-900">{supplierName}</p><p className="text-xs text-slate-500">{selectedSupplier?.contact_number}</p></div>
+                <div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-400">Order summary</p><p className="mt-1 text-sm font-semibold text-slate-900">{items.length} material{items.length !== 1 ? "s" : ""}</p><p className="text-xs text-slate-500">{totalUnits} units</p></div>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="hidden grid-cols-[1fr_7rem_7rem] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500 sm:grid"><span>Material</span><span>Quantity</span><span>Unit</span></div>
+                <div className="divide-y divide-slate-100">{items.map((item) => { const newAssociation = !supplierProductSet.has(normalize(item.name)); return <div key={item.uid} className="grid grid-cols-2 gap-2 px-4 py-3 text-sm sm:grid-cols-[1fr_7rem_7rem] sm:gap-3"><div><span className="font-medium text-slate-900">{item.name}</span>{newAssociation && <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">New to supplier</span>}</div><span className="text-slate-600">{item.quantity}</span><span className="text-slate-600">{item.unit}</span></div>; })}</div>
+              </div>
+              {notes && <div className="rounded-xl border border-slate-200 p-4"><p className="text-xs font-semibold text-slate-500">Notes</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{notes}</p></div>}
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800"><span className="font-semibold">Stock is not changed when this PO is created.</span> Inventory quantities increase only when an authorized staff member receives the purchase order.</div>
+            </section>
+          )}
+        </main>
+
+        <footer className="border-t border-slate-100 px-5 py-4 sm:px-7">
+          <div className="mb-3 flex items-center justify-between gap-3 text-xs text-slate-500"><span>{step > 1 ? `${items.length} material${items.length !== 1 ? "s" : ""} · ${totalUnits} units` : "Select one supplier to continue"}</span>{step === 2 && !isValid && blockingMessage && <span className="max-w-[60%] truncate text-right text-amber-700">{blockingMessage}</span>}</div>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+            <button type="button" onClick={requestClose} disabled={isSubmitting} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+            <div className="flex gap-3">
+              {step > 1 && <button type="button" onClick={() => setStep((step - 1) as 1 | 2)} disabled={isSubmitting} className="flex-1 rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:flex-none">Back</button>}
+              {step === 1 && <button type="button" onClick={goToMaterials} className="flex-1 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 sm:flex-none">Next: Materials</button>}
+              {step === 2 && <button type="button" onClick={goToReview} className="flex-1 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 sm:flex-none">Next: Review</button>}
+              {step === 3 && <button type="button" onClick={() => void handleSubmit()} disabled={!isValid || isSubmitting} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">{isSubmitting ? <><Spinner />Saving...</> : initialOrder ? "Save Changes" : "Create Purchase Order"}</button>}
             </div>
           </div>
-
-          {/* Notes */}
-          <div>
-            <label
-              htmlFor="po-notes"
-              className="text-xs text-gray-400 font-medium block mb-1"
-            >
-              Notes (optional)
-            </label>
-            <textarea
-              id="po-notes"
-              value={notes}
-              onChange={(e) => {
-                setNotes(e.target.value);
-                markDirty();
-              }}
-              placeholder="Special instructions for supplier..."
-              rows={2}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-200 placeholder-gray-300 resize-none"
-            />
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100">
-          <div className="flex items-center justify-between gap-3 mb-3 text-xs">
-            <span className="text-slate-500">
-              {items.length} item{items.length !== 1 ? "s" : ""} {"\u00B7"}{" "}
-              {totalUnits} unit{totalUnits !== 1 ? "s" : ""} total
-              {totalCost > 0 && ` · PHP ${totalCost.toFixed(2)}`}
-            </span>
-            {!isValid && blockingMessage && (
-              <span className="text-amber-600 text-right truncate">
-                {blockingMessage}
-              </span>
-            )}
-          </div>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!isValid || isSubmitting}
-              className="flex-1 py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
-            >
-              {isSubmitting ? (
-                <>
-                  <Spinner />
-                  Saving...
-                </>
-              ) : (
-                initialOrder ? "Save Changes" : "Save as Draft"
-              )}
-            </button>
-          </div>
-        </div>
+        </footer>
       </motion.div>
     </motion.div>
   );

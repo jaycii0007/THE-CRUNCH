@@ -7,7 +7,12 @@ import {
   getPOItemDateTrackingType,
   getPOItemUsableUntil,
 } from "../../utils/purchaseOrderUtils";
-import { fmtDate, fmtDateTime, formatShelfLife } from "../../utils/formatters";
+import {
+  fmtDate,
+  fmtDateTime,
+  fmtReceivedDate,
+  formatShelfLife,
+} from "../../utils/formatters";
 
 function TrashIcon() {
   return (
@@ -145,9 +150,9 @@ export function PODetailDrawer({
           <p className="font-semibold text-gray-800">{order.supplier}</p>
           <p className="text-sm text-gray-500">{order.contact}</p>
           <p className="text-sm text-gray-500">
-            Delivery:{" "}
+            Expected Delivery:{" "}
             <span className="font-medium text-gray-700">
-              {order.deliveryDate}
+              {order.deliveryDate || "Not specified"}
             </span>
           </p>
         </div>
@@ -267,7 +272,7 @@ export function PODetailDrawer({
               )}
               {order.receivedDate && (
                 <p className="text-sm text-gray-500">
-                  On: {order.receivedDate}
+                  Actual Receipt Date: {fmtReceivedDate(order.receivedDate)}
                 </p>
               )}
             </div>

@@ -51,7 +51,7 @@ export interface PurchaseOrder {
   supplier: string;
   contact: string;
   date: string;
-  deliveryDate: string;
+  deliveryDate?: string | null;
   status: POStatus;
   items: POItem[];
   notes: string;
@@ -113,7 +113,7 @@ export interface Supplier {
   supplier_id: number;
   supplier_name: string;
   contact_number: string;
-  product_id: number;
+  product_id?: number | null;
   email?: string;
   products_supplied?: string;
 }

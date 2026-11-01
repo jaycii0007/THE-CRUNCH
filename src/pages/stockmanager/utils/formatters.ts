@@ -23,7 +23,8 @@ export const fmtDate = (v?: string | null) => {
       });
 };
 
-export const fmtReceivedDate = (v: string) => {
+export const fmtReceivedDate = (v?: string | null) => {
+  if (!v) return "Not specified";
   const d = new Date(v);
   return isNaN(d.getTime())
     ? v

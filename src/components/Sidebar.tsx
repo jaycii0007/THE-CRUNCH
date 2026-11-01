@@ -229,7 +229,7 @@ export function Sidebar() {
   const handleLogout = () => {
     logout();
     closeSidebar();
-    navigate("/login");
+    navigate("/");
   };
 
   const iconSize = isMobile ? "w-5 h-5" : "w-4 h-4";

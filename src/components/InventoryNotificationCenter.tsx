@@ -29,7 +29,7 @@ interface InventoryAlertsResponse {
 
 interface StaffNotification {
   notification_id: number;
-  category: "refund_request" | "purchase_order";
+  category: "refund_request" | "purchase_order" | "inventory_change";
   event_type: string;
   entity_id: string;
   title: string;
@@ -152,7 +152,12 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
       ? inventoryAlerts
       : [];
     const visibleStaff = staffNotifications.filter((notification) => {
-      if (notification.category === "refund_request") return normalizedRole === "administrator";
+      if (
+        notification.category === "refund_request" ||
+        notification.category === "inventory_change"
+      ) {
+        return normalizedRole === "administrator";
+      }
       return normalizedRole === "administrator" || normalizedRole === "inventory_manager";
     });
     return [
@@ -225,6 +230,11 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
     setOpen(false);
     if (notification.source === "staff" && notification.item.category === "refund_request") {
       setSelectedRefund(notification.item);
+      return;
+    }
+    if (notification.source === "staff" && notification.item.category === "inventory_change") {
+      requestStockManagerTab("alerts");
+      navigate(STOCK_MANAGER_PATH);
       return;
     }
     requestStockManagerTab(notification.source === "inventory" ? "alerts" : "purchases");
@@ -351,8 +361,11 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
                   const inventory = notification.source === "inventory" ? notification.item : null;
                   const staff = notification.source === "staff" ? notification.item : null;
                   const isRefund = staff?.category === "refund_request";
+                  const isInventoryChange = staff?.category === "inventory_change";
                   const iconClass = inventory ? SEVERITY_STYLES[inventory.severity]
-                    : isRefund ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700";
+                    : isRefund ? "bg-violet-100 text-violet-700"
+                      : isInventoryChange ? "bg-amber-100 text-amber-700"
+                        : "bg-blue-100 text-blue-700";
                   return (
                     <div key={key} className={`mb-1 flex gap-2 rounded-xl px-3 py-3 transition hover:bg-slate-100 ${unread ? "bg-slate-50" : "bg-white"}`}>
                       <button type="button" onClick={() => openNotification(notification)} className="flex min-w-0 flex-1 gap-3 text-left">
@@ -360,6 +373,7 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
                           {inventory?.severity === "out" ? <PackageX className="h-4 w-4" />
                             : inventory ? <AlertTriangle className="h-4 w-4" />
                               : isRefund ? <FileText className="h-4 w-4" />
+                                  : isInventoryChange ? <AlertTriangle className="h-4 w-4" />
                                 : staff?.event_type === "purchase_order.received" ? <PackageCheck className="h-4 w-4" />
                                   : <ShoppingCart className="h-4 w-4" />}
                         </span>
@@ -369,7 +383,7 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
                               {inventory ? inventory.product_name : staff?.title}
                             </span>
                             <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-slate-500">
-                              {inventory ? "Inventory" : isRefund ? "Refund request" : "Purchase order"}
+                              {inventory ? "Inventory" : isRefund ? "Refund request" : isInventoryChange ? "Inventory write-off" : "Purchase order"}
                             </span>
                           </span>
                           <span className="mt-0.5 block text-xs text-slate-500">

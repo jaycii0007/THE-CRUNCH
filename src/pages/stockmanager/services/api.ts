@@ -259,6 +259,7 @@ export const api = {
       id: string,
       receiptNo: string,
       receivedBy: string,
+      receivedDate: string,
       itemExpiryDates?: Record<number, string>,
       itemShelfLife?: Record<
         number,
@@ -270,7 +271,7 @@ export const api = {
         body: JSON.stringify({
           receiptNo,
           receivedBy,
-          receivedDate: new Date().toISOString(),
+          receivedDate,
           itemExpiryDates,
           itemShelfLife,
         }),

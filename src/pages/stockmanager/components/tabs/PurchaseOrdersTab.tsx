@@ -2,25 +2,7 @@ import { motion, type Variants } from "framer-motion";
 import { EmptyState } from "../EmptyState";
 import { POBadge } from "../POBadge";
 import { KPICard } from "../KPICard";
-import type { DashboardSummaryKey, Product, PurchaseOrder, StockAlertSettings } from "../../types/inventory";
-
-function CartIcon() {
-  return (
-    <svg
-      className="w-3.5 h-3.5"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M3 3h2l.4 2m0 0L7 13h10l2-8H5.4M7 13l-1.2 6.4A1 1 0 006.8 21h10.4a1 1 0 001-.8L20 13M7 13h13M9 21a1 1 0 100-2 1 1 0 000 2zm8 0a1 1 0 100-2 1 1 0 000 2z"
-      />
-    </svg>
-  );
-}
+import type { DashboardSummaryKey, Product, PurchaseOrder } from "../../types/inventory";
 
 function TrashIcon() {
   return (
@@ -48,15 +30,8 @@ export function PurchaseOrdersTab({
   criticalStock,
   filteredPOs,
   poLoading,
-  products,
-  stockAlertSettings,
-  statusDot,
-  statusBar,
   restockBanner,
   onNewPO,
-  onOrderNow,
-  isMenuFoodProduct,
-  getStockStatus,
   onSelectOrder,
   onPrintOrder,
   onDeleteOrder,
@@ -69,18 +44,8 @@ export function PurchaseOrdersTab({
   criticalStock: Product[];
   filteredPOs: PurchaseOrder[];
   poLoading: boolean;
-  products: Product[];
-  stockAlertSettings: StockAlertSettings;
-  statusDot: Record<"critical" | "low" | "normal", string>;
-  statusBar: Record<"critical" | "low" | "normal", string>;
   restockBanner: React.ReactNode;
   onNewPO: () => void;
-  onOrderNow: (product: Product) => void;
-  isMenuFoodProduct: (p: Pick<Product, "item_type">) => boolean;
-  getStockStatus: (
-    p: Product,
-    settings: StockAlertSettings,
-  ) => "critical" | "low" | "normal";
   onSelectOrder: (order: PurchaseOrder) => void;
   onPrintOrder: (order: PurchaseOrder) => void;
   onDeleteOrder: (id: string) => void;
@@ -164,83 +129,6 @@ export function PurchaseOrdersTab({
           </button>
         </motion.div>
         <motion.div variants={itemVariants}>
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-50">
-              <p className="font-semibold text-slate-800 text-sm">
-                Quick Order {"\u2014"} All Products
-              </p>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Place a PO for any product, regardless of stock level
-              </p>
-            </div>
-            <div className="divide-y divide-slate-50">
-              {products
-                .filter((p) => !isMenuFoodProduct(p))
-                .map((p, i) => {
-                  const status = getStockStatus(p, stockAlertSettings);
-                  const pct = Math.min(
-                    100,
-                    (p.mainStock / Math.max(1, p.reorderPoint)) * 100,
-                  );
-                  return (
-                    <motion.div
-                      key={p.product_id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: i * 0.03 }}
-                      className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-5 py-3 hover:bg-slate-50/60 transition-colors"
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot[status]}`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-slate-800 truncate">
-                            {p.product_name}
-                          </p>
-                          {status !== "normal" && (
-                            <span
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${status === "critical" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"}`}
-                            >
-                              {status === "critical" ? "Critical" : "Low"}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-400">
-                          {p.supplier_name}
-                        </p>
-                      </div>
-                      <div className="w-full sm:w-28 sm:text-right">
-                        <p className="text-xs font-semibold text-slate-600 mb-1">
-                          {p.mainStock}
-                          <span className="text-slate-400 font-normal ml-0.5">
-                            {p.unit}
-                          </span>
-                        </p>
-                        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${statusBar[status]}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => onOrderNow(p)}
-                        className="w-full sm:w-auto sm:flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all duration-150"
-                      >
-                        <CartIcon />
-                        Order
-                      </button>
-                    </motion.div>
-                  );
-                })}
-              {products.filter((p) => !isMenuFoodProduct(p)).length === 0 && (
-                <EmptyState message="No stock items are configured for purchase ordering." />
-              )}
-            </div>
-          </div>
-        </motion.div>
-        <motion.div variants={itemVariants}>
           <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
             <div className="px-5 py-4 border-b border-slate-50">
               <p className="font-semibold text-slate-800 text-sm">
@@ -256,7 +144,7 @@ export function PurchaseOrdersTab({
               <span>Supplier</span>
               <span>Receipt</span>
               <span>Order Date</span>
-              <span>Delivery</span>
+              <span>Expected Delivery</span>
               <span>Items</span>
               <span>Status</span>
               <span className="text-right">Action</span>
@@ -312,7 +200,7 @@ export function PurchaseOrdersTab({
                             {order.date}
                           </span>
                           <span className="text-sm text-slate-500">
-                            {order.deliveryDate}
+                            {order.deliveryDate || "Not specified"}
                           </span>
                           <span className="text-sm font-semibold text-slate-800">
                             {totalQuantity} unit{totalQuantity !== 1 ? "s" : ""}
@@ -407,7 +295,7 @@ export function PurchaseOrdersTab({
                         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-500">
                           <span>Receipt: {order.receiptNo || "-"}</span>
                           <span>Order: {order.date}</span>
-                          <span>Delivery: {order.deliveryDate}</span>
+                          <span>Expected: {order.deliveryDate || "Not specified"}</span>
                           <span className="font-semibold text-slate-700">
                             {totalQuantity} unit{totalQuantity !== 1 ? "s" : ""}
                           </span>

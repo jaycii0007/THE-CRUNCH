@@ -255,7 +255,7 @@ export default function AboutTheCrunch() {
   const handleLogout = () => {
     logout();
     setMenuOpen(false);
-    goProducts();
+    navigate('/');
   };
 
   return (

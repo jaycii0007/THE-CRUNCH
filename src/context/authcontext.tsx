@@ -11,7 +11,7 @@ import { authApi } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface AuthUser {
+export interface AuthUser {
   token: string;
   username: string;
   email: string;
@@ -32,6 +32,7 @@ export interface AttendanceRecord {
 
 interface AuthContextType {
   user: AuthUser | null;
+  isInitialized: boolean;
   isOnline: boolean;
   attendance: AttendanceRecord[];
   login: (data: AuthUser) => void;
@@ -86,7 +87,7 @@ function parseJwtExp(token: string): number | null {
   }
 }
 
-function isTokenExpired(token: string): boolean {
+export function isTokenExpired(token: string): boolean {
   const exp = parseJwtExp(token);
   if (!exp) return false;
   return exp * 1000 <= Date.now();
@@ -104,7 +105,7 @@ function computeDuration(timeIn: Date, timeOut: Date | null): string {
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
-function readStoredUser(): AuthUser | null {
+export function readStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
 
   const token = localStorage.getItem("authToken");
@@ -135,8 +136,9 @@ function readStoredUser(): AuthUser | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
-  const [isOnline, setIsOnline] = useState(() => !!readStoredUser());
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
 
   /**
    * attendanceRef is the source of truth.
@@ -169,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     saveStoredAuth(data);
 
     setUser(data);
+    setIsInitialized(true);
     setIsOnline(true);
 
     if (!isStaffRole(data.role)) return;
@@ -221,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     syncAttendance(updated);
     setIsOnline(false);
     setUser(null);
+    setIsInitialized(true);
     if (typeof window !== "undefined") {
       if (currentUser?.token) {
         void authApi.logout(currentUser.token).catch(() => undefined);
@@ -237,7 +241,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedUser = readStoredUser();
       setUser(storedUser);
       setIsOnline(!!storedUser);
+      setIsInitialized(true);
     };
+
+    syncStoredAuth();
 
     window.addEventListener("authChange", syncStoredAuth);
     window.addEventListener("storage", syncStoredAuth);
@@ -268,7 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user?.token]);
 
   return (
-    <AuthContext.Provider value={{ user, isOnline, attendance, login, updateUser, logout }}>
+    <AuthContext.Provider value={{ user, isInitialized, isOnline, attendance, login, updateUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

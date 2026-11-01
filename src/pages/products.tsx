@@ -1847,7 +1847,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
   const feedbackOptions = useMemo(() => products.map(p => ({ id: p.id, name: p.name })), [products])
 
   const goOrder = useCallback(() => navigate('/usersmenu?showOrderModal=true'), [navigate])
-  const logout = useCallback(() => { onLogout?.(); navigate('/products') }, [onLogout, navigate])
+  const logout = useCallback(() => { onLogout?.(); navigate('/') }, [onLogout, navigate])
   const navLinks = [
     { label: 'Home', action: () => navigate('/') },
     { label: 'Menu', action: goOrder },

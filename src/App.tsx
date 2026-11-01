@@ -24,6 +24,10 @@ import StockManager from "./pages/stockmanager";
 import Products from "./pages/products";
 import Settings from "./pages/settings";
 import MyAccount from "./pages/my-account";
+import {
+  ROLE_HOME_PATHS,
+  resolveRootRoute,
+} from "./lib/rootRoutePolicy";
 
 // ── Shared / Auth
 import Login from "./pages/login";
@@ -39,13 +43,6 @@ type Role =
   | "inventory_manager"
   | "customer"
   | null;
-
-const ROLE_MAP: Record<string, string> = {
-  administrator: "/dashboard",
-  cashier: "/menu",
-  inventory_manager: "/inventory",
-  customer: "/products",
-};
 
 const PERMISSION_ROUTE_MAP: Partial<Record<PermissionKey, string>> = {
   orders: "/orders",
@@ -63,9 +60,9 @@ function getHomePathForRole(
   permissions: PermissionsMap,
 ): string {
   if (!role) return "/login";
-  if (role === "customer") return ROLE_MAP.customer;
+  if (role === "customer") return ROLE_HOME_PATHS.customer;
 
-  const fallback = ROLE_MAP[role] ?? "/unauthorized";
+  const fallback = ROLE_HOME_PATHS[role] ?? "/unauthorized";
   const rolePermissions = permissions[role];
   if (!rolePermissions) return fallback;
 
@@ -162,7 +159,7 @@ function Unauthorized() {
 }
 
 export default function App() {
-  const { user, logout } = useAuth();
+  const { user, isInitialized, logout } = useAuth();
   const [permissions, setPermissions] = React.useState<PermissionsMap>(() =>
     readCachedPermissions(),
   );
@@ -175,6 +172,11 @@ export default function App() {
     () => getHomePathForRole(userRole, permissions),
     [permissions, userRole],
   );
+  const rootRoute = resolveRootRoute({
+    isInitialized,
+    role: userRole,
+    staffHomePath: homePath,
+  });
 
   React.useEffect(() => {
     if (!userRole || userRole === "customer") {
@@ -235,10 +237,19 @@ export default function App() {
     />
   );
 
+  if (rootRoute.kind === "pending") return null;
+
+  const rootElement =
+    rootRoute.kind === "redirect" ? (
+      <Navigate to={rootRoute.to} replace />
+    ) : (
+      <AboutTheCrunch />
+    );
+
   return (
     <Routes>
       {/* ── Public ───────────────────────────────────────────── */}
-      <Route path="/" element={<AboutTheCrunch />} />
+      <Route path="/" element={rootElement} />
 
       {/* /login is only for guests — logged-in users are redirected to their home */}
       <Route

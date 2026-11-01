@@ -218,7 +218,7 @@ export function PurchaseHistoryTab({
               <span>Supplier</span>
               <span>PO Document</span>
               <span>Handled By</span>
-              <span>History Date</span>
+              <span>Received / Closed Date</span>
               <span>Inventory</span>
               <span className="text-right">Status</span>
             </div>
@@ -332,7 +332,7 @@ export function PurchaseHistoryTab({
                         <span>Receipt: {order.receiptNo || "-"}</span>
                         <span>Handled by: {order.receivedBy || "-"}</span>
                         <span>
-                          Date: {fmtReceivedDate(order.receivedDate ?? order.date)}
+                          {order.status === "Received" ? "Actual receipt" : "Closed"}: {fmtReceivedDate(order.receivedDate ?? order.date)}
                         </span>
                         <span className="font-semibold text-slate-700 truncate">
                           Inventory: {order.items.map((item) => `${item.name} (${item.quantity} ${item.unit})`).join(", ") || "None"}
