@@ -9,6 +9,15 @@ assert.match(settings, /key: "payment_methods", label: "Payment Methods"/);
 assert.match(settings, /api\.post<PaymentQrConfiguration>\("\/payment-qr", form\)/);
 assert.match(settings, /api\.delete<PaymentQrConfiguration>\("\/payment-qr"\)/);
 assert.match(settings, /image\/png,image\/jpeg,image\/webp/);
+assert.match(settings, /Drop a QR image here/);
+assert.match(settings, /fileInputRef\.current\?\.click\(\)/);
+assert.match(settings, /Choose Replacement Image/);
+assert.match(settings, /PREVIEW — NOT UPLOADED/);
+assert.match(settings, /onDrop=\{handleDrop\}/);
+assert.match(settings, /event\.preventDefault\(\)/);
+assert.match(settings, /window\.addEventListener\("drop", preventFileNavigation\)/);
+assert.match(settings, /Save Replacement/);
+assert.match(settings, /Upload QR/);
 
 assert.match(paymentQr, /api\.get<PaymentQrConfiguration>\("\/payment-qr"\)/);
 assert.match(paymentQr, /fetchAuthenticatedAsset\(imageUrl\)/);

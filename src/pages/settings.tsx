@@ -1,8 +1,8 @@
 ﻿import {
   createContext, useCallback, useContext, useEffect, useRef, useState,
-  type CSSProperties, type ReactNode,
+  type CSSProperties, type DragEvent as ReactDragEvent, type ReactNode,
 } from "react";
-import { Lock, ChevronDown, ChevronUp, Star, MessageSquare } from "lucide-react";
+import { Lock, ChevronDown, ChevronUp, Star, MessageSquare, Upload } from "lucide-react";
 import { useAuth } from "../context/authcontext";
 import { api } from "../lib/api";
 import { normalizePermissionsMap, normalizeRole, type PermissionsMap } from "../lib/permissions";
@@ -545,6 +545,7 @@ export function BusinessTab(p: TabProps) {
 
 function PaymentMethodsTab() {
   const previewRef = useRef("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [configuration, setConfiguration] = useState<PaymentQrConfiguration>(
     EMPTY_PAYMENT_QR,
   );
@@ -553,6 +554,7 @@ function PaymentMethodsTab() {
   const [selectedPreview, setSelectedPreview] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -589,6 +591,21 @@ function PaymentMethodsTab() {
   }, [load]);
 
   useEffect(() => {
+    const preventFileNavigation = (event: Event) => {
+      const dragEvent = event as DragEvent;
+      if (Array.from(dragEvent.dataTransfer?.types ?? []).includes("Files")) {
+        dragEvent.preventDefault();
+      }
+    };
+    window.addEventListener("dragover", preventFileNavigation);
+    window.addEventListener("drop", preventFileNavigation);
+    return () => {
+      window.removeEventListener("dragover", preventFileNavigation);
+      window.removeEventListener("drop", preventFileNavigation);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selectedFile) {
       setSelectedPreview("");
       return;
@@ -603,24 +620,36 @@ function PaymentMethodsTab() {
     setNotice("");
     if (!file) {
       setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
     const allowed = ["image/png", "image/jpeg", "image/webp"];
     if (!allowed.includes(file.type)) {
       setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       setError("Choose a PNG, JPG, or WebP image.");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
       setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       setError("GCash QR image must be 5 MB or smaller.");
       return;
     }
     setSelectedFile(file);
   };
 
+  const handleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+    if (busy) return;
+    chooseFile(event.dataTransfer.files?.[0]);
+  };
+
   const upload = async () => {
     if (!selectedFile || busy) return;
+    const wasConfigured = configuration.configured;
     setBusy(true);
     setError("");
     setNotice("");
@@ -629,8 +658,9 @@ function PaymentMethodsTab() {
       form.append("image", selectedFile, selectedFile.name || "gcash-qr.png");
       await api.post<PaymentQrConfiguration>("/payment-qr", form);
       setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       await load();
-      setNotice(configuration.configured ? "GCash QR image replaced." : "GCash QR image uploaded.");
+      setNotice(wasConfigured ? "GCash QR image replaced successfully." : "GCash QR image uploaded successfully.");
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Unable to upload the GCash QR image.");
     } finally {
@@ -647,6 +677,7 @@ function PaymentMethodsTab() {
     try {
       await api.delete<PaymentQrConfiguration>("/payment-qr");
       setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       await load();
       setNotice("GCash QR image removed.");
     } catch (removeError) {
@@ -663,27 +694,73 @@ function PaymentMethodsTab() {
         <p style={{ ...typo("0.86rem", INK, 700), margin: "0 0 6px" }}>In-store GCash QR</p>
         <Hint>Cashiers can display this image during manual GCash checkout. Payment is marked Paid only after the cashier confirms receipt.</Hint>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 20, marginTop: 18, alignItems: "start" }}>
-          <div style={{ minHeight: 220, display: "grid", placeItems: "center", border: "1px solid #e2ded9", borderRadius: 14, background: "#faf9f7", padding: 12 }}>
+          <div style={{ minHeight: 220, display: "grid", placeItems: "center", border: "1px solid #e2ded9", borderRadius: 14, background: "#faf9f7", padding: 12, position: "relative" }}>
             {shownPreview ? (
-              <img src={shownPreview} alt="GCash QR preview" style={{ width: "100%", maxHeight: 260, objectFit: "contain", borderRadius: 10 }} />
+              <>
+                <img src={shownPreview} alt={selectedFile ? "Selected GCash QR preview" : "Active GCash QR"} style={{ width: "100%", maxHeight: 260, objectFit: "contain", borderRadius: 10 }} />
+                <span style={{ position: "absolute", top: 10, left: 10, borderRadius: 999, padding: "5px 9px", background: selectedFile ? "#fff7ed" : "#ecfdf5", color: selectedFile ? ACCENT : SUCCESS, fontFamily: FONT, fontSize: "0.66rem", fontWeight: 700 }}>
+                  {selectedFile ? "PREVIEW — NOT UPLOADED" : "ACTIVE QR"}
+                </span>
+              </>
             ) : (
               <p style={{ ...typo("0.75rem", MUTED, 500), textAlign: "center" }}>{loading ? "Loading QR image..." : "No GCash QR configured"}</p>
             )}
           </div>
           <div>
-            <input
-              key={configuration.updatedAt || "no-payment-qr"}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
-              disabled={busy}
-              onChange={(event) => chooseFile(event.currentTarget.files?.[0])}
-              style={{ width: "100%", marginBottom: 12 }}
-            />
+            <div
+              data-testid="gcash-qr-drop-zone"
+              onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
+              onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setIsDragging(true); }}
+              onDragLeave={(event) => { event.preventDefault(); setIsDragging(false); }}
+              onDrop={handleDrop}
+              style={{
+                border: `2px dashed ${isDragging ? ACCENT : "#d8d2cb"}`,
+                borderRadius: 14,
+                background: isDragging ? "#fff7ed" : "#faf9f7",
+                padding: "22px 16px",
+                marginBottom: 12,
+                textAlign: "center",
+                transition: "border-color .15s, background .15s",
+              }}
+            >
+              <Upload size={28} color={isDragging ? ACCENT : MUTED} aria-hidden="true" />
+              <p style={{ ...typo("0.82rem", INK, 650), margin: "8px 0 3px" }}>Drop a QR image here</p>
+              <p style={{ ...typo("0.7rem", MUTED, 400), margin: "0 0 12px" }}>or select one from your device</p>
+              <input
+                ref={fileInputRef}
+                key={configuration.updatedAt || "no-payment-qr"}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                disabled={busy}
+                onChange={(event) => chooseFile(event.currentTarget.files?.[0])}
+                style={{ display: "none" }}
+                aria-label="Choose GCash QR image"
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => fileInputRef.current?.click()}
+                style={{ ...accentButton(busy), display: "inline-flex", alignItems: "center", gap: 7 }}
+              >
+                <Upload size={15} aria-hidden="true" />
+                {configuration.configured ? "Choose Replacement Image" : "Choose Image"}
+              </button>
+              {selectedFile && (
+                <p style={{ ...typo("0.7rem", SUCCESS, 600), margin: "11px 0 0", overflowWrap: "anywhere" }}>
+                  Selected: {selectedFile.name}
+                </p>
+              )}
+            </div>
             <p style={{ ...typo("0.72rem", MUTED, 400), lineHeight: 1.6, margin: "0 0 14px" }}>PNG, JPG, or WebP. Maximum 5 MB. The server verifies the actual file content.</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <button type="button" onClick={() => void upload()} disabled={!selectedFile || busy} style={accentButton()}>
-                {busy ? "Saving..." : configuration.configured ? "Replace QR image" : "Upload QR image"}
+              <button type="button" onClick={() => void upload()} disabled={!selectedFile || busy} style={accentButton(!selectedFile || busy)}>
+                {busy ? "Uploading..." : configuration.configured ? "Save Replacement" : "Upload QR"}
               </button>
+              {selectedFile && !busy && (
+                <button type="button" onClick={() => chooseFile()} style={secondaryButton()}>
+                  Clear Selection
+                </button>
+              )}
               {configuration.configured && (
                 <button type="button" onClick={() => void remove()} disabled={busy} style={{ ...accentButton(), background: "#fff", color: ERROR, border: `1px solid ${ERROR}` }}>
                   Remove QR image
