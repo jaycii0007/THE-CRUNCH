@@ -19,7 +19,8 @@
     "test:root-routing": "node scripts/test-root-routing.mjs",
     "test:po-wizard": "node scripts/test-purchase-order-wizard.mjs",
     "test:product-images": "node scripts/test-product-images.mjs",
-    "test:deployment": "node scripts/test-deployment-config.mjs"
+    "test:deployment": "node scripts/test-deployment-config.mjs",
+    "test:gcash-qr": "node scripts/test-gcash-qr.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",

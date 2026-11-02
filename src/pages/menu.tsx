@@ -64,6 +64,11 @@ import {
 } from "@/lib/refundEligibility";
 import { isFinalizedSale } from "@/lib/financialStatus";
 import {
+  EMPTY_PAYMENT_QR,
+  fetchPaymentQrConfiguration,
+  fetchPaymentQrObjectUrl,
+} from "@/lib/paymentQr";
+import {
   buildKotHtml,
   buildReceiptHtml,
   downloadHtml,
@@ -1024,34 +1029,22 @@ function AmountModal({
   show,
   amountDue,
   method,
+  qrImageUrl,
   onConfirm,
   onCancel,
 }: {
   show: boolean;
   amountDue: number;
   method: PaymentMethod;
-  onConfirm: (p: { tendered: number; file?: File }) => void;
+  qrImageUrl: string;
+  onConfirm: (p: { tendered: number }) => void;
   onCancel: () => void;
 }) {
   const { money, s } = useFmt();
   const [input, setInput] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [err, setErr] = useState("");
-  const preview = useMemo(
-    () => (file ? URL.createObjectURL(file) : ""),
-    [file],
-  );
-  useEffect(
-    () => () => {
-      if (preview) URL.revokeObjectURL(preview);
-    },
-    [preview],
-  );
   useEffect(() => {
     if (show) {
       setInput("");
-      setFile(null);
-      setErr("");
     }
   }, [show]);
 
@@ -1070,18 +1063,6 @@ function AmountModal({
               : p
             : p + k,
     );
-  const onFile = (f?: File) => {
-    const e = !f
-      ? ""
-      : !f.type.startsWith("image/")
-        ? "Please upload an image file."
-        : f.size > 5 * 1024 * 1024
-          ? "Proof image must be 5 MB or smaller."
-          : "";
-    setErr(e);
-    setFile(f && !e ? f : null);
-  };
-
   return (
     <Modal show={show} max="max-w-sm" onClose={onCancel}>
       <div className="border-b border-neutral-100 px-5 py-5 sm:px-6">
@@ -1178,58 +1159,34 @@ function AmountModal({
           <>
             <div className="mb-4 flex flex-col items-center rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
               <p className="mb-3 text-sm font-semibold text-sky-700">
-                E-Payment
+                GCash Online Payment
               </p>
-              <img
-                src="/gcashQR1.png"
-                alt="GCash QR"
-                className="h-44 w-44 rounded-xl border border-neutral-200 bg-white object-contain"
-              />
+              {qrImageUrl ? (
+                <img
+                  src={qrImageUrl}
+                  alt="Administrator-configured GCash QR"
+                  className="h-52 w-52 rounded-xl border border-neutral-200 bg-white object-contain"
+                />
+              ) : (
+                <div className="grid h-44 w-44 place-items-center rounded-xl border border-red-200 bg-red-50 px-4 text-center text-xs font-semibold text-red-600">
+                  GCash QR is not configured. Ask an Administrator to upload it in Settings.
+                </div>
+              )}
               <p className="mt-3 text-center text-xs text-neutral-400">
-                Ask the customer to scan, then upload the proof below.
+                Ask the customer to scan and pay exactly {money(amountDue)}. Verify receipt in the store's GCash account before confirming.
               </p>
-            </div>
-            <div className="mb-4 rounded-xl border border-neutral-200 p-3">
-              <p className={`${eyebrow} mb-2`}>Proof image</p>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={(e) => onFile(e.currentTarget.files?.[0])}
-                className="w-full text-sm"
-              />
-              {err && (
-                <p className="mt-2 text-sm font-medium text-red-600">{err}</p>
-              )}
-              {preview && (
-                <>
-                  <img
-                    src={preview}
-                    alt="Payment proof"
-                    className="mt-3 max-h-52 w-full rounded-lg border border-neutral-200 object-contain"
-                  />
-                  <button
-                    onClick={() => onFile()}
-                    className="ml-auto mt-2 block rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600"
-                  >
-                    Remove image
-                  </button>
-                </>
-              )}
             </div>
             <button
               className={`${B.blue} mb-2`}
-              disabled={!file}
-              onClick={() =>
-                onConfirm({ tendered: amountDue, file: file ?? undefined })
-              }
+              disabled={!qrImageUrl}
+              onClick={() => onConfirm({ tendered: amountDue })}
             >
-              Confirm payment
+              Confirm Payment
             </button>
           </>
         )}
         <button className={B.ghost} onClick={onCancel}>
-          Cancel
+          Back / Cancel
         </button>
       </div>
     </Modal>
@@ -1714,6 +1671,9 @@ export default function CashierView() {
   const { toasts, toast, dismiss } = useToast();
   const firstPoll = useRef(true);
   const placingRef = useRef(false);
+  const paymentAttemptRef = useRef<string | null>(null);
+  const paymentQrVersionRef = useRef<string | null>(null);
+  const paymentQrObjectUrlRef = useRef("");
   const prevReviewCount = useRef(0);
   const prevDeliveryCount = useRef(0);
 
@@ -1753,6 +1713,8 @@ export default function CashierView() {
   const [settings, setSettings] = useState<GeneralRestaurantSettings>(
     GENERAL_SETTINGS_DEFAULTS,
   );
+  const [paymentQrImageUrl, setPaymentQrImageUrl] = useState("");
+  const [loadingPaymentQr, setLoadingPaymentQr] = useState(false);
   const [isOnline, setIsOnline] = useState(
     typeof navigator === "undefined" || navigator.onLine,
   );
@@ -1822,6 +1784,44 @@ export default function CashierView() {
       window.removeEventListener("offline", off);
     };
   }, [toast]);
+
+  const loadPaymentQr = useCallback(async () => {
+    setLoadingPaymentQr(true);
+    try {
+      const configuration = await fetchPaymentQrConfiguration();
+      let nextObjectUrl = "";
+      if (configuration.configured && configuration.imageUrl) {
+        nextObjectUrl = await fetchPaymentQrObjectUrl(configuration.imageUrl);
+      }
+      if (paymentQrObjectUrlRef.current) {
+        URL.revokeObjectURL(paymentQrObjectUrlRef.current);
+      }
+      paymentQrObjectUrlRef.current = nextObjectUrl;
+      paymentQrVersionRef.current = configuration.updatedAt;
+      setPaymentQrImageUrl(nextObjectUrl);
+      return { configuration, objectUrl: nextObjectUrl };
+    } catch {
+      if (paymentQrObjectUrlRef.current) {
+        URL.revokeObjectURL(paymentQrObjectUrlRef.current);
+      }
+      paymentQrObjectUrlRef.current = "";
+      paymentQrVersionRef.current = null;
+      setPaymentQrImageUrl("");
+      return { configuration: EMPTY_PAYMENT_QR, objectUrl: "" };
+    } finally {
+      setLoadingPaymentQr(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPaymentQr();
+    return () => {
+      if (paymentQrObjectUrlRef.current) {
+        URL.revokeObjectURL(paymentQrObjectUrlRef.current);
+        paymentQrObjectUrlRef.current = "";
+      }
+    };
+  }, [loadPaymentQr]);
 
   const loadProducts = useCallback(async () => {
     setLoadingProducts(true);
@@ -2201,6 +2201,8 @@ export default function CashierView() {
     setPendingDiscount(null);
     setDiscountApproval(null);
     setDiscountAuthError("");
+    paymentAttemptRef.current = null;
+    paymentQrVersionRef.current = null;
   };
 
   const voidCurrentOrder = () => {
@@ -2274,7 +2276,7 @@ export default function CashierView() {
     }
   };
 
-  const openPayment = () => {
+  const openPayment = async () => {
     if (
       discount &&
       discountRate > 0 &&
@@ -2296,16 +2298,25 @@ export default function CashierView() {
       void placeOrder({ tendered: pricing.amountDue });
       return;
     }
+    if (paymentMethod === "gcash_onsite") {
+      const currentQr = await loadPaymentQr();
+      if (!currentQr.configuration.configured || !currentQr.objectUrl) {
+        toast(
+          "error",
+          "GCash QR is not configured. Ask an Administrator to upload it in Settings.",
+        );
+        return;
+      }
+      paymentAttemptRef.current ??= `POS-GCASH-${crypto.randomUUID()}`;
+    }
     setShowAmount(true);
   };
 
   /* ── place order ── */
   const placeOrder = async ({
     tendered,
-    file,
   }: {
     tendered: number;
-    file?: File;
   }) => {
     if (placingRef.current) return;
     if (!isOnline) return toast("error", "No connection. Cannot place order.");
@@ -2318,25 +2329,8 @@ export default function CashierView() {
     const isThirdPartyDelivery = orderType === "delivery";
 
     try {
-      let proofImageUrl: string | undefined;
-      if (!isCash && !isThirdPartyDelivery) {
-        if (!file)
-          throw new Error("Please upload the onsite e-payment proof first.");
-        const form = new FormData();
-        form.append(
-          "proof",
-          file,
-          file.name || `payment-proof-${Date.now()}.jpg`,
-        );
-        try {
-          proofImageUrl = (
-            await api.post<{ fileUrl: string }>("/upload-proof", form)
-          ).fileUrl;
-        } catch {
-          throw new Error(
-            "Failed to upload the payment proof. Please try again.",
-          );
-        }
+      if (!isCash && !isThirdPartyDelivery && !paymentAttemptRef.current) {
+        throw new Error("GCash payment confirmation expired. Reopen checkout and try again.");
       }
 
       const res = await api.post<{
@@ -2361,7 +2355,8 @@ export default function CashierView() {
         }),
         ...(!isCash && !isThirdPartyDelivery && {
           payment_status: "Paid",
-          proof_image_url: proofImageUrl,
+          payment_reference: paymentAttemptRef.current,
+          payment_qr_version: paymentQrVersionRef.current,
         }),
         customer_type: customerType,
         discount_name: customerType,
@@ -2378,6 +2373,8 @@ export default function CashierView() {
       });
 
       setDone(res.receipt);
+      paymentAttemptRef.current = null;
+      paymentQrVersionRef.current = null;
       void loadProducts();
     } catch (e) {
       console.error("Order failed:", e);
@@ -2402,9 +2399,13 @@ export default function CashierView() {
   const deliveryCount = pendingDelivery.length + handed.length;
   const payBtnLabel = placing
     ? "Processing…"
-    : !isOnline
+    : loadingPaymentQr && paymentMethod === "gcash_onsite"
+      ? "Loading GCash QR…"
+      : !isOnline
       ? "Offline — cannot place order"
-      : `Pay ${fmt.money(pricing.amountDue)}`;
+      : paymentMethod === "gcash_onsite"
+        ? "Proceed to Checkout"
+        : `Pay ${fmt.money(pricing.amountDue)}`;
 
   return (
     <Ctx.Provider value={fmt}>
@@ -2734,7 +2735,7 @@ export default function CashierView() {
                       ]
                     : [
                         { value: "cash", label: "Cash" },
-                        { value: "gcash_onsite", label: "E-Payment" },
+                        { value: "gcash_onsite", label: "Online Payment" },
                       ]}
                 />
               </div>
@@ -2794,14 +2795,14 @@ export default function CashierView() {
 
               <button
                 className={`${isOnline ? B.green : B.dark} flex items-center justify-center gap-2 py-4 text-base`}
-                disabled={placing || !isOnline || !customerType}
+                disabled={placing || loadingPaymentQr || !isOnline || !customerType}
                 onClick={openPayment}
               >
                 {placing && <Spinner size={16} light />}
                 {payBtnLabel}
               </button>
               <p className="mt-2 text-center text-xs text-neutral-400">
-                Inventory is deducted after payment confirmation.
+                Inventory is deducted only after the paid order is completed.
               </p>
             </div>
           )}
@@ -2860,8 +2861,13 @@ export default function CashierView() {
         show={showAmount}
         amountDue={pricing.amountDue}
         method={paymentMethod}
+        qrImageUrl={paymentQrImageUrl}
         onConfirm={(p) => void placeOrder(p)}
-        onCancel={() => setShowAmount(false)}
+        onCancel={() => {
+          setShowAmount(false);
+          paymentAttemptRef.current = null;
+          paymentQrVersionRef.current = null;
+        }}
       />
       <HandoverModal
         order={handoverOrder}

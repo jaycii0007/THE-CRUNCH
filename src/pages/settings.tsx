@@ -1,5 +1,5 @@
 ﻿import {
-  createContext, useCallback, useContext, useEffect, useState,
+  createContext, useCallback, useContext, useEffect, useRef, useState,
   type CSSProperties, type ReactNode,
 } from "react";
 import { Lock, ChevronDown, ChevronUp, Star, MessageSquare } from "lucide-react";
@@ -7,6 +7,12 @@ import { useAuth } from "../context/authcontext";
 import { api } from "../lib/api";
 import { normalizePermissionsMap, normalizeRole, type PermissionsMap } from "../lib/permissions";
 import { saveGeneralSettings, syncGeneralSettings } from "../lib/restaurantSettings";
+import {
+  EMPTY_PAYMENT_QR,
+  fetchPaymentQrConfiguration,
+  fetchPaymentQrObjectUrl,
+  type PaymentQrConfiguration,
+} from "../lib/paymentQr";
 import { Sidebar } from "../components/Sidebar";
 
 /*
@@ -102,6 +108,7 @@ export type TabKey =
   | "profile"
   | "master_data"
   | "business"
+  | "payment_methods"
   | "ordering"
   | "inventory"
   | "billing"
@@ -533,6 +540,162 @@ export function BusinessTab(p: TabProps) {
         ))}
       </Section>
     </>
+  );
+}
+
+function PaymentMethodsTab() {
+  const previewRef = useRef("");
+  const [configuration, setConfiguration] = useState<PaymentQrConfiguration>(
+    EMPTY_PAYMENT_QR,
+  );
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedPreview, setSelectedPreview] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const replacePreview = useCallback((nextUrl: string) => {
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    previewRef.current = nextUrl;
+    setPreviewUrl(nextUrl);
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const next = await fetchPaymentQrConfiguration();
+      const nextPreview = next.configured && next.imageUrl
+        ? await fetchPaymentQrObjectUrl(next.imageUrl)
+        : "";
+      setConfiguration(next);
+      replacePreview(nextPreview);
+    } catch (loadError) {
+      setConfiguration(EMPTY_PAYMENT_QR);
+      replacePreview("");
+      setError(loadError instanceof Error ? loadError.message : "Unable to load the GCash QR image.");
+    } finally {
+      setLoading(false);
+    }
+  }, [replacePreview]);
+
+  useEffect(() => {
+    void load();
+    return () => {
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setSelectedPreview("");
+      return;
+    }
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setSelectedPreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [selectedFile]);
+
+  const chooseFile = (file?: File) => {
+    setError("");
+    setNotice("");
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      setSelectedFile(null);
+      setError("Choose a PNG, JPG, or WebP image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setSelectedFile(null);
+      setError("GCash QR image must be 5 MB or smaller.");
+      return;
+    }
+    setSelectedFile(file);
+  };
+
+  const upload = async () => {
+    if (!selectedFile || busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const form = new FormData();
+      form.append("image", selectedFile, selectedFile.name || "gcash-qr.png");
+      await api.post<PaymentQrConfiguration>("/payment-qr", form);
+      setSelectedFile(null);
+      await load();
+      setNotice(configuration.configured ? "GCash QR image replaced." : "GCash QR image uploaded.");
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload the GCash QR image.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (busy || !configuration.configured) return;
+    if (!window.confirm("Remove the active GCash QR image? Cashiers will be unable to use QR checkout until a new image is uploaded.")) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await api.delete<PaymentQrConfiguration>("/payment-qr");
+      setSelectedFile(null);
+      await load();
+      setNotice("GCash QR image removed.");
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "Unable to remove the GCash QR image.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const shownPreview = selectedPreview || previewUrl;
+  return (
+    <Section>
+      <div style={{ padding: 20 }}>
+        <p style={{ ...typo("0.86rem", INK, 700), margin: "0 0 6px" }}>In-store GCash QR</p>
+        <Hint>Cashiers can display this image during manual GCash checkout. Payment is marked Paid only after the cashier confirms receipt.</Hint>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 20, marginTop: 18, alignItems: "start" }}>
+          <div style={{ minHeight: 220, display: "grid", placeItems: "center", border: "1px solid #e2ded9", borderRadius: 14, background: "#faf9f7", padding: 12 }}>
+            {shownPreview ? (
+              <img src={shownPreview} alt="GCash QR preview" style={{ width: "100%", maxHeight: 260, objectFit: "contain", borderRadius: 10 }} />
+            ) : (
+              <p style={{ ...typo("0.75rem", MUTED, 500), textAlign: "center" }}>{loading ? "Loading QR image..." : "No GCash QR configured"}</p>
+            )}
+          </div>
+          <div>
+            <input
+              key={configuration.updatedAt || "no-payment-qr"}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+              disabled={busy}
+              onChange={(event) => chooseFile(event.currentTarget.files?.[0])}
+              style={{ width: "100%", marginBottom: 12 }}
+            />
+            <p style={{ ...typo("0.72rem", MUTED, 400), lineHeight: 1.6, margin: "0 0 14px" }}>PNG, JPG, or WebP. Maximum 5 MB. The server verifies the actual file content.</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button type="button" onClick={() => void upload()} disabled={!selectedFile || busy} style={accentButton()}>
+                {busy ? "Saving..." : configuration.configured ? "Replace QR image" : "Upload QR image"}
+              </button>
+              {configuration.configured && (
+                <button type="button" onClick={() => void remove()} disabled={busy} style={{ ...accentButton(), background: "#fff", color: ERROR, border: `1px solid ${ERROR}` }}>
+                  Remove QR image
+                </button>
+              )}
+            </div>
+            {error && <p style={{ ...typo("0.75rem", ERROR, 500), marginTop: 12 }}>{error}</p>}
+            {notice && <p style={{ ...typo("0.75rem", SUCCESS, 500), marginTop: 12 }}>{notice}</p>}
+          </div>
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -1109,6 +1272,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Store",
     items: [
       { key: "business", label: "Store Information" },
+      { key: "payment_methods", label: "Payment Methods" },
     ],
   },
   {
@@ -1129,6 +1293,7 @@ export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
   profile:       { title: "My Profile",              desc: "Update your own account details and password." },
   master_data:   { title: "Categories & Units",      desc: "Maintain the category and unit choices used by inventory forms." },
   business:      { title: "Business Information",    desc: "Restaurant identity, contact details, and operating hours." },
+  payment_methods: { title: "Payment Methods",       desc: "Configure the in-store GCash QR shown to Cashiers." },
   ordering:      { title: "Online Ordering",         desc: "Accept online orders, set a minimum order, and control the store status." },
   inventory:     { title: "Inventory Configuration", desc: "Low and critical stock thresholds." },
   billing:       { title: "Tax & Charges",           desc: "VAT configuration and service charge rules." },
@@ -1412,6 +1577,7 @@ function SettingsPanel() {
       case "profile":       return <ProfileTab />;
       case "master_data":   return <CategoriesUnitsTab />;
       case "business":      return <BusinessTab {...tabProps} />;
+      case "payment_methods": return <PaymentMethodsTab />;
       case "inventory":     return <InventoryTab {...tabProps} />;
       case "roles":         return <RolesTab />;
       default:               return <ProfileTab />;
