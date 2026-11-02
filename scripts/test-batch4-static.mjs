@@ -47,6 +47,8 @@ assert.match(notificationCenter, /\/staff-notifications/);
 assert.match(notificationCenter, /\/inventory\/alerts\/\$\{notification\.id\}\/read/);
 assert.match(notificationCenter, /\/inventory\/alerts\/read-all/);
 assert.match(notificationCenter, /\/staff-notifications\/read-all/);
+assert.match(notificationCenter, /`\/staff-notifications\/\$\{notification\.id\}\/read`/);
+assert.doesNotMatch(notificationCenter, /markReceived|purchase-orders\/.*\/receive/);
 assert.match(notificationCenter, /inventoryUnread \+ staffUnread/);
 assert.match(notificationCenter, /notification\.source === "inventory" \? "alerts" : "purchases"/);
 assert.match(notificationCenter, /\/refund-requests\/\$\{requestId\}\/ignore/);
