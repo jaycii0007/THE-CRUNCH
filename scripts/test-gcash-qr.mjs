@@ -27,8 +27,15 @@ assert.match(menu, /Proceed to Checkout/);
 assert.match(menu, /POS-GCASH-\$\{crypto\.randomUUID\(\)\}/);
 assert.match(menu, /payment_reference: paymentAttemptRef\.current/);
 assert.match(menu, /payment_qr_version: paymentQrVersionRef\.current/);
+assert.match(menu, /accept="image\/png,image\/jpeg,image\/webp/);
+assert.match(menu, /Selected GCash payment proof preview/);
+assert.match(menu, /disabled=\{!qrImageUrl \|\| !file\}/);
+assert.match(menu, /api\.post<\{ fileUrl: string \}>\("\/upload-proof", form\)/);
+assert.match(menu, /proof_image_url: proofImageUrl/);
+assert.match(menu, /paymentProofUploadRef\.current/);
+assert.match(menu, /cachedProof\.file === file/);
 assert.match(menu, /Verify receipt in the store's GCash account before confirming/);
 assert.match(menu, /Inventory is deducted only after the paid order is completed/);
-assert.doesNotMatch(menu, /gcashQR1|gcashQR\.jpg|\/upload-proof/);
+assert.doesNotMatch(menu, /gcashQR1|gcashQR\.jpg/);
 
 console.log("Admin-managed in-store GCash QR frontend checks passed");

@@ -1037,11 +1037,24 @@ function AmountModal({
   amountDue: number;
   method: PaymentMethod;
   qrImageUrl: string;
-  onConfirm: (p: { tendered: number }) => void;
+  onConfirm: (p: { tendered: number; file?: File }) => void;
   onCancel: () => void;
 }) {
   const { money, s } = useFmt();
   const [input, setInput] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [proofError, setProofError] = useState("");
+  const proofInputRef = useRef<HTMLInputElement>(null);
+  const proofPreview = useMemo(
+    () => (file ? URL.createObjectURL(file) : ""),
+    [file],
+  );
+  useEffect(
+    () => () => {
+      if (proofPreview) URL.revokeObjectURL(proofPreview);
+    },
+    [proofPreview],
+  );
   useEffect(() => {
     if (show) {
       setInput("");
@@ -1063,6 +1076,27 @@ function AmountModal({
               : p
             : p + k,
     );
+  const selectProof = (nextFile?: File) => {
+    setProofError("");
+    if (!nextFile) {
+      setFile(null);
+      if (proofInputRef.current) proofInputRef.current.value = "";
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(nextFile.type)) {
+      setFile(null);
+      if (proofInputRef.current) proofInputRef.current.value = "";
+      setProofError("Choose a PNG, JPG, or WebP payment proof.");
+      return;
+    }
+    if (nextFile.size > 5 * 1024 * 1024) {
+      setFile(null);
+      if (proofInputRef.current) proofInputRef.current.value = "";
+      setProofError("Payment proof must be 5 MB or smaller.");
+      return;
+    }
+    setFile(nextFile);
+  };
   return (
     <Modal show={show} max="max-w-sm" onClose={onCancel}>
       <div className="border-b border-neutral-100 px-5 py-5 sm:px-6">
@@ -1176,10 +1210,47 @@ function AmountModal({
                 Ask the customer to scan and pay exactly {money(amountDue)}. Verify receipt in the store's GCash account before confirming.
               </p>
             </div>
+            <div className="mb-4 rounded-xl border border-neutral-200 p-3">
+              <p className={`${eyebrow} mb-2`}>Payment proof</p>
+              <input
+                ref={proofInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                capture="environment"
+                onChange={(event) => selectProof(event.currentTarget.files?.[0])}
+                className="w-full text-sm"
+                aria-label="Choose GCash payment proof image"
+              />
+              <p className="mt-2 text-xs text-neutral-400">
+                Upload the customer's completed GCash payment screen before confirming.
+              </p>
+              {proofError && (
+                <p className="mt-2 text-sm font-medium text-red-600">{proofError}</p>
+              )}
+              {proofPreview && (
+                <>
+                  <img
+                    src={proofPreview}
+                    alt="Selected GCash payment proof preview"
+                    className="mt-3 max-h-52 w-full rounded-lg border border-neutral-200 object-contain"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-xs text-neutral-500">{file?.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => selectProof()}
+                      className="shrink-0 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600"
+                    >
+                      Clear proof
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <button
               className={`${B.blue} mb-2`}
-              disabled={!qrImageUrl}
-              onClick={() => onConfirm({ tendered: amountDue })}
+              disabled={!qrImageUrl || !file}
+              onClick={() => onConfirm({ tendered: amountDue, file: file ?? undefined })}
             >
               Confirm Payment
             </button>
@@ -1674,6 +1745,11 @@ export default function CashierView() {
   const paymentAttemptRef = useRef<string | null>(null);
   const paymentQrVersionRef = useRef<string | null>(null);
   const paymentQrObjectUrlRef = useRef("");
+  const paymentProofUploadRef = useRef<{
+    attemptReference: string;
+    file: File;
+    fileUrl: string;
+  } | null>(null);
   const prevReviewCount = useRef(0);
   const prevDeliveryCount = useRef(0);
 
@@ -2203,6 +2279,7 @@ export default function CashierView() {
     setDiscountAuthError("");
     paymentAttemptRef.current = null;
     paymentQrVersionRef.current = null;
+    paymentProofUploadRef.current = null;
   };
 
   const voidCurrentOrder = () => {
@@ -2315,8 +2392,10 @@ export default function CashierView() {
   /* ── place order ── */
   const placeOrder = async ({
     tendered,
+    file,
   }: {
     tendered: number;
+    file?: File;
   }) => {
     if (placingRef.current) return;
     if (!isOnline) return toast("error", "No connection. Cannot place order.");
@@ -2327,10 +2406,40 @@ export default function CashierView() {
     const change = Math.max(0, tendered - amountDue);
     const isCash = paymentMethod === "cash";
     const isThirdPartyDelivery = orderType === "delivery";
+    const isOnsiteGcash = paymentMethod === "gcash_onsite" && !isThirdPartyDelivery;
 
     try {
       if (!isCash && !isThirdPartyDelivery && !paymentAttemptRef.current) {
         throw new Error("GCash payment confirmation expired. Reopen checkout and try again.");
+      }
+      let proofImageUrl: string | undefined;
+      if (isOnsiteGcash) {
+        if (!file) {
+          throw new Error("Choose a payment proof before confirming GCash payment.");
+        }
+        const attemptReference = paymentAttemptRef.current as string;
+        const cachedProof = paymentProofUploadRef.current;
+        if (
+          cachedProof?.attemptReference === attemptReference &&
+          cachedProof.file === file
+        ) {
+          proofImageUrl = cachedProof.fileUrl;
+        } else {
+          const form = new FormData();
+          form.append("proof", file, file.name || `payment-proof-${Date.now()}.jpg`);
+          try {
+            proofImageUrl = (
+              await api.post<{ fileUrl: string }>("/upload-proof", form)
+            ).fileUrl;
+          } catch {
+            throw new Error("Failed to upload the payment proof. Please try again.");
+          }
+          paymentProofUploadRef.current = {
+            attemptReference,
+            file,
+            fileUrl: proofImageUrl,
+          };
+        }
       }
 
       const res = await api.post<{
@@ -2357,6 +2466,7 @@ export default function CashierView() {
           payment_status: "Paid",
           payment_reference: paymentAttemptRef.current,
           payment_qr_version: paymentQrVersionRef.current,
+          proof_image_url: proofImageUrl,
         }),
         customer_type: customerType,
         discount_name: customerType,
@@ -2375,6 +2485,7 @@ export default function CashierView() {
       setDone(res.receipt);
       paymentAttemptRef.current = null;
       paymentQrVersionRef.current = null;
+      paymentProofUploadRef.current = null;
       void loadProducts();
     } catch (e) {
       console.error("Order failed:", e);
@@ -2858,6 +2969,7 @@ export default function CashierView() {
         }}
       />
       <AmountModal
+        key={paymentAttemptRef.current || `${paymentMethod}-payment`}
         show={showAmount}
         amountDue={pricing.amountDue}
         method={paymentMethod}
@@ -2867,6 +2979,7 @@ export default function CashierView() {
           setShowAmount(false);
           paymentAttemptRef.current = null;
           paymentQrVersionRef.current = null;
+          paymentProofUploadRef.current = null;
         }}
       />
       <HandoverModal
