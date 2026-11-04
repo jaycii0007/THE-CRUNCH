@@ -9,6 +9,7 @@ const notificationCenter = read(
   "src/components/InventoryNotificationCenter.tsx",
 );
 const settings = read("src/pages/settings.tsx");
+const cashierMenu = read("src/pages/menu.tsx");
 
 assert.match(menuManagement, /Current stock \(read-only\)/);
 assert.match(
@@ -37,6 +38,11 @@ assert.match(
   notificationCenter,
   /notifications: \[\],[\s\S]*?unreadCount: 0/,
   "disabled low-stock alerts must clear their badge contribution",
+);
+assert.match(
+  cashierMenu,
+  /error instanceof Error[\s\S]*?error\.message[\s\S]*?Failed to confirm order/,
+  "online acceptance must surface the backend insufficient-stock response",
 );
 
 console.log("Frontend inventory stabilization checks passed");

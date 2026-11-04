@@ -543,6 +543,115 @@ export function BusinessTab(p: TabProps) {
   );
 }
 
+interface DeliveryPlatformLinks {
+  grabfoodUrl: string | null;
+  foodpandaUrl: string | null;
+}
+
+function DeliveryPlatformLinksSection() {
+  const [grabfoodUrl, setGrabfoodUrl] = useState("");
+  const [foodpandaUrl, setFoodpandaUrl] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<DeliveryPlatformLinks>("/settings/delivery-links")
+      .then((links) => {
+        if (cancelled) return;
+        setGrabfoodUrl(links.grabfoodUrl || "");
+        setFoodpandaUrl(links.foodpandaUrl || "");
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load delivery links.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const save = async () => {
+    if (saving || loading) return;
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const links = await api.put<DeliveryPlatformLinks>("/settings/delivery-links", {
+        grabfoodUrl,
+        foodpandaUrl,
+      });
+      setGrabfoodUrl(links.grabfoodUrl || "");
+      setFoodpandaUrl(links.foodpandaUrl || "");
+      setNotice("Delivery platform links saved.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save delivery links.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Section>
+      <div style={{ padding: 20 }}>
+        <p style={{ ...typo("0.86rem", INK, 700), margin: "0 0 6px" }}>Delivery Platform Links</p>
+        <Hint>Customers see these links after choosing Delivery Order. Clear a field to disable that platform.</Hint>
+        <div style={{ display: "grid", gap: 14, marginTop: 18 }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={typo("0.76rem", "#5a5652", 600)}>GrabFood Ordering URL</span>
+            <input
+              data-testid="grabfood-ordering-url"
+              type="url"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={grabfoodUrl}
+              disabled={loading || saving}
+              onChange={(event) => setGrabfoodUrl(event.target.value)}
+              placeholder="https://r.grab.com/g/..."
+              style={S.input}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={typo("0.76rem", "#5a5652", 600)}>Foodpanda Ordering URL</span>
+            <input
+              data-testid="foodpanda-ordering-url"
+              type="url"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={foodpandaUrl}
+              disabled={loading || saving}
+              onChange={(event) => setFoodpandaUrl(event.target.value)}
+              placeholder="https://foodpanda.go.link/..."
+              style={S.input}
+            />
+          </label>
+          <div>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={loading || saving}
+              style={accentButton(loading || saving)}
+            >
+              {saving ? "Saving..." : "Save Delivery Links"}
+            </button>
+          </div>
+          {loading && <p style={typo("0.75rem", MUTED, 400)}>Loading saved delivery links...</p>}
+          {error && <p role="alert" style={typo("0.75rem", ERROR, 500)}>{error}</p>}
+          {notice && <p role="status" style={typo("0.75rem", SUCCESS, 500)}>{notice}</p>}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 function PaymentMethodsTab() {
   const previewRef = useRef("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -689,8 +798,9 @@ function PaymentMethodsTab() {
 
   const shownPreview = selectedPreview || previewUrl;
   return (
-    <Section>
-      <div style={{ padding: 20 }}>
+    <>
+      <Section>
+        <div style={{ padding: 20 }}>
         <p style={{ ...typo("0.86rem", INK, 700), margin: "0 0 6px" }}>In-store GCash QR</p>
         <Hint>Cashiers can display this image during manual GCash checkout. Payment is marked Paid only after the cashier confirms receipt.</Hint>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 20, marginTop: 18, alignItems: "start" }}>
@@ -771,8 +881,10 @@ function PaymentMethodsTab() {
             {notice && <p style={{ ...typo("0.75rem", SUCCESS, 500), marginTop: 12 }}>{notice}</p>}
           </div>
         </div>
-      </div>
-    </Section>
+        </div>
+      </Section>
+      <DeliveryPlatformLinksSection />
+    </>
   );
 }
 
@@ -1370,7 +1482,7 @@ export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
   profile:       { title: "My Profile",              desc: "Update your own account details and password." },
   master_data:   { title: "Categories & Units",      desc: "Maintain the category and unit choices used by inventory forms." },
   business:      { title: "Business Information",    desc: "Restaurant identity, contact details, and operating hours." },
-  payment_methods: { title: "Payment Methods",       desc: "Configure the in-store GCash QR shown to Cashiers." },
+  payment_methods: { title: "Payment Methods",       desc: "Configure the in-store GCash QR and customer delivery-platform links." },
   ordering:      { title: "Online Ordering",         desc: "Accept online orders, set a minimum order, and control the store status." },
   inventory:     { title: "Inventory Configuration", desc: "Low and critical stock thresholds." },
   billing:       { title: "Tax & Charges",           desc: "VAT configuration and service charge rules." },

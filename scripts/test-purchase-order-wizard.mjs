@@ -25,11 +25,17 @@ const printModal = read(
 const historyTab = read(
   "src/pages/stockmanager/components/tabs/PurchaseHistoryTab.tsx",
 );
+const stockManager = read("src/pages/stockmanager/index.tsx");
 
 assert.match(modal, /const \[step, setStep\] = useState<1 \| 2 \| 3>/);
 assert.match(modal, /const steps = \["Supplier", "Materials", "Review"\]/);
 assert.match(modal, /type="search"[\s\S]*?placeholder="Search suppliers"/);
-assert.match(modal, /placeholder="Search inventory"/);
+assert.match(modal, /<select id={`po-item-product-/);
+assert.match(modal, /Select an inventory material/);
+assert.match(modal, /product\.product_name\} \{"\\u2014"\} \(\{formatStock\(product\)\}\)/);
+assert.match(modal, /maximumFractionDigits: 20/);
+assert.match(modal, /disabled=\{selectedElsewhere\}/);
+assert.doesNotMatch(modal, /placeholder="Search inventory"/);
 assert.match(modal, /\+ Add another/);
 assert.match(modal, /Already added as Material/);
 assert.match(modal, /Enter a whole number from 1 to/);
@@ -62,6 +68,19 @@ assert.match(modal, /disabled=\{!isValid \|\| isSubmitting\}/);
 assert.match(modal, /Discard this purchase order\?/);
 assert.match(modal, /onAddSupplier/);
 assert.match(modal, /onAddMaterial/);
+assert.match(modal, /Stock alert suggestions/);
+assert.match(modal, /severity === "out" \|\| severity === "critical"/);
+assert.match(modal, /isCritical \? "Critical" : "Low"/);
+assert.match(modal, /getAppliedThresholds\(product, settings\)\.low/);
+assert.match(modal, /onRefreshInventory\(\)\.finally/);
+assert.match(
+  purchaseOrdersHook,
+  /\[\.\.\.outOfStock, \.\.\.criticalStock, \.\.\.lowStock\]/,
+  "PO suggestions must prioritize out/critical stock before low stock",
+);
+assert.match(stockManager, /getAlertSeverity\(p, stockAlertSettings\) === "out"/);
+assert.match(stockManager, /stockAlertSettings=\{stockAlertSettings\}/);
+assert.match(stockManager, /onRefreshInventory=\{fetchAll\}/);
 
 assert.match(purchaseOrdersHook, /api\.mergeSupplierProducts\(/);
 assert.match(purchaseOrdersHook, /mergeSupplierProducts\(/);

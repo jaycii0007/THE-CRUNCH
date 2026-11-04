@@ -52,6 +52,7 @@ interface CustomerOrder { id: number; orderNumber: string; total: number; create
 interface PaymentSessionState { checkoutSessionId: string; checkoutUrl: string | null; status: string; paid: boolean; paymentReference: string | null; bypassed?: boolean }
 interface BillingSettings { taxRate: number; serviceCharge: number }
 interface StoreStatusSettings { weekdayOpenTime: string; weekdayCloseTime: string; weekendOpenTime: string; weekendCloseTime: string; storeStatusMode: "auto" | "manual_open" | "manual_closed"; timezone: string }
+interface DeliveryPlatformLinks { grabfoodUrl: string | null; foodpandaUrl: string | null }
 type PaymentMethodType = "gcash" | "cash";
 type VerifyResult = { paid: boolean; status: string; paymentReference: string | null };
 
@@ -61,14 +62,11 @@ const LOW_STOCK_THRESHOLD = 5;
 const PLACEHOLDER_IMG = "/img/placeholder.jpg";
 const DEFAULT_BILLING: BillingSettings = { taxRate: 0, serviceCharge: 0 };
 const DEFAULT_STORE: StoreStatusSettings = { weekdayOpenTime: "10:00", weekdayCloseTime: "22:00", weekendOpenTime: "11:00", weekendCloseTime: "20:30", storeStatusMode: "auto", timezone: "Asia/Manila" };
+const EMPTY_DELIVERY_LINKS: DeliveryPlatformLinks = { grabfoodUrl: null, foodpandaUrl: null };
 
 // "Home" goes to the customer storefront (/products), not "/" (which redirects to the About page).
 const HOME_PATH = "/products";
 const NAV_LINKS = [{ label: "Home", path: HOME_PATH }, { label: "About", path: "/aboutthecrunch" }, { label: "Menu", path: "/usersmenu" }];
-const DELIVERY_LINKS = [
-  { label: "Foodpanda", href: "https://foodpanda.go.link/9O718" },
-  { label: "Grab", href: "https://r.grab.com/g/6-20260421_220129_6e23187a089147b69736d4cacea38146_MEXMPS-2-C4A3RBCER7NFUE" },
-];
 const CASH_TERMS = "By selecting Cash as your payment method, you agree that your order will not be processed immediately and will only be prepared once full payment is made onsite. You are responsible for completing payment at the store. Delays in payment may result in longer waiting times or possible cancellation of your order. The store reserves the right to refuse or cancel orders that are not paid within a reasonable time.";
 const STORE_CLOSED_MESSAGE = "The store is currently closed. Please come back during business hours.";
 const DATE_FORMAT: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true };
@@ -457,10 +455,40 @@ function CashTermsModal({ onAccept, onDecline }: { onAccept: () => void; onDecli
 
 function OrderTypeModal({ onClose }: { onClose: () => void }) {
   const [view, setView] = useState<"choose" | "delivery">("choose");
+  const [deliveryLinks, setDeliveryLinks] = useState<DeliveryPlatformLinks>(EMPTY_DELIVERY_LINKS);
+  const [linksLoading, setLinksLoading] = useState(false);
+  const [linksError, setLinksError] = useState("");
   const { width } = useViewport();
   const cols = width < 700 ? "1fr" : "1fr 1fr";
   const option: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, cursor: "pointer", fontFamily: FONT, textAlign: "left", display: "flex", flexDirection: "column", gap: 10, color: C.text, textDecoration: "none" };
   const desc: CSSProperties = { fontSize: 13, color: C.muted, lineHeight: 1.6 };
+  useEffect(() => {
+    if (view !== "delivery") return;
+    let cancelled = false;
+    setLinksLoading(true);
+    setLinksError("");
+    setDeliveryLinks(EMPTY_DELIVERY_LINKS);
+    api.get<DeliveryPlatformLinks>("/settings/delivery-links")
+      .then((links) => {
+        if (cancelled) return;
+        setDeliveryLinks({
+          grabfoodUrl: /^https:\/\//i.test(String(links.grabfoodUrl || "")) ? links.grabfoodUrl : null,
+          foodpandaUrl: /^https:\/\//i.test(String(links.foodpandaUrl || "")) ? links.foodpandaUrl : null,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setLinksError("Delivery links are unavailable right now. Please try again later.");
+      })
+      .finally(() => {
+        if (!cancelled) setLinksLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [view]);
+
+  const platforms = [
+    { label: "GrabFood", href: deliveryLinks.grabfoodUrl },
+    { label: "Foodpanda", href: deliveryLinks.foodpandaUrl },
+  ];
   return (
     <Modal onClose={onClose} width={640}>
       <div style={{ padding: 26 }}>
@@ -484,13 +512,25 @@ function OrderTypeModal({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <div style={{ display: "grid", gridTemplateColumns: cols, gap: 12 }}>
-              {DELIVERY_LINKS.map(d => (
-                <a key={d.label} href={d.href} target="_blank" rel="noopener noreferrer" style={option}>
-                  <span style={{ fontSize: 16, fontWeight: 600 }}>{d.label}</span>
+              {platforms.map((platform) => platform.href ? (
+                <a key={platform.label} href={platform.href} target="_blank" rel="noopener noreferrer" style={option}>
+                  <span style={{ fontSize: 16, fontWeight: 600 }}>{platform.label}</span>
                   <span style={{ ...desc, display: "inline-flex", alignItems: "center", gap: 6 }}>Open in a new tab <Icon d={D.external} size={13} /></span>
                 </a>
+              ) : (
+                <button
+                  key={platform.label}
+                  type="button"
+                  disabled
+                  aria-label={`${platform.label} ordering is unavailable`}
+                  style={{ ...option, cursor: "not-allowed", opacity: 0.55 }}
+                >
+                  <span style={{ fontSize: 16, fontWeight: 600 }}>{platform.label}</span>
+                  <span style={desc}>{linksLoading ? "Loading ordering link..." : "Ordering link is not configured"}</span>
+                </button>
               ))}
             </div>
+            {linksError && <p role="alert" style={{ ...desc, color: C.danger, marginTop: 12 }}>{linksError}</p>}
             <div style={{ marginTop: 16 }}><Button variant="ghost" small onClick={() => setView("choose")}>Back</Button></div>
           </>
         )}

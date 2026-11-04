@@ -551,8 +551,14 @@ export default function StockManager() {
       !isMenuFoodProduct(p) &&
       getAlertSeverity(p, stockAlertSettings) === "critical",
   );
+  const outOfStock = products.filter(
+    (p) =>
+      !isMenuFoodProduct(p) &&
+      getAlertSeverity(p, stockAlertSettings) === "out",
+  );
   const po = usePurchaseOrders({
     enabled: activeTab === "purchases" || activeTab === "purchase-history",
+    outOfStock,
     criticalStock,
     lowStock,
     suppliers: supplier.suppliers,
@@ -1474,6 +1480,8 @@ export default function StockManager() {
               allSuppliers={supplier.suppliers}
               prefillProduct={po.prefillPOProduct}
               initialOrder={po.editingOrder}
+              stockAlertSettings={stockAlertSettings}
+              onRefreshInventory={fetchAll}
               onShowToast={showToast}
               isMenuFoodProduct={isMenuFoodProduct}
               onAddSupplier={() => {

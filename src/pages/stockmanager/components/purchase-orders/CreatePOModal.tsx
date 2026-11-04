@@ -4,21 +4,27 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { CloseBtn } from "../CloseBtn";
-import type { POItem, Product, PurchaseOrder, Supplier } from "../../types/inventory";
+import type {
+  POItem,
+  Product,
+  PurchaseOrder,
+  StockAlertSettings,
+  Supplier,
+} from "../../types/inventory";
 import { toNumber } from "../../utils/formatters";
 import {
   blockInvalidNumberKeys,
   sanitizeNumberInput,
-  sanitizeShortTextInput,
 } from "../../utils/inputUtils";
 import { parseSupplierProducts } from "../../utils/supplierUtils";
+import {
+  getAlertSeverity,
+  getAppliedThresholds,
+} from "../../utils/stockUtils";
 
-const NAME_MAX_LENGTH = 100;
 const QUANTITY_MAX = 999;
-const MAX_SUGGESTIONS = 7;
 let nextDraftItemUid = 1;
 
 type DraftItem = {
@@ -46,9 +52,19 @@ function toLocalISODate(date: Date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-function suggestedQuantity(product: Product) {
-  const shortfall = Math.ceil(toNumber(product.reorderPoint) - toNumber(product.mainStock));
+function suggestedQuantity(product: Product, settings: StockAlertSettings) {
+  const shortfall = Math.ceil(
+    getAppliedThresholds(product, settings).low - toNumber(product.mainStock),
+  );
   return Math.min(QUANTITY_MAX, Math.max(1, shortfall));
+}
+
+const stockQuantityFormatter = new Intl.NumberFormat("en-PH", {
+  maximumFractionDigits: 20,
+});
+
+function formatStock(product: Product) {
+  return `${stockQuantityFormatter.format(toNumber(product.mainStock))} ${product.unit}`;
 }
 
 const fieldClass = (invalid = false) =>
@@ -83,6 +99,8 @@ export function CreatePOModal({
   allSuppliers,
   prefillProduct,
   initialOrder,
+  stockAlertSettings,
+  onRefreshInventory,
   onShowToast,
   isMenuFoodProduct,
   onAddSupplier,
@@ -104,6 +122,8 @@ export function CreatePOModal({
     supplier: string;
   } | null;
   initialOrder?: PurchaseOrder | null;
+  stockAlertSettings: StockAlertSettings;
+  onRefreshInventory: () => Promise<void>;
   onShowToast: (message: string, type: "success" | "error") => void;
   isMenuFoodProduct: (product: Pick<Product, "item_type">) => boolean;
   onAddSupplier: () => void;
@@ -142,7 +162,10 @@ export function CreatePOModal({
     return result;
   }, [allProducts]);
   const orderableProducts = useMemo(
-    () => allProducts.filter((product) => !isMenuFoodProduct(product)),
+    () =>
+      allProducts
+        .filter((product) => !isMenuFoodProduct(product))
+        .sort((left, right) => left.product_name.localeCompare(right.product_name)),
     [allProducts, isMenuFoodProduct],
   );
 
@@ -161,13 +184,9 @@ export function CreatePOModal({
   const [supplierSearch, setSupplierSearch] = useState(initialSupplier?.supplier_name ?? "");
   const [supplierTouched, setSupplierTouched] = useState(false);
   const [notes, setNotes] = useState(initialOrder?.notes || "");
-  const [showRestockSuggestions, setShowRestockSuggestions] = useState(false);
+  const [isRefreshingStock, setIsRefreshingStock] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [suggestionState, setSuggestionState] = useState<{
-    uid: number;
-    highlight: number;
-  } | null>(null);
   const supplierSearchRef = useRef<HTMLInputElement>(null);
   const pendingFocusId = useRef<string | null>(null);
 
@@ -175,7 +194,10 @@ export function CreatePOModal({
     if (initialOrder) {
       return initialOrder.items.map((item) =>
         makeItem({
-          productId: item.productId ?? null,
+          productId:
+            item.productId ??
+            productByName.get(normalize(item.name))?.product_id ??
+            null,
           name: item.name,
           category: item.category,
           unit: item.unit,
@@ -196,7 +218,9 @@ export function CreatePOModal({
           name: product?.product_name ?? prefillProduct.name,
           category: product?.category ?? prefillProduct.category,
           unit: product?.unit ?? prefillProduct.unit,
-          quantity: product ? String(suggestedQuantity(product)) : "",
+          quantity: product
+            ? String(suggestedQuantity(product, stockAlertSettings))
+            : "",
         }),
       ];
     }
@@ -268,42 +292,23 @@ export function CreatePOModal({
     return "";
   }, [itemErrors, supplierError]);
 
-  const activeItem = suggestionState
-    ? items.find((item) => item.uid === suggestionState.uid)
-    : undefined;
-  const suggestions = useMemo(() => {
-    if (!activeItem) return [];
-    const query = normalize(activeItem.name);
-    const usedElsewhere = new Set(
-      items
-        .filter((item) => item.uid !== activeItem.uid)
-        .map((item) => normalize(item.name)),
-    );
-    const available = orderableProducts.filter(
-      (product) => !usedElsewhere.has(normalize(product.product_name)),
-    );
-    if (!query) {
-      const preferred = available.filter((product) =>
-        supplierProductSet.has(normalize(product.product_name)),
+  const restockSuggestions = useMemo(() => {
+    const severityRank = { out: 0, critical: 0, low: 1, normal: 2 } as const;
+    return [...quickOrderProducts].sort((left, right) => {
+      const severityDifference =
+        severityRank[getAlertSeverity(left, stockAlertSettings)] -
+        severityRank[getAlertSeverity(right, stockAlertSettings)];
+      return (
+        severityDifference || left.product_name.localeCompare(right.product_name)
       );
-      return (preferred.length > 0 ? preferred : available).slice(0, MAX_SUGGESTIONS);
-    }
-    if (productByName.has(query)) return [];
-    return available
-      .filter((product) => normalize(product.product_name).includes(query))
-      .sort((left, right) => {
-        const leftRank = supplierProductSet.has(normalize(left.product_name)) ? 0 : 1;
-        const rightRank = supplierProductSet.has(normalize(right.product_name)) ? 0 : 1;
-        return leftRank - rightRank || left.product_name.localeCompare(right.product_name);
-      })
-      .slice(0, MAX_SUGGESTIONS);
-  }, [activeItem, items, orderableProducts, productByName, supplierProductSet]);
+    });
+  }, [quickOrderProducts, stockAlertSettings]);
   const availableRestockProducts = useMemo(
     () =>
-      quickOrderProducts.filter(
+      restockSuggestions.filter(
         (product) => !usedProductNames.has(normalize(product.product_name)),
       ),
-    [quickOrderProducts, usedProductNames],
+    [restockSuggestions, usedProductNames],
   );
 
   useEffect(() => {
@@ -314,6 +319,17 @@ export function CreatePOModal({
       document.body.style.overflow = previous;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setIsRefreshingStock(true);
+    void onRefreshInventory().finally(() => {
+      if (active) setIsRefreshingStock(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [onRefreshInventory]);
 
   useEffect(() => {
     if (!pendingFocusId.current) return;
@@ -349,7 +365,7 @@ export function CreatePOModal({
       name: product.product_name,
       category: product.category,
       unit: product.unit,
-      quantity: String(suggestedQuantity(product)),
+      quantity: String(suggestedQuantity(product, stockAlertSettings)),
       nameTouched: true,
       quantityTouched: true,
     });
@@ -374,7 +390,7 @@ export function CreatePOModal({
 
   const addBlankItem = () => {
     const item = makeItem();
-    pendingFocusId.current = `po-item-name-${item.uid}`;
+    pendingFocusId.current = `po-item-product-${item.uid}`;
     setItems((current) => [...current, item]);
     setIsDirty(true);
   };
@@ -395,7 +411,6 @@ export function CreatePOModal({
         ...additions.map(buildItem),
       ];
     });
-    setShowRestockSuggestions(false);
     setIsDirty(true);
   };
 
@@ -414,36 +429,13 @@ export function CreatePOModal({
                 item.productId === product.product_id ? item.unitCost : null,
               quantity: item.quantity.trim()
                 ? item.quantity
-                : String(suggestedQuantity(product)),
+                : String(suggestedQuantity(product, stockAlertSettings)),
               nameTouched: true,
             }
           : item,
       ),
     );
-    setSuggestionState(null);
     setIsDirty(true);
-  };
-
-  const handleNameKeyDown = (
-    event: ReactKeyboardEvent<HTMLInputElement>,
-    uid: number,
-  ) => {
-    if (!suggestionState || suggestionState.uid !== uid || suggestions.length === 0) return;
-    const current = Math.min(suggestionState.highlight, suggestions.length - 1);
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      setSuggestionState({
-        uid,
-        highlight: (current + direction + suggestions.length) % suggestions.length,
-      });
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      selectProduct(uid, suggestions[current]);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      setSuggestionState(null);
-    }
   };
 
   const goToMaterials = () => {
@@ -645,9 +637,9 @@ export function CreatePOModal({
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                 <div>
                   <h3 id="materials-step-title" className="text-base font-semibold text-slate-900">Add materials and quantities</h3>
-                  <p className="mt-1 text-sm text-slate-500">Search existing inventory materials. Units come from Inventory Management.</p>
+                  <p className="mt-1 text-sm text-slate-500">Choose from current inventory materials. Stock and units come from Inventory Management.</p>
                 </div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2 text-right"><p className="text-xs text-slate-400">Supplier</p><p className="text-sm font-semibold text-slate-800">{supplierName}</p></div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-right"><p className="text-xs text-slate-400">Supplier</p><p className="text-sm font-semibold text-slate-800">{supplierName}</p><p className="text-[11px] text-slate-400">{isRefreshingStock ? "Refreshing stock\u2026" : "Current stock loaded"}</p></div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
@@ -666,24 +658,28 @@ export function CreatePOModal({
                 </div>
               )}
 
+              {restockSuggestions.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-xs font-semibold text-amber-900">Stock alert suggestions</p><p className="mt-0.5 text-[11px] text-amber-700">Critical materials appear first. Adding one does not create or receive the PO.</p></div>{availableRestockProducts.length > 1 && <button type="button" onClick={addAllRestockProducts} className="shrink-0 text-xs font-semibold text-amber-800">Add all ({availableRestockProducts.length})</button>}</div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {restockSuggestions.map((product) => {
+                      const severity = getAlertSeverity(product, stockAlertSettings);
+                      const isCritical = severity === "out" || severity === "critical";
+                      const added = usedProductNames.has(normalize(product.product_name));
+                      return <button key={product.product_id} type="button" disabled={added} onClick={() => addProduct(product)} className={`flex items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 text-left text-xs transition ${added ? "border-emerald-200 opacity-65" : isCritical ? "border-red-200 hover:border-red-400" : "border-amber-200 hover:border-amber-400"}`}><span className="min-w-0"><span className="block truncate font-semibold text-slate-800">{added ? "\u2713 " : "+ "}{product.product_name}</span><span className="text-slate-500">Current: {formatStock(product)}</span></span><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${isCritical ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{isCritical ? "Critical" : "Low"}</span></button>;
+                    })}
+                  </div>
+                  {availableRestockProducts.length === 0 && <p className="mt-2 text-xs text-amber-700">All suggested materials are already included.</p>}
+                </div>
+              )}
+
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Materials ({items.length})</p>
                 <div className="flex flex-wrap items-center gap-3">
-                  <button type="button" onClick={() => setShowRestockSuggestions((value) => !value)} disabled={quickOrderProducts.length === 0} aria-expanded={showRestockSuggestions} className="text-xs font-semibold text-amber-700 disabled:opacity-40">Restock suggestions</button>
                   <button type="button" onClick={addBlankItem} className="text-xs font-semibold text-slate-700">+ Add another</button>
                   <button type="button" onClick={() => openSetupPage("material")} className="text-xs font-semibold text-slate-500 hover:text-slate-900">Add new material</button>
                 </div>
               </div>
-
-              {showRestockSuggestions && quickOrderProducts.length > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-amber-800">Low-stock restock suggestions</p>{availableRestockProducts.length > 1 && <button type="button" onClick={addAllRestockProducts} className="text-xs font-semibold text-amber-800">Add all ({availableRestockProducts.length})</button>}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {availableRestockProducts.map((product) => <button key={product.product_id} type="button" onClick={() => addProduct(product)} className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">+ {product.product_name} ({product.unit})</button>)}
-                    {availableRestockProducts.length === 0 && <p className="text-xs text-amber-700">All suggested materials are already included.</p>}
-                  </div>
-                </div>
-              )}
 
               <div className="space-y-3">
                 {items.map((item, index) => {
@@ -692,16 +688,16 @@ export function CreatePOModal({
                   const quantityError = item.quantityTouched ? errors.quantity : undefined;
                   const matched = !!((item.productId && productById.get(item.productId)) || productByName.get(normalize(item.name)));
                   const newAssociation = matched && !supplierProductSet.has(normalize(item.name));
-                  const showSuggestions = suggestionState?.uid === item.uid && suggestions.length > 0;
-                  const highlight = Math.min(suggestionState?.highlight ?? 0, Math.max(0, suggestions.length - 1));
                   return (
                     <div key={item.uid} className="rounded-xl border border-slate-200 p-4">
                       <div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-slate-500">Material {index + 1}</p><button type="button" onClick={() => { if (items.length > 1) { setItems((current) => current.filter((entry) => entry.uid !== item.uid)); setIsDirty(true); } }} disabled={items.length === 1} aria-label={`Remove material ${index + 1}`} className="text-xs font-semibold text-slate-400 hover:text-red-500 disabled:opacity-30">Remove</button></div>
                       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(16rem,1fr)_8rem_9rem]">
-                        <div className="relative">
-                          <label htmlFor={`po-item-name-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Inventory material</label>
-                          <input id={`po-item-name-${item.uid}`} value={item.name} onChange={(event) => { const name = sanitizeShortTextInput(event.target.value, NAME_MAX_LENGTH); const product = productByName.get(normalize(name)); updateItem(item.uid, { name, productId: product?.product_id ?? null, category: product?.category ?? "", unit: product?.unit ?? "", unitCost: product?.product_id === item.productId ? item.unitCost : null }); setSuggestionState({ uid: item.uid, highlight: 0 }); setIsDirty(true); }} onKeyDown={(event) => handleNameKeyDown(event, item.uid)} onFocus={() => setSuggestionState({ uid: item.uid, highlight: 0 })} onBlur={() => { updateItem(item.uid, { nameTouched: true }); setSuggestionState((current) => current?.uid === item.uid ? null : current); }} maxLength={NAME_MAX_LENGTH} placeholder="Search inventory" autoComplete="off" role="combobox" aria-expanded={showSuggestions} aria-autocomplete="list" aria-controls={`po-item-suggestions-${item.uid}`} aria-invalid={!!nameError} className={fieldClass(!!nameError)} />
-                          {showSuggestions && <div id={`po-item-suggestions-${item.uid}`} role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">{suggestions.map((product, suggestionIndex) => <button key={product.product_id} type="button" role="option" aria-selected={suggestionIndex === highlight} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSuggestionState({ uid: item.uid, highlight: suggestionIndex })} onClick={() => selectProduct(item.uid, product)} className={`w-full px-3 py-2 text-left text-xs ${suggestionIndex === highlight ? "bg-slate-100" : "hover:bg-slate-50"}`}><span className="block font-medium text-slate-800">{product.product_name}</span><span className="text-slate-400">{product.category} · {product.unit}</span></button>)}</div>}
+                        <div>
+                          <label htmlFor={`po-item-product-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Inventory material</label>
+                          <select id={`po-item-product-${item.uid}`} value={item.productId ?? ""} onChange={(event) => { const product = productById.get(Number(event.target.value)); if (product) selectProduct(item.uid, product); else { updateItem(item.uid, { productId: null, name: "", category: "", unit: "", unitCost: null, nameTouched: true }); setIsDirty(true); } }} onBlur={() => updateItem(item.uid, { nameTouched: true })} aria-invalid={!!nameError} className={fieldClass(!!nameError)}>
+                            <option value="">Select an inventory material</option>
+                            {orderableProducts.map((product) => { const selectedElsewhere = items.some((entry) => entry.uid !== item.uid && entry.productId === product.product_id); return <option key={product.product_id} value={product.product_id} disabled={selectedElsewhere}>{product.product_name} {"\u2014"} ({formatStock(product)})</option>; })}
+                          </select>
                           {nameError && <p role="alert" className="mt-1 text-[11px] text-red-500">{nameError}</p>}
                           {!nameError && newAssociation && <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">New to supplier</span>}
                         </div>

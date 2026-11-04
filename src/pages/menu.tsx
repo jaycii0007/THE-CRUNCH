@@ -206,6 +206,31 @@ const paymentLabel = (m?: string | null) => {
   return m ?? "—";
 };
 
+const MAX_PLATFORM_REFERENCE_LENGTH = 255;
+const PLATFORM_REFERENCE_PATTERN = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
+
+function getPlatformReferenceError(
+  provider: PaymentMethod,
+  value: string,
+): string | null {
+  const reference = value.trim();
+  if (!reference) {
+    return provider === "foodpanda"
+      ? "Enter the complete Foodpanda order reference."
+      : "Enter the complete platform order reference.";
+  }
+  if (provider === "grabfood" && /^GF-$/i.test(reference)) {
+    return "Complete the GrabFood reference after GF-.";
+  }
+  if (
+    reference.length > MAX_PLATFORM_REFERENCE_LENGTH ||
+    !PLATFORM_REFERENCE_PATTERN.test(reference)
+  ) {
+    return "Enter the complete reference using letters, numbers, and hyphens only.";
+  }
+  return null;
+}
+
 const computePricing = (subtotal: number, b: Billing, discountRate: number) => {
   const discountAmount = subtotal * (Math.max(0, discountRate) / 100);
   const taxAmount = subtotal * (b.taxRate / 100);
@@ -1965,7 +1990,10 @@ export default function CashierView() {
     if (orderType === "delivery") {
       if (!["grabfood", "foodpanda", "other"].includes(paymentMethod)) {
         setPaymentMethod("grabfood");
+        setPlatformReference("GF-");
+        return;
       }
+      setPlatformReference(paymentMethod === "grabfood" ? "GF-" : "");
       return;
     }
     if (["grabfood", "foodpanda", "other"].includes(paymentMethod)) {
@@ -2131,8 +2159,13 @@ export default function CashierView() {
         "success",
         `Order ${o.orderNumber} confirmed and moved to cook queue.`,
       );
-    } catch {
-      toast("error", "Failed to confirm order. Please try again.");
+    } catch (error) {
+      toast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Failed to confirm order. Please try again.",
+      );
     } finally {
       setProceeding(false);
     }
@@ -2365,11 +2398,9 @@ export default function CashierView() {
     }
     if (orderType === "delivery") {
       const reference = platformReference.trim();
-      if (!/^[A-Za-z0-9-]{5,15}$/.test(reference)) {
-        toast(
-          "error",
-          "Platform reference must be 5 to 15 letters, numbers, or hyphens.",
-        );
+      const referenceError = getPlatformReferenceError(paymentMethod, reference);
+      if (referenceError) {
+        toast("error", referenceError);
         return;
       }
       void placeOrder({ tendered: pricing.amountDue });
@@ -2859,15 +2890,29 @@ export default function CashierView() {
                     id="platform-reference"
                     value={platformReference}
                     onChange={(event) => setPlatformReference(
-                      event.target.value.replace(/[^A-Za-z0-9-]/g, "").slice(0, 15),
+                       event.target.value
+                         .replace(/[^A-Za-z0-9-]/g, "")
+                         .slice(0, MAX_PLATFORM_REFERENCE_LENGTH),
                     )}
-                    minLength={5}
-                    maxLength={15}
-                    placeholder="e.g. GF-123456"
+                     maxLength={MAX_PLATFORM_REFERENCE_LENGTH}
+                     placeholder={paymentMethod === "foodpanda"
+                       ? "Enter complete Foodpanda order reference"
+                       : paymentMethod === "grabfood"
+                         ? "GF-123 or complete GrabFood booking ID"
+                         : "Enter complete platform order reference"}
+                     aria-invalid={Boolean(
+                       platformReference &&
+                       getPlatformReferenceError(paymentMethod, platformReference),
+                     )}
+                     autoCapitalize="characters"
                     className="w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm uppercase outline-none focus:border-neutral-900"
                   />
                   <p className="mt-1 text-xs text-neutral-400">
-                    Enter 5–15 letters, numbers, or hyphens. The full reference is saved.
+                     {paymentMethod === "grabfood"
+                       ? "Complete the actual GrabFood short order ID or enter the full booking ID."
+                       : paymentMethod === "foodpanda"
+                         ? "Enter the actual reference shown by Foodpanda; no prefix is added."
+                         : "Enter the complete reference shown by the delivery platform."}
                   </p>
                 </div>
               )}

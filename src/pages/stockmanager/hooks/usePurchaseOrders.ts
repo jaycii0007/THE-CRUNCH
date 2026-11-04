@@ -27,6 +27,7 @@ export type POPrefillProduct =
 
 type UsePurchaseOrdersParams = {
   enabled: boolean;
+  outOfStock: Product[];
   criticalStock: Product[];
   lowStock: Product[];
   suppliers: Supplier[];
@@ -38,6 +39,7 @@ type UsePurchaseOrdersParams = {
 
 export function usePurchaseOrders({
   enabled,
+  outOfStock,
   criticalStock,
   lowStock,
   suppliers,
@@ -104,11 +106,11 @@ export function usePurchaseOrders({
 
   const poQuickOrderProducts = useMemo(() => {
     const m = new Map<number, Product>();
-    [...criticalStock, ...lowStock].forEach((p) => {
+    [...outOfStock, ...criticalStock, ...lowStock].forEach((p) => {
       if (!m.has(p.product_id)) m.set(p.product_id, p);
     });
     return Array.from(m.values());
-  }, [criticalStock, lowStock]);
+  }, [outOfStock, criticalStock, lowStock]);
 
   const filteredPOs = useMemo(
     () => poOrders.filter((o) => o.status !== "Received" && o.status !== "Cancelled"),
