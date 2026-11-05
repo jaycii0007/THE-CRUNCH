@@ -249,6 +249,7 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
   const latest = new Map<string, Record<string, any>>();
   for (const p of data) {
     if (norm(p.item_type ?? "menu_item") !== "menu_item") continue;
+    if (norm(p.availability_status) === "hidden") continue;
     const key = norm(p.product_name ?? p.name);
     const prev = latest.get(key);
     if (

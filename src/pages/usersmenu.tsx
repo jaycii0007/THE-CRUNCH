@@ -319,6 +319,7 @@ function mapMenuRows(rows: InventoryMenuRow[]): Recipe[] {
   const deduped = new Map<string, InventoryMenuRow>();
   for (const row of rows ?? []) {
     if (normalizeName(row.item_type ?? "menu_item") !== "menu_item") continue;
+    if (normalizeName(row.availability_status) === "hidden") continue;
     const key = normalizeName(row.product_name ?? row.name);
     const prev = deduped.get(key);
     if (key && (!prev || rowId(row) > rowId(prev))) deduped.set(key, row);

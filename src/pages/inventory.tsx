@@ -125,6 +125,16 @@ interface MenuItem {
 
 const formatPeso = (value: number | string) => formatCurrencyAmount(Number(value || 0));
 const errorText = (error: unknown) => (error instanceof Error ? error.message : "Unknown error");
+const isArchivableDeleteConflict = (error: unknown) => {
+  if (!error || typeof error !== "object") return false;
+  const failure = error as { status?: unknown; data?: unknown };
+  const data = failure.data && typeof failure.data === "object"
+    ? failure.data as { code?: unknown; canArchive?: unknown }
+    : null;
+  return failure.status === 409 && (
+    data?.code === "PRODUCT_HAS_PROTECTED_HISTORY" || data?.canArchive === true
+  );
+};
 
 function useNow() {
   const [now, setNow] = useState(new Date());
@@ -233,6 +243,7 @@ function toMenuItem(item: ApiRow): MenuItem {
 
 // What a customer can actually order: servings from the recipe, or plain stock
 const sellableQuantity = (item: MenuItem) => (item.hasRecipe ? Number(item.availableServings ?? 0) : item.stock);
+const isArchived = (item: MenuItem) => item.availabilityStatus.trim().toLowerCase() === "hidden";
 const isUnavailable = (item: MenuItem) => item.availabilityStatus === "Out of Stock" || sellableQuantity(item) === 0;
 const priceNumber = (value: string) => parseFloat(String(value).replace(/[^0-9.]/g, "")) || 0;
 
@@ -419,15 +430,15 @@ function Modal({ title, eyebrow, onClose, footer, children }: { title: string; e
 
 const sectionTitle = "mb-3 mt-6 text-[12px] font-semibold first:mt-0";
 
-function StatusBadge({ unavailable }: { unavailable: boolean }) {
-  const color = unavailable ? T.bad : T.good;
+function StatusBadge({ unavailable, archived = false }: { unavailable: boolean; archived?: boolean }) {
+  const color = archived ? T.muted : unavailable ? T.bad : T.good;
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold"
-      style={{ color, background: unavailable ? T.badSoft : T.goodSoft, boxShadow: `inset 0 0 0 1px ${color}22` }}
+      style={{ color, background: archived ? T.surfaceMuted : unavailable ? T.badSoft : T.goodSoft, boxShadow: `inset 0 0 0 1px ${color}22` }}
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color, boxShadow: `0 0 0 3px ${color}22` }} />
-      {unavailable ? "Unavailable" : "Available"}
+      {archived ? "Archived" : unavailable ? "Unavailable" : "Available"}
     </span>
   );
 }
@@ -729,11 +740,12 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
    Menu list
    ──────────────────────────────────────────────────────────────────────── */
 
-type StatusFilter = "all" | "available" | "unavailable";
+type StatusFilter = "all" | "available" | "unavailable" | "archived";
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "All" },
+  { value: "all", label: "All active" },
   { value: "available", label: "Available" },
   { value: "unavailable", label: "Unavailable" },
+  { value: "archived", label: "Archived" },
 ];
 
 const TABLE_COLUMNS = ["Item", "Category", "Price", "Availability", ""];
@@ -754,20 +766,24 @@ function MenuAdminTab() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [formTarget, setFormTarget] = useState<MenuItem | "new" | null>(null); // which item the form is open for
   const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<{ item: MenuItem; action: "archive" | "restore" } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [availabilitySavingId, setAvailabilitySavingId] = useState<number | null>(null);
 
   const term = search.trim().toLowerCase();
   const visible = items.filter((item) =>
     (categoryFilter === "all" || item.category === categoryFilter) &&
-    (statusFilter === "all" || (statusFilter === "unavailable") === isUnavailable(item)) &&
+    (statusFilter === "archived" ? isArchived(item) : !isArchived(item)) &&
+    (statusFilter === "all" || statusFilter === "archived" || (statusFilter === "unavailable") === isUnavailable(item)) &&
     (!term || [item.name, item.category, item.menuCode, item.promoLabel].some((text) => text.toLowerCase().includes(term))),
   );
 
   // Numbers for the summary cards
-  const unavailableItems = items.filter(isUnavailable);
-  const promoCount = items.filter((item) => item.isPromotional).length;
-  const markedOutCount = items.filter((item) => item.availabilityStatus === "Out of Stock").length;
+  const activeItems = items.filter((item) => !isArchived(item));
+  const unavailableItems = activeItems.filter(isUnavailable);
+  const promoCount = activeItems.filter((item) => item.isPromotional).length;
+  const markedOutCount = activeItems.filter((item) => item.availabilityStatus === "Out of Stock").length;
 
   async function toggleAvailability(item: MenuItem) {
     if (availabilitySavingId !== null) return;
@@ -799,9 +815,34 @@ function MenuAdminTab() {
       setDeleteTarget(null);
       toast("Product deleted successfully.", "success");
     } catch (error) {
-      toast(`Failed to delete: ${errorText(error)}`, "error");
+      if (isArchivableDeleteConflict(error)) {
+        setDeleteTarget(null);
+        setArchiveTarget({ item, action: "archive" });
+      } else {
+        toast(`Failed to delete: ${errorText(error)}`, "error");
+      }
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function changeArchiveState(item: MenuItem, action: "archive" | "restore") {
+    const productId = item.rawProductId ?? item.id;
+    try {
+      setArchiving(true);
+      await api.patch(`/products/${productId}/${action}`);
+      await reload();
+      setArchiveTarget(null);
+      toast(
+        action === "archive"
+          ? `"${item.name}" archived. Historical records were preserved.`
+          : `"${item.name}" restored. Live ingredient and stock availability still applies.`,
+        "success",
+      );
+    } catch (error) {
+      toast(`Failed to ${action}: ${errorText(error)}`, "error");
+    } finally {
+      setArchiving(false);
     }
   }
 
@@ -809,7 +850,7 @@ function MenuAdminTab() {
     <div style={{ fontFamily: FONT }}>
       {/* Summary */}
       <div className="mb-6 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
-        <StatCard featured label="Menu items" value={items.length} meta="Currently in the system" icon="grid" tone="deep" />
+        <StatCard featured label="Menu items" value={activeItems.length} meta="Currently active" icon="grid" tone="deep" />
         <StatCard label="Promotional" value={promoCount} meta="Active special menus" icon="tag" tone={promoCount > 0 ? "accent" : "neutral"} />
         <StatCard label="Unavailable" value={markedOutCount} meta="Marked out of stock" icon="alert" tone={markedOutCount > 0 ? "warn" : "deep"} />
       </div>
@@ -927,7 +968,7 @@ function MenuAdminTab() {
                         )}
                       </td>
                       <td className="px-4 py-3.5">
-                        <StatusBadge unavailable={isUnavailable(item)} />
+                        <StatusBadge unavailable={isUnavailable(item)} archived={isArchived(item)} />
                         <div className="mt-1.5 text-[11.5px]" style={{ color: T.muted }}>
                           {item.hasRecipe ? `${sellableQuantity(item)} servings` : `${item.stock} ${item.unit}`}
                           {item.overrideMode !== "Auto" && ` \u00B7 ${item.overrideMode}`}
@@ -935,11 +976,17 @@ function MenuAdminTab() {
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" small onClick={() => setFormTarget(item)}>Edit</Button>
-                          <Button variant="ghost" small disabled={availabilitySavingId !== null} onClick={() => void toggleAvailability(item)}>
-                            {availabilitySavingId === item.id ? "Saving..." : item.overrideMode === "Auto" ? "Force out" : "Set auto"}
-                          </Button>
-                          <Button variant="danger" small onClick={() => setDeleteTarget(item)}>Delete</Button>
+                          {isArchived(item) ? (
+                            <Button variant="solid" small onClick={() => setArchiveTarget({ item, action: "restore" })}>Restore</Button>
+                          ) : (
+                            <>
+                              <Button variant="ghost" small onClick={() => setFormTarget(item)}>Edit</Button>
+                              <Button variant="ghost" small disabled={availabilitySavingId !== null} onClick={() => void toggleAvailability(item)}>
+                                {availabilitySavingId === item.id ? "Saving..." : item.overrideMode === "Auto" ? "Force out" : "Set auto"}
+                              </Button>
+                              <Button variant="danger" small onClick={() => setDeleteTarget(item)}>Delete</Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -976,6 +1023,36 @@ function MenuAdminTab() {
         >
           <p className="text-[13px] leading-relaxed" style={{ color: T.muted }}>
             Are you sure you want to delete <span className="font-semibold" style={{ color: T.ink }}>{deleteTarget.name}</span>? This action cannot be undone.
+          </p>
+        </Modal>
+      )}
+
+      {archiveTarget && (
+        <Modal
+          eyebrow={archiveTarget.action === "archive" ? "Historical records protected" : "Restore archived item"}
+          title={archiveTarget.action === "archive" ? "Archive menu item instead?" : "Restore menu item?"}
+          onClose={() => setArchiveTarget(null)}
+          footer={<>
+            <Button variant="ghost" onClick={() => setArchiveTarget(null)} disabled={archiving}>Cancel</Button>
+            <Button
+              variant={archiveTarget.action === "archive" ? "dangerSolid" : "solid"}
+              onClick={() => void changeArchiveState(archiveTarget.item, archiveTarget.action)}
+              disabled={archiving}
+            >
+              {archiving ? "Saving..." : archiveTarget.action === "archive" ? "Archive item" : "Restore item"}
+            </Button>
+          </>}
+        >
+          <p className="text-[13px] leading-relaxed" style={{ color: T.muted }}>
+            {archiveTarget.action === "archive" ? (
+              <>
+                <span className="font-semibold" style={{ color: T.ink }}>{archiveTarget.item.name}</span> cannot be permanently deleted because historical or active records reference it. Archiving removes it from Cashier and customer ordering while preserving orders, receipts, inventory deductions, recipes, and product history.
+              </>
+            ) : (
+              <>
+                Restore <span className="font-semibold" style={{ color: T.ink }}>{archiveTarget.item.name}</span> to the active menu? Its actual order availability will still depend on its ingredients, stock, and availability override.
+              </>
+            )}
           </p>
         </Modal>
       )}
