@@ -21,8 +21,8 @@ import {
   TrendingUp,
   Search,
   Image as ImageIcon,
-  Loader2,
 } from "lucide-react";
+import { SectionSpinner } from "@/components/ui/spinner";
 import { Sidebar } from "@/components/Sidebar";
 import {
   api,
@@ -2760,47 +2760,7 @@ function EmptyState({ message }: { message: string }) {
 
 function LoadingState({ label }: { label: string }) {
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      style={{
-        padding: "56px 24px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 12,
-        color: "#64748b",
-      }}
-    >
-      <div
-        style={{
-          width: 48,
-          height: 48,
-          borderRadius: 16,
-          background: "#f8fafc",
-          border: "1px solid #e2e8f0",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Loader2 size={18} className="animate-spin" />
-      </div>
-      <div style={{ textAlign: "center" }}>
-        <p
-          style={{
-            margin: "0 0 4px",
-            fontSize: 14,
-            fontWeight: 700,
-            color: "#334155",
-          }}
-        >
-          Loading report data
-        </p>
-        <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>{label}</p>
-      </div>
-    </motion.div>
+    <SectionSpinner message={label} />
   );
 }
 

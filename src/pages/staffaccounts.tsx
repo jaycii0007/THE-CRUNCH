@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { SectionSpinner } from "@/components/ui/spinner";
 import { Sidebar } from "@/components/Sidebar";
 import { staffApi } from "../lib/api";
 import type { StaffMember } from "../lib/api";
@@ -694,11 +695,7 @@ export default function StaffAccounts() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={TABLE_COLUMNS.length} style={{ ...emptyRowStyle, color: "#94a3b8" }}>
-                    Loading staff accounts...
-                  </td>
-                </tr>
+                <SectionSpinner message="Loading staff accounts..." />
               ) : filteredEmployees.length === 0 ? (
                 <tr>
                   <td colSpan={TABLE_COLUMNS.length} style={{ ...emptyRowStyle, color: "#cbd5e0" }}>

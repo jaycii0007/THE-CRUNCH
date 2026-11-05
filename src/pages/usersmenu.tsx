@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
+import { FullscreenSpinner } from "@/components/ui/spinner";
 import { api, authApi, resolveAssetUrl } from "../lib/api";
 import {
   fetchGeneralSettings,
@@ -835,47 +836,6 @@ function Stepper({
     </div>
   );
 }
-
-// Loading placeholder shaped like the landscape card.
-const CardSkeleton = () => (
-  <div
-    style={{
-      display: "flex",
-      minHeight: 180,
-      background: C.surface,
-      border: `1px solid ${C.border}`,
-      borderRadius: 14,
-      overflow: "hidden",
-    }}
-  >
-    <motion.div
-      animate={{ opacity: [0.4, 0.8, 0.4] }}
-      transition={{ duration: 1.6, repeat: Infinity }}
-      style={{ width: 160, background: C.surfaceAlt }}
-    />
-    <div
-      style={{
-        flex: 1,
-        padding: 18,
-        display: "grid",
-        gap: 10,
-        alignContent: "start",
-      }}
-    >
-      {["30%", "70%", "50%"].map((w, i) => (
-        <div
-          key={i}
-          style={{
-            height: 12,
-            width: w,
-            borderRadius: 4,
-            background: C.surfaceAlt,
-          }}
-        />
-      ))}
-    </div>
-  </div>
-);
 
 // ── Product card (landscape: image left, name / price / nutrition right) ──
 function ProductCard({
@@ -3148,11 +3108,7 @@ export default function Delicacy() {
 
           {/* ── Product grid ── */}
           {loading ? (
-            <div style={gridStyle}>
-              <CardSkeleton />
-              <CardSkeleton />
-              <CardSkeleton />
-            </div>
+            <FullscreenSpinner message="Loading menu..." />
           ) : loadError ? (
             <div style={{ textAlign: "center", padding: "72px 0" }}>
               <p style={{ color: C.muted, fontSize: 14, margin: "0 0 16px" }}>

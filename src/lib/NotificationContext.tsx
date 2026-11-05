@@ -9,13 +9,8 @@ import {
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  X,
-  CheckCircle2,
-  AlertTriangle,
-  Info,
-  XCircle,
-} from "lucide-react";
+import { X, CheckCircle, Info, AlertTriangle, CircleAlert } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 
 /* ================= TYPES ================= */
@@ -72,22 +67,22 @@ const ConfirmContext = createContext<{
 
 /* ================= CONFIG ================= */
 
-const TYPE_CONFIG = {
+const TYPE_CONFIG: Record<NotificationType, { icon: React.ReactNode; accent: string }> = {
   success: {
-    icon: <CheckCircle2 size={16} />,
-    color: "#16a34a",
+    icon: <CheckCircle className="size-5" />,
+    accent: "text-success",
   },
   error: {
-    icon: <XCircle size={16} />,
-    color: "#dc2626",
+    icon: <CircleAlert className="size-5" />,
+    accent: "text-destructive",
   },
   warning: {
-    icon: <AlertTriangle size={16} />,
-    color: "#d97706",
+    icon: <AlertTriangle className="size-5" />,
+    accent: "text-warning",
   },
   info: {
-    icon: <Info size={16} />,
-    color: "#2563eb",
+    icon: <Info className="size-5" />,
+    accent: "text-foreground",
   },
 };
 
@@ -184,34 +179,21 @@ function ToastItem({
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 80, scale: 0.95 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
-      style={{
-        background: "#fff",
-        borderRadius: 14,
-        padding: "12px 14px",
-        display: "flex",
-        gap: 10,
-        alignItems: "center",
-        minWidth: 260,
-        boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-        borderLeft: `4px solid ${cfg.color}`,
-      }}
+      className="flex items-start gap-3 rounded-lg border border-border bg-background p-4 shadow-sm min-w-[260px]"
+      role="status"
     >
-      <span style={{ color: cfg.color }}>{cfg.icon}</span>
+      <span className={cn("mt-0.5 shrink-0", cfg.accent)}>{cfg.icon}</span>
 
-      <span style={{ flex: 1, fontSize: 13, color: "#334155" }}>
-        {label}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-sm font-semibold text-foreground">{label}</span>
       </span>
 
       <button
         onClick={() => onRemove(id)}
-        style={{
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-          opacity: 0.5,
-        }}
+        aria-label="Dismiss"
+        className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
       >
-        <X size={14} />
+        <X className="size-4" aria-hidden="true" />
       </button>
     </motion.div>
   );
@@ -223,31 +205,21 @@ function ToastContainer({
   settings: NotificationSettings;
 }) {
   const { notifications, removeNotification } = useNotifications();
-  const positionStyle = useMemo(() => {
+  const positionClass = useMemo(() => {
     const isTop = settings.toastPosition.startsWith("top");
     const isRight = settings.toastPosition.endsWith("right");
-    return {
-      top: isTop ? 24 : "auto",
-      bottom: isTop ? "auto" : 24,
-      right: isRight ? 24 : "auto",
-      left: isRight ? "auto" : 24,
-      alignItems: isRight ? "flex-end" : "flex-start",
-    } as const;
+    return cn(
+      "fixed flex flex-col gap-2 z-[9999]",
+      isTop ? "top-6" : "bottom-6",
+      isRight ? "right-6" : "left-6",
+      isRight ? "items-end" : "items-start",
+    );
   }, [settings.toastPosition]);
 
   if (!settings.enableToastNotifications) return null;
 
   return createPortal(
-    <div
-      style={{
-        position: "fixed",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        zIndex: 9999,
-        ...positionStyle,
-      }}
-    >
+    <div className={positionClass}>
       <AnimatePresence>
         {notifications.map((n) => (
           <ToastItem

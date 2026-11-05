@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
-import { Loader2, Printer, X } from "lucide-react";
+import { Printer, X } from "lucide-react";
+import { SectionSpinner } from "@/components/ui/spinner";
 import { buildReceiptHtml, type ReceiptDto } from "@/lib/receipt";
 
 export function ReceiptViewerModal({
@@ -46,7 +47,7 @@ export function ReceiptViewerModal({
         </div>
         <div className="min-h-0 flex-1 bg-slate-100 p-3">
           {loading ? (
-            <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="animate-spin" size={18} /> Loading receipt…</div>
+            <SectionSpinner message="Loading receipt…" />
           ) : error ? (
             <div className="flex h-full items-center justify-center text-sm font-medium text-red-600">{error}</div>
           ) : receipt ? (

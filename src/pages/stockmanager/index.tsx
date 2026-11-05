@@ -46,6 +46,7 @@ import { DashboardTab } from "./components/tabs/DashboardTab";
 import { useDashboard } from "./hooks/useDashboard";
 import { usePurchaseOrders } from "./hooks/usePurchaseOrders";
 import { useSuppliers } from "./hooks/useSuppliers";
+import { SectionSpinner } from "@/components/ui/spinner";
 import { toNumber } from "./utils/formatters";
 import {
   STOCK_MANAGER_ACTIVE_TAB_STORAGE_KEY,
@@ -952,7 +953,7 @@ export default function StockManager() {
             </div>
           )}
           {isLoading ? (
-            <LoadingSkeleton />
+            <SectionSpinner message="Loading stock manager..." />
           ) : error ? null : (
             <AnimatePresence mode="wait">
               {/* ===== Dashboard ===== */}
