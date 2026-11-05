@@ -22,7 +22,8 @@
     "test:deployment": "node scripts/test-deployment-config.mjs",
     "test:gcash-qr": "node scripts/test-gcash-qr.mjs",
     "test:third-party-delivery": "node scripts/test-third-party-delivery.mjs",
-    "test:delivery-links": "node scripts/test-delivery-platform-links.mjs"
+    "test:delivery-links": "node scripts/test-delivery-platform-links.mjs",
+    "test:ui-cleanup": "node scripts/test-ui-cleanup.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",

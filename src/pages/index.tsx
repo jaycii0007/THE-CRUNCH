@@ -54,6 +54,12 @@ interface RawOrderRow {
   orderNumber?: string;
   total: number | string;
   date?: string;
+  paymentDate?: string | null;
+  payment_date?: string | null;
+  readyAt?: string | null;
+  ready_at?: string | null;
+  handoverTimestamp?: string | null;
+  handover_timestamp?: string | null;
   status?: string;
   paymentMethod?: string;
   payment_method?: string;
@@ -92,12 +98,6 @@ interface Share {
   pct: number;
 }
 
-interface HeatmapCell {
-  day: string;
-  hour: string;
-  count: number; // -1 means the restaurant is closed for that slot
-}
-
 interface ChartPoint {
   label: string;
   current: number;
@@ -116,26 +116,11 @@ const PERIODS: { label: string; value: Period }[] = [
 ];
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const WEEKEND = ["Sat", "Sun"];
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 const SHORT_MONTHS = MONTHS.map((m) => m.slice(0, 3));
-
-// Opening-hour slots: [label, startHour, endHour]
-const WEEKDAY_SLOTS: [string, number, number][] = [
-  ["10am", 10, 12], ["12pm", 12, 14], ["2pm", 14, 16], ["4pm", 16, 18],
-  ["6pm", 18, 20], ["8pm", 20, 22], ["10pm", 22, 24],
-];
-const WEEKEND_SLOTS: [string, number, number][] = [
-  ["11:30am", 11.5, 13.5], ["1:30pm", 13.5, 15.5], ["3:30pm", 15.5, 17.5],
-  ["5:30pm", 17.5, 19.5], ["7:30pm", 19.5, 20.5],
-];
-const ALL_SLOT_LABELS = [
-  "10am", "11:30am", "12pm", "1:30pm", "2pm", "3:30pm",
-  "4pm", "5:30pm", "6pm", "7:30pm", "8pm", "10pm",
-];
 
 const BRAND = "#7C2D2D";
 const PAYMENT_COLORS: Record<string, string> = {
@@ -283,29 +268,6 @@ function computeTopItems(orders: Order[], limit = 6) {
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
-}
-
-function computeHeatmap(orders: Order[]): HeatmapCell[] {
-  const counts: Record<string, number> = {};
-
-  orders.forEach((o) => {
-    if (!o.date) return;
-    const d = new Date(o.date);
-    const day = DAYS[d.getDay()];
-    const hour = d.getHours() + d.getMinutes() / 60;
-    const slots = WEEKEND.includes(day) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
-    const slot = slots.find(([, start, end]) => hour >= start && hour < end);
-    if (slot) counts[`${day}|${slot[0]}`] = (counts[`${day}|${slot[0]}`] ?? 0) + 1;
-  });
-
-  return DAYS.flatMap((day) => {
-    const openLabels = (WEEKEND.includes(day) ? WEEKEND_SLOTS : WEEKDAY_SLOTS).map(([label]) => label);
-    return ALL_SLOT_LABELS.map((hour) => ({
-      day,
-      hour,
-      count: openLabels.includes(hour) ? counts[`${day}|${hour}`] ?? 0 : -1,
-    }));
-  });
 }
 
 function computeChartData(
@@ -602,60 +564,6 @@ const EmptyState = ({ message }: { message: string }) => (
   <p className="py-8 text-center text-sm text-gray-400">{message}</p>
 );
 
-/** Interpolates from a pale green to a deep green based on intensity (0-1). */
-const heatColor = (t: number) =>
-  t === 0
-    ? "#F0FAF4"
-    : `rgb(${Math.round(220 - t * 161)},${Math.round(242 - t * 105)},${Math.round(228 - t * 174)})`;
-
-function PeakHoursHeatmap({ cells }: { cells: HeatmapCell[] }) {
-  const maxCount = Math.max(...cells.map((c) => c.count), 1);
-
-  return (
-    <div>
-      <div className="grid gap-1.5" style={{ gridTemplateColumns: "minmax(40px, 56px) repeat(7, minmax(0, 1fr))" }}>
-        <div />
-        {DAYS.map((d) => (
-          <div key={d} className="pb-1 text-center text-xs text-gray-400">
-            {d}
-          </div>
-        ))}
-
-        {ALL_SLOT_LABELS.map((hour) => (
-          <React.Fragment key={hour}>
-            <div className="flex items-center justify-end pr-1 text-[10px] text-gray-400 sm:text-xs">{hour}</div>
-            {DAYS.map((day) => {
-              const count = cells.find((c) => c.day === day && c.hour === hour)?.count ?? -1;
-              const closed = count < 0;
-              return (
-                <div
-                  key={day}
-                  title={closed ? `${day} ${hour}: Closed` : `${day} ${hour}: ${count} orders`}
-                  className={`h-5 rounded ${closed ? "opacity-15" : "cursor-pointer"}`}
-                  style={{ backgroundColor: closed ? "transparent" : heatColor(count / maxCount) }}
-                />
-              );
-            })}
-          </React.Fragment>
-        ))}
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-gray-400">
-        <span>Low</span>
-        <div className="flex gap-0.5">
-          {[0, 0.2, 0.4, 0.6, 0.8, 1].map((t) => (
-            <div key={t} className="h-3.5 w-5 rounded-sm" style={{ backgroundColor: heatColor(t) }} />
-          ))}
-        </div>
-        <span>High</span>
-        <span className="ml-3 flex items-center gap-1.5">
-          <span className="inline-block h-3.5 w-5 rounded-sm bg-gray-200 opacity-40" /> Closed
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function TopItemsChart({ items }: { items: { name: string; count: number }[] }) {
   if (items.length === 0) return <EmptyState message="No items data yet." />;
   const max = items[0].count;
@@ -689,12 +597,20 @@ function groupOrderRows(rows: RawOrderRow[]): Order[] {
 
   rows.forEach((row) => {
     if (!grouped.has(row.id)) {
+      const financialTimestamp =
+        row.handoverTimestamp ??
+        row.handover_timestamp ??
+        row.readyAt ??
+        row.ready_at ??
+        row.paymentDate ??
+        row.payment_date ??
+        row.date;
       grouped.set(row.id, {
         id: row.id,
         orderNumber: row.orderNumber || `#${row.id}`,
         items: [],
         total: Number(row.total) || 0,
-        date: row.date ? new Date(row.date).toISOString() : "",
+        date: financialTimestamp ? new Date(financialTimestamp).toISOString() : "",
         orderType: row.orderType ?? row.order_type ?? "",
         status: row.status ?? "",
         paymentCategory: row.paymentMethod ?? row.payment_method ?? "",
@@ -794,11 +710,9 @@ export default function AdminDashboard() {
   );
   const {
     totalOrders,
-    totalSales,
+    totalSales: totalRevenue,
     finalizedSalesCount,
     averageOrderValue: avgOrderValue,
-    activeOrders,
-    pendingOrders,
     cancelledOrders,
     refundedOrders,
     finalizedSales,
@@ -813,7 +727,6 @@ export default function AdminDashboard() {
     () => computeShares(finalizedSales, (o) => o.paymentCategory || "Others"),
     [finalizedSales],
   );
-  const heatmap = useMemo(() => computeHeatmap(finalizedSales), [finalizedSales]);
   const chartData = useMemo(
     () => computeChartData(finalizedSales, previousFinalizedSales, period, salesView),
     [finalizedSales, previousFinalizedSales, period, salesView],
@@ -885,23 +798,18 @@ export default function AdminDashboard() {
           )}
 
           {/* KPIs */}
-          <section className="mb-6 grid grid-cols-1 gap-4 sm:mb-8 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4">
+          <section className="mb-6 grid grid-cols-1 gap-4 sm:mb-8 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3">
             <KpiCard
               label="Total Orders"
               value={show(totalOrders.toLocaleString())}
               hint={show(`${cancelledOrders} cancelled · ${refundedOrders} refunded`)}
             />
             <KpiCard
-              label="Total Sales"
-              value={show(money(totalSales, wholeNumber))}
-              hint={show(`${finalizedSalesCount} finalized`)}
+              label="Total Revenue"
+              value={show(money(totalRevenue, wholeNumber))}
+              hint={show(`${finalizedSalesCount} completed paid orders`)}
             />
             <KpiCard label="Avg Order Value" value={show(money(avgOrderValue))} hint="Per finalized sale" />
-            <KpiCard
-              label="Active Orders"
-              value={show(activeOrders.toLocaleString())}
-              hint={show(`${pendingOrders} pending`)}
-            />
           </section>
 
           {/* Sales chart + payment methods */}
@@ -913,7 +821,7 @@ export default function AdminDashboard() {
                   <p className="mt-0.5 text-sm text-gray-400">{formatSpan(activeRange, timezone)}</p>
                   {!isLoading && (
                     <p className="mt-2 text-base font-semibold text-[#7C2D2D]">
-                      {money(totalSales, wholeNumber)}{" "}
+                      {money(totalRevenue, wholeNumber)}{" "}
                       <span className="text-sm font-normal text-gray-400">
                         as of {formatDisplayDate(activeRange.end, timezone)}
                       </span>
@@ -1014,12 +922,8 @@ export default function AdminDashboard() {
             </Panel>
           </section>
 
-          {/* Peak hours, top items, order types */}
-          <section className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <Panel title="Peak Hours">
-              <PeakHoursHeatmap cells={heatmap} />
-            </Panel>
-
+          {/* Top items and order types */}
+          <section className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Panel title="Top-Selling Items">
               <TopItemsChart items={topItems} />
             </Panel>

@@ -69,6 +69,11 @@ const reports = readFileSync(
   "utf8",
 );
 assert.match(dashboard, /summarizeFinancialOrders\(filteredOrders\)/);
+assert.match(
+  dashboard,
+  /row\.handoverTimestamp[\s\S]*row\.readyAt[\s\S]*row\.paymentDate[\s\S]*row\.date/,
+  "Overview and Sales & Reports must use the same finalized-sale timestamp basis",
+);
 assert.match(reports, /isFinalizedSale/);
 
 console.log("Financial correctness regression tests passed");

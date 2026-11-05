@@ -53,16 +53,6 @@ const expected = {
     salesReports: true,
     settings: false,
   },
-  cook: {
-    overview: false,
-    orders: true,
-    menuManagement: false,
-    menus: false,
-    stockManager: false,
-    userAccounts: false,
-    salesReports: false,
-    settings: false,
-  },
   inventory_manager: {
     overview: true,
     orders: true,

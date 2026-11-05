@@ -8,7 +8,8 @@ const cashier = read("src/pages/menu.tsx");
 const reports = read("src/pages/sales-reports.tsx");
 
 assert.match(cashier, /value: "grabfood", label: "GrabFood"/);
-assert.match(cashier, /value: "foodpanda", label: "foodpanda"/);
+assert.match(cashier, /value: "foodpanda", label: "Foodpanda"/);
+assert.doesNotMatch(cashier, /value: "other", label: "Other platform"/);
 assert.match(cashier, /setPlatformReference\("GF-"\)/);
 assert.match(
   cashier,

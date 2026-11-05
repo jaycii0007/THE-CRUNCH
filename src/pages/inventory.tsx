@@ -766,8 +766,6 @@ function MenuAdminTab() {
   // Numbers for the summary cards
   const unavailableItems = items.filter(isUnavailable);
   const promoCount = items.filter((item) => item.isPromotional).length;
-  const zeroStockCount = items.filter((item) => sellableQuantity(item) === 0).length;
-  const menuValue = items.reduce((sum, item) => sum + priceNumber(item.price) * sellableQuantity(item), 0);
   const markedOutCount = items.filter((item) => item.availabilityStatus === "Out of Stock").length;
 
   async function toggleAvailability(item: MenuItem) {
@@ -809,14 +807,10 @@ function MenuAdminTab() {
   return (
     <div style={{ fontFamily: FONT }}>
       {/* Summary */}
-      <div className="mb-6 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
         <StatCard featured label="Menu items" value={items.length} meta="Currently in the system" icon="grid" tone="deep" />
         <StatCard label="Promotional" value={promoCount} meta="Active special menus" icon="tag" tone={promoCount > 0 ? "accent" : "neutral"} />
         <StatCard label="Unavailable" value={markedOutCount} meta="Marked out of stock" icon="alert" tone={markedOutCount > 0 ? "warn" : "deep"} />
-        <StatCard
-          label="Menu value" value={formatPeso(menuValue)} icon="wallet" tone={zeroStockCount > 0 ? "bad" : "deep"}
-          meta={`${zeroStockCount} item${zeroStockCount === 1 ? "" : "s"} with zero stock`}
-        />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">

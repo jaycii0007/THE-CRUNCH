@@ -70,8 +70,12 @@ type OrderStatusFilter =
   | "Pending"
   | "Cancelled"
   | "Refunded";
-type PaymentMethodFilter = "All" | "Cash" | "GCash" | "Cash on Pickup" | "GrabFood" | "foodpanda" | "Other";
-type DeliveryPlatformFilter = "All" | "GrabFood" | "foodpanda" | "Other";
+type PaymentMethodFilter = "All" | "Cash" | "Online Payment" | "Cash on Pickup";
+type DeliveryPlatformFilter = "All Platforms" | "GrabFood" | "Foodpanda";
+type NormalizedPaymentMethod =
+  | Exclude<PaymentMethodFilter, "All">
+  | Exclude<DeliveryPlatformFilter, "All Platforms">
+  | "Other";
 type OrderTypeFilter = "All" | "Dine In" | "Take Out" | "Delivery";
 
 interface SaleLog {
@@ -351,8 +355,8 @@ function groupByDate(logs: SaleLog[]): Record<string, SaleLog[]> {
   );
 }
 
-function getRevenueForPeriod(logs: SaleLog[], period: Period): number {
-  const now = new Date();
+function getPeriodStart(period: Period, now = new Date()): Date | null {
+  if (period === "All Time") return null;
   const start = new Date(now);
 
   if (period === "Today") {
@@ -364,12 +368,21 @@ function getRevenueForPeriod(logs: SaleLog[], period: Period): number {
     start.setDate(now.getDate() - 29);
     start.setHours(0, 0, 0, 0);
   }
+  return start;
+}
+
+function isInReportPeriod(value: Date, period: Period, now = new Date()): boolean {
+  const start = getPeriodStart(period, now);
+  return !start || (value >= start && value <= now);
+}
+
+function getRevenueForPeriod(logs: SaleLog[], period: Period): number {
+  const now = new Date();
 
   return logs
     .filter((l) => {
       if (!isFinalizedSale(l)) return false;
-      if (period === "All Time") return true;
-      return l._dateObj >= start && l._dateObj <= now;
+      return isInReportPeriod(l._dateObj, period, now);
     })
     .reduce((sum, l) => sum + l.total, 0);
 }
@@ -416,7 +429,7 @@ function getOrderSettlementAction(order: Order): SettlementAction | null {
   return action === "cancel" ? "void" : action;
 }
 
-function normalizePaymentMethod(value?: string | null): PaymentMethodFilter {
+function normalizePaymentMethod(value?: string | null): NormalizedPaymentMethod {
   const normalized = String(value ?? "")
     .trim()
     .toLowerCase();
@@ -432,10 +445,10 @@ function normalizePaymentMethod(value?: string | null): PaymentMethodFilter {
     normalized.includes("e-payment") ||
     normalized.includes("epayment")
   ) {
-    return "GCash";
+    return "Online Payment";
   }
   if (normalized === "grabfood" || normalized === "grab food") return "GrabFood";
-  if (normalized === "foodpanda" || normalized === "food panda") return "foodpanda";
+  if (normalized === "foodpanda" || normalized === "food panda") return "Foodpanda";
   if (normalized === "other" || normalized === "other platform") return "Other";
   return "Cash";
 }
@@ -722,9 +735,13 @@ function triggerPrint(
   orders: Order[],
   restaurantSettings: GeneralRestaurantSettings,
 ) {
-  const paidCompleted = logs.filter(isFinalizedSale);
+  const now = new Date();
+  const periodLogs = logs.filter((log) => isInReportPeriod(log._dateObj, period, now));
+  const paidCompleted = periodLogs.filter(isFinalizedSale);
+  const refundedCount = periodLogs.filter((log) => log.status === "Refunded").length;
+  const cancelledCount = periodLogs.filter((log) => log.status === "Cancelled").length;
   const gcashSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "GCash",
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Online Payment",
   );
   const cashSales = paidCompleted.filter(
     (l) => normalizePaymentMethod(l.paymentMethod) === "Cash",
@@ -736,12 +753,8 @@ function triggerPrint(
     (l) => normalizePaymentMethod(l.paymentMethod) === "GrabFood",
   );
   const foodpandaSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "foodpanda",
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Foodpanda",
   );
-  const otherPlatformSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "Other",
-  );
-  const now = new Date();
   const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
     month: "long",
     day: "numeric",
@@ -754,7 +767,10 @@ function triggerPrint(
   });
 
   const completedOrders = orders
-    .filter(isFinalizedSale)
+    .filter((order) => {
+      const date = parseDateSafe(order.date);
+      return isFinalizedSale(order) && !!date && isInReportPeriod(date, period, now);
+    })
     .sort(
       (a, b) =>
         (parseDateSafe(b.date)?.getTime() ?? 0) -
@@ -882,15 +898,8 @@ function triggerPrint(
         </div>
         <div class="revenue-stats">
           <div class="stat-item"><p class="stat-number">${paidCompleted.length}</p><p class="stat-label">Paid Orders</p></div>
-          <div class="stat-item"><p class="stat-number">${formatReportCurrency(
-            gcashSales.reduce((sum, log) => sum + log.total, 0),
-            restaurantSettings,
-          )}</p><p class="stat-label">GCash Sales</p></div>
-          <div class="stat-item"><p class="stat-number">${formatReportCurrency(
-            cashSales.reduce((sum, log) => sum + log.total, 0),
-            restaurantSettings,
-          )}</p><p class="stat-label">Cash Sales</p></div>
-          <div class="stat-item"><p class="stat-number">${cashOnPickupSales.length}</p><p class="stat-label">Pickup Cash</p></div>
+          <div class="stat-item"><p class="stat-number">${refundedCount}</p><p class="stat-label">Refunded</p></div>
+          <div class="stat-item"><p class="stat-number">${cancelledCount}</p><p class="stat-label">Cancelled</p></div>
         </div>
       </div>
       <div class="summary-grid">
@@ -921,22 +930,22 @@ function triggerPrint(
             cashSales.reduce((sum, log) => sum + log.total, 0),
             restaurantSettings,
           )}</p>
-          <p class="summary-card-sub">${cashOnPickupSales.length > 0 ? `${cashSales.length} cash · ${cashOnPickupSales.length} pickup cash` : `${cashSales.length} orders`}</p>
+          <p class="summary-card-sub">${cashSales.length} orders</p>
         </div>
         <div class="summary-card">
-          <p class="summary-card-label">GrabFood Sales</p>
+          <p class="summary-card-label">Cash on Pickup</p>
+          <p class="summary-card-value">${formatReportCurrency(cashOnPickupSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${cashOnPickupSales.length} orders</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">GrabFood</p>
           <p class="summary-card-value">${formatReportCurrency(grabFoodSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
           <p class="summary-card-sub">${grabFoodSales.length} orders</p>
         </div>
         <div class="summary-card">
-          <p class="summary-card-label">foodpanda Sales</p>
+          <p class="summary-card-label">Foodpanda</p>
           <p class="summary-card-value">${formatReportCurrency(foodpandaSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
           <p class="summary-card-sub">${foodpandaSales.length} orders</p>
-        </div>
-        <div class="summary-card">
-          <p class="summary-card-label">Other Platform Sales</p>
-          <p class="summary-card-value">${formatReportCurrency(otherPlatformSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
-          <p class="summary-card-sub">${otherPlatformSales.length} orders</p>
         </div>
       </div>
       <p class="section-title">Completed Orders (${completedOrders.length})</p>
@@ -2182,93 +2191,58 @@ function RefundModal({
 
 // --- Summary Bar ---
 
-function SummaryBar({ logs }: { logs: SaleLog[] }) {
+function SummaryBar({
+  logs,
+  filterDescription,
+}: {
+  logs: SaleLog[];
+  filterDescription: string;
+}) {
+  const [showTotalSales, setShowTotalSales] = useState(false);
   const paidCompleted = logs.filter(isFinalizedSale);
-  const gcashSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "GCash",
-  );
-  const cashSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash",
-  );
-  const cashOnPickupSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash on Pickup",
-  );
-  const platformSales = (["GrabFood", "foodpanda", "Other"] as const).map((method) => ({
-    method,
-    logs: paidCompleted.filter(
+  const refunded = logs.filter((log) => log.status === "Refunded");
+  const byMethod = (method: NormalizedPaymentMethod) =>
+    paidCompleted.filter(
       (log) => normalizePaymentMethod(log.paymentMethod) === method,
-    ),
-  }));
-
-  // First card is the one strong block (solid deep green); the rest stay white.
+    );
+  const gcashSales = byMethod("Online Payment");
+  const cashSales = byMethod("Cash");
+  const cashOnPickupSales = byMethod("Cash on Pickup");
+  const grabFoodSales = byMethod("GrabFood");
+  const foodpandaSales = byMethod("Foodpanda");
+  const totalSales = paidCompleted.reduce((sum, log) => sum + log.total, 0);
+  const methodGroups = [
+    { label: "GCash Sales", logs: gcashSales },
+    { label: "Cash Sales", logs: cashSales },
+    { label: "Cash on Pickup", logs: cashOnPickupSales },
+    { label: "GrabFood", logs: grabFoodSales },
+    { label: "Foodpanda", logs: foodpandaSales },
+  ];
+  const categorizedIds = new Set(methodGroups.flatMap((group) => group.logs.map((log) => log.id)));
+  const legacySales = paidCompleted.filter((log) => !categorizedIds.has(log.id));
   const stats = [
     {
       label: "Total Sales",
-      value: formatReportCurrency(
-        paidCompleted.reduce((sum, log) => sum + log.total, 0),
-      ),
-      sub: "Completed",
+      value: formatReportCurrency(totalSales),
+      sub: `${paidCompleted.length} completed paid orders · View summary`,
       dark: true,
+      clickable: true,
     },
     {
       label: "Completed Orders",
       value: `${paidCompleted.length}`,
       sub: "Paid transactions",
       dark: false,
+      clickable: false,
     },
-    {
-      label: "GCash Sales",
+    ...methodGroups.map((group) => ({
+      label: group.label,
       value: formatReportCurrency(
-        gcashSales.reduce((sum, log) => sum + log.total, 0),
+        group.logs.reduce((sum, log) => sum + log.total, 0),
       ),
-      sub: `${gcashSales.length} orders`,
+      sub: `${group.logs.length} order${group.logs.length === 1 ? "" : "s"}`,
       dark: false,
-    },
-    {
-      label: "Cash Sales",
-      value: formatReportCurrency(
-        cashSales.reduce((sum, log) => sum + log.total, 0),
-      ),
-      sub:
-        cashOnPickupSales.length > 0
-          ? `${cashSales.length} cash · ${cashOnPickupSales.length} pickup cash`
-          : `${cashSales.length} orders`,
-      dark: false,
-    },
-  ];
-
-  const paymentBreakdown = [
-    {
-      label: "Cash",
-      value: formatReportCurrency(
-        cashSales.reduce((sum, log) => sum + log.total, 0),
-      ),
-      count: cashSales.length,
-    },
-    {
-      label: "GCash",
-      value: formatReportCurrency(
-        gcashSales.reduce((sum, log) => sum + log.total, 0),
-      ),
-      count: gcashSales.length,
-    },
-    ...(cashOnPickupSales.length > 0
-      ? [
-          {
-            label: "Cash on Pickup",
-            value: formatReportCurrency(
-              cashOnPickupSales.reduce((sum, log) => sum + log.total, 0),
-            ),
-            count: cashOnPickupSales.length,
-          },
-        ]
-      : []),
-    ...platformSales.map(({ method, logs: methodLogs }) => ({
-      label: method,
-      value: formatReportCurrency(
-        methodLogs.reduce((sum, log) => sum + log.total, 0),
-      ),
-      count: methodLogs.length,
+      clickable: false,
     })),
   ];
 
@@ -2277,114 +2251,123 @@ function SummaryBar({ logs }: { logs: SaleLog[] }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
           gap: 14,
-          marginBottom: 14,
-          alignItems: "stretch",
-        }}
-      >
-        {stats.map((s) => (
-          <motion.div
-            key={s.label}
-            whileHover={{ y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
-            style={{
-              minHeight: 122,
-              background: s.dark ? DEEP : "#fff",
-              border: `1px solid ${s.dark ? DEEP : "#e2e8f0"}`,
-              borderRadius: 18,
-              padding: "18px 20px",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-            }}
-          >
-            <p
-              style={{
-                color: s.dark ? DEEP_LINE : "#94a3b8",
-                fontSize: 10,
-                fontWeight: 700,
-                margin: "0 0 10px",
-                letterSpacing: 1.2,
-                textTransform: "uppercase",
-              }}
-            >
-              {s.label}
-            </p>
-            <p
-              style={{
-                color: s.dark ? "#fff" : "#0f172a",
-                fontSize: 24,
-                fontWeight: 700,
-                margin: "0 0 8px",
-                lineHeight: 1.1,
-              }}
-            >
-              {s.value}
-            </p>
-            <p
-              style={{
-                color: s.dark ? DEEP_LINE : "#64748b",
-                fontSize: 11,
-                margin: 0,
-                lineHeight: 1.5,
-              }}
-            >
-              {s.sub}
-            </p>
-          </motion.div>
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(170px, max-content))",
-          gap: 10,
           marginBottom: 24,
           alignItems: "stretch",
         }}
       >
-        {paymentBreakdown.map((item) => (
-          <div
-            key={item.label}
-            style={{
-              background: "#fff",
-              border: "1px solid #e2e8f0",
-              borderRadius: 14,
-              padding: "12px 14px",
-              minWidth: 170,
-              boxShadow: "0 1px 4px rgba(15,23,42,0.04)",
-            }}
-          >
-            <p
+        {stats.map((stat) => {
+          const Component = stat.clickable ? motion.button : motion.div;
+          return (
+            <Component
+              key={stat.label}
+              {...(stat.clickable
+                ? {
+                    type: "button" as const,
+                    onClick: () => setShowTotalSales(true),
+                    "aria-label": "Open Total Sales summary",
+                  }
+                : {})}
+              whileHover={{ y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
               style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#94a3b8",
-                letterSpacing: 1,
-                textTransform: "uppercase",
-                margin: "0 0 4px",
+                minHeight: 122,
+                background: stat.dark ? DEEP : "#fff",
+                border: `1px solid ${stat.dark ? DEEP : "#e2e8f0"}`,
+                borderRadius: 18,
+                padding: "18px 20px",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                textAlign: "left",
+                cursor: stat.clickable ? "pointer" : "default",
+                fontFamily: "inherit",
               }}
             >
-              {item.label}
-            </p>
-            <p
-              style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: "#0f172a",
-                margin: "0 0 2px",
-              }}
-            >
-              {item.value}
-            </p>
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
-              {item.count} order{item.count !== 1 ? "s" : ""}
-            </p>
-          </div>
-        ))}
+              <p style={{ color: stat.dark ? DEEP_LINE : "#94a3b8", fontSize: 10, fontWeight: 700, margin: "0 0 10px", letterSpacing: 1.2, textTransform: "uppercase" }}>
+                {stat.label}
+              </p>
+              <p style={{ color: stat.dark ? "#fff" : "#0f172a", fontSize: 24, fontWeight: 700, margin: "0 0 8px", lineHeight: 1.1 }}>
+                {stat.value}
+              </p>
+              <p style={{ color: stat.dark ? DEEP_LINE : "#64748b", fontSize: 11, margin: 0, lineHeight: 1.5 }}>
+                {stat.sub}
+              </p>
+            </Component>
+          );
+        })}
       </div>
+
+      <AnimatePresence>
+        {showTotalSales && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowTotalSales(false)}
+              className="fixed inset-0 z-[120] bg-slate-950/45"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="total-sales-summary-title"
+              className="fixed left-1/2 top-1/2 z-[121] max-h-[85vh] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Sales breakdown</p>
+                  <h2 id="total-sales-summary-title" className="mt-1 text-xl font-bold text-slate-900">Total Sales Summary</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{filterDescription}</p>
+                </div>
+                <button type="button" onClick={() => setShowTotalSales(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100" aria-label="Close Total Sales summary">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-emerald-950 p-4 text-white">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-200">Completed paid sales</p>
+                  <p className="mt-2 text-2xl font-bold">{formatReportCurrency(totalSales)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Transactions</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{paidCompleted.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average sale</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{formatReportCurrency(paidCompleted.length ? totalSales / paidCompleted.length : 0)}</p>
+                </div>
+              </div>
+
+              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+                {[
+                  ...methodGroups,
+                  ...(legacySales.length ? [{ label: "Historical payment methods", logs: legacySales }] : []),
+                ].map((group) => (
+                  <div key={group.label} className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 last:border-0">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{group.label}</p>
+                      <p className="text-xs text-slate-400">{group.logs.length} order{group.logs.length === 1 ? "" : "s"}</p>
+                    </div>
+                    <p className="text-sm font-bold text-slate-900">{formatReportCurrency(group.logs.reduce((sum, log) => sum + log.total, 0))}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                <p><strong className="text-slate-800">Refunded orders:</strong> {refunded.length}</p>
+                <p className="mt-1"><strong className="text-slate-800">Refunded order value:</strong> {formatReportCurrency(refunded.reduce((sum, log) => sum + log.total, 0))} (excluded from Total Sales)</p>
+                <p className="mt-2 text-xs leading-5 text-slate-400">Gross sales and discount totals are not shown because the current report feed does not expose those values separately.</p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -2947,7 +2930,7 @@ const paymentBadgeStyle: Record<
   { bg: string; text: string; border: string }
 > = {
   Cash: { bg: "#f1f5f9", text: "#334155", border: "#cbd5e1" },
-  GCash: { bg: DEEP_SOFT, text: DEEP, border: DEEP_LINE },
+  "Online Payment": { bg: DEEP_SOFT, text: DEEP, border: DEEP_LINE },
   "Cash on Pickup": { bg: "#f8fafc", text: "#334155", border: "#cbd5e1" },
 };
 
@@ -3407,18 +3390,14 @@ const ORDER_STATUS_FILTERS: OrderStatusFilter[] = [
 const ORDER_PAYMENT_FILTERS: PaymentMethodFilter[] = [
   "All",
   "Cash",
-  "GCash",
+  "Online Payment",
   "Cash on Pickup",
-  "GrabFood",
-  "foodpanda",
-  "Other",
 ];
 
 const DELIVERY_PLATFORM_FILTERS: DeliveryPlatformFilter[] = [
-  "All",
+  "All Platforms",
   "GrabFood",
-  "foodpanda",
-  "Other",
+  "Foodpanda",
 ];
 
 const ORDER_TYPE_FILTERS: OrderTypeFilter[] = [
@@ -3461,9 +3440,8 @@ function OrdersTab({
     useState<PaymentMethodFilter>("All");
   const [orderTypeFilter, setOrderTypeFilter] =
     useState<OrderTypeFilter>("All");
-  const [cashierFilter, setCashierFilter] = useState("All");
   const [deliveryPlatformFilter, setDeliveryPlatformFilter] =
-    useState<DeliveryPlatformFilter>("All");
+    useState<DeliveryPlatformFilter>("All Platforms");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<"from" | "to">("from");
   const [pickerInitial, setPickerInitial] = useState<Date>(now);
@@ -3525,16 +3503,9 @@ function OrdersTab({
       : paymentFiltered.filter(
           (o) => formatOrderType(o.orderType) === orderTypeFilter,
         );
-  const cashierOptions = [
-    "All",
-    ...Array.from(new Set(orders.map((order) => order.cashierName || "Unknown"))).sort(),
-  ];
-  const cashierFiltered = cashierFilter === "All"
+  const filtered = deliveryPlatformFilter === "All Platforms"
     ? orderTypeFiltered
-    : orderTypeFiltered.filter((order) => (order.cashierName || "Unknown") === cashierFilter);
-  const filtered = deliveryPlatformFilter === "All"
-    ? cashierFiltered
-    : cashierFiltered.filter(
+    : orderTypeFiltered.filter(
         (order) =>
           order.orderType === "delivery" &&
           normalizePaymentMethod(order.paymentCategory) === deliveryPlatformFilter,
@@ -3642,7 +3613,7 @@ function OrdersTab({
           </div>
         </div>
 
-        <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-4">
           <FilterChips
             label="Order Status"
             options={ORDER_STATUS_FILTERS}
@@ -3668,15 +3639,6 @@ function OrdersTab({
             active={orderTypeFilter}
             onChange={(t) => {
               setOrderTypeFilter(t);
-              setCurrentPage(1);
-            }}
-          />
-          <FilterChips
-            label="Cashier"
-            options={cashierOptions}
-            active={cashierFilter}
-            onChange={(cashier) => {
-              setCashierFilter(cashier);
               setCurrentPage(1);
             }}
           />
@@ -3783,7 +3745,6 @@ export default function SalesReports() {
 
   // UI state
   const [activeTab, setActiveTab] = useState<TabKey>("logs");
-  const [search, setSearch] = useState("");
   const [logPage, setLogPage] = useState(1);
   const [period, setPeriod] = useState<Period>("Today");
 
@@ -3805,9 +3766,8 @@ export default function SalesReports() {
     useState<PaymentMethodFilter>("All");
   const [logOrderTypeFilter, setLogOrderTypeFilter] =
     useState<OrderTypeFilter>("All");
-  const [logCashierFilter, setLogCashierFilter] = useState("All");
   const [logDeliveryPlatformFilter, setLogDeliveryPlatformFilter] =
-    useState<DeliveryPlatformFilter>("All");
+    useState<DeliveryPlatformFilter>("All Platforms");
   const [logPickerOpen, setLogPickerOpen] = useState(false);
   const [logPickerTarget, setLogPickerTarget] = useState<"from" | "to">("from");
   const [logPickerInitial, setLogPickerInitial] = useState<Date>(now);
@@ -3866,16 +3826,14 @@ export default function SalesReports() {
     return () => window.clearTimeout(timeout);
   }, [proofNotice]);
 
-  // Reset log page when search/date filters change
+  // Reset log page when report filters change.
   useEffect(() => {
     setLogPage(1);
   }, [
-    search,
     logFromDate,
     logToDate,
     logPaymentFilter,
     logOrderTypeFilter,
-    logCashierFilter,
     logDeliveryPlatformFilter,
   ]);
 
@@ -3972,19 +3930,12 @@ export default function SalesReports() {
   // Derived log data
   const completedLogs = logs.filter(isFinalizedSale);
   const dateFilteredLogs = filterLogsByRange(
-    completedLogs,
+    logs,
     logFromDate,
     logToDate,
   );
 
-  const logCashierOptions = [
-    "All",
-    ...Array.from(
-      new Set(completedLogs.map((log) => log.cashierName || "Unknown")),
-    ).sort(),
-  ];
-
-  const filteredLogs = dateFilteredLogs.filter((l) => {
+  const scopedLogs = dateFilteredLogs.filter((l) => {
     if (
       logPaymentFilter !== "All" &&
       normalizePaymentMethod(l.paymentMethod) !== logPaymentFilter
@@ -3998,13 +3949,7 @@ export default function SalesReports() {
       return false;
     }
     if (
-      logCashierFilter !== "All" &&
-      (l.cashierName || "Unknown") !== logCashierFilter
-    ) {
-      return false;
-    }
-    if (
-      logDeliveryPlatformFilter !== "All" &&
+      logDeliveryPlatformFilter !== "All Platforms" &&
       !(
         String(l.category).toLowerCase() === "delivery" &&
         normalizePaymentMethod(l.paymentMethod) === logDeliveryPlatformFilter
@@ -4012,15 +3957,9 @@ export default function SalesReports() {
     ) {
       return false;
     }
-    const q = search.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      l.transactionId.toLowerCase().includes(q) ||
-      l.product.toLowerCase().includes(q) ||
-      l.paymentMethod.toLowerCase().includes(q) ||
-      l.cashierName.toLowerCase().includes(q)
-    );
+    return true;
   });
+  const filteredLogs = scopedLogs.filter(isFinalizedSale);
 
   const logTotalPages = Math.max(
     1,
@@ -4033,6 +3972,14 @@ export default function SalesReports() {
   const grouped = groupByDate(paginatedLogs);
   const dates = Object.keys(grouped);
   const hasLogRange = !!(logFromDate || logToDate);
+  const summaryFilterDescription = [
+    hasLogRange
+      ? `Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`
+      : "All dates",
+    logPaymentFilter === "All" ? "All payment methods" : logPaymentFilter,
+    logOrderTypeFilter === "All" ? "All order types" : logOrderTypeFilter,
+    logDeliveryPlatformFilter,
+  ].join(" · ");
 
   const tabs: {
     key: TabKey;
@@ -4223,7 +4170,10 @@ export default function SalesReports() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <SummaryBar logs={logs} />
+          <SummaryBar
+            logs={scopedLogs}
+            filterDescription={summaryFilterDescription}
+          />
         </motion.div>
 
         {/* Tabs */}
@@ -4304,46 +4254,14 @@ export default function SalesReports() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.15, duration: 0.35 }}
               style={{
-                display: "grid",
-                gridTemplateColumns: isNarrow ? "1fr" : "minmax(0,1fr) auto",
+                display: "flex",
                 gap: 14,
                 marginBottom: 20,
-                alignItems: "stretch",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
               }}
             >
-              <div
-                style={{
-                  position: "relative",
-                  minWidth: 0,
-                }}
-              >
-                <Search
-                  size={16}
-                  style={{
-                    position: "absolute",
-                    left: 16,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    color: "#94a3b8",
-                  }}
-                />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by transaction ID, product, cashier, or payment method..."
-                  style={{
-                    width: "100%",
-                    background: "#fff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 18,
-                    padding: "12px 18px 12px 42px",
-                    fontSize: 13,
-                    color: "#1e293b",
-                    outline: "none",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-                  }}
-                />
-              </div>
               <div
                 style={{
                   display: "flex",
@@ -4467,7 +4385,7 @@ export default function SalesReports() {
               ))}
             </div>
 
-            <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-3">
               <FilterChips
                 label="Payment Method"
                 options={ORDER_PAYMENT_FILTERS}
@@ -4479,12 +4397,6 @@ export default function SalesReports() {
                 options={ORDER_TYPE_FILTERS}
                 active={logOrderTypeFilter}
                 onChange={setLogOrderTypeFilter}
-              />
-              <FilterChips
-                label="Cashier"
-                options={logCashierOptions}
-                active={logCashierFilter}
-                onChange={setLogCashierFilter}
               />
               <FilterChips
                 label="Delivery Platform"
@@ -4554,7 +4466,7 @@ export default function SalesReports() {
                   <EmptyState
                     key="empty"
                     message={
-                      search || hasLogRange
+                      hasLogRange || logPaymentFilter !== "All" || logOrderTypeFilter !== "All" || logDeliveryPlatformFilter !== "All Platforms"
                         ? "No completed sales found for the selected filters."
                         : "Completed orders from the cashier view will appear here automatically."
                     }
@@ -4626,7 +4538,7 @@ export default function SalesReports() {
               }}
             >
               {filteredLogs.length} of {completedLogs.length} completed sales
-              {(search || hasLogRange) && " matching your filters"}
+              {(hasLogRange || logPaymentFilter !== "All" || logOrderTypeFilter !== "All" || logDeliveryPlatformFilter !== "All Platforms") && " matching your filters"}
             </p>
           </>
         )}

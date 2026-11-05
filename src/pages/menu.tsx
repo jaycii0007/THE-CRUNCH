@@ -104,7 +104,7 @@ const DATETIME: Intl.DateTimeFormatOptions = {
   ...TIME,
 };
 
-type PaymentMethod = "cash" | "gcash_onsite" | "grabfood" | "foodpanda" | "other";
+type PaymentMethod = "cash" | "gcash_onsite" | "grabfood" | "foodpanda";
 type OrderTypeVal = "dine-in" | "take-out" | "delivery";
 type ToastType = "success" | "error" | "info" | "warning";
 type Settle = "refund" | "cancel";
@@ -679,15 +679,12 @@ const CartRow = memo(
     item,
     onRemove,
     onQty,
-    onNote,
   }: {
     item: CartItem;
     onRemove: (id: number) => void;
     onQty: (id: number, d: number) => void;
-    onNote: (id: number, n: string) => void;
   }) => {
     const { money } = useFmt();
-    const [showNote, setShowNote] = useState(false);
     const max = getEffectiveMaxQuantity(item.remainingStock);
     const step =
       "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
@@ -750,15 +747,6 @@ const CartRow = memo(
           </div>
           <div className="flex gap-1">
             <button
-              title="Add note"
-              onClick={() => setShowNote((p) => !p)}
-              className={`flex h-9 w-9 items-center justify-center rounded-lg ${item.note ? "bg-blue-50" : "hover:bg-neutral-100"}`}
-            >
-              <MessageSquare
-                className={`h-4 w-4 ${item.note ? "text-blue-600" : "text-neutral-300"}`}
-              />
-            </button>
-            <button
               title="Remove"
               onClick={() => onRemove(item.id)}
               className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-red-50"
@@ -767,15 +755,6 @@ const CartRow = memo(
             </button>
           </div>
         </div>
-        <Collapse open={showNote}>
-          <input
-            value={item.note ?? ""}
-            onChange={(e) => onNote(item.id, e.target.value)}
-            maxLength={120}
-            placeholder="Special instruction (e.g. no onions)…"
-            className="mt-3 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-          />
-        </Collapse>
       </motion.div>
     );
   },
@@ -1988,7 +1967,7 @@ export default function CashierView() {
 
   useEffect(() => {
     if (orderType === "delivery") {
-      if (!["grabfood", "foodpanda", "other"].includes(paymentMethod)) {
+      if (!["grabfood", "foodpanda"].includes(paymentMethod)) {
         setPaymentMethod("grabfood");
         setPlatformReference("GF-");
         return;
@@ -1996,7 +1975,7 @@ export default function CashierView() {
       setPlatformReference(paymentMethod === "grabfood" ? "GF-" : "");
       return;
     }
-    if (["grabfood", "foodpanda", "other"].includes(paymentMethod)) {
+    if (["grabfood", "foodpanda"].includes(paymentMethod)) {
       setPaymentMethod("cash");
     }
     setPlatformReference("");
@@ -2269,11 +2248,6 @@ export default function CashierView() {
 
   const removeFromCart = useCallback(
     (id: number) => setCart((p) => p.filter((c) => c.id !== id)),
-    [],
-  );
-  const setItemNote = useCallback(
-    (id: number, note: string) =>
-      setCart((p) => p.map((c) => (c.id === id ? { ...c, note } : c))),
     [],
   );
   const updateQty = useCallback(
@@ -2812,7 +2786,6 @@ export default function CashierView() {
                     item={item}
                     onRemove={removeFromCart}
                     onQty={updateQty}
-                    onNote={setItemNote}
                   />
                 ))}
               </AnimatePresence>
@@ -2872,8 +2845,7 @@ export default function CashierView() {
                   options={orderType === "delivery"
                     ? [
                         { value: "grabfood", label: "GrabFood" },
-                        { value: "foodpanda", label: "foodpanda" },
-                        { value: "other", label: "Other platform" },
+                        { value: "foodpanda", label: "Foodpanda" },
                       ]
                     : [
                         { value: "cash", label: "Cash" },
@@ -2897,9 +2869,7 @@ export default function CashierView() {
                      maxLength={MAX_PLATFORM_REFERENCE_LENGTH}
                      placeholder={paymentMethod === "foodpanda"
                        ? "Enter complete Foodpanda order reference"
-                       : paymentMethod === "grabfood"
-                         ? "GF-123 or complete GrabFood booking ID"
-                         : "Enter complete platform order reference"}
+                       : "GF-123 or complete GrabFood booking ID"}
                      aria-invalid={Boolean(
                        platformReference &&
                        getPlatformReferenceError(paymentMethod, platformReference),
@@ -2910,9 +2880,7 @@ export default function CashierView() {
                   <p className="mt-1 text-xs text-neutral-400">
                      {paymentMethod === "grabfood"
                        ? "Complete the actual GrabFood short order ID or enter the full booking ID."
-                       : paymentMethod === "foodpanda"
-                         ? "Enter the actual reference shown by Foodpanda; no prefix is added."
-                         : "Enter the complete reference shown by the delivery platform."}
+                       : "Enter the actual reference shown by Foodpanda; no prefix is added."}
                   </p>
                 </div>
               )}
@@ -2936,7 +2904,7 @@ export default function CashierView() {
                 className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}
               >
                 <MessageSquare className="h-4 w-4" />
-                {orderNote ? "Edit order note" : "Add order note"}
+                {orderNote ? "Edit Other Note" : "Add Other Note"}
               </button>
               <Collapse open={showNote}>
                 <textarea

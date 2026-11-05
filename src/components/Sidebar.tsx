@@ -219,9 +219,18 @@ export function Sidebar() {
   // Only show the links this role is allowed to open.
   const visibleItems = useMemo(() => {
     if (!staffRole) return [];
-    return SIDEBAR_ITEMS.filter((item) =>
+    const allowed = SIDEBAR_ITEMS.filter((item) =>
       hasPagePermission(staffRole, item.permissionKey, permissions),
     );
+    if (staffRole !== "cashier") return allowed;
+
+    const cashierOrder = ["Cashier View", "Cook View", "Overview", "Sales & Reports"];
+    return [...allowed].sort((left, right) => {
+      const leftIndex = cashierOrder.indexOf(left.label);
+      const rightIndex = cashierOrder.indexOf(right.label);
+      return (leftIndex < 0 ? cashierOrder.length : leftIndex) -
+        (rightIndex < 0 ? cashierOrder.length : rightIndex);
+    });
   }, [permissions, staffRole]);
 
   const closeSidebar = () => setIsOpen(false);
@@ -233,6 +242,28 @@ export function Sidebar() {
   };
 
   const iconSize = isMobile ? "w-5 h-5" : "w-4 h-4";
+  const profileLink = (
+    <NavLink to="/my-account" end onClick={closeSidebar}>
+      {({ isActive }) => (
+        <Button
+          variant="ghost"
+          className={cn(
+            "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5 gap-3 h-auto",
+            isActive
+              ? "bg-gray-100 text-black font-semibold"
+              : "text-gray-500 hover:text-black hover:bg-gray-50",
+            isMobile && "py-3 text-base",
+          )}
+        >
+          <UserRound
+            className={cn("flex-shrink-0", iconSize)}
+            strokeWidth={isActive ? 2.2 : 1.8}
+          />
+          <span>My Profile</span>
+        </Button>
+      )}
+    </NavLink>
+  );
 
   return (
     <>
@@ -364,26 +395,7 @@ export function Sidebar() {
                 "[&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]",
               )}
             >
-              <NavLink to="/my-account" end onClick={closeSidebar}>
-                {({ isActive }) => (
-                  <Button
-                    variant="ghost"
-                    className={cn(
-                      "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5 gap-3 h-auto",
-                      isActive
-                        ? "bg-gray-100 text-black font-semibold"
-                        : "text-gray-500 hover:text-black hover:bg-gray-50",
-                      isMobile && "py-3 text-base",
-                    )}
-                  >
-                    <UserRound
-                      className={cn("flex-shrink-0", iconSize)}
-                      strokeWidth={isActive ? 2.2 : 1.8}
-                    />
-                    <span>My Profile</span>
-                  </Button>
-                )}
-              </NavLink>
+              {staffRole !== "cashier" && profileLink}
               {visibleItems.map(({ label, path, icon: Icon }, index) => (
                 <NavLink key={path} to={path} end onClick={closeSidebar}>
                   {({ isActive }) => (
@@ -416,6 +428,7 @@ export function Sidebar() {
                   )}
                 </NavLink>
               ))}
+              {staffRole === "cashier" && profileLink}
             </nav>
 
             {/* Log out */}
