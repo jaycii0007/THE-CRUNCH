@@ -75,6 +75,7 @@ import {
   printHtml,
   type ReceiptDto,
 } from "../lib/receipt";
+import { ButtonSpinner, SectionSpinner, FullscreenSpinner } from "@/components/ui/spinner";
 
 /* ───────────────────────── setup ───────────────────────── */
 
@@ -320,13 +321,6 @@ const ACT = {
 };
 const eyebrow =
   "text-xs font-semibold uppercase tracking-wider text-neutral-400";
-
-const Spinner = ({ size = 16, light = false }) => (
-  <span
-    className={`inline-block shrink-0 animate-spin rounded-full border-2 ${light ? "border-white/30 border-t-white" : "border-neutral-200 border-t-neutral-600"}`}
-    style={{ width: size, height: size }}
-  />
-);
 
 function Modal({
   show,
@@ -794,7 +788,7 @@ function ConfirmModal({
           disabled={busy}
           onClick={onConfirm}
         >
-          {busy && <Spinner size={14} light />}
+          {busy && <ButtonSpinner color="white" />}
           {confirmLabel}
         </button>
         <button className={B.ghost} disabled={busy} onClick={onCancel}>
@@ -852,7 +846,7 @@ function RefundRequestModal({
           disabled={busy || !trimmedReason}
           onClick={onConfirm}
         >
-          {busy && <Spinner size={14} light />}
+          {busy && <ButtonSpinner color="white" />}
           Send refund request
         </button>
         <button className={B.ghost} disabled={busy} onClick={onCancel}>Cancel</button>
@@ -929,10 +923,7 @@ function ProceedModal({
               onClick={onConfirm}
             >
               {busy ? (
-                <>
-                  <Spinner size={14} light />
-                  Processing…
-                </>
+                <ButtonSpinner color="white" message="Processing…" />
               ) : (
                 "Confirm & proceed to queue"
               )}
@@ -1380,7 +1371,7 @@ function DiscountAuthorizationModal({
           disabled={!code.trim() || busy}
           onClick={() => onConfirm(code)}
         >
-          {busy && <Spinner size={14} light />}Authorize discount
+          {busy && <ButtonSpinner color="white" />}Authorize discount
         </button>
         <button className={B.ghost} disabled={busy} onClick={onCancel}>
           Cancel
@@ -1611,7 +1602,7 @@ function HistoryModal({
       </div>
       {loading ? (
         <div className="flex h-32 items-center justify-center">
-          <Spinner size={22} />
+          <SectionSpinner />
         </div>
       ) : !orders.length ? (
         <Empty icon={<Receipt className="h-8 w-8 text-neutral-200" />}>
@@ -1680,7 +1671,7 @@ function HistoryModal({
                     onClick={() => onSettle(o)}
                   >
                     {settlingId === o.id ? (
-                      <Spinner size={14} />
+                      <ButtonSpinner />
                     ) : action === "refund" ? (
                       <RotateCcw className="h-4 w-4 text-red-600" />
                     ) : (
@@ -1695,7 +1686,7 @@ function HistoryModal({
                     title="Request administrator refund review"
                     onClick={() => onRequestRefund(o)}
                   >
-                    {requestingId === o.id ? <Spinner size={13} /> : <RotateCcw className="h-3.5 w-3.5" />}
+                    {requestingId === o.id ? <ButtonSpinner /> : <RotateCcw className="h-3.5 w-3.5" />}
                     Request refund
                   </button>
                 )}
@@ -2599,7 +2590,7 @@ export default function CashierView() {
                               disabled={settlingId === o.id}
                               onClick={() => setCancelId(o.id)}
                             >
-                              {settlingId === o.id && <Spinner size={12} />}
+                              {settlingId === o.id && <ButtonSpinner />}
                               {action === "refund"
                                 ? "Refund order"
                                 : "Void order"}
@@ -2706,9 +2697,7 @@ export default function CashierView() {
 
           <div className="flex-1 overflow-y-auto px-4 pb-8 sm:px-8">
             {loadingProducts && !products.length ? (
-              <div className="flex h-52 items-center justify-center">
-                <Spinner size={24} />
-              </div>
+              <FullscreenSpinner message="Loading menu..." />
             ) : productsError ? (
               <Empty>
                 <p className="text-red-400">{productsError}</p>
@@ -2922,7 +2911,7 @@ export default function CashierView() {
                 disabled={placing || loadingPaymentQr || !isOnline || !customerType}
                 onClick={openPayment}
               >
-                {placing && <Spinner size={16} light />}
+                {placing && <ButtonSpinner color="white" />}
                 {payBtnLabel}
               </button>
               <p className="mt-2 text-center text-xs text-neutral-400">

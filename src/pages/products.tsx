@@ -6,6 +6,7 @@ import { useViewport } from '@/hooks/use-tablet'
 import { api, resolveAssetUrl } from '@/lib/api'
 import { fetchGeneralSettings, formatCurrencyAmount } from '@/lib/restaurantSettings'
 import { useAuth } from '@/context/authcontext'
+import { FullscreenSpinner } from "@/components/ui/spinner";
 
 // ── Types & helpers ────────────────────────────────────────────────────────
 const NAV_H = 64
@@ -85,20 +86,20 @@ const MUTED = 'rgba(245,240,232,0.58)'
 const PAD = 'clamp(20px,5vw,64px)'
 
 // Hero images for Signature Glazed Chicken
-const HERO_IMAGE_1 = '/img/signatureglazed1.jpg'
-const HERO_IMAGE_2 = '/img/signatureglazed2.jpg'
+const HERO_IMAGE_1 = '/img/signatureglazed1.webp'
+const HERO_IMAGE_2 = '/img/signatureglazed2.webp'
 
 // Promotional images for featured strip (use ChatGPT images that are promotional)
 const PROMO_IMAGES = [
-  '/img/ChatGPT Image Sep 29, 2026, 05_21_28 PM.png',
-  '/img/ChatGPT Image Sep 29, 2026, 05_33_26 PM.png',
-  '/img/ChatGPT Image Sep 29, 2026, 05_37_12 PM.png',
-  '/img/ChatGPT Image Sep 29, 2026, 05_37_39 PM.png',
-  '/img/ChatGPT Image Sep 29, 2026, 05_45_42 PM.png',
-  '/img/ChatGPT Image Sep 29, 2026, 05_46_01 PM.png',
-  '/img/ChatGPT Image Sep 29, 2026, 05_50_11 PM.png',
-  '/img/ChatGPT Image Sep 29, 2026, 05_51_46 PM.png',
-  '/img/ChatGPT Image Sep 29, 2026, 05_53_39 PM.png',
+  '/img/ChatGPT Image Sep 29, 2026, 05_21_28 PM.webp',
+  '/img/ChatGPT Image Sep 29, 2026, 05_33_26 PM.webp',
+  '/img/ChatGPT Image Sep 29, 2026, 05_37_12 PM.webp',
+  '/img/ChatGPT Image Sep 29, 2026, 05_37_39 PM.webp',
+  '/img/ChatGPT Image Sep 29, 2026, 05_45_42 PM.webp',
+  '/img/ChatGPT Image Sep 29, 2026, 05_46_01 PM.webp',
+  '/img/ChatGPT Image Sep 29, 2026, 05_50_11 PM.webp',
+  '/img/ChatGPT Image Sep 29, 2026, 05_51_46 PM.webp',
+  '/img/ChatGPT Image Sep 29, 2026, 05_53_39 PM.webp',
 ]
 
 const CSS = `
@@ -196,19 +197,17 @@ function normalizeProductName(name: string): string {
 
 // All verified local food images (for gallery)
 const VERIFIED_LOCAL_FOOD_IMAGES = [
-  { filename: 'chickenhoneygarlic.jpg', displayName: 'Honey Garlic Chicken', path: '/img/chickenhoneygarlic.jpg' },
-  { filename: 'chickenteriyaki.jpg', displayName: 'Teriyaki Chicken', path: '/img/chickenteriyaki.jpg' },
-  { filename: 'chickentexasbbq.jpg', displayName: 'Texas BBQ Chicken', path: '/img/chickentexasbbq.jpg' },
-  { filename: 'chickenspicekstyle.jpg', displayName: 'Spicy K-Style Chicken', path: '/img/chickenspicekstyle.jpg' },
-  { filename: 'chickenspecialcheese.jpg', displayName: 'Special Cheese Chicken', path: '/img/chickenspecialcheese.jpg' },
-  { filename: 'chickengarlicparmesan.jpg', displayName: 'Garlic Parmesan Chicken', path: '/img/chickengarlicparmesan.jpg' },
-  { filename: 'chickenskin.jpg', displayName: 'Chicken Skin', path: '/img/chickenskin.jpg' },
-  { filename: 'chicken poppers 2.jpg', displayName: 'Chicken Poppers', path: '/img/chicken poppers 2.jpg' },
-  { filename: 'chickchicken.png', displayName: 'Classic Fried Chicken', path: '/img/chickchicken.png' },
-  { filename: 'chicken1.jpg', displayName: 'Signature Chicken', path: '/img/chicken1.jpg' },
+  { filename: 'chickenhoneygarlic.webp', displayName: 'Honey Garlic Chicken', path: '/img/chickenhoneygarlic.webp' },
+  { filename: 'chickenteriyaki.webp', displayName: 'Teriyaki Chicken', path: '/img/chickenteriyaki.webp' },
+  { filename: 'chickentexasbbq.webp', displayName: 'Texas BBQ Chicken', path: '/img/chickentexasbbq.webp' },
+  { filename: 'chickenspicekstyle.webp', displayName: 'Spicy K-Style Chicken', path: '/img/chickenspicekstyle.webp' },
+  { filename: 'chickenspecialcheese.webp', displayName: 'Special Cheese Chicken', path: '/img/chickenspecialcheese.webp' },
+  { filename: 'chickengarlicparmesan.webp', displayName: 'Garlic Parmesan Chicken', path: '/img/chickengarlicparmesan.webp' },
+  { filename: 'chickenskin.webp', displayName: 'Chicken Skin', path: '/img/chickenskin.webp' },
+  { filename: 'chicken poppers 2.webp', displayName: 'Chicken Poppers', path: '/img/chicken poppers 2.webp' },
+  { filename: 'chickchicken.webp', displayName: 'Classic Fried Chicken', path: '/img/chickchicken.webp' },
+  { filename: 'chicken1.webp', displayName: 'Signature Chicken', path: '/img/chicken1.webp' },
 ] as const;
-
-const Skel = ({ h }: { h: number }) => <div className="skel" style={{ height: h }} />
 
 function Photo({ src, alt, priority = false, style, className }: { src?: string; alt: string; priority?: boolean; style?: React.CSSProperties; className?: string }) {
   const [bad, setBad] = useState(false)
@@ -1595,7 +1594,6 @@ function FeaturedStrip() {
       <motion.div variants={fadeUp}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
           <h2 className="h2" style={{ fontSize: 'clamp(28px,5vw,44px)' }}>Featured Today</h2>
-          <p className="sub" style={{ maxWidth: 420 }}>Hand-picked specials crafted for maximum flavor</p>
         </div>
       </motion.div>
       <motion.div
@@ -1743,7 +1741,7 @@ function FoodPreviewGallery({ products }: { products: Product[] }) {
       <div className="section-header" style={{ maxWidth: 1280, margin: '0 auto 28px', padding: '0 24px' }}>
         <motion.h2 className="section-title" variants={fadeUp}>Food Preview Gallery</motion.h2>
         <motion.p className="section-subtitle" variants={fadeUp}>
-          Verified food photography from our kitchen. Prices shown where available — visit Our Menu to order.
+
         </motion.p>
       </div>
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px' }}>
@@ -1867,7 +1865,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
       >
         <div className="wrap nav-in">
           <button className="brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top">
-            <img src="/img/logo24.png" alt="" width={32} height={32} style={{ objectFit: 'contain' }} />
+            <img src="/img/logo24.webp" alt="" width={32} height={32} style={{ objectFit: 'contain' }} />
             {!isPhone && <span>The <span style={{ color: 'var(--gold)' }}>Crunch</span></span>}
           </button>
 
@@ -1986,9 +1984,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
           </div>
 
           {loading.p ? (
-            <div className="grid" role="status" aria-label="Loading products">
-              {Array.from({ length: 6 }).map((_, _idx) => <motion.div key={_idx} variants={fadeUp}><Skel h={400} /></motion.div>)}
-            </div>
+            <FullscreenSpinner message="Loading menu..." />
           ) : filtered.length === 0 ? (
             <motion.div variants={fadeIn} style={{ textAlign: 'center', padding: '80px 0' }}>
               <p style={{ fontSize: 18, fontWeight: 700 }}>No items found</p>

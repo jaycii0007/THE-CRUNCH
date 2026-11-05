@@ -26,6 +26,7 @@ import {
   getCurrencySymbol,
 } from "@/lib/restaurantSettings";
 import { summarizeFinancialOrders } from "@/lib/financialStatus";
+import { SectionSpinner } from "@/components/ui/spinner";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Types                                   */
@@ -739,12 +740,25 @@ export default function AdminDashboard() {
   const currencySymbol = getCurrencySymbol(settings);
   const wholeNumber = { minimumFractionDigits: 0, maximumFractionDigits: 0 };
   const money = (v: number, opts?: typeof wholeNumber) => formatCurrencyAmount(v, settings, opts);
-  const show = (value: string) => (isLoading ? "..." : value);
 
   const axisFormatter = (v: number) =>
     salesView === "sales" ? `${currencySymbol}${v >= 1000 ? `${Math.round(v / 1000)}k` : v}` : String(v);
 
-  const noOrdersInRange = !error && !isLoading && orders.length > 0 && filteredOrders.length === 0;
+  const noOrdersInRange = !error && orders.length > 0 && filteredOrders.length === 0;
+
+  // Show fullscreen loader during initial data fetch
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
+        <Sidebar />
+        <main className="tablet-shell min-w-0 flex-1">
+          <div className="tablet-surface min-h-[calc(100vh-5rem)] bg-[#FDFAF6]">
+            <SectionSpinner message="Loading dashboard..." />
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
@@ -801,15 +815,20 @@ export default function AdminDashboard() {
           <section className="mb-6 grid grid-cols-1 gap-4 sm:mb-8 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3">
             <KpiCard
               label="Total Orders"
-              value={show(totalOrders.toLocaleString())}
-              hint={show(`${cancelledOrders} cancelled · ${refundedOrders} refunded`)}
+              value={totalOrders.toLocaleString()}
+              hint={`${cancelledOrders} cancelled · ${refundedOrders} refunded`}
             />
             <KpiCard
-              label="Total Revenue"
-              value={show(money(totalRevenue, wholeNumber))}
-              hint={show(`${finalizedSalesCount} completed paid orders`)}
+              label="Total Sales"
+              value={money(totalSales, wholeNumber)}
+              hint={`${finalizedSalesCount} finalized`}
             />
-            <KpiCard label="Avg Order Value" value={show(money(avgOrderValue))} hint="Per finalized sale" />
+            <KpiCard label="Avg Order Value" value={money(avgOrderValue)} hint="Per finalized sale" />
+            <KpiCard
+              label="Active Orders"
+              value={activeOrders.toLocaleString()}
+              hint={`${pendingOrders} pending`}
+            />
           </section>
 
           {/* Sales chart + payment methods */}
@@ -819,14 +838,12 @@ export default function AdminDashboard() {
                 <div>
                   <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">Order & Sales Review</h2>
                   <p className="mt-0.5 text-sm text-gray-400">{formatSpan(activeRange, timezone)}</p>
-                  {!isLoading && (
-                    <p className="mt-2 text-base font-semibold text-[#7C2D2D]">
-                      {money(totalRevenue, wholeNumber)}{" "}
-                      <span className="text-sm font-normal text-gray-400">
-                        as of {formatDisplayDate(activeRange.end, timezone)}
-                      </span>
-                    </p>
-                  )}
+                  <p className="mt-2 text-base font-semibold text-[#7C2D2D]">
+                    {money(totalSales, wholeNumber)}{" "}
+                    <span className="text-sm font-normal text-gray-400">
+                      as of {formatDisplayDate(activeRange.end, timezone)}
+                    </span>
+                  </p>
                 </div>
 
                 <div className="flex w-fit max-w-full overflow-x-auto rounded-xl bg-[#F0EBE6] p-1">

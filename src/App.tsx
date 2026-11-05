@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import React from "react";
 import { useAuth } from "./context/authcontext";
+import { FullscreenSpinner } from "@/components/ui/spinner";
 import {
   PermissionKey,
   PermissionsMap,
@@ -237,7 +238,13 @@ export default function App() {
     />
   );
 
-  if (rootRoute.kind === "pending") return null;
+  if (rootRoute.kind === "pending") {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#1A1A1A]">
+        <FullscreenSpinner message="Loading The Crunch..." />
+      </div>
+    );
+  }
 
   const rootElement =
     rootRoute.kind === "redirect" ? (

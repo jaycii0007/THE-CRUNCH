@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { ProductImage } from "@/components/ProductImage";
 import { api, apiCall } from "@/lib/api";
 import { motion } from "framer-motion";
+import { SectionSpinner } from "@/components/ui/spinner";
 import { useNotifications } from "@/lib/NotificationContext";
 import {
   fetchGeneralSettings,
@@ -871,13 +872,7 @@ function MenuAdminTab() {
                 </thead>
                 <tbody>
                   {loading ? (
-                    [0, 1, 2, 3].map((row) => (
-                      <tr key={row} style={{ borderBottom: `1px solid ${T.line}` }}>
-                        <td colSpan={TABLE_COLUMNS.length} className="px-4 py-4">
-                          <div className="h-12 animate-pulse rounded-xl" style={{ background: T.surfaceMuted }} />
-                        </td>
-                      </tr>
-                    ))
+                    <SectionSpinner message="Loading menu items..." />
                   ) : visible.length === 0 ? (
                     <tr>
                       <td colSpan={TABLE_COLUMNS.length} className="px-4 py-16 text-center">

@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Eye, EyeOff, LockKeyhole, Save, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
+import { SectionSpinner } from "@/components/ui/spinner";
 import { useAuth } from "@/context/authcontext";
 import { api } from "@/lib/api";
 import { normalizeRole } from "@/lib/permissions";
@@ -200,7 +201,7 @@ export default function MyAccount() {
         </header>
 
         {loading ? (
-          <div className="rounded-2xl bg-white p-10 text-center text-sm text-slate-500 shadow-sm">Loading your account…</div>
+          <SectionSpinner message="Loading your account..." />
         ) : loadError || !account ? (
           <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
             <p className="text-sm text-red-600">{loadError || "Account details are unavailable."}</p>
