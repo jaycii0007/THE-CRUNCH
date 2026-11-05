@@ -819,16 +819,11 @@ export default function AdminDashboard() {
               hint={`${cancelledOrders} cancelled · ${refundedOrders} refunded`}
             />
             <KpiCard
-              label="Total Sales"
-              value={money(totalSales, wholeNumber)}
-              hint={`${finalizedSalesCount} finalized`}
+              label="Total Revenue"
+              value={money(totalRevenue, wholeNumber)}
+              hint={`${finalizedSalesCount} completed paid orders`}
             />
             <KpiCard label="Avg Order Value" value={money(avgOrderValue)} hint="Per finalized sale" />
-            <KpiCard
-              label="Active Orders"
-              value={activeOrders.toLocaleString()}
-              hint={`${pendingOrders} pending`}
-            />
           </section>
 
           {/* Sales chart + payment methods */}
@@ -839,7 +834,7 @@ export default function AdminDashboard() {
                   <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">Order & Sales Review</h2>
                   <p className="mt-0.5 text-sm text-gray-400">{formatSpan(activeRange, timezone)}</p>
                   <p className="mt-2 text-base font-semibold text-[#7C2D2D]">
-                    {money(totalSales, wholeNumber)}{" "}
+                    {money(totalRevenue, wholeNumber)}{" "}
                     <span className="text-sm font-normal text-gray-400">
                       as of {formatDisplayDate(activeRange.end, timezone)}
                     </span>
