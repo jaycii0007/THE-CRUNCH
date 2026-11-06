@@ -164,6 +164,12 @@ interface ForgotPasswordResponse {
   message: string;
 }
 
+interface VerifyPasswordResetOtpResponse {
+  message: string;
+  resetAuthorization: string;
+  expiresInSeconds: number;
+}
+
 // ─── Attendance Record type ───────────────────────────────────────────────────
 export interface AttendanceRecord {
   id: number;
@@ -344,11 +350,22 @@ export const authApi = {
       body: { email },
     }),
 
-  resetPassword: (email: string, code: string, newPassword: string) =>
+  verifyPasswordResetOtp: (email: string, code: string) =>
+    apiCall<VerifyPasswordResetOtpResponse>("/auth/verify-password-reset-otp", {
+      method: "POST",
+      skipAuth: true,
+      body: { email, code },
+    }),
+
+  resetPassword: (
+    email: string,
+    resetAuthorization: string,
+    newPassword: string,
+  ) =>
     apiCall<ForgotPasswordResponse>("/auth/reset-password", {
       method: "POST",
       skipAuth: true,
-      body: { email, code, newPassword },
+      body: { email, resetAuthorization, newPassword },
     }),
 
   logout: (token: string) =>

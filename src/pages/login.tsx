@@ -92,9 +92,10 @@ export default function Login() {
 
   // ── Forgot Password Modal State ──────────────────────────────────────────
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
-  const [forgotPasswordStep, setForgotPasswordStep] = useState<1 | 2>(1); // 1 = Request code, 2 = Reset
+  const [forgotPasswordStep, setForgotPasswordStep] = useState<1 | 2 | 3>(1);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotPasswordCode, setForgotPasswordCode] = useState("");
+  const [forgotResetAuthorization, setForgotResetAuthorization] = useState("");
   const [newPasswordValue, setNewPasswordValue] = useState("");
   const [confirmNewPasswordValue, setConfirmNewPasswordValue] = useState("");
   const [forgotModalError, setForgotModalError] = useState("");
@@ -245,12 +246,34 @@ export default function Login() {
     }
   };
 
-  const handleResetPasswordSubmit = async (event: FormEvent) => {
+  const handleVerifyResetPasswordCode = async (event: FormEvent) => {
     event.preventDefault();
     const cleanedEmail = forgotPasswordEmail.trim().toLowerCase();
     const cleanedCode = forgotPasswordCode.trim();
 
-    if (!cleanedCode || !newPasswordValue || !confirmNewPasswordValue) {
+    if (!/^\d{6}$/.test(cleanedCode)) {
+      setForgotModalError("Enter the 6-digit code from your email.");
+      return;
+    }
+    setIsSubmittingForgotPassword(true);
+    setForgotModalError("");
+    try {
+      const response = await authApi.verifyPasswordResetOtp(cleanedEmail, cleanedCode);
+      setForgotResetAuthorization(response.resetAuthorization);
+      setForgotPasswordStep(3);
+      setForgotModalSuccess("Code verified. Choose your new password.");
+    } catch (networkError: any) {
+      setForgotModalError(networkError?.message || "Invalid or expired reset code.");
+    } finally {
+      setIsSubmittingForgotPassword(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const cleanedEmail = forgotPasswordEmail.trim().toLowerCase();
+
+    if (!forgotResetAuthorization || !newPasswordValue || !confirmNewPasswordValue) {
       setForgotModalError("Please complete all fields.");
       return;
     }
@@ -268,7 +291,7 @@ export default function Login() {
     setForgotModalSuccess("");
 
     try {
-      await authApi.resetPassword(cleanedEmail, cleanedCode, newPasswordValue);
+      await authApi.resetPassword(cleanedEmail, forgotResetAuthorization, newPasswordValue);
       setIsForgotModalOpen(false);
       switchAuthenticationMode("signin");
       setEmailAddress(cleanedEmail);
@@ -569,6 +592,10 @@ export default function Login() {
                     onClick={() => {
                       setForgotPasswordEmail(emailAddress);
                       setForgotPasswordStep(1);
+                      setForgotPasswordCode("");
+                      setForgotResetAuthorization("");
+                      setNewPasswordValue("");
+                      setConfirmNewPasswordValue("");
                       setForgotModalError("");
                       setForgotModalSuccess("");
                       setIsForgotModalOpen(true);
@@ -781,12 +808,18 @@ export default function Login() {
               }}
             >
               <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 6px" }}>
-                {forgotPasswordStep === 1 ? "Forgot Password" : "Reset Your Password"}
+                {forgotPasswordStep === 1
+                  ? "Forgot Password"
+                  : forgotPasswordStep === 2
+                    ? "Verify Reset Code"
+                    : "Reset Your Password"}
               </h2>
               <p style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.5, margin: "0 0 16px" }}>
                 {forgotPasswordStep === 1
                   ? "Enter your account email to receive a password reset code."
-                  : `Enter the code sent to ${forgotPasswordEmail} and your new password.`}
+                  : forgotPasswordStep === 2
+                    ? `Enter the code sent to ${forgotPasswordEmail}.`
+                    : "Choose a new password after successful code verification."}
               </p>
 
               {forgotModalError && (
@@ -827,17 +860,43 @@ export default function Login() {
                     {isSubmittingForgotPassword ? "SENDING CODE…" : "SEND RESET CODE"}
                   </motion.button>
                 </form>
-              ) : (
-                <form onSubmit={handleResetPasswordSubmit} style={{ display: "grid", gap: 14 }}>
+              ) : forgotPasswordStep === 2 ? (
+                <form onSubmit={handleVerifyResetPasswordCode} style={{ display: "grid", gap: 14 }}>
                   <input
                     type="text"
+                    inputMode="numeric"
                     maxLength={6}
                     required
                     placeholder="6-digit reset code"
                     value={forgotPasswordCode}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setForgotPasswordCode(event.target.value)}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                      setForgotPasswordCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
                     style={textInputStyle}
                   />
+                  <motion.button
+                    type="submit"
+                    disabled={isSubmittingForgotPassword || forgotPasswordCode.length !== 6}
+                    whileHover={{ scale: 1.015 }}
+                    whileTap={{ scale: 0.985 }}
+                    style={{
+                      backgroundColor: COLORS.gold,
+                      color: "#120d04",
+                      border: 0,
+                      borderRadius: 10,
+                      padding: "11px",
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      fontFamily: FONT_FAMILY,
+                      opacity: isSubmittingForgotPassword ? 0.5 : 1,
+                    }}
+                  >
+                    {isSubmittingForgotPassword ? "VERIFYING…" : "VERIFY CODE"}
+                  </motion.button>
+                </form>
+              ) : (
+                <form onSubmit={handleResetPasswordSubmit} style={{ display: "grid", gap: 14 }}>
                   <input
                     type="password"
                     required

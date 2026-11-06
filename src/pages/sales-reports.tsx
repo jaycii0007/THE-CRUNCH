@@ -734,6 +734,7 @@ function triggerPrint(
   logs: SaleLog[],
   orders: Order[],
   restaurantSettings: GeneralRestaurantSettings,
+  generatedBy: string,
 ) {
   const now = new Date();
   const periodLogs = logs.filter((log) => isInReportPeriod(log._dateObj, period, now));
@@ -889,6 +890,8 @@ function triggerPrint(
           <p>Generated</p>
           <strong>${dateLabel}</strong>
           <p style="margin-top:2px">${timeLabel}</p>
+          <p style="margin-top:8px">Prepared by</p>
+          <strong>${generatedBy || "Staff"}</strong>
         </div>
       </div>
       <div class="revenue-hero">
@@ -1473,6 +1476,7 @@ interface RevenueDropdownProps {
   logs: SaleLog[];
   orders: Order[];
   restaurantSettings: GeneralRestaurantSettings;
+  generatedBy: string;
 }
 
 function RevenueDropdown({
@@ -1481,6 +1485,7 @@ function RevenueDropdown({
   logs,
   orders,
   restaurantSettings,
+  generatedBy,
 }: RevenueDropdownProps) {
   const [open, setOpen] = useState(false);
   const [printToast, setPrintToast] = useState(false);
@@ -1529,7 +1534,7 @@ function RevenueDropdown({
 
   function handlePrint() {
     setOpen(false);
-    triggerPrint(revenue, period, logs, orders, restaurantSettings);
+    triggerPrint(revenue, period, logs, orders, restaurantSettings, generatedBy);
     setPrintToast(true);
     setTimeout(() => setPrintToast(false), 3000);
   }
@@ -2374,7 +2379,15 @@ function SummaryBar({
 
 // --- Log Row ---
 
-function LogRow({ log, index }: { log: SaleLog; index: number }) {
+function LogRow({
+  log,
+  index,
+  onViewReceipt,
+}: {
+  log: SaleLog;
+  index: number;
+  onViewReceipt: (orderId: number) => void;
+}) {
   const [open, setOpen] = useState(false);
   const paymentTone = paymentBadgeStyle[
     normalizePaymentMethod(log.paymentMethod)
@@ -2650,6 +2663,21 @@ function LogRow({ log, index }: { log: SaleLog; index: number }) {
                   </button>
                 </div>
               )}
+              <div>
+                <p style={{ color: "#94a3b8", fontSize: 10, fontWeight: 600, letterSpacing: 1, margin: "0 0 2px", textTransform: "uppercase" }}>
+                  Receipt
+                </p>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onViewReceipt(log.orderId);
+                  }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, color: DEEP, fontSize: 12, fontWeight: 700, background: DEEP_SOFT, border: `1px solid ${DEEP_LINE}`, borderRadius: 12, padding: "9px 13px", cursor: "pointer" }}
+                >
+                  <Printer size={14} /> View Receipt
+                </button>
+              </div>
               {log.note && (
                 <div>
                   <p
@@ -3870,7 +3898,7 @@ export default function SalesReports() {
     }
   }
 
-  async function handleViewReceipt(order: Order) {
+  async function handleViewReceipt(order: Pick<Order, "id">) {
     setReceiptOpen(true);
     setReceiptLoading(true);
     setReceiptError("");
@@ -4120,6 +4148,7 @@ export default function SalesReports() {
               logs={logs}
               orders={orders}
               restaurantSettings={restaurantSettings}
+              generatedBy={String(user?.username || user?.email || "Staff")}
             />
           </div>
         </motion.div>
@@ -4464,7 +4493,12 @@ export default function SalesReports() {
                           </span>
                         </div>
                         {entries.map((log, i) => (
-                          <LogRow key={log.transactionId} log={log} index={i} />
+                          <LogRow
+                            key={log.transactionId}
+                            log={log}
+                            index={i}
+                            onViewReceipt={(orderId) => void handleViewReceipt({ id: orderId })}
+                          />
                         ))}
                       </div>
                     );

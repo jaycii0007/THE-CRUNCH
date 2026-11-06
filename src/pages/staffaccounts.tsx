@@ -52,7 +52,12 @@ const AVATAR_COLORS: [string, string][] = [
 
 const TABLE_COLUMNS = ["#", "Employee", "Role", "Email", ""];
 
-const DEFAULT_FORM: FormState = { name: "", email: "", password: "", role: "cashier" };
+const DEFAULT_FORM: FormState = {
+  name: "",
+  email: "",
+  password: "",
+  role: "cashier",
+};
 
 const NAME_PATTERN = /^[A-Za-z][A-Za-z.' -]*[A-Za-z.]$|^[A-Za-z.]$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -124,7 +129,8 @@ const getInitials = (name: string): string =>
 
 // Safely reads the message from an unknown thrown value
 const getMessage = (err: unknown): string | null => {
-  if (typeof err !== "object" || err === null || !("message" in err)) return null;
+  if (typeof err !== "object" || err === null || !("message" in err))
+    return null;
   const { message } = err as { message?: unknown };
   return typeof message === "string" && message.trim() ? message : null;
 };
@@ -134,7 +140,10 @@ const getErrorMessage = (err: unknown, fallback: string): string =>
 
 const isAuthError = (err: unknown): boolean => {
   const message = getMessage(err);
-  return message !== null && /invalid or expired token|no token provided/i.test(message);
+  return (
+    message !== null &&
+    /invalid or expired token|no token provided/i.test(message)
+  );
 };
 
 // Cleans input as the user types, based on which field it belongs to
@@ -157,19 +166,23 @@ const validateForm = (form: FormState): string => {
 
   if (!name) return "Full name is required.";
   if (name.length < 2) return "Full name must be at least 2 characters.";
-  if (name.length > FIELD_MAX_LENGTH) return "Full name must not exceed 100 characters.";
+  if (name.length > FIELD_MAX_LENGTH)
+    return "Full name must not exceed 100 characters.";
   if (!NAME_PATTERN.test(name) || !/[A-Za-z]/.test(name)) {
     return "Full name may only use letters, spaces, apostrophes, hyphens, and periods.";
   }
 
   if (!email) return "Email is required.";
-  if (email.length > FIELD_MAX_LENGTH) return "Email must not exceed 100 characters.";
+  if (email.length > FIELD_MAX_LENGTH)
+    return "Email must not exceed 100 characters.";
   if (!EMAIL_PATTERN.test(email)) return "Please enter a valid email address.";
 
   if (!password.trim()) return "Password is required.";
   if (password.length < 8) return "Password must be at least 8 characters.";
-  if (password.length > FIELD_MAX_LENGTH) return "Password must not exceed 100 characters.";
-  if (!PASSWORD_PATTERN.test(password)) return "Password must include at least 1 letter and 1 number.";
+  if (password.length > FIELD_MAX_LENGTH)
+    return "Password must not exceed 100 characters.";
+  if (!PASSWORD_PATTERN.test(password))
+    return "Password must include at least 1 letter and 1 number.";
 
   if (!ROLES.includes(form.role)) return "Please select a valid role.";
   return "";
@@ -220,10 +233,20 @@ function RoleBadge({ role }: { role: string }) {
 function StatCard({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "#a0aec0", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: "#a0aec0",
+          textTransform: "uppercase",
+          letterSpacing: "0.07em",
+        }}
+      >
         {label}
       </div>
-      <div style={{ fontSize: 24, fontWeight: 600, color: "#2d3748" }}>{value}</div>
+      <div style={{ fontSize: 24, fontWeight: 600, color: "#2d3748" }}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -236,7 +259,13 @@ interface FormFieldProps {
   placeholder?: string;
 }
 
-function FormField({ label, value, onChange, type = "text", placeholder }: FormFieldProps) {
+function FormField({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+}: FormFieldProps) {
   const [showPassword, setShowPassword] = useState(false);
   const isPassword = type === "password";
 
@@ -296,11 +325,15 @@ function StaffRow({ employee, index, onRemove }: StaffRowProps) {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
     >
-      <td style={{ ...cellStyle, fontSize: 12, color: "#cbd5e0", width: 32 }}>{index + 1}</td>
+      <td style={{ ...cellStyle, fontSize: 12, color: "#cbd5e0", width: 32 }}>
+        {index + 1}
+      </td>
       <td style={cellStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Avatar name={employee.username} />
-          <span style={{ fontWeight: 600, color: "#2d3748" }}>{employee.username}</span>
+          <span style={{ fontWeight: 600, color: "#2d3748" }}>
+            {employee.username}
+          </span>
         </div>
       </td>
       <td style={cellStyle}>
@@ -385,11 +418,30 @@ function AddEmployeeModal({
         exit={{ opacity: 0, scale: 0.97, y: 8 }}
         transition={{ duration: 0.18 }}
       >
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>Add Employee</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>
+          Add Employee
+        </div>
 
-        <FormField label="Full Name" value={form.name} onChange={onFieldChange("name")} placeholder="e.g. Maria Santos" />
-        <FormField label="Email" value={form.email} onChange={onFieldChange("email")} type="email" placeholder="e.g. maria@thecrunch.com" />
-        <FormField label="Password" value={form.password} onChange={onFieldChange("password")} type="password" placeholder="Min. 8 characters" />
+        <FormField
+          label="Full Name"
+          value={form.name}
+          onChange={onFieldChange("name")}
+          placeholder="e.g. Maria Santos"
+        />
+        <FormField
+          label="Email"
+          value={form.email}
+          onChange={onFieldChange("email")}
+          type="email"
+          placeholder="e.g. maria@thecrunch.com"
+        />
+        <FormField
+          label="Password"
+          value={form.password}
+          onChange={onFieldChange("password")}
+          type="password"
+          placeholder="Min. 8 characters"
+        />
 
         <div style={{ marginBottom: 13 }}>
           <label style={labelStyle}>Role</label>
@@ -406,7 +458,11 @@ function AddEmployeeModal({
           </select>
         </div>
 
-        {error && <p style={{ fontSize: 11, color: "#e53e3e", margin: "4px 0 6px" }}>{error}</p>}
+        {error && (
+          <p style={{ fontSize: 11, color: "#e53e3e", margin: "4px 0 6px" }}>
+            {error}
+          </p>
+        )}
 
         <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
           <button
@@ -472,7 +528,7 @@ export default function StaffAccounts() {
     (type: NotificationType, label: string) => {
       addNotification({ id: crypto.randomUUID(), type, label });
     },
-    [addNotification]
+    [addNotification],
   );
 
   // Logs the user out if the session expired, otherwise shows the error.
@@ -487,7 +543,7 @@ export default function StaffAccounts() {
       notify("error", getErrorMessage(err, fallback));
       return false;
     },
-    [logout, notify]
+    [logout, notify],
   );
 
   // ── Data loading ───────────────────────────────────────────────────────────
@@ -569,7 +625,8 @@ export default function StaffAccounts() {
       title: "Delete staff account?",
       message: (
         <>
-          Permanently remove <strong>{name}</strong>'s account. This cannot be undone.
+          Permanently remove <strong>{name}</strong>'s account. This cannot be
+          undone.
         </>
       ),
       confirmLabel: "Delete account",
@@ -597,7 +654,14 @@ export default function StaffAccounts() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: "100vh", background: "#fff", fontFamily: FONT_FAMILY, color: "#1a202c" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#fff",
+        fontFamily: FONT_FAMILY,
+        color: "#1a202c",
+      }}
+    >
       <Sidebar />
       <link
         href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
@@ -617,8 +681,12 @@ export default function StaffAccounts() {
           }}
         >
           <div>
-            <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>Staff Accounts</div>
-            <div style={{ fontSize: 12, color: "#a0aec0", marginTop: 3 }}>Manage employee access and roles</div>
+            <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>
+              Staff Accounts
+            </div>
+            <div style={{ fontSize: 12, color: "#a0aec0", marginTop: 3 }}>
+              Manage employee access and roles
+            </div>
           </div>
           <button
             onClick={() => setShowModal(true)}
@@ -654,13 +722,22 @@ export default function StaffAccounts() {
             <StatCard
               key={role}
               label={ROLE_LABEL[role]}
-              value={employees.filter((employee) => employee.role === role).length}
+              value={
+                employees.filter((employee) => employee.role === role).length
+              }
             />
           ))}
         </div>
 
         {/* Search and role filter */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
+        >
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -682,8 +759,18 @@ export default function StaffAccounts() {
         </div>
 
         {/* Staff table */}
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflowX: "auto", marginBottom: 40 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: 14,
+            border: "1px solid #e2e8f0",
+            overflowX: "auto",
+            marginBottom: 40,
+          }}
+        >
+          <table
+            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}
+          >
             <thead>
               <tr>
                 {TABLE_COLUMNS.map((heading, i) => (
@@ -698,8 +785,13 @@ export default function StaffAccounts() {
                 <SectionSpinner message="Loading staff accounts..." />
               ) : filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length} style={{ ...emptyRowStyle, color: "#cbd5e0" }}>
-                    {isFiltering ? "No results match your search." : "No employees yet. Add one above."}
+                  <td
+                    colSpan={TABLE_COLUMNS.length}
+                    style={{ ...emptyRowStyle, color: "#cbd5e0" }}
+                  >
+                    {isFiltering
+                      ? "No results match your search."
+                      : "No employees yet. Add one above."}
                   </td>
                 </tr>
               ) : (

@@ -1771,11 +1771,13 @@ export default function CashierView() {
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [orderType, setOrderType] = useState<OrderTypeVal>("dine-in");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [platformReference, setPlatformReference] = useState("");
   const [customerType, setCustomerType] = useState("");
   const [orderNote, setOrderNote] = useState("");
+  const [soldToName, setSoldToName] = useState("");
   const [showNote, setShowNote] = useState(false);
   const [billing, setBilling] = useState<Billing>({
     taxRate: 0,
@@ -2222,6 +2224,7 @@ export default function CashierView() {
   const cartSignature = cart.map((i) => `${i.id}:${i.quantity}`).join(",");
   useEffect(() => {
     setDiscountApproval(null);
+    if (!cart.length) setCheckoutStep(1);
   }, [cartSignature]);
 
   const addToCart = useCallback((item: MenuItem) => {
@@ -2262,6 +2265,7 @@ export default function CashierView() {
   // Puts the whole order form back to its starting state (used by Void and New order).
   const clearOrderForm = () => {
     setCart([]);
+    setCheckoutStep(1);
     setOrderType("dine-in");
     setPaymentMethod("cash");
     setPlatformReference("");
@@ -2271,6 +2275,7 @@ export default function CashierView() {
         "",
     );
     setOrderNote("");
+    setSoldToName("");
     setShowNote(false);
     setShowDiscounts(false);
     setPendingDiscount(null);
@@ -2466,6 +2471,7 @@ export default function CashierView() {
           proof_image_url: proofImageUrl,
         }),
         customer_type: customerType,
+        ...(soldToName.trim() && { customer_name: soldToName.trim() }),
         discount_name: customerType,
         discount_rate: discountRate,
         discount_id: discount?.discount_id ?? null,
@@ -2768,7 +2774,7 @@ export default function CashierView() {
               >
                 Add items to start
               </Empty>
-            ) : (
+            ) : checkoutStep === 1 ? (
               <AnimatePresence>
                 {cart.map((item) => (
                   <CartRow
@@ -2779,30 +2785,60 @@ export default function CashierView() {
                   />
                 ))}
               </AnimatePresence>
+            ) : (
+              <div className="space-y-3 py-5">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-neutral-400">
+                  Confirmed order summary
+                </p>
+                {cart.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-start justify-between gap-3 rounded-xl border border-neutral-100 bg-neutral-50 p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-neutral-800">{item.name}</p>
+                      <p className="text-xs text-neutral-400">
+                        {item.quantity} × {fmt.money(item.price)}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-semibold">
+                      {fmt.money(item.price * item.quantity)}
+                    </p>
+                  </div>
+                ))}
+                <div className="rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-500">
+                  Order type: <strong className="text-neutral-800">{orderType === "dine-in" ? "Dine-in" : orderType === "take-out" ? "Take-out" : "Delivery"}</strong>
+                  {orderType === "delivery" && platformReference.trim() && (
+                    <span className="block pt-1">Reference: {platformReference.trim()}</span>
+                  )}
+                </div>
+              </div>
             )}
           </div>
 
           {cart.length > 0 && (
             <div className="shrink-0 border-t border-neutral-100 p-4 sm:p-6">
               <div className="mb-4 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 text-sm">
-                {[
-                  ["Subtotal", fmt.money(gross), "text-neutral-500"],
-                  [
-                    `Discount (${pct(discountRate)}%)`,
-                    `-${fmt.money(pricing.discountAmount)}`,
-                    "text-green-600",
-                  ],
-                  [
-                    `Tax (${pct(billing.taxRate)}%)`,
-                    fmt.money(pricing.taxAmount),
-                    "text-neutral-500",
-                  ],
-                  [
-                    `Service charge (${pct(billing.serviceCharge)}%)`,
-                    fmt.money(pricing.serviceChargeAmount),
-                    "text-neutral-500",
-                  ],
-                ].map(([l, v, c]) => (
+                {(checkoutStep === 1
+                  ? [["Subtotal", fmt.money(gross), "text-neutral-500"]]
+                  : [
+                      ["Subtotal", fmt.money(gross), "text-neutral-500"],
+                      [
+                        `Discount (${pct(discountRate)}%)`,
+                        `-${fmt.money(pricing.discountAmount)}`,
+                        "text-green-600",
+                      ],
+                      [
+                        `Tax (${pct(billing.taxRate)}%)`,
+                        fmt.money(pricing.taxAmount),
+                        "text-neutral-500",
+                      ],
+                      [
+                        `Service charge (${pct(billing.serviceCharge)}%)`,
+                        fmt.money(pricing.serviceChargeAmount),
+                        "text-neutral-500",
+                      ],
+                    ]).map(([l, v, c]) => (
                   <p
                     key={l}
                     className="flex justify-between gap-3 border-b border-dashed border-neutral-200 px-4 py-2.5"
@@ -2811,39 +2847,58 @@ export default function CashierView() {
                     <span className={`font-medium ${c}`}>{v}</span>
                   </p>
                 ))}
-                <p className="flex items-center justify-between bg-neutral-100 px-4 py-3.5">
+                {checkoutStep === 2 && <p className="flex items-center justify-between bg-neutral-100 px-4 py-3.5">
                   <span className="font-medium text-neutral-600">Total</span>
                   <span className="text-2xl font-semibold">
                     {fmt.money(pricing.amountDue)}
                   </span>
-                </p>
+                </p>}
               </div>
 
-              <div className="mb-2 grid grid-cols-2 gap-2">
+              <div className={`mb-2 grid gap-2 ${checkoutStep === 2 ? "grid-cols-1" : "grid-cols-1"}`}>
+                {checkoutStep === 1 && (
                 <Select
                   value={orderType}
-                  onChange={(v) => setOrderType(v as OrderTypeVal)}
+                  onChange={(v) => {
+                    const nextOrderType = v as OrderTypeVal;
+                    setOrderType(nextOrderType);
+                    setPaymentMethod(nextOrderType === "delivery" ? "grabfood" : "cash");
+                    if (nextOrderType !== "delivery") setPlatformReference("");
+                  }}
                   options={[
                     { value: "dine-in", label: "Dine in" },
                     { value: "take-out", label: "Take out" },
                     { value: "delivery", label: "Delivery" },
                   ]}
                 />
+                )}
+                {checkoutStep === 1 && orderType === "delivery" && (
+                  <Select
+                    value={paymentMethod}
+                    onChange={(v) => setPaymentMethod(v as PaymentMethod)}
+                    options={[
+                      { value: "grabfood", label: "GrabFood" },
+                      { value: "foodpanda", label: "Foodpanda" },
+                    ]}
+                  />
+                )}
+                {checkoutStep === 2 && orderType !== "delivery" && (
                 <Select
                   value={paymentMethod}
                   onChange={(v) => setPaymentMethod(v as PaymentMethod)}
-                  options={orderType === "delivery"
-                    ? [
-                        { value: "grabfood", label: "GrabFood" },
-                        { value: "foodpanda", label: "Foodpanda" },
-                      ]
-                    : [
+                  options={[
                         { value: "cash", label: "Cash" },
                         { value: "gcash_onsite", label: "Online Payment" },
                       ]}
                 />
+                )}
+                {checkoutStep === 2 && orderType === "delivery" && (
+                  <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm font-semibold text-neutral-700">
+                    {paymentMethod === "foodpanda" ? "Foodpanda" : "GrabFood"} · {platformReference}
+                  </div>
+                )}
               </div>
-              {orderType === "delivery" && (
+              {checkoutStep === 1 && orderType === "delivery" && (
                 <div className="mb-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                   <label className={`${eyebrow} mb-1.5 block`} htmlFor="platform-reference">
                     Platform reference
@@ -2874,7 +2929,7 @@ export default function CashierView() {
                   </p>
                 </div>
               )}
-              <button
+              {checkoutStep === 2 && <button
                 type="button"
                 onClick={() => setShowDiscounts(true)}
                 className="mb-2 flex w-full items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-700 transition hover:border-neutral-400"
@@ -2888,15 +2943,26 @@ export default function CashierView() {
                     ? `${discount.name} (${pct(discountRate)}%)`
                     : "Select"}
                 </span>
-              </button>
-              <button
+              </button>}
+              {checkoutStep === 2 && (
+                <div className="mb-3 grid gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                  <p className={eyebrow}>Optional receipt details</p>
+                  <input
+                    value={soldToName}
+                    onChange={(event) => setSoldToName(event.target.value.slice(0, 150))}
+                    placeholder="Sold To"
+                    className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-900"
+                  />
+                </div>
+              )}
+              {checkoutStep === 2 && <button
                 onClick={() => setShowNote((p) => !p)}
                 className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}
               >
                 <MessageSquare className="h-4 w-4" />
                 {orderNote ? "Edit Other Note" : "Add Other Note"}
-              </button>
-              <Collapse open={showNote}>
+              </button>}
+              {checkoutStep === 2 && <Collapse open={showNote}>
                 <textarea
                   value={orderNote}
                   onChange={(e) => setOrderNote(e.target.value)}
@@ -2905,18 +2971,37 @@ export default function CashierView() {
                   placeholder="e.g. no spicy, birthday order…"
                   className="w-full resize-none rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 outline-none"
                 />
-              </Collapse>
+              </Collapse>}
 
-              <button
+              {checkoutStep === 1 ? (
+                <button
+                  type="button"
+                  className={`${B.dark} flex items-center justify-center gap-2 py-4 text-base`}
+                  onClick={() => setCheckoutStep(2)}
+                >
+                  Continue to Payment
+                </button>
+              ) : (
+                <div className="grid grid-cols-[auto_1fr] gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutStep(1)}
+                    className="rounded-xl border border-neutral-200 px-4 py-3 text-sm font-semibold text-neutral-600"
+                  >
+                    Back
+                  </button>
+                  <button
                 className={`${isOnline ? B.green : B.dark} flex items-center justify-center gap-2 py-4 text-base`}
                 disabled={placing || loadingPaymentQr || !isOnline || !customerType}
                 onClick={openPayment}
               >
                 {placing && <ButtonSpinner color="white" />}
                 {payBtnLabel}
-              </button>
+                  </button>
+                </div>
+              )}
               <p className="mt-2 text-center text-xs text-neutral-400">
-                Inventory is deducted only after the paid order is completed.
+                Paid orders reserve and deduct stock when the payment is confirmed.
               </p>
             </div>
           )}

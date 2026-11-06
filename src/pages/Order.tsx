@@ -10,6 +10,7 @@ import {
   Clock,
   Flame,
   Minus,
+  MessageSquareText,
   PackageCheck,
   Play,
   Plus,
@@ -58,6 +59,7 @@ type SettlementAction = "refund" | "cancel" | null;
 interface OrderItem {
   quantity: number;
   name: string;
+  note?: string | null;
 }
 
 interface OrderCard {
@@ -67,6 +69,7 @@ interface OrderCard {
   orderType: OrderType;
   isOnlinePickup?: boolean;
   items: OrderItem[];
+  orderNote?: string | null;
   isPreparing: boolean;
   isReady: boolean;
   isFinished: boolean;
@@ -272,6 +275,7 @@ interface TicketProps {
 }
 
 function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRefund, onStart, onComplete, onAdjustTimer, onSettle }: TicketProps) {
+  const [showNotes, setShowNotes] = useState(false);
   const stage = getStage(order);
   const overdue = isOverdue(order, nowMs);
   const orderType = order.orderType || order.status;
@@ -283,6 +287,8 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
   const busy = thisAction !== null || isSettling;
   const settleLocked = busy || isTerminalStatus(order.currentStatus);
   const timerEditable = stage !== "ready";
+  const itemNotes = order.items.filter((item) => Boolean(item.note?.trim()));
+  const hasNotes = Boolean(order.orderNote?.trim()) || itemNotes.length > 0;
 
   const stripe = overdue ? "bg-red-500" : COLUMNS.find((c) => c.stage === stage)!.accent;
   const primaryButton = "flex h-12 w-full items-center justify-center gap-2 rounded-xl text-base font-semibold transition disabled:cursor-not-allowed";
@@ -337,6 +343,36 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
             </li>
           ))}
         </ul>
+
+        {hasNotes && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowNotes((visible) => !visible)}
+              aria-expanded={showNotes}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              <MessageSquareText size={16} />
+              Notes
+            </button>
+            {showNotes && (
+              <div className="mt-2 rounded-xl border border-amber-200 bg-white p-3 text-sm shadow-lg">
+                {order.orderNote?.trim() && (
+                  <p className="whitespace-pre-wrap text-slate-700">
+                    <span className="font-semibold text-slate-900">Order:</span>{" "}
+                    {order.orderNote.trim()}
+                  </p>
+                )}
+                {itemNotes.map((item, index) => (
+                  <p key={`${item.name}-${index}`} className="mt-2 whitespace-pre-wrap text-slate-700">
+                    <span className="font-semibold text-slate-900">{item.name}:</span>{" "}
+                    {item.note?.trim()}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {timerEditable && (
           <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">

@@ -30,9 +30,9 @@ import { ProductImage } from "@/components/ProductImage";
  * 1b. Optional nutrition: calories, protein, carbs, fat (numbers) and serving_size (string), either
  *    flat on the row or inside a nested `nutrition` object. Nothing is shown if the backend sends none.
  * 2. Stock is enforced client-side: stock <= 0 always means unavailable.
- * 3. Cart and payment state live in memory only (no localStorage).
- * 4. Payment return expects the PayMongo redirect URL to include `?payment=success&session_id=...`
- *    (or `?payment=cancelled`).
+ * 3. A pending PayMongo checkout is stored locally only long enough to survive the hosted redirect.
+ *    The backend treats every restored value as untrusted and revalidates the customer, cart and amount.
+ * 4. Payment returns use `?payment=success` or `?payment=cancelled`; the checkout ID is restored locally.
  * 5. Font: Poppins is loaded globally. Do not add a per-page <link> tag.
  */
 
@@ -123,7 +123,14 @@ interface PaymentSessionState {
   status: string;
   paid: boolean;
   paymentReference: string | null;
-  bypassed?: boolean;
+}
+interface PendingPayMongoCheckout {
+  customerUserId: number;
+  checkoutRequestId: string;
+  checkoutSessionId: string | null;
+  checkoutUrl: string | null;
+  cart: CartItem[];
+  createdAt: number;
 }
 interface BillingSettings {
   taxRate: number;
@@ -147,6 +154,74 @@ type VerifyResult = {
   status: string;
   paymentReference: string | null;
 };
+
+const PENDING_PAYMONGO_TTL_MS = 24 * 60 * 60 * 1000;
+const pendingPayMongoKey = (customerUserId: number) =>
+  `the-crunch:paymongo-checkout:${customerUserId}`;
+
+function cartPaymentFingerprint(cart: CartItem[]) {
+  return cart
+    .map((item) => `${Number(item.recipe.id)}:${Number(item.quantity)}`)
+    .sort()
+    .join("|");
+}
+
+function readPendingPayMongoCheckout(customerUserId: number): PendingPayMongoCheckout | null {
+  if (typeof window === "undefined" || customerUserId <= 0) return null;
+  try {
+    const raw = window.localStorage.getItem(pendingPayMongoKey(customerUserId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingPayMongoCheckout>;
+    const validCart = Array.isArray(parsed.cart) && parsed.cart.every((item) =>
+      Number.isSafeInteger(Number(item?.recipe?.id)) &&
+      Number(item.recipe.id) > 0 &&
+      Number.isFinite(Number(item?.recipe?.price)) &&
+      Number.isSafeInteger(Number(item?.quantity)) &&
+      Number(item.quantity) > 0,
+    );
+    if (
+      Number(parsed.customerUserId) !== customerUserId ||
+      !validCart ||
+      !parsed.checkoutRequestId ||
+      !Number.isFinite(Number(parsed.createdAt)) ||
+      Date.now() - Number(parsed.createdAt) > PENDING_PAYMONGO_TTL_MS
+    ) {
+      window.localStorage.removeItem(pendingPayMongoKey(customerUserId));
+      return null;
+    }
+    return parsed as PendingPayMongoCheckout;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingPayMongoCheckout(value: PendingPayMongoCheckout) {
+  try {
+    window.localStorage.setItem(
+      pendingPayMongoKey(value.customerUserId),
+      JSON.stringify(value),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removePendingPayMongoCheckout(customerUserId: number) {
+  try {
+    window.localStorage.removeItem(pendingPayMongoKey(customerUserId));
+  } catch {
+    // Storage cleanup is best-effort; the record also expires after 24 hours.
+  }
+}
+
+function newCheckoutRequestId() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (digit) =>
+    (Number(digit) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(digit) / 4))))
+      .toString(16),
+  );
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const CATEGORY_ORDER = ["Chicken", "Sides", "Drinks", "Combos"] as const;
@@ -1095,7 +1170,7 @@ function PaymentMethodSelector({
   disabled?: boolean;
 }) {
   const methods = [
-    { id: "gcash" as const, label: "GCash", sub: "Pay now online", d: D.phone },
+    { id: "gcash" as const, label: "Pay Online", sub: "Secure PayMongo checkout", d: D.phone },
     { id: "cash" as const, label: "Cash", sub: "Pay at the store", d: D.cash },
   ];
   return (
@@ -1792,7 +1867,7 @@ function CartDrawer({
       ? ["Place order", onPlaceOrder]
       : paymentSession
         ? ["Check payment status", onVerifyPayment]
-        : ["Pay with GCash", onSendPayment];
+        : ["Pay Online", onSendPayment];
   const note = (color: string, text: string) => (
     <p style={{ fontSize: 12.5, color, lineHeight: 1.6, margin: "0 0 12px" }}>
       {text}
@@ -1861,7 +1936,7 @@ function CartDrawer({
         {!isCash && paymentSession?.checkoutUrl && !paymentSession.paid && (
           <div style={{ marginBottom: 10 }}>
             <Button full href={paymentSession.checkoutUrl}>
-              Open GCash payment
+              Open PayMongo checkout
             </Button>
           </div>
         )}
@@ -1883,9 +1958,7 @@ function CartDrawer({
         >
           {isCash
             ? "Pickup only. Pay at the store."
-            : paymentSession?.bypassed
-              ? "Test mode. No real GCash charge."
-              : "Pickup only. Pay with GCash, then place your order."}
+            : "Pickup only. Payment is verified securely through PayMongo."}
         </p>
       </>
     ) : undefined;
@@ -2109,8 +2182,10 @@ export default function Delicacy() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  // Cart and payment (memory only, nothing is written to localStorage)
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Only an active hosted-checkout handoff is persisted; ordinary carts stay in memory.
+  const [cart, setCart] = useState<CartItem[]>(() =>
+    readPendingPayMongoCheckout(customerUserId)?.cart ?? [],
+  );
   const [paymentSession, setPaymentSession] =
     useState<PaymentSessionState | null>(null);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
@@ -2275,12 +2350,26 @@ export default function Delicacy() {
     };
   }, [loadMenuItems]);
 
-  // Payment return: reads session_id from the redirect URL (API note #4).
+  // Payment return: restore the trusted session/cart handoff created before redirect.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const state = params.get("payment"),
-      sessionId = params.get("session_id");
-    if (!state) return;
+      returnedSessionId = params.get("session_id");
+    const pending = readPendingPayMongoCheckout(customerUserId);
+    const sessionId = returnedSessionId || pending?.checkoutSessionId || null;
+    if (!state) {
+      if (pending?.checkoutSessionId) {
+        setPaymentSession({
+          checkoutSessionId: pending.checkoutSessionId,
+          checkoutUrl: pending.checkoutUrl,
+          status: "active",
+          paid: false,
+          paymentReference: null,
+        });
+        setPaymentMessage("You have an unfinished PayMongo checkout. Continue it or check its status.");
+      }
+      return;
+    }
     const clearUrl = () => {
       const u = new URL(window.location.href);
       u.searchParams.delete("payment");
@@ -2289,8 +2378,17 @@ export default function Delicacy() {
     };
     if (state === "cancelled") {
       setDrawerOpen(true);
+      if (pending?.checkoutSessionId) {
+        setPaymentSession({
+          checkoutSessionId: pending.checkoutSessionId,
+          checkoutUrl: pending.checkoutUrl,
+          status: "active",
+          paid: false,
+          paymentReference: null,
+        });
+      }
       setPaymentMessage(
-        "GCash checkout was cancelled. You can try again when you're ready.",
+        "PayMongo checkout was closed. You can reopen the same secure checkout when you're ready.",
       );
       clearUrl();
       return;
@@ -2300,7 +2398,7 @@ export default function Delicacy() {
       return;
     }
     setDrawerOpen(true);
-    setPaymentMessage("Verifying your GCash payment...");
+    setPaymentMessage("Verifying your PayMongo payment...");
     let cancelled = false;
     (async () => {
       try {
@@ -2308,12 +2406,12 @@ export default function Delicacy() {
         if (cancelled) return;
         setPaymentSession({
           checkoutSessionId: sessionId,
-          checkoutUrl: "",
+          checkoutUrl: pending?.checkoutUrl || "",
           ...d,
         });
         setPaymentMessage(
           d.paid
-            ? "Payment confirmed. You can now place your order."
+            ? "Payment confirmed. Finalizing your order securely..."
             : "Payment is still pending. Please check again.",
         );
       } catch (error) {
@@ -2330,7 +2428,7 @@ export default function Delicacy() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [customerUserId]);
 
   // Deep link: ?showOrderModal=true opens the order type dialog.
   useEffect(() => {
@@ -2423,6 +2521,7 @@ export default function Delicacy() {
   const clearPayment = () => {
     setPaymentSession(null);
     setPaymentMessage(null);
+    removePendingPayMongoCheckout(customerUserId);
   };
 
   const addToCart = (recipe: Recipe) => {
@@ -2525,7 +2624,6 @@ export default function Delicacy() {
           items: buildItems(),
           total: billing.grandTotal,
           customerUserId,
-          customer_name: customerName,
           customer_email: customerEmail,
           order_type: "take-out",
           ...extra,
@@ -2557,7 +2655,7 @@ export default function Delicacy() {
 
   const handlePlaceOrder = () => {
     if (isSubmitting || !paymentSession?.paid) {
-      setPaymentMessage("Please complete and verify your GCash payment first.");
+      setPaymentMessage("Please complete and verify your PayMongo payment first.");
       return;
     }
     return submitOrder(
@@ -2578,44 +2676,71 @@ export default function Delicacy() {
     setIsSubmitting(true);
     setPaymentMessage(null);
     try {
+      const existingPending = readPendingPayMongoCheckout(customerUserId);
+      const currentFingerprint = cartPaymentFingerprint(cart);
+      if (
+        existingPending?.checkoutSessionId &&
+        existingPending.checkoutUrl &&
+        cartPaymentFingerprint(existingPending.cart) === currentFingerprint
+      ) {
+        window.location.href = existingPending.checkoutUrl;
+        return;
+      }
+      const checkoutRequestId =
+        existingPending &&
+        cartPaymentFingerprint(existingPending.cart) === currentFingerprint
+          ? existingPending.checkoutRequestId
+          : newCheckoutRequestId();
+      const pendingCheckout: PendingPayMongoCheckout = {
+        customerUserId,
+        checkoutRequestId,
+        checkoutSessionId: null,
+        checkoutUrl: null,
+        cart,
+        createdAt: existingPending?.checkoutRequestId === checkoutRequestId
+          ? existingPending.createdAt
+          : Date.now(),
+      };
+      if (!writePendingPayMongoCheckout(pendingCheckout)) {
+        throw new Error(
+          "Secure payment recovery is unavailable in this browser. Enable site storage or use Cash on Pickup.",
+        );
+      }
       const d = await api.post<{
         checkoutSessionId: string;
         checkoutUrl: string | null;
         status: string;
         paid?: boolean;
         paymentReference?: string | null;
-        bypassed?: boolean;
       }>("/paymongo/create-checkout", {
         items: buildItems(),
-        total: billing.grandTotal,
-        customerUserId,
-        customerName,
-        customerEmail,
+        checkoutRequestId,
       });
-      const bypassed = d.bypassed === true;
+      if (!writePendingPayMongoCheckout({
+        ...pendingCheckout,
+        checkoutSessionId: d.checkoutSessionId,
+        checkoutUrl: d.checkoutUrl,
+      })) {
+        throw new Error("Could not preserve the PayMongo checkout for the return redirect.");
+      }
       setPaymentSession({
         checkoutSessionId: d.checkoutSessionId,
         checkoutUrl: d.checkoutUrl,
         status: d.status,
-        paid: bypassed && d.paid === true,
+        paid: false,
         paymentReference: d.paymentReference ?? null,
-        bypassed,
       });
-      if (bypassed) {
-        setPaymentMessage("paymongo to naka bypass lang so click nyo lang");
-        return;
-      }
       if (!d.checkoutUrl)
         throw new Error(
           "The payment checkout link was not returned. Please try again.",
         );
-      setPaymentMessage("Redirecting to GCash checkout...");
+      setPaymentMessage("Redirecting to PayMongo checkout...");
       window.location.href = d.checkoutUrl;
     } catch (error) {
       setPaymentMessage(
         error instanceof Error
           ? error.message
-          : "Could not start GCash payment. Please try again.",
+          : "Could not start PayMongo payment. Please try again.",
       );
     } finally {
       setIsSubmitting(false);
@@ -2632,8 +2757,8 @@ export default function Delicacy() {
       setPaymentSession({ ...paymentSession, ...d });
       setPaymentMessage(
         d.paid
-          ? "Payment confirmed. You can now place your order."
-          : "Payment is still pending. Finish GCash checkout, then check again.",
+          ? "Payment confirmed. Finalizing your order securely..."
+          : "Payment is still pending. Finish PayMongo checkout, then check again.",
       );
     } catch (error) {
       setPaymentMessage(
@@ -2645,6 +2770,14 @@ export default function Delicacy() {
       setIsSubmitting(false);
     }
   };
+
+  const autoFinalizedSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!paymentSession?.paid || isSubmitting) return;
+    if (autoFinalizedSessionRef.current === paymentSession.checkoutSessionId) return;
+    autoFinalizedSessionRef.current = paymentSession.checkoutSessionId;
+    void handlePlaceOrder();
+  }, [paymentSession?.paid, paymentSession?.checkoutSessionId, isSubmitting]);
 
   // ── Email verification ───────────────────────────────────────────────────
   const handleVerifyEmail = async () => {

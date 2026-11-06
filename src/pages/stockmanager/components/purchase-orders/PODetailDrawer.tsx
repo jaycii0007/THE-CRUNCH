@@ -184,7 +184,10 @@ export function PODetailDrawer({
                         {item.name}
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">
-                        {item.category} {"\u00B7"} {item.quantity} {item.unit}
+                        {item.category} {"\u00B7"} Ordered: {item.quantity} {item.unit}
+                        {item.receivedQuantity != null && (
+                          <> {"\u00B7"} Received: {item.receivedQuantity} {item.unit}</>
+                        )}
                       </p>
                       <div className="mt-2 space-y-1">
                         <span

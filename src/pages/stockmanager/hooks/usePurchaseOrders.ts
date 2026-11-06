@@ -220,6 +220,7 @@ export function usePurchaseOrders({
       receivedDate,
       itemExpiryDates,
       itemShelfLife,
+      itemReceivedQuantities,
     }: {
       receiptNo: string;
       receivedBy: string;
@@ -227,8 +228,9 @@ export function usePurchaseOrders({
       itemExpiryDates: Record<number, string>;
       itemShelfLife: Record<
         number,
-        { shelfLifeDays?: number | null; shelfLifeHours?: number | null }
+        { shelfLifeMonths?: number | null; shelfLifeDays?: number | null; shelfLifeHours?: number | null }
       >;
+      itemReceivedQuantities: Record<number, number>;
     }) => {
       if (!receivingOrder) return;
       setPoLoading(true);
@@ -240,6 +242,7 @@ export function usePurchaseOrders({
           receivedDate,
           itemExpiryDates,
           itemShelfLife,
+          itemReceivedQuantities,
         );
         setPoOrders((prev) =>
           prev.map((o) => (o.id === receivingOrder.id ? updated : o)),

@@ -31,6 +31,9 @@ export interface ReceiptDto {
   cashTendered: number | null;
   change: number | null;
   customerType: string | null;
+  customer: {
+    soldTo: string | null;
+  };
   tableNumber: string | null;
   orderNote: string | null;
   currency: string | null;
@@ -54,9 +57,6 @@ export interface ReceiptOptions {
   cashier?: string | null;
 }
 
-// ---------- Store details (edit these) ----------
-const STORE_NAME = "The Crunch";
-const STORE_ADDRESS = ["6 Falcon St., cor Dahlia Fairview,", "Quezon City, Philippines"];
 const SOCIAL_HANDLE = "@TheCrunchFairviewDahlia";
 const WEBSITE = "www.thecrunch.site";
 
@@ -65,8 +65,13 @@ const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 const num = (v: number | null | undefined): v is number => v != null && Number.isFinite(Number(v));
-const fmtNum = (v: number) => Number(v).toFixed(2).replace(/\.00$/, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-const money = (v: number | null | undefined, cur: string | null) => (num(v) ? `${cur ? `${cur} ` : ""}${fmtNum(v)}` : "—");
+const fmtNum = (v: number) => Number(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const money = (v: number | null | undefined, cur: string | null) => {
+  if (!num(v)) return "—";
+  const currency = String(cur || "").trim().toUpperCase();
+  const prefix = currency === "PHP" ? "₱" : currency ? `${currency} ` : "";
+  return `${prefix}${fmtNum(v)}`;
+};
 const rate = (r: number | null) => (num(r) ? ` ${fmtNum(r)}%` : "");
 const cap = (s: string) => s.replace(/(^|[-\s_])\w/g, (m) => m.toUpperCase());
 
@@ -98,16 +103,17 @@ export function formatReceiptDate(r: ReceiptDto): string {
 const PAGE = (title: string, css: string, body: string) => `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"/><title>${esc(title)}</title><style>
 *{box-sizing:border-box}
-body{margin:0;padding:16px;background:#e5e5e5;font-family:'Courier New',ui-monospace,monospace;color:#000}
-.paper{width:302px;margin:0 auto;background:#fff;padding:20px 16px 26px;font-size:12px;line-height:1.45;box-shadow:0 2px 14px rgba(0,0,0,.18)}
-h1{font-size:18px;text-align:center;margin:0 0 2px;text-transform:uppercase;letter-spacing:.06em}
-p{margin:0}.c{text-align:center}.s{font-size:10px;color:#555}.b{font-weight:700}
-hr{border:0;border-top:1px dashed #000;margin:10px 0}hr.d{border-top:2px solid #000}
+body{margin:0;padding:16px;background:#e5e7eb;font-family:Arial,Helvetica,sans-serif;color:#111827}
+.paper{width:320px;margin:0 auto;background:#fff;padding:22px 18px 28px;font-size:11px;line-height:1.45;box-shadow:0 8px 30px rgba(15,23,42,.18)}
+h1{font-size:19px;text-align:center;margin:0 0 2px;text-transform:uppercase;letter-spacing:.05em}
+p{margin:0}.c{text-align:center}.s{font-size:9.5px;color:#64748b}.b{font-weight:700}.label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#64748b}
+hr{border:0;border-top:1px dashed #94a3b8;margin:10px 0}hr.d{border-top:2px solid #111827}
 table{width:100%;border-collapse:collapse}td,th{padding:2px 0;vertical-align:top;text-align:left}
-th{font-size:10px;letter-spacing:.05em;border-bottom:1px solid #000;padding-bottom:3px}
+th{font-size:9px;letter-spacing:.06em;border-bottom:1px solid #111827;padding-bottom:4px;text-transform:uppercase}
 .r{text-align:right;white-space:nowrap;padding-left:8px}.q{width:34px}
 .tot td{font-size:16px;font-weight:700;padding:4px 0}
 .legacy{margin-bottom:8px;padding:6px 8px;border:1px dashed #000;font-size:10px}
+.receipt-title{text-align:center;font-size:10px;font-weight:700;letter-spacing:.16em;margin-top:8px}.customer{padding:8px;background:#f8fafc;border-radius:6px}.item td{padding-top:5px;padding-bottom:5px;border-bottom:1px solid #e2e8f0}
 ${css}
 @media print{@page{size:80mm auto;margin:0}body{background:#fff;padding:0}.paper{width:auto;box-shadow:none}}
 </style></head><body><div class="paper">${body}</div></body></html>`;
@@ -118,7 +124,6 @@ const row = (l: string, v: string, cls = "") => `<tr class="${cls}"><td>${esc(l)
 export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): string {
   const cur = r.currency;
   const cashier = r.cashierName || opts.cashier || "";
-  const isCash = String(r.paymentMethod).toLowerCase() === "cash";
 
   const info: [string, string][] = [
     ["Order #", r.orderNumber],
@@ -135,7 +140,7 @@ export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): stri
 
   const hasDiscount = num(r.discount.amount) && r.discount.amount > 0;
   const extras = [
-    hasDiscount ? row("Subtotal", money(r.subtotal, cur)) : "",
+    row("Total Sales", money(r.subtotal, cur)),
     hasDiscount
       ? row(`Discount${r.discount.name ? ` (${r.discount.name})` : ""}${rate(r.discount.rate)}`, `-${money(r.discount.amount, cur)}`) : "",
     num(r.tax.amount) && r.tax.amount > 0 ? row(`Tax${rate(r.tax.rate)}`, money(r.tax.amount, cur)) : "",
@@ -144,16 +149,29 @@ export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): stri
 
   const payment =
     (r.paymentMethod ? row("Payment", paymentLabel(r.paymentMethod)) : "") +
-    (isCash && num(r.cashTendered) ? row("Cash Tendered", money(r.cashTendered, cur)) : "") +
+    (num(r.cashTendered)
+      ? row("Amount Received", money(r.cashTendered, cur))
+      : num(r.amountPaid) && r.amountPaid > 0
+        ? row("Amount Received", money(r.amountPaid, cur))
+        : "") +
     (num(r.change) ? row("Change", money(r.change, cur), "b") : "");
 
+  const merchantName = r.merchant.name || "The Crunch";
+  const merchantLines = [r.merchant.address, r.merchant.phone, r.merchant.email].filter(Boolean);
+  const customer = r.customer || { soldTo: null };
+  const customerValue = (value: string | null) => value ? esc(value) : "________________________";
+  const blankCustomerLine = "________________________";
+
   return PAGE(`Receipt ${r.orderNumber}`, "", `
-<h1>${esc(STORE_NAME)}</h1>
-${STORE_ADDRESS.map((l) => `<p class="c s">${esc(l)}</p>`).join("")}
+<h1>${esc(merchantName)}</h1>
+${r.merchant.tagline ? `<p class="c s">${esc(r.merchant.tagline)}</p>` : ""}
+${merchantLines.map((line) => `<p class="c s">${esc(line)}</p>`).join("")}
+<p class="receipt-title">ORDER / TRANSACTION RECEIPT</p>
 <hr/>
 <table>${info.filter(([, v]) => v).map(([l, v]) => row(l, v)).join("")}</table>
+<hr/><div class="customer"><p class="label">Customer information</p><p><b>Sold To / Registered Name:</b> ${customerValue(customer.soldTo)}</p><p><b>TIN:</b> ${blankCustomerLine}</p><p><b>Business Address:</b> ${blankCustomerLine}</p></div>
 <hr/>
-<table><tr><th class="q">QTY</th><th>MENU</th><th class="r">PRICE</th></tr>${items}</table>
+<table><tr><th class="q">Qty</th><th>Description</th><th class="r">Amount</th></tr><tbody class="item">${items}</tbody></table>
 <hr/>
 ${extras ? `<table>${extras}</table><hr/>` : ""}
 <table>${row("TOTAL", money(r.total, cur), "tot")}</table>

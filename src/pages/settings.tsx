@@ -127,6 +127,8 @@ export interface RestaurantSettings {
   email: string;
   phone: string;
   address: string;
+  businessTin: string;
+  businessRegistrationDetails: string;
   // Operating hours
   weekdayOpenTime: string;
   weekdayCloseTime: string;
@@ -194,6 +196,8 @@ export const DEFAULT: RestaurantSettings = {
   email: "",
   phone: "",
   address: "",
+  businessTin: "",
+  businessRegistrationDetails: "",
   weekdayOpenTime: "10:00",
   weekdayCloseTime: "22:00",
   weekendOpenTime: "11:00",
@@ -242,6 +246,8 @@ function normalizeSettings(src: Record<string, unknown> | null | undefined): Res
     email: text("email"),
     phone: text("phone"),
     address: text("address"),
+    businessTin: text("businessTin"),
+    businessRegistrationDetails: text("businessRegistrationDetails"),
 
     weekdayOpenTime: text("weekdayOpenTime", DEFAULT.weekdayOpenTime),
     weekdayCloseTime: text("weekdayCloseTime", DEFAULT.weekdayCloseTime),
@@ -531,6 +537,8 @@ export function BusinessTab(p: TabProps) {
         <FR label="Email"><SI {...bindText(p, "email")} type="email" placeholder="Email address" /></FR>
         <FR label="Phone"><SI {...bindText(p, "phone")} placeholder="Phone number" /></FR>
         <FR label="Address" last><SI {...bindText(p, "address")} placeholder="Street address" /></FR>
+        <FR label="Business TIN"><SI {...bindText(p, "businessTin")} placeholder="Configured tax identification number" /></FR>
+        <FR label="Registration details" last><SI {...bindText(p, "businessRegistrationDetails")} placeholder="Business registration / permit details" /></FR>
       </Section>
       <Section>
         {HOUR_FIELDS.map(([key, label], i) => (
@@ -1237,6 +1245,7 @@ export function RolesTab() {
   const cellX = isMobile ? 8 : 14;
 
   return (
+    <>
     <Section>
       {/* The table scrolls sideways inside its own box so the page never does. */}
       <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -1286,6 +1295,70 @@ export function RolesTab() {
       {notice && <p style={{ ...typo("0.76rem", SUCCESS, 500), marginTop: 12 }}>{notice}</p>}
       <button type="button" onClick={() => void save()} disabled={saving} style={{ ...accentButton(saving), marginTop: 14 }}>
         {saving ? "Saving..." : "Save Role Permissions"}
+      </button>
+    </Section>
+    <DiscountPasswordSection />
+    </>
+  );
+}
+
+function DiscountPasswordSection() {
+  const [currentAdminPassword, setCurrentAdminPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+
+  const save = async () => {
+    setMessage(null);
+    if (newPassword !== confirmPassword) {
+      setMessage({ text: "New password confirmation does not match.", error: true });
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await api.put<{ message: string }>("/settings/discount-password", {
+        currentAdminPassword,
+        newPassword,
+        confirmPassword,
+      });
+      setCurrentAdminPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage({ text: response.message, error: false });
+    } catch (error) {
+      setMessage({
+        text: error instanceof Error ? error.message : "Failed to update discount password.",
+        error: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Section>
+      <h3 style={{ ...typo("0.92rem", INK, 650), marginBottom: 4 }}>Discount Authorization Password</h3>
+      <Hint>Cashiers enter this password when applying a protected discount. It is stored only as a secure hash.</Hint>
+      <FR label="Current admin password">
+        <SI value={currentAdminPassword} onChange={setCurrentAdminPassword} type="password" />
+      </FR>
+      <FR label="New discount password">
+        <SI value={newPassword} onChange={setNewPassword} type="password" placeholder="8 to 72 characters" />
+      </FR>
+      <FR label="Confirm new password" last>
+        <SI value={confirmPassword} onChange={setConfirmPassword} type="password" />
+      </FR>
+      {message && (
+        <p style={{ ...typo("0.76rem", message.error ? ERROR : SUCCESS, 500), marginTop: 8 }}>{message.text}</p>
+      )}
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={saving || !currentAdminPassword || !newPassword || !confirmPassword}
+        style={{ ...accentButton(saving || !currentAdminPassword || !newPassword || !confirmPassword), marginTop: 14 }}
+      >
+        {saving ? "Updating..." : "Update Discount Password"}
       </button>
     </Section>
   );

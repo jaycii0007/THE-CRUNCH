@@ -10,7 +10,31 @@ import {
   sanitizeNumberInput,
 } from "../../utils/inputUtils";
 import { getPOItemDateTrackingType } from "../../utils/purchaseOrderUtils";
-import { getShelfLifeDurationMs } from "../../utils/stockUtils";
+
+function getUsableUntilPreview(
+  receivedDate: string,
+  months: number,
+  days: number,
+  hours: number,
+) {
+  if (!receivedDate || (months <= 0 && days <= 0 && hours <= 0)) return null;
+  const value = new Date(`${receivedDate}T12:00:00`);
+  if (Number.isNaN(value.getTime())) return null;
+  if (months > 0) {
+    const originalDay = value.getDate();
+    value.setDate(1);
+    value.setMonth(value.getMonth() + months);
+    const lastDayOfTargetMonth = new Date(
+      value.getFullYear(),
+      value.getMonth() + 1,
+      0,
+    ).getDate();
+    value.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+  }
+  value.setDate(value.getDate() + days);
+  value.setHours(value.getHours() + hours);
+  return value.toISOString();
+}
 
 function toLocalISODate(date: Date = new Date()) {
   const year = date.getFullYear();
@@ -45,8 +69,9 @@ export function ReceivePOModal({
     itemExpiryDates: Record<number, string>;
     itemShelfLife: Record<
       number,
-      { shelfLifeDays?: number | null; shelfLifeHours?: number | null }
+      { shelfLifeMonths?: number | null; shelfLifeDays?: number | null; shelfLifeHours?: number | null }
     >;
+    itemReceivedQuantities: Record<number, number>;
   }) => Promise<void>;
   onShowToast: (message: string, type: "success" | "error") => void;
 }) {
@@ -60,14 +85,17 @@ export function ReceivePOModal({
     () => Object.fromEntries(order.items.map((item) => [item.id, ""])),
   );
   const [itemShelfLife, setItemShelfLife] = useState<
-    Record<number, { shelfLifeDays: string; shelfLifeHours: string }>
+    Record<number, { shelfLifeMonths: string; shelfLifeDays: string; shelfLifeHours: string }>
   >(() =>
     Object.fromEntries(
       order.items.map((item) => [
         item.id,
-        { shelfLifeDays: "", shelfLifeHours: "" },
+        { shelfLifeMonths: "", shelfLifeDays: "", shelfLifeHours: "" },
       ]),
     ),
+  );
+  const [itemReceivedQuantities, setItemReceivedQuantities] = useState<Record<number, string>>(
+    () => Object.fromEntries(order.items.map((item) => [item.id, String(item.quantity)])),
   );
 
   const handleConfirm = async () => {
@@ -93,7 +121,21 @@ export function ReceivePOModal({
       onShowToast("Actual receipt date cannot be in the future.", "error");
       return;
     }
+    const invalidQuantity = order.items.find((item) => {
+      const raw = itemReceivedQuantities[item.id] ?? "";
+      const quantity = Number(raw);
+      return !/^\d+$/.test(raw) || !Number.isInteger(quantity) || quantity < 0 || quantity > 999;
+    });
+    if (invalidQuantity) {
+      onShowToast(`Actual received quantity for ${invalidQuantity.name} must be a whole number from 0 to 999.`, "error");
+      return;
+    }
+    if (!order.items.some((item) => Number(itemReceivedQuantities[item.id]) > 0)) {
+      onShowToast("At least one item must have an actual received quantity greater than zero.", "error");
+      return;
+    }
     const missing = order.items.filter((item) => {
+      if (Number(itemReceivedQuantities[item.id]) === 0) return false;
       const trackingType = getPOItemDateTrackingType(
         item,
         inventoryCategoryNameLookup,
@@ -101,10 +143,12 @@ export function ReceivePOModal({
       );
       if (trackingType === "shelf_life") {
         const shelfLife = itemShelfLife[item.id] || {
+          shelfLifeMonths: "",
           shelfLifeDays: "",
           shelfLifeHours: "",
         };
         return (
+          toNumber(shelfLife.shelfLifeMonths) <= 0 &&
           toNumber(shelfLife.shelfLifeDays) <= 0 &&
           toNumber(shelfLife.shelfLifeHours) <= 0
         );
@@ -133,10 +177,17 @@ export function ReceivePOModal({
       receivedBy: receivedBy.trim(),
       receivedDate,
       itemExpiryDates,
+      itemReceivedQuantities: Object.fromEntries(
+        Object.entries(itemReceivedQuantities).map(([itemId, value]) => [Number(itemId), Number(value)]),
+      ),
       itemShelfLife: Object.fromEntries(
         Object.entries(itemShelfLife).map(([itemId, value]) => [
           Number(itemId),
           {
+            shelfLifeMonths:
+              toNumber(value.shelfLifeMonths) > 0
+                ? Math.round(toNumber(value.shelfLifeMonths))
+                : null,
             shelfLifeDays:
               toNumber(value.shelfLifeDays) > 0
                 ? Math.round(toNumber(value.shelfLifeDays))
@@ -238,6 +289,7 @@ export function ReceivePOModal({
             const usesExpiry = trackingType === "expiry";
             const currentExpiryDate = itemExpiryDates[item.id] || "";
             const currentShelfLife = itemShelfLife[item.id] || {
+              shelfLifeMonths: "",
               shelfLifeDays: "",
               shelfLifeHours: "",
             };
@@ -249,15 +301,15 @@ export function ReceivePOModal({
               dayCount <= 7;
             const usableUntilPreview =
               usesShelfLife &&
-              (toNumber(currentShelfLife.shelfLifeDays) > 0 ||
+              (toNumber(currentShelfLife.shelfLifeMonths) > 0 ||
+                toNumber(currentShelfLife.shelfLifeDays) > 0 ||
                 toNumber(currentShelfLife.shelfLifeHours) > 0)
-                ? new Date(
-                    Date.now() +
-                      getShelfLifeDurationMs(
-                        toNumber(currentShelfLife.shelfLifeDays),
-                        toNumber(currentShelfLife.shelfLifeHours),
-                      ),
-                  ).toISOString()
+                ? getUsableUntilPreview(
+                    receivedDate,
+                    toNumber(currentShelfLife.shelfLifeMonths),
+                    toNumber(currentShelfLife.shelfLifeDays),
+                    toNumber(currentShelfLife.shelfLifeHours),
+                  )
                 : null;
             return (
               <div
@@ -270,7 +322,7 @@ export function ReceivePOModal({
                       {item.name}
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {item.category} {"\u00B7"} {item.quantity} {item.unit}
+                      {item.category} {"\u00B7"} Ordered: {item.quantity} {item.unit}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -288,12 +340,52 @@ export function ReceivePOModal({
                     ) : null}
                   </div>
                 </div>
+                <div className="mb-3 rounded-xl border border-violet-100 bg-violet-50/40 p-3">
+                  <label className="block text-xs font-semibold text-violet-700 mb-1.5">
+                    Actual Received Quantity ({item.unit})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="999"
+                    step="1"
+                    value={itemReceivedQuantities[item.id] ?? ""}
+                    onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: false })}
+                    onChange={(event) => setItemReceivedQuantities((current) => ({
+                      ...current,
+                      [item.id]: sanitizeNumberInput(event.target.value, { allowDecimal: false }),
+                    }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-200"
+                  />
+                </div>
                 {usesShelfLife ? (
                   <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
                     <p className="text-xs font-semibold text-emerald-700 mb-3">
                       Shelf Life
                     </p>
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">
+                          Months
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={currentShelfLife.shelfLifeMonths}
+                          inputMode="numeric"
+                          onKeyDown={(e) => blockInvalidNumberKeys(e, { allowDecimal: false })}
+                          onChange={(e) => setItemShelfLife((prev) => ({
+                            ...prev,
+                            [item.id]: {
+                              ...(prev[item.id] || { shelfLifeMonths: "", shelfLifeDays: "", shelfLifeHours: "" }),
+                              shelfLifeMonths: sanitizeNumberInput(e.target.value, { allowDecimal: false }),
+                            },
+                          }))}
+                          placeholder="Months"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                        />
+                      </div>
                       <div>
                         <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">
                           Days
@@ -312,6 +404,7 @@ export function ReceivePOModal({
                               ...prev,
                               [item.id]: {
                                 ...(prev[item.id] || {
+                                  shelfLifeMonths: "",
                                   shelfLifeDays: "",
                                   shelfLifeHours: "",
                                 }),
@@ -344,6 +437,7 @@ export function ReceivePOModal({
                               ...prev,
                               [item.id]: {
                                 ...(prev[item.id] || {
+                                  shelfLifeMonths: "",
                                   shelfLifeDays: "",
                                   shelfLifeHours: "",
                                 }),

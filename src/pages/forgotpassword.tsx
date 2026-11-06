@@ -234,6 +234,7 @@ export default function ForgotPassword() {
   const [direction, setDir]   = useState(1);
   const [email, setEmail]     = useState("");
   const [code, setCode]       = useState("");
+  const [resetAuthorization, setResetAuthorization] = useState("");
   const [newPw, setNewPw]     = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [loading, setLoading] = useState(false);
@@ -275,8 +276,16 @@ export default function ForgotPassword() {
   /* proceed to reset after entering the emailed code */
   const handleVerifyCode = async () => {
     if (code.length !== 6) { setError("Enter the 6-digit code from your email."); return; }
-    setError("");
-    goTo("newpassword");
+    setLoading(true); setError("");
+    try {
+      const response = await authApi.verifyPasswordResetOtp(
+        email.trim().toLowerCase(),
+        code,
+      );
+      setResetAuthorization(response.resetAuthorization);
+      goTo("newpassword");
+    } catch (e: any) { setError(e.message || "Invalid or expired reset code."); }
+    finally { setLoading(false); }
   };
 
   /* reset password */
@@ -285,7 +294,16 @@ export default function ForgotPassword() {
     if (newPw !== confirmPw) { setError("Passwords don't match."); return; }
     setLoading(true); setError("");
     try {
-      await authApi.resetPassword(email.trim().toLowerCase(), code, newPw);
+      if (!resetAuthorization) {
+        setError("Your reset authorization has expired. Verify a new code.");
+        goTo("code");
+        return;
+      }
+      await authApi.resetPassword(
+        email.trim().toLowerCase(),
+        resetAuthorization,
+        newPw,
+      );
       goTo("done");
     } catch (e: any) { setError(e.message || "Could not reset password."); }
     finally { setLoading(false); }

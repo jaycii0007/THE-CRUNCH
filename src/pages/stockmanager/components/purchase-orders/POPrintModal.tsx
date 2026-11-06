@@ -162,7 +162,8 @@ export function POPrintModal({
                       {[
                         "Item",
                         "Category",
-                        "Qty",
+                        "Ordered Qty",
+                        ...(order.status === "Received" ? ["Received Qty"] : []),
                         "Unit",
                       ].map((header) => (
                         <th
@@ -190,6 +191,11 @@ export function POPrintModal({
                         <td className="px-4 py-3 text-right text-slate-700">
                           {item.quantity}
                         </td>
+                        {order.status === "Received" && (
+                          <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                            {item.receivedQuantity ?? "—"}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-right text-slate-500">
                           {item.unit}
                         </td>

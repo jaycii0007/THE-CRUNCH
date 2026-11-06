@@ -263,8 +263,9 @@ export const api = {
       itemExpiryDates?: Record<number, string>,
       itemShelfLife?: Record<
         number,
-        { shelfLifeDays?: number | null; shelfLifeHours?: number | null }
+        { shelfLifeMonths?: number | null; shelfLifeDays?: number | null; shelfLifeHours?: number | null }
       >,
+      itemReceivedQuantities?: Record<number, number>,
     ) =>
       apiFetch<PurchaseOrder>(`/purchase-orders/${id}/receive`, {
         method: "PATCH",
@@ -274,6 +275,7 @@ export const api = {
           receivedDate,
           itemExpiryDates,
           itemShelfLife,
+          itemReceivedQuantities,
         }),
       }),
     delete: (id: string) =>

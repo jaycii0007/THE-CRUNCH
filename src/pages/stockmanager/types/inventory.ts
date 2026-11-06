@@ -39,11 +39,13 @@ export interface POItem {
   category: string;
   unit: string;
   quantity: number;
+  receivedQuantity?: number | null;
   unitCost?: number | null;
   expectedExpiryDate?: string;
   isRawMaterial?: boolean | number;
   shelfLifeDays?: number | null;
   shelfLifeHours?: number | null;
+  shelfLifeMonths?: number | null;
 }
 
 export interface PurchaseOrder {
@@ -83,6 +85,7 @@ export interface Product {
   wasted: number;
   expiryDate?: string | null;
   usableUntil?: string | null;
+  shelfLifeMonths?: number | null;
   shelfLifeDays?: number | null;
   shelfLifeHours?: number | null;
   promo?: string;

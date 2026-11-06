@@ -6,6 +6,8 @@ export interface GeneralRestaurantSettings {
   email: string;
   phone: string;
   address: string;
+  businessTin: string;
+  businessRegistrationDetails: string;
   currency: string;
   timezone: string;
   openTime: string;
@@ -18,6 +20,8 @@ export const GENERAL_SETTINGS_DEFAULTS: GeneralRestaurantSettings = {
   email: "",
   phone: "",
   address: "",
+  businessTin: "",
+  businessRegistrationDetails: "",
   currency: "PHP",
   timezone: "Asia/Manila",
   openTime: "08:00",
@@ -42,6 +46,8 @@ export function normalizeGeneralSettings(
     email: readString(source?.email),
     phone: readString(source?.phone),
     address: readString(source?.address),
+    businessTin: readString(source?.businessTin),
+    businessRegistrationDetails: readString(source?.businessRegistrationDetails),
     currency: GENERAL_SETTINGS_DEFAULTS.currency,
     timezone: GENERAL_SETTINGS_DEFAULTS.timezone,
     openTime: readString(source?.openTime, GENERAL_SETTINGS_DEFAULTS.openTime),
