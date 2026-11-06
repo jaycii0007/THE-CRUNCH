@@ -310,6 +310,22 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
         <header className="flex items-center justify-between gap-3">
           <h3 className="text-xl font-bold tracking-tight text-slate-900">{order.orderNumber}</h3>
           <div className="flex items-center gap-2">
+            {hasNotes && (
+              <button
+                type="button"
+                onClick={() => setShowNotes((visible) => !visible)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setShowNotes(false);
+                }}
+                aria-label={showNotes ? "Hide order notes" : "Show order notes"}
+                aria-expanded={showNotes}
+                aria-controls={`order-notes-${order.id}`}
+                title={showNotes ? "Hide order notes" : "Show order notes"}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-800 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+              >
+                <MessageSquareText size={18} aria-hidden="true" />
+              </button>
+            )}
             {overdue && (
               <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-600">Overdue</span>
             )}
@@ -344,33 +360,36 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
           ))}
         </ul>
 
-        {hasNotes && (
-          <div className="relative">
+        {hasNotes && showNotes && (
+          <div
+            id={`order-notes-${order.id}`}
+            role="region"
+            aria-label={`Notes for order ${order.orderNumber}`}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setShowNotes(false);
+            }}
+            className="relative rounded-xl border border-amber-200 bg-amber-50 p-3 pr-10 text-sm shadow-sm"
+          >
             <button
               type="button"
-              onClick={() => setShowNotes((visible) => !visible)}
-              aria-expanded={showNotes}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+              onClick={() => setShowNotes(false)}
+              aria-label="Close order notes"
+              className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-amber-800 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
             >
-              <MessageSquareText size={16} />
-              Notes
+              <XCircle size={17} aria-hidden="true" />
             </button>
-            {showNotes && (
-              <div className="mt-2 rounded-xl border border-amber-200 bg-white p-3 text-sm shadow-lg">
-                {order.orderNote?.trim() && (
-                  <p className="whitespace-pre-wrap text-slate-700">
-                    <span className="font-semibold text-slate-900">Order:</span>{" "}
-                    {order.orderNote.trim()}
-                  </p>
-                )}
-                {itemNotes.map((item, index) => (
-                  <p key={`${item.name}-${index}`} className="mt-2 whitespace-pre-wrap text-slate-700">
-                    <span className="font-semibold text-slate-900">{item.name}:</span>{" "}
-                    {item.note?.trim()}
-                  </p>
-                ))}
-              </div>
+            {order.orderNote?.trim() && (
+              <p className="whitespace-pre-wrap text-slate-700">
+                <span className="font-semibold text-slate-900">Order:</span>{" "}
+                {order.orderNote}
+              </p>
             )}
+            {itemNotes.map((item, index) => (
+              <p key={`${item.name}-${index}`} className="mt-2 whitespace-pre-wrap text-slate-700">
+                <span className="font-semibold text-slate-900">{item.name}:</span>{" "}
+                {item.note}
+              </p>
+            ))}
           </div>
         )}
 

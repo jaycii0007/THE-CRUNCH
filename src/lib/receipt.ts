@@ -59,6 +59,7 @@ export interface ReceiptOptions {
 
 const SOCIAL_HANDLE = "@TheCrunchFairviewDahlia";
 const WEBSITE = "www.thecrunch.site";
+const INPUT_TAX_DISCLAIMER = "THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX";
 
 // ---------- Helpers ----------
 const esc = (v: unknown) =>
@@ -114,6 +115,7 @@ th{font-size:9px;letter-spacing:.06em;border-bottom:1px solid #111827;padding-bo
 .tot td{font-size:16px;font-weight:700;padding:4px 0}
 .legacy{margin-bottom:8px;padding:6px 8px;border:1px dashed #000;font-size:10px}
 .receipt-title{text-align:center;font-size:10px;font-weight:700;letter-spacing:.16em;margin-top:8px}.customer{padding:8px;background:#f8fafc;border-radius:6px}.item td{padding-top:5px;padding-bottom:5px;border-bottom:1px solid #e2e8f0}
+.tax-disclaimer{margin-top:12px;padding-top:8px;border-top:1px dashed #111827;font-size:10px;font-weight:700;line-height:1.35;text-align:center}
 ${css}
 @media print{@page{size:80mm auto;margin:0}body{background:#fff;padding:0}.paper{width:auto;box-shadow:none}}
 </style></head><body><div class="paper">${body}</div></body></html>`;
@@ -184,7 +186,8 @@ ${r.orderNote ? `<hr/><p><b>Note:</b> ${esc(r.orderNote)}</p>` : ""}
 <p class="c b" style="margin-top:10px">Follow us</p>
 <p class="c">${esc(SOCIAL_HANDLE)}</p>
 <p class="c b" style="margin-top:10px">Visit us at</p>
-<p class="c">${esc(WEBSITE)}</p>`);
+<p class="c">${esc(WEBSITE)}</p>
+<p class="tax-disclaimer">${esc(INPUT_TAX_DISCLAIMER)}</p>`);
 }
 
 // ---------- Kitchen order ticket ----------
