@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import ts from "typescript";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -13,6 +15,21 @@ const login = read("src/pages/login.tsx");
 const products = read("src/pages/products.tsx");
 const customerMenu = read("src/pages/usersmenu.tsx");
 const settings = read("src/pages/settings.tsx");
+
+const compiledAccount = ts.transpileModule(`${account}\nexport { isCustomerAccountRole };`, {
+  compilerOptions: {
+    module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2022,
+    jsx: ts.JsxEmit.ReactJSX,
+  },
+}).outputText;
+const accountModule = { exports: {} };
+vm.runInNewContext(compiledAccount, {
+  module: accountModule,
+  exports: accountModule.exports,
+  require: () => ({}),
+});
+const { isCustomerAccountRole } = accountModule.exports;
 
 assert.match(app, /path="\/my-account"/);
 assert.match(app, /element=\{isAuth \? <MyAccount \/> : <Navigate to="\/login" replace \/>\}/);
@@ -41,6 +58,19 @@ assert.match(account, /readOnly/);
 assert.match(account, /Email changes need a separate verification process and are not available yet/);
 assert.match(account, /Show.*password|\$\{visible \? "Hide" : "Show"\}/s);
 assert.doesNotMatch(account, /email:\s*account\.email/);
+assert.equal(isCustomerAccountRole("customer"), true);
+assert.equal(isCustomerAccountRole("user"), true, "legacy customer role aliases use the customer theme");
+for (const staffRole of ["administrator", "cashier", "inventory_manager"]) {
+  assert.equal(isCustomerAccountRole(staffRole), false, `${staffRole} must retain the staff profile`);
+}
+assert.match(account, /\{!isCustomer && <Sidebar \/>\}/);
+assert.match(account, /Back to Customer View/);
+assert.match(account, /bg-\[#0a0808\]/);
+assert.match(account, /bg-\[#f7c948\]/);
+assert.match(account, /Customer account/);
+assert.match(account, /logo24\.webp/);
+assert.match(account, /bg-slate-100 px-4 py-8/);
+assert.match(account, /bg-slate-900 px-6 py-7 text-white/);
 
 assert.match(auth, /saveStoredAuth\(nextUser\)/);
 assert.match(products, /navigate\('\/my-account'\)/);
