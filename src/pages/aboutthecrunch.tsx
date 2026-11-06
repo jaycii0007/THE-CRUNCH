@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect, CSSProperties, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence, useInView, useScroll, useTransform, MotionConfig } from 'framer-motion';
-import { useAuth } from '../context/authcontext';
+import { motion, useInView, useScroll, useTransform, MotionConfig } from 'framer-motion';
+import { useAuth } from '@/context/authcontext';
+import { Navbar } from '@/components/Navbar';
 
 // Ensure Google Font 'Poppins' is loaded
 if (typeof document !== 'undefined' && !document.getElementById('crunch-fonts')) {
@@ -197,12 +198,6 @@ function MarqueeBanner() {
 }
 
 // ── Data & Highlights ─────────────────────────────────────────────────────
-const NAV_LINKS = [
-  { label: 'Home', path: '/products' },
-  { label: 'About', path: '/aboutthecrunch' },
-  { label: 'Menu', path: '/usersmenu' },
-];
-
 const PILLARS = [
   { no: '01', title: 'Always Fresh, Never Frozen', desc: 'Premium chicken cuts prepped every morning in-house. Pure crunch with zero frozen compromises.' },
   { no: '02', title: '7 Signature Glazes', desc: 'From savory garlic parmesan to fiery hot glazes, each recipe is developed to coat every bite thoroughly.' },
@@ -216,21 +211,7 @@ const PILLARS = [
 export default function AboutTheCrunch() {
   const navigate = useNavigate();
   const { isMobile, isTablet } = useScreen();
-  const { user, logout } = useAuth();
-  const isAuth = !!user;
-
-  const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  useEffect(() => {
-    if (!isTablet) setMenuOpen(false);
-  }, [isTablet]);
+  useAuth(); // Initialize auth context
 
   const heroTargetRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: heroTargetRef, offset: ['start start', 'end start'] });
@@ -243,19 +224,6 @@ export default function AboutTheCrunch() {
   const goProducts = () => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
     navigate('/products');
-  };
-
-  const handleNav = (p: string) => {
-    setMenuOpen(false);
-    if (p === '/usersmenu') goMenu();
-    else if (p === '/products') goProducts();
-    else navigate(p);
-  };
-
-  const handleLogout = () => {
-    logout();
-    setMenuOpen(false);
-    navigate('/');
   };
 
   return (
@@ -272,287 +240,7 @@ export default function AboutTheCrunch() {
           }}
         />
         <ScrollProgressBar />
-
-        {/* ── Fixed Navigation Bar ────────────────────────────────────────── */}
-        <motion.header
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 1000,
-            height: 68,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: isMobile ? '0 20px' : '0 40px',
-            background: scrolled || menuOpen ? 'rgba(26, 26, 26, 0.95)' : 'transparent',
-            backdropFilter: scrolled || menuOpen ? 'blur(24px)' : 'none',
-            borderBottom: scrolled ? `1px solid ${BORDER}` : '1px solid transparent',
-            transition: 'background 0.3s ease, border-color 0.3s ease',
-            boxShadow: scrolled ? '0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.02)' : 'none',
-          }}
-        >
-          {/* Brand */}
-          <button
-            onClick={goProducts}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-            }}
-          >
-            <img src="/img/logo24.png" alt="The Crunch" style={{ width: 34, height: 34, borderRadius: 9, objectFit: 'contain' }} />
-            <span style={{ fontFamily: PP, fontSize: 17, fontWeight: 900, color: CR, letterSpacing: '-0.02em' }}>
-              The <span style={{ color: Y }}>Crunch</span>
-            </span>
-          </button>
-
-          {/* Desktop Nav Links */}
-          {!isTablet && (
-            <nav style={{ display: 'flex', gap: 6, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
-              {NAV_LINKS.map(({ label, path }) => {
-                const isActive = path === '/aboutthecrunch';
-                return (
-                  <motion.button
-                    key={label}
-                    onClick={() => handleNav(path)}
-                    style={{
-                      background: isActive ? 'rgba(245, 200, 66, 0.12)' : 'transparent',
-                      border: isActive ? '1px solid rgba(245, 200, 66, 0.3)' : '1px solid transparent',
-                      cursor: 'pointer',
-                      fontFamily: PP,
-                      fontSize: 13.5,
-                      fontWeight: 600,
-                      padding: '8px 18px',
-                      borderRadius: 999,
-                      color: isActive ? Y : 'rgba(245, 242, 235, 0.65)',
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}
-                    whileHover={isActive ? {} : {
-                      color: CR,
-                      background: 'rgba(245, 200, 66, 0.08)',
-                      borderColor: 'rgba(245, 200, 66, 0.2)',
-                      y: -1,
-                    }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-                  </motion.button>
-                );
-              })}
-            </nav>
-          )}
-
-          {/* Right Action / Auth */}
-          {!isTablet ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {isAuth ? (
-                <motion.button
-                  onClick={handleLogout}
-                  style={{
-                    background: Y,
-                    border: 'none',
-                    borderRadius: 12,
-                    padding: '10px 22px',
-                    fontSize: 13.5,
-                    fontWeight: 700,
-                    color: `${GOLD_TEXT}`,
-                    cursor: 'pointer',
-                    fontFamily: PP,
-                    boxShadow: '0 4px 16px rgba(245, 200, 66, 0.3)',
-                  }}
-                  whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(245, 200, 66, 0.45)' }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  Log Out
-                </motion.button>
-              ) : (
-                <>
-                  <motion.button
-                    onClick={() => navigate('/login')}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: `1px solid ${BORDER}`,
-                      borderRadius: 12,
-                      padding: '10px 20px',
-                      fontSize: 13.5,
-                      fontWeight: 600,
-                      color: CR,
-                      cursor: 'pointer',
-                      fontFamily: PP,
-                    }}
-                    whileHover={{ background: 'rgba(245, 200, 66, 0.1)', borderColor: 'rgba(245, 200, 66, 0.3)', color: Y }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    Log In
-                  </motion.button>
-                  <motion.button
-                    onClick={() => navigate('/login?tab=signup')}
-                    style={{
-                      background: `linear-gradient(135deg, ${Y} 0%, ${Y_DARK} 100%)`,
-                      border: 'none',
-                      borderRadius: 12,
-                      padding: '10px 22px',
-                      fontSize: 13.5,
-                      fontWeight: 700,
-                      color: `${GOLD_TEXT}`,
-                      cursor: 'pointer',
-                      fontFamily: PP,
-                      boxShadow: '0 6px 20px rgba(245, 200, 66, 0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
-                    }}
-                    whileHover={{ scale: 1.02, boxShadow: '0 10px 28px rgba(245, 200, 66, 0.5), inset 0 1px 0 rgba(255,255,255,0.25)' }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    Sign Up
-                  </motion.button>
-                </>
-              )}
-            </div>
-          ) : (
-            /* Animated Clean Hamburger */
-            <button
-              onClick={() => setMenuOpen(v => !v)}
-              aria-label="Toggle navigation menu"
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: 10,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 5,
-              }}
-            >
-              <motion.span
-                animate={menuOpen ? { rotate: 45, y: 7 } : { rotate: 0, y: 0 }}
-                style={{ width: 22, height: 2, background: Y, borderRadius: 2 }}
-              />
-              <motion.span
-                animate={menuOpen ? { opacity: 0 } : { opacity: 1 }}
-                style={{ width: 16, height: 2, background: Y, borderRadius: 2 }}
-              />
-              <motion.span
-                animate={menuOpen ? { rotate: -45, y: -7 } : { rotate: 0, y: 0 }}
-                style={{ width: 22, height: 2, background: Y, borderRadius: 2 }}
-              />
-            </button>
-          )}
-        </motion.header>
-
-        {/* ── Tablet & Mobile Navigation Drawer ───────────────────────────── */}
-        <AnimatePresence>
-          {menuOpen && isTablet && (
-            <motion.div
-              initial={{ opacity: 0, y: -15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.22 }}
-              style={{
-                position: 'fixed',
-                top: 68,
-                left: 0,
-                right: 0,
-                zIndex: 990,
-                background: 'rgba(10, 8, 6, 0.98)',
-                backdropFilter: 'blur(24px)',
-                borderBottom: `1px solid ${BORDER}`,
-                padding: '24px 28px 32px',
-                display: 'grid',
-                gap: 12,
-                boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
-              }}
-            >
-              {NAV_LINKS.map(({ label, path }) => (
-                <button
-                  key={label}
-                  onClick={() => handleNav(path)}
-                  style={{
-                    textAlign: 'left',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontFamily: PP,
-                    fontSize: 20,
-                    fontWeight: 700,
-                    color: path === '/aboutthecrunch' ? Y : CR,
-                    padding: '12px 0',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-
-              <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-                {isAuth ? (
-                  <button
-                    onClick={handleLogout}
-                    style={{
-                      flex: 1,
-                      background: Y,
-                      border: 'none',
-                      borderRadius: 12,
-                      padding: 14,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: `${GOLD_TEXT}`,
-                      cursor: 'pointer',
-                      fontFamily: PP,
-                    }}
-                  >
-                    Log Out
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => { setMenuOpen(false); navigate('/login'); }}
-                      style={{
-                        flex: 1,
-                        background: 'rgba(255,255,255,0.06)',
-                        border: `1px solid ${BORDER}`,
-                        borderRadius: 12,
-                        padding: 14,
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: CR,
-                        cursor: 'pointer',
-                        fontFamily: PP,
-                      }}
-                    >
-                      Log In
-                    </button>
-                    <button
-                      onClick={() => { setMenuOpen(false); navigate('/login?tab=signup'); }}
-                      style={{
-                        flex: 1,
-                        background: Y,
-                        border: 'none',
-                        borderRadius: 12,
-                        padding: 14,
-                        fontSize: 14,
-                        fontWeight: 700,
-                        color: `${GOLD_TEXT}`,
-                        cursor: 'pointer',
-                        fontFamily: PP,
-                      }}
-                    >
-                      Sign Up
-                    </button>
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Navbar />
 
         {/* ── Hero Section ────────────────────────────────────────────────── */}
         <section
@@ -1427,35 +1115,7 @@ export default function AboutTheCrunch() {
                 </p>
               </div>
 
-              <div>
-                <span style={{ fontFamily: PP, fontSize: 10, fontWeight: 700, color: 'rgba(245, 242, 235, 0.35)', letterSpacing: '0.18em', textTransform: 'uppercase', display: 'block', marginBottom: 14 }}>
-                  Quick Navigation
-                </span>
-                {NAV_LINKS.map(({ label, path }) => (
-                  <button
-                    key={label}
-                    onClick={() => handleNav(path)}
-                    style={{
-                      display: 'block',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontFamily: PP,
-                      fontSize: 13.5,
-                      fontWeight: 400,
-                      color: CR_MUTED,
-                      padding: '5px 0',
-                      textAlign: 'left',
-                      transition: 'color 0.2s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.color = Y; }}
-                    onMouseLeave={e => { e.currentTarget.style.color = CR_MUTED; }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
+            
               <div>
                 <span style={{ fontFamily: PP, fontSize: 10, fontWeight: 700, color: 'rgba(245, 242, 235, 0.35)', letterSpacing: '0.18em', textTransform: 'uppercase', display: 'block', marginBottom: 14 }}>
                   Social Channels

@@ -1,0 +1,430 @@
+import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { Menu, X, User, LogOut, LogIn, UserPlus } from "lucide-react";
+import { useAuth } from "@/context/authcontext";
+
+const NAV_H = 72;
+const GOLD = '#C9A84C';
+const GOLD_DARK = '#B8953A';
+const CREAM = '#F5F0E8';
+const CHARCOAL = '#282823';
+
+interface NavLinkItem {
+  label: string;
+  path: string;
+  exact?: boolean;
+}
+
+export const CUSTOMER_NAV_LINKS: NavLinkItem[] = [
+  { label: 'Home', path: '/products', exact: true },
+  { label: 'About', path: '/aboutthecrunch', exact: true },
+  { label: 'Menu', path: '/usersmenu', exact: true },
+];
+
+const NAVBAR_CSS = `
+.navbar-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  height: ${NAV_H}px;
+  display: flex;
+  align-items: center;
+  transition: background 0.25s, border-color 0.25s, box-shadow 0.25s;
+  border-bottom: 1px solid transparent;
+}
+.navbar-root.scrolled {
+  background: rgba(26, 26, 26, 0.92);
+  backdrop-filter: blur(16px);
+  border-bottom-color: rgba(89, 92, 86, 0.25);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.navbar-inner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 clamp(20px, 5vw, 64px);
+}
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: ${CREAM};
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.nav-brand span {
+  display: none;
+}
+.nav-brand:hover span, .nav-brand:focus span {
+  display: inline;
+}
+@media (min-width: 640px) {
+  .nav-brand span {
+    display: inline;
+  }
+}
+.nav-center {
+  display: flex;
+  justify-content: center;
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-link {
+  background: none;
+  border: 0;
+  color: rgba(245, 240, 232, 0.58);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.nav-link:hover {
+  color: ${CREAM};
+  background: rgba(245, 232, 182, 0.08);
+}
+.nav-link.active {
+  color: ${GOLD};
+  background: rgba(201, 168, 76, 0.12);
+  border: 1px solid rgba(201, 168, 76, 0.3);
+  border-radius: 999px;
+  padding: 8px 18px;
+}
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nav-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(245, 240, 232, 0.58);
+  padding: 0 4px;
+}
+.nav-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.nav-btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.nav-btn:active {
+  transform: scale(0.97);
+}
+.nav-btn-gold {
+  background: ${GOLD};
+  color: ${CHARCOAL};
+}
+.nav-btn-gold:hover {
+  background: ${GOLD_DARK};
+}
+.nav-btn-ghost {
+  background: transparent;
+  color: ${CREAM};
+  border: 1px solid rgba(89, 92, 86, 0.25);
+}
+.nav-btn-ghost:hover {
+  background: rgba(245, 232, 182, 0.08);
+  border-color: rgba(201, 168, 76, 0.3);
+  color: ${GOLD};
+}
+.nav-burger {
+  display: none;
+  background: none;
+  border: 0;
+  color: ${CREAM};
+  cursor: pointer;
+  padding: 8px;
+}
+@media (max-width: 768px) {
+  .nav-links, .nav-status { display: none; }
+  .nav-burger { display: flex; }
+}
+.mobile-menu {
+  position: absolute;
+  top: ${NAV_H}px;
+  left: 0;
+  right: 0;
+  background: rgba(11, 10, 8, 0.98);
+  border-bottom: 1px solid rgba(89, 92, 86, 0.25);
+  padding: 8px clamp(20px, 5vw, 64px) 18px;
+  display: grid;
+  gap: 4px;
+}
+.mobile-link {
+  text-align: left;
+  font-size: 15px;
+  padding: 12px 0;
+}
+.mobile-auth {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mobile-auth .nav-btn {
+  flex: 1;
+}
+`;
+
+export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: boolean; onOpenChange?: (open: boolean) => void } = {}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isOpenStatus, setIsOpenStatus] = useState(false);
+
+  const isControlled = controlledOpen !== undefined && onOpenChange !== undefined;
+  const open = isControlled ? controlledOpen : menuOpen;
+  const setOpen = isControlled
+    ? ((val: boolean | ((prev: boolean) => boolean)) => onOpenChange!(typeof val === 'function' ? val(open) : val))
+    : setMenuOpen;
+
+  // Inject CSS
+  useEffect(() => {
+    const el = document.createElement('style');
+    el.id = 'navbar-css';
+    el.innerHTML = NAVBAR_CSS;
+    document.head.appendChild(el);
+    return () => el.remove();
+  }, []);
+
+  // Detect business hours
+  useEffect(() => {
+    const check = () => {
+      const n = new Date();
+      const d = n.getDay();
+      const t = n.getHours() + n.getMinutes() / 60;
+      setIsOpenStatus((d >= 1 && d <= 5 && t >= 10 && t < 22) || ((d === 0 || d === 6) && t >= 11 && t < 20.5));
+    };
+    check();
+    const id = setInterval(check, 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Scroll handler
+  useEffect(() => {
+    const onScroll = () => setIsScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    if (open) setOpen(false);
+  }, [location.pathname, open, setOpen]);
+
+  // Active link detection
+  const isActive = (path: string, exact = false) => {
+    if (exact) return location.pathname === path;
+    return location.pathname.startsWith(path);
+  };
+
+  const handleNav = (path: string) => {
+    setOpen(false);
+    if (path === '/usersmenu') {
+      navigate('/usersmenu?showOrderModal=true');
+    } else if (path === '/login?tab=signup') {
+      navigate('/login?tab=signup');
+    } else {
+      navigate(path);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setOpen(false);
+    navigate('/');
+  };
+
+  const isAuthenticated = !!user;
+
+  return (
+    <>
+      <motion.header
+        className={`navbar-root ${isScrolled || open ? 'scrolled' : ''}`}
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <div className="navbar-inner">
+          <button
+            className="nav-brand"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            aria-label="Back to top"
+          >
+            <img src="/img/logo24.webp" alt="" width={32} height={32} style={{ objectFit: 'contain' }} />
+            <span>The <span style={{ color: GOLD }}>Crunch</span></span>
+          </button>
+
+          <nav className="nav-center" aria-label="Main navigation">
+            <span className="nav-status" title="Store hours: Mon–Fri 10 AM–10 PM, Sat–Sun 11 AM–8:30 PM">
+              <span className="nav-dot" style={{ background: isOpenStatus ? '#22c55e' : '#ef4444' }} />
+              {isOpenStatus ? 'Open now' : 'Closed'}
+            </span>
+            <div className="nav-links">
+              {CUSTOMER_NAV_LINKS.map(({ label, path, exact }) => (
+                <motion.button
+                  key={label}
+                  className={`nav-link ${isActive(path, exact) ? 'active' : ''}`}
+                  onClick={() => handleNav(path)}
+                  whileTap={{ scale: 0.97 }}
+                  whileHover={isActive(path, exact) ? {} : { scale: 1.02 }}
+                >
+                  {label}
+                </motion.button>
+              ))}
+            </div>
+          </nav>
+
+          <div className="nav-right">
+            {isAuthenticated ? (
+              <>
+                {user?.username && (
+                  <button
+                    className="nav-status"
+                    onClick={() => { navigate('/my-account'); setOpen(false); }}
+                    title="Open My Account"
+                  >
+                    <User size={14} />{user.username}
+                  </button>
+                )}
+                <motion.button
+                  className="nav-btn nav-btn-gold"
+                  onClick={handleLogout}
+                  whileTap={{ scale: 0.97 }}
+                  whileHover={{ scale: 1.02 }}
+                >
+                  <LogOut size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                  Log Out
+                </motion.button>
+              </>
+            ) : (
+              <>
+                <motion.button
+                  className="nav-btn nav-btn-ghost"
+                  onClick={() => { handleNav('/login'); }}
+                  whileTap={{ scale: 0.97 }}
+                  whileHover={{ scale: 1.02 }}
+                >
+                  <LogIn size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                  Log In
+                </motion.button>
+                <motion.button
+                  className="nav-btn nav-btn-gold"
+                  onClick={() => { handleNav('/login?tab=signup'); }}
+                  whileTap={{ scale: 0.97 }}
+                  whileHover={{ scale: 1.02 }}
+                >
+                  <UserPlus size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                  Sign Up
+                </motion.button>
+              </>
+            )}
+            <button
+              className="nav-burger"
+              onClick={() => setOpen(prev => !prev)}
+              aria-label="Toggle menu"
+              aria-expanded={open}
+            >
+              {open ? <X size={22} /> : <Menu size={22} />}
+            </button>
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              className="mobile-menu"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              {CUSTOMER_NAV_LINKS.map(({ label, path, exact }) => (
+                <motion.button
+                  key={label}
+                  className={`nav-link mobile-link ${isActive(path, exact) ? 'active' : ''}`}
+                  onClick={() => handleNav(path)}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {label}
+                </motion.button>
+              ))}
+              <div className="mobile-auth">
+                {isAuthenticated ? (
+                  <>
+                    <motion.button
+                      className="nav-btn nav-btn-ghost"
+                      onClick={() => { navigate('/my-account'); setOpen(false); }}
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      <User size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                      My Account
+                    </motion.button>
+                    <motion.button
+                      className="nav-btn nav-btn-gold"
+                      onClick={handleLogout}
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      <LogOut size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                      Log Out
+                    </motion.button>
+                  </>
+                ) : (
+                  <>
+                    <motion.button
+                      className="nav-btn nav-btn-ghost"
+                      onClick={() => { handleNav('/login'); }}
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      <LogIn size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                      Log In
+                    </motion.button>
+                    <motion.button
+                      className="nav-btn nav-btn-gold"
+                      onClick={() => { handleNav('/login?tab=signup'); }}
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      <UserPlus size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                      Sign Up
+                    </motion.button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.header>
+    </>
+  );
+}

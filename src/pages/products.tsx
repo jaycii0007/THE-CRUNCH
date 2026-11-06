@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Flame, MapPin, Star, X, MessageSquare, Send, CheckCircle, Menu, User, ShoppingBag, ArrowRight, Clock } from 'lucide-react'
+import { Search, Flame, MapPin, Star, X, MessageSquare, Send, CheckCircle, ShoppingBag, ArrowRight, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useViewport } from '@/hooks/use-tablet'
 import { api, resolveAssetUrl } from '@/lib/api'
 import { fetchGeneralSettings, formatCurrencyAmount } from '@/lib/restaurantSettings'
 import { useAuth } from '@/context/authcontext'
 import { FullscreenSpinner } from "@/components/ui/spinner";
+import { Navbar } from '@/components/Navbar';
 
 // ── Types & helpers ────────────────────────────────────────────────────────
-const NAV_H = 64
+const NAV_H = 72
 const MAX_FB = 200
 const CATEGORIES = ['All', 'Chicken', 'Sides', 'Drinks', 'Combos'] as const
 type Category = (typeof CATEGORIES)[number]
@@ -1938,11 +1939,10 @@ function FoodPreviewGallery({ products }: { products: Product[] }) {
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
-interface ProductsProps { isAuthenticated?: boolean; onLogout?: () => void }
+interface ProductsProps { isAuthenticated?: boolean }
 
-export default function Products({ isAuthenticated = false, onLogout }: ProductsProps) {
+export default function Products({ isAuthenticated = false }: ProductsProps) {
   const navigate = useNavigate()
-  const { isPhone } = useViewport()
   const { user } = useAuth()
 
   const [products, setProducts] = useState<Product[]>([])
@@ -1951,12 +1951,11 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
   const [loading, setLoading] = useState({ p: true, f: true, r: true })
   const [category, setCategory] = useState<Category>('All')
   const [search, setSearch] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
-  const [isOpen, setIsOpen] = useState(false)
 
   const userId = isAuthenticated && user && Number(user.userId) > 0 ? Number(user.userId) : null
+
+  const goOrder = useCallback(() => navigate('/usersmenu?showOrderModal=true'), [navigate])
 
   useEffect(() => { void fetchGeneralSettings() }, [])
 
@@ -1966,23 +1965,6 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
     el.innerHTML = CSS
     document.head.appendChild(el)
     return () => el.remove()
-  }, [])
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    const check = () => {
-      const n = new Date(), d = n.getDay(), t = n.getHours() + n.getMinutes() / 60
-      setIsOpen((d >= 1 && d <= 5 && t >= 10 && t < 22) || ((d === 0 || d === 6) && t >= 11 && t < 20.5))
-    }
-    check()
-    const id = setInterval(check, 60000)
-    return () => clearInterval(id)
   }, [])
 
   useEffect(() => {
@@ -2003,83 +1985,12 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
     [products, category, search]
   )
   const feedbackOptions = useMemo(() => products.map(p => ({ id: p.id, name: p.name })), [products])
-
-  const goOrder = useCallback(() => navigate('/usersmenu?showOrderModal=true'), [navigate])
-  const logout = useCallback(() => { onLogout?.(); navigate('/') }, [onLogout, navigate])
-  const navLinks = [
-    { label: 'Home', action: () => navigate('/') },
-    { label: 'Menu', action: goOrder },
-    { label: 'About', action: () => navigate('/aboutthecrunch') },
-  ]
   const featured = promos.filter(p => p.highlight)
   const regular = promos.filter(p => !p.highlight)
 
   return (
     <div className="pc">
-      {/* NAVBAR — fixed, always visible while scrolling */}
-      <motion.header
-        className={`nav ${scrolled || menuOpen ? 'on' : ''}`}
-        initial={{ y: -100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, ease: easeOut }}
-      >
-        <div className="wrap nav-in">
-          <button className="brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top">
-            <img src="/img/logo24.webp" alt="" width={32} height={32} style={{ objectFit: 'contain' }} />
-            {!isPhone && <span>The <span style={{ color: 'var(--gold)' }}>Crunch</span></span>}
-          </button>
-
-          <nav className="links" aria-label="Main">
-            <span className="status" title="Store hours: Mon–Fri 10 AM–10 PM, Sat–Sun 11 AM–8:30 PM">
-              <span className="dot" style={{ background: isOpen ? '#22c55e' : '#ef4444' }} />
-              {isOpen ? 'Open now' : 'Closed'}
-            </span>
-            {navLinks.map(l => <button key={l.label} className="link" onClick={l.action}>{l.label}</button>)}
-            <span style={{ width: 1, height: 18, background: 'var(--line)', margin: '0 8px' }} />
-            {isAuthenticated ? (
-              <>
-                {user?.username && (
-                  <button className="status" onClick={() => navigate('/my-account')} title="Open My Account">
-                    <User size={14} />{user.username}
-                  </button>
-                )}
-                <button className="btn btn-gold" onClick={logout}>Log out</button>
-              </>
-            ) : (
-              <>
-                <button className="btn btn-ghost" onClick={() => navigate('/login')}>Log in</button>
-                <button className="btn btn-gold" style={{ marginLeft: 8 }} onClick={() => navigate('/login?tab=signup')}>Sign up</button>
-              </>
-            )}
-          </nav>
-
-          <button className="burger" onClick={() => setMenuOpen(v => !v)} aria-label="Toggle menu" aria-expanded={menuOpen}>
-            {menuOpen ? <X size={22} /> : <Menu size={22} />}
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {menuOpen && (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: .2 }}
-              style={{ position: 'absolute', top: NAV_H, left: 0, right: 0, background: 'rgba(11,10,8,.98)', borderBottom: '1px solid var(--line)', padding: '8px var(--pad) 18px', display: 'grid', gap: 4 }}>
-              {navLinks.map(l => <button key={l.label} className="link" style={{ textAlign: 'left', fontSize: 15 }} onClick={() => { l.action(); setMenuOpen(false) }}>{l.label}</button>)}
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                {isAuthenticated ? (
-                  <>
-                    <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { navigate('/my-account'); setMenuOpen(false) }}>My Account</button>
-                    <button className="btn btn-gold" style={{ flex: 1 }} onClick={() => { logout(); setMenuOpen(false) }}>Log out</button>
-                  </>
-                ) : (
-                  <>
-                    <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { navigate('/login'); setMenuOpen(false) }}>Log in</button>
-                    <button className="btn btn-gold" style={{ flex: 1 }} onClick={() => { navigate('/login?tab=signup'); setMenuOpen(false) }}>Sign up</button>
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.header>
+      <Navbar />
 
       {/* HERO SECTION — Signature Glazed Chicken: Premium Black & Gold */}
       <section style={{ paddingTop: NAV_H + 60, paddingBottom: 60, background: BLACK }}>

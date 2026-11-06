@@ -22,7 +22,7 @@ import Menu from "./pages/menu";
 import Order from "./pages/Order";
 import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
-import Products from "./pages/products";
+import Products from "./pages/Products";
 import Settings from "./pages/settings";
 import MyAccount from "./pages/my-account";
 import {
@@ -160,7 +160,7 @@ function Unauthorized() {
 }
 
 export default function App() {
-  const { user, isInitialized, logout } = useAuth();
+  const { user, isInitialized } = useAuth();
   const [permissions, setPermissions] = React.useState<PermissionsMap>(() =>
     readCachedPermissions(),
   );
@@ -279,7 +279,6 @@ export default function App() {
         element={
           <Products
             isAuthenticated={isAuth}
-            onLogout={logout}
           />
         }
       />

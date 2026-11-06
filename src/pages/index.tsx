@@ -8,7 +8,6 @@ import {
   ShoppingBag,
   DollarSign,
   Calculator,
-  CheckCircle,
   Layers,
   PieChart as PieIcon,
   AlertCircle,
@@ -929,7 +928,7 @@ export default function AdminDashboard() {
         >
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#818781]">
-              Operations & Analytics Studio
+              Dashboard
             </p>
             <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-[#242824] sm:text-3xl">
               {settings.restaurantName || "THE CRUNCH"}
@@ -965,7 +964,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ============ 4 KPI CARDS (ALIGNED 4-COL ON DESKTOP) ============ */}
+        {/* ============ 3 KPI CARDS (ALIGNED 3-COL ON DESKTOP) ============ */}
         <motion.section
           aria-labelledby="kpi-heading"
           initial={{ opacity: 0, y: 12 }}
@@ -991,12 +990,6 @@ export default function AdminDashboard() {
             value={money(avgOrderValue)}
             hint="Per finalized sale"
             icon={Calculator}
-          />
-          <KpiCard
-            label="Finalized Sales"
-            value={finalizedSalesCount.toLocaleString()}
-            hint="Completed paid orders"
-            icon={CheckCircle}
           />
         </motion.section>
 
