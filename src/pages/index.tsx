@@ -1,8 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Calendar, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
-  Bar,
-  BarChart,
+  Calendar,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  ShoppingBag,
+  DollarSign,
+  Calculator,
+  CheckCircle,
+  Layers,
+  PieChart as PieIcon,
+  AlertCircle,
+} from "lucide-react";
+import {
+  Area,
   CartesianGrid,
   Cell,
   Line,
@@ -14,7 +26,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Card } from "@/components/ui/card";
+import { motion } from "framer-motion";
 import { Sidebar } from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
@@ -122,28 +134,23 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 const SHORT_MONTHS = MONTHS.map((m) => m.slice(0, 3));
+const WEEKDAY_HEADERS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
-const BRAND = "#7C2D2D";
+// Studio palette
 const PAYMENT_COLORS: Record<string, string> = {
   GCash: "#2D5F9E",
-  Cash: BRAND,
+  Cash: "#486C5D",
   Maya: "#1B7A5A",
   "Credit Card": "#B85E1A",
-  Others: "#888680",
+  Others: "#818781",
 };
-const FALLBACK_COLORS = [BRAND, "#A84040", "#C46060", "#DDA0A0", "#EEC8C8"];
-
-const TOOLTIP_STYLE = {
-  borderRadius: 12,
-  border: "none",
-  boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-  fontSize: 13,
-};
+const FALLBACK_COLORS = ["#789486", "#486C5D", "#98B2A4", "#C4D4CC", "#5B7568"];
 
 const TRIGGER_CLASS =
-  "flex w-full min-w-0 items-center gap-3 rounded-xl border-[1.5px] border-[#E8E0DC] bg-white px-4 py-2.5 text-left shadow-sm outline-none transition focus-visible:ring-4 focus-visible:ring-[#7C2D2D]/15 sm:min-w-[250px]";
+  "flex w-full min-w-0 items-center gap-2.5 rounded-xl border border-[#E5E9E4] bg-white px-3.5 py-2 text-left shadow-sm outline-none transition duration-150 hover:border-[#789486] hover:bg-[#F8F9F6] focus-visible:ring-2 focus-visible:ring-[#789486]/25 sm:min-w-[220px]";
+
 const PANEL_CLASS =
-  "absolute left-0 top-[calc(100%+8px)] z-50 sm:left-auto sm:right-0 overflow-hidden rounded-2xl border border-[#F0EBE6] bg-white shadow-xl";
+  "absolute left-0 top-[calc(100%+8px)] z-50 sm:left-auto sm:right-0 overflow-hidden rounded-2xl border border-[#E5E9E4] bg-white shadow-xl";
 
 /* -------------------------------------------------------------------------- */
 /*                                   Helpers                                  */
@@ -161,7 +168,7 @@ const formatDisplayDate = (d: Date, timezone?: string) =>
 const formatSpan = ({ start, end }: Span, timezone?: string) =>
   sameDay(start, end)
     ? formatDisplayDate(start, timezone)
-    : `${formatDisplayDate(start, timezone)} - ${formatDisplayDate(end, timezone)}`;
+    : `${formatDisplayDate(start, timezone)} – ${formatDisplayDate(end, timezone)}`;
 
 const formatCompactDate = (d: Date) =>
   `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
@@ -316,7 +323,9 @@ function computeChartData(
 function useClickOutside(ref: React.RefObject<HTMLElement | null>, onOutside: () => void) {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onOutside();
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onOutside();
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -327,8 +336,6 @@ function useClickOutside(ref: React.RefObject<HTMLElement | null>, onOutside: ()
 /*                              Date range picker                             */
 /* -------------------------------------------------------------------------- */
 
-const WEEKDAY_HEADERS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-
 function DateRangePicker({ value, onChange }: { value: DateRange; onChange: (r: DateRange) => void }) {
   const today = new Date();
   const [open, setOpen] = useState(false);
@@ -336,13 +343,13 @@ function DateRangePicker({ value, onChange }: { value: DateRange; onChange: (r: 
   const [selecting, setSelecting] = useState<"start" | "end">("start");
   const [view, setView] = useState({ year: today.getFullYear(), month: today.getMonth() });
   const ref = useRef<HTMLDivElement>(null);
-
-  useClickOutside(ref, useCallback(() => setOpen(false), []));
+  const closePicker = useCallback(() => setOpen(false), [setOpen]);
+  useClickOutside(ref, closePicker);
 
   const hasValue = !!(value.start || value.end);
   const label = value.start
     ? `${formatCompactDate(value.start)} ~ ${value.end ? formatCompactDate(value.end) : "..."}`
-    : "Select date range";
+    : "Custom Date Range";
 
   const previewEnd = value.end ?? (selecting === "end" ? hovered : null);
   const daysInMonth = new Date(view.year, view.month + 1, 0).getDate();
@@ -378,42 +385,56 @@ function DateRangePicker({ value, onChange }: { value: DateRange; onChange: (r: 
     return day > a && day < b;
   };
 
-  const navButton = "flex h-9 w-9 items-center justify-center rounded-lg bg-[#F5F0ED] hover:bg-[#EDE5E0]";
-
   return (
     <div ref={ref} className="relative w-full sm:w-auto">
-      <button onClick={() => setOpen((o) => !o)} className={TRIGGER_CLASS}>
-        <Calendar size={18} className="text-[#9B8E8E]" />
-        <span className={`flex-1 text-sm ${hasValue ? "font-medium text-[#4A1C1C]" : "text-[#B0A8A4]"}`}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={TRIGGER_CLASS}
+        type="button"
+        aria-label="Filter by date range"
+        aria-expanded={open}
+      >
+        <Calendar size={16} className="text-[#818781] shrink-0" />
+        <span className={`flex-1 truncate text-xs sm:text-sm ${hasValue ? "font-semibold text-[#242824]" : "text-[#818781]"}`}>
           {label}
         </span>
         {hasValue && (
           <span
             onClick={clear}
-            className="flex h-5 w-5 items-center justify-center rounded-full bg-[#F0EBE6] hover:bg-[#E8E0DC]"
+            className="flex h-5 w-5 items-center justify-center rounded-full bg-[#F3F3F0] text-[#818781] transition hover:bg-[#E5E9E4] hover:text-[#242824]"
+            title="Clear date range"
+            role="button"
           >
-            <X size={12} className="text-[#9B8E8E]" />
+            <X size={12} />
           </span>
         )}
       </button>
 
       {open && (
-        <div className={`${PANEL_CLASS} w-full p-4 sm:w-[340px] sm:p-5`}>
-          <div className="mb-4 flex items-center justify-between">
-            <button onClick={() => shiftMonth(-1)} className={navButton}>
-              <ChevronLeft size={16} className="text-[#7C2D2D]" />
+        <div className={`${PANEL_CLASS} w-full p-4 sm:w-[320px]`}>
+          <div className="mb-3 flex items-center justify-between">
+            <button
+              onClick={() => shiftMonth(-1)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#F8F9F6] text-[#486C5D] transition hover:bg-[#E5E9E4]"
+              aria-label="Previous month"
+            >
+              <ChevronLeft size={16} />
             </button>
-            <span className="text-sm font-semibold text-[#4A1C1C]">
+            <span className="text-sm font-semibold text-[#242824]">
               {MONTHS[view.month]} {view.year}
             </span>
-            <button onClick={() => shiftMonth(1)} className={navButton}>
-              <ChevronRight size={16} className="text-[#7C2D2D]" />
+            <button
+              onClick={() => shiftMonth(1)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#F8F9F6] text-[#486C5D] transition hover:bg-[#E5E9E4]"
+              aria-label="Next month"
+            >
+              <ChevronRight size={16} />
             </button>
           </div>
 
-          <div className="mb-1 grid grid-cols-7 gap-0.5">
+          <div className="mb-1.5 grid grid-cols-7 gap-0.5 text-center text-[11px] font-semibold text-[#818781]">
             {WEEKDAY_HEADERS.map((d) => (
-              <div key={d} className="py-1 text-center text-xs font-semibold text-[#B0A8A4]">
+              <div key={d} className="py-1">
                 {d}
               </div>
             ))}
@@ -428,19 +449,20 @@ function DateRangePicker({ value, onChange }: { value: DateRange; onChange: (r: 
               const isEndpoint =
                 (!!value.start && sameDay(day, value.start)) || (!!previewEnd && sameDay(day, previewEnd));
 
+              let btnStyle = "text-[#242824] hover:bg-[#F8F9F6]";
+              if (isEndpoint) {
+                btnStyle = "bg-[#789486] font-semibold text-white shadow-sm";
+              } else if (isInRange(day)) {
+                btnStyle = "bg-[#789486]/15 text-[#486C5D] font-medium";
+              }
+
               return (
                 <button
                   key={i}
                   onClick={() => pickDay(day)}
                   onMouseEnter={() => setHovered(day)}
                   onMouseLeave={() => setHovered(null)}
-                  className={`h-10 text-sm transition-colors ${
-                    isEndpoint
-                      ? "rounded-lg bg-[#7C2D2D] font-semibold text-white"
-                      : isInRange(day)
-                      ? "bg-[#F5E8E8] text-[#7C2D2D]"
-                      : "rounded-md text-[#4A1C1C] hover:bg-[#FDF5F5]"
-                  }`}
+                  className={`h-8 rounded-lg text-xs transition duration-150 ${btnStyle}`}
                 >
                   {dayNum}
                 </button>
@@ -448,7 +470,7 @@ function DateRangePicker({ value, onChange }: { value: DateRange; onChange: (r: 
             })}
           </div>
 
-          <p className="mt-4 border-t border-[#F0EBE6] pt-3 text-center text-xs text-[#B0A8A4]">
+          <p className="mt-3 border-t border-[#E5E9E4] pt-2.5 text-center text-[11px] text-[#818781]">
             {selecting === "start" ? "Click to set start date" : "Click to set end date"}
           </p>
         </div>
@@ -472,8 +494,8 @@ interface PeriodDropdownProps {
 function PeriodDropdown({ period, subKey, timezone, disabled, onSelect }: PeriodDropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  useClickOutside(ref, useCallback(() => setOpen(false), []));
+  const closePicker = useCallback(() => setOpen(false), [setOpen]);
+  useClickOutside(ref, closePicker);
 
   const options = getPeriodOptions(period);
   const active = options.find((o) => o.key === subKey) ?? options[0];
@@ -483,29 +505,30 @@ function PeriodDropdown({ period, subKey, timezone, disabled, onSelect }: Period
     <div ref={ref} className="relative w-full sm:w-auto">
       <button
         onClick={() => !disabled && setOpen((o) => !o)}
-        className={`${TRIGGER_CLASS} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
+        className={`${TRIGGER_CLASS} ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
+        type="button"
+        aria-label="Select reporting period"
+        aria-expanded={open}
       >
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold leading-tight text-[#4A1C1C]">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs sm:text-sm font-semibold text-[#242824]">
             {periodLabel} · {active.label}
-          </span>
-          <span className="mt-0.5 block text-xs text-[#B0A8A4]">{formatSpan(active.range, timezone)}</span>
-        </span>
+          </div>
+          <div className="truncate text-[11px] text-[#818781]">
+            {formatSpan(active.range, timezone)}
+          </div>
+        </div>
         <ChevronDown
           size={16}
-          className={`shrink-0 text-[#9B8E8E] transition-transform ${open ? "rotate-180" : ""}`}
+          className={`shrink-0 text-[#818781] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
         />
       </button>
 
       {open && (
-        <div className={`${PANEL_CLASS} w-full sm:w-[300px]`}>
+        <div className={`${PANEL_CLASS} w-full sm:w-[280px]`}>
           {PERIODS.map(({ label, value: groupPeriod }, index) => (
-            <div key={groupPeriod} className={index > 0 ? "border-t border-[#F5F0ED]" : ""}>
-              <div
-                className={`px-4 pb-1.5 pt-3 text-xs font-bold uppercase tracking-wider ${
-                  groupPeriod === period ? "bg-[#FDF8F8] text-[#7C2D2D]" : "text-[#C4B8B8]"
-                }`}
-              >
+            <div key={groupPeriod} className={index > 0 ? "border-t border-[#E5E9E4]" : ""}>
+              <div className="bg-[#F8F9F6] px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#818781]">
                 {label}
               </div>
               {getPeriodOptions(groupPeriod).map((opt) => {
@@ -517,14 +540,14 @@ function PeriodDropdown({ period, subKey, timezone, disabled, onSelect }: Period
                       onSelect(groupPeriod, opt.key);
                       setOpen(false);
                     }}
-                    className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors ${
-                      isActive ? "bg-[#F5E8E8]" : "hover:bg-[#FDF5F5]"
+                    className={`flex w-full items-center justify-between px-3.5 py-2 text-left text-xs transition duration-150 ${
+                      isActive
+                        ? "bg-[#789486]/12 font-semibold text-[#486C5D]"
+                        : "text-[#242824] hover:bg-[#F8F9F6]"
                     }`}
                   >
-                    <span className={`text-sm ${isActive ? "font-semibold text-[#7C2D2D]" : "text-[#4A1C1C]"}`}>
-                      {opt.label}
-                    </span>
-                    <span className="ml-3 text-right text-xs text-[#B0A8A4] sm:whitespace-nowrap">
+                    <span>{opt.label}</span>
+                    <span className="text-[11px] text-[#818781]">
                       {formatSpan(opt.range, timezone)}
                     </span>
                   </button>
@@ -539,51 +562,133 @@ function PeriodDropdown({ period, subKey, timezone, disabled, onSelect }: Period
 }
 
 /* -------------------------------------------------------------------------- */
-/*                               Dashboard parts                              */
+/*                               KPI Card Component                           */
 /* -------------------------------------------------------------------------- */
 
-function KpiCard({ label, value, hint }: { label: string; value: string; hint: string }) {
+interface KpiCardProps {
+  label: string;
+  value: string;
+  hint: string;
+  icon: React.ElementType;
+}
+
+function KpiCard({ label, value, hint, icon: Icon }: KpiCardProps) {
   return (
-    <Card className="min-w-0 rounded-2xl border-0 bg-white p-5 shadow-md transition-shadow sm:p-6 hover:shadow-lg">
-      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 sm:text-sm">{label}</div>
-      <div className="mb-1 text-3xl font-bold sm:text-4xl text-gray-800">{value}</div>
-      <div className="text-sm text-gray-400">{hint}</div>
-    </Card>
+    <article className="ov-kpi-card" tabIndex={0} aria-label={`${label}: ${value}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-[#818781]">
+            {label}
+          </p>
+          <p className="mt-1.5 truncate text-2xl font-bold tracking-tight text-[#242824] sm:text-3xl" title={value}>
+            {value}
+          </p>
+        </div>
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F0F4F1] text-[#486C5D]"
+          aria-hidden="true"
+        >
+          <Icon size={20} strokeWidth={1.8} />
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-1.5 text-xs text-[#818781] truncate">
+        {hint.split(" · ").map((part, i, arr) => {
+          const isNegative = part.toLowerCase().includes("cancelled") || part.toLowerCase().includes("refunded");
+          return (
+            <React.Fragment key={i}>
+              <span className={`truncate font-medium ${isNegative ? "text-[#C05656]" : "text-[#818781]"}`}>
+                {part}
+              </span>
+              {i < arr.length - 1 && <span className="text-[#E5E9E4]">·</span>}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </article>
   );
 }
 
-function Panel({ title, className = "", children }: { title: string; className?: string; children: React.ReactNode }) {
-  return (
-    <Card className={`rounded-2xl border-0 bg-white p-5 shadow-md sm:p-7 ${className}`}>
-      <h3 className="mb-4 text-lg font-semibold text-gray-800 sm:mb-5 sm:text-xl">{title}</h3>
-      {children}
-    </Card>
-  );
-}
+/* -------------------------------------------------------------------------- */
+/*                                Empty State                                 */
+/* -------------------------------------------------------------------------- */
 
-const EmptyState = ({ message }: { message: string }) => (
-  <p className="py-8 text-center text-sm text-gray-400">{message}</p>
+const EmptyState = ({ message, icon, title }: { message: string; icon?: React.ReactNode; title?: string }) => (
+  <div className="flex min-h-[170px] flex-col items-center justify-center px-4 py-8 text-center">
+    {icon && (
+      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F8F9F6] text-[#818781]">
+        {icon}
+      </div>
+    )}
+    {title && <p className="text-xs font-semibold uppercase tracking-wider text-[#242824]">{title}</p>}
+    <p className="mt-1 max-w-[260px] text-xs text-[#818781]">{message}</p>
+  </div>
 );
 
+/* -------------------------------------------------------------------------- */
+/*                             Top-Selling Items                              */
+/* -------------------------------------------------------------------------- */
+
 function TopItemsChart({ items }: { items: { name: string; count: number }[] }) {
-  if (items.length === 0) return <EmptyState message="No items data yet." />;
-  const max = items[0].count;
+  if (items.length === 0) {
+    return <EmptyState message="No sales data for this period yet." title="Top-Selling Items" icon={<ShoppingBag size={20} />} />;
+  }
+  const max = items[0].count || 1;
 
   return (
     <div className="flex flex-col gap-3.5">
       {items.map((item, i) => (
         <div key={item.name} className="flex items-center gap-3">
-          <span className="w-4 text-right text-xs text-gray-400">{i + 1}</span>
-          <span className="w-20 truncate text-sm text-gray-600 sm:w-28">{item.name}</span>
-          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+          <span
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+              i === 0
+                ? "bg-[#486C5D] text-white"
+                : i < 3
+                ? "bg-[#F0F4F1] text-[#486C5D]"
+                : "text-[#818781]"
+            }`}
+          >
+            {i + 1}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-xs sm:text-sm font-medium text-[#242824]" title={item.name}>
+            {item.name}
+          </span>
+          <div className="h-2 w-24 sm:w-32 shrink-0 overflow-hidden rounded-full bg-[#F3F3F0]">
             <div
-              className="h-full rounded-full bg-[#7C2D2D] transition-all duration-500"
+              className={`h-full rounded-full transition-all duration-500 ${
+                i === 0 ? "bg-[#486C5D]" : "bg-[#789486]"
+              }`}
               style={{ width: `${(item.count / max) * 100}%` }}
             />
           </div>
-          <span className="w-10 text-right text-sm text-gray-500">{item.count}</span>
+          <span className="w-8 shrink-0 text-right text-xs sm:text-sm font-bold text-[#242824]">
+            {item.count}
+          </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                Order Types                                 */
+/* -------------------------------------------------------------------------- */
+
+function OrderTypeBar({ label, pct, color }: { label: string; pct: number; color: string }) {
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <span className="w-24 shrink-0 truncate text-xs sm:text-sm font-medium text-[#242824]" title={label}>
+        {label}
+      </span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#F3F3F0]">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${pct}%`, backgroundColor: color }}
+        />
+      </div>
+      <span className="w-10 shrink-0 text-right text-xs sm:text-sm font-bold text-[#242824]">
+        {pct}%
+      </span>
     </div>
   );
 }
@@ -631,7 +736,61 @@ function groupOrderRows(rows: RawOrderRow[]): Order[] {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                  Dashboard                                 */
+/*                          Custom Chart Tooltip                              */
+/* -------------------------------------------------------------------------- */
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    name: string;
+    value: number;
+    color?: string;
+  }>;
+  label?: string;
+  currencySymbol: string;
+  salesView: SalesView;
+}
+
+function CustomStudioTooltip({
+  active,
+  payload,
+  label,
+  currencySymbol,
+  salesView,
+}: CustomTooltipProps) {
+  if (!active || !payload || !payload.length) return null;
+
+  return (
+    <div className="rounded-xl border border-[#E5E9E4] bg-white px-3.5 py-2.5 shadow-lg">
+      <p className="mb-1 text-xs font-semibold text-[#818781]">{label}</p>
+      <div className="flex flex-col gap-1">
+        {payload.map((entry, idx) => {
+          const val = entry.value;
+          const formatted =
+            salesView === "sales"
+              ? `${currencySymbol}${val.toLocaleString(undefined, {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}`
+              : `${val} orders`;
+          return (
+            <div key={idx} className="flex items-center gap-2 text-xs">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: entry.color || "#789486" }}
+              />
+              <span className="font-medium text-[#818781]">{entry.name}:</span>
+              <span className="font-bold text-[#242824]">{formatted}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Main Dashboard                                */
 /* -------------------------------------------------------------------------- */
 
 export default function AdminDashboard() {
@@ -749,232 +908,350 @@ export default function AdminDashboard() {
   // Show fullscreen loader during initial data fetch
   if (isLoading) {
     return (
-      <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
+      <div className="ov-canvas flex items-center justify-center">
         <Sidebar />
-        <main className="tablet-shell min-w-0 flex-1">
-          <div className="tablet-surface min-h-[calc(100vh-5rem)] bg-[#FDFAF6]">
-            <SectionSpinner message="Loading dashboard..." />
-          </div>
-        </main>
+        <SectionSpinner message="Loading Overview Dashboard..." />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 font-['Poppins',sans-serif]">
+    <div className="ov-canvas">
       <Sidebar />
 
-      <main className="tablet-shell min-w-0 flex-1">
-        <div className="tablet-surface min-h-[calc(100vh-5rem)] bg-[#FDFAF6]">
-          {/* Header */}
-          <header className="mb-6 flex flex-wrap items-start justify-between gap-5 sm:mb-8">
-            <div className="shrink-0">
-              <h1 className="text-2xl font-semibold sm:text-3xl text-[#4A1C1C]">{settings.restaurantName}</h1>
-              <p className="mt-1 text-sm font-medium uppercase tracking-wide text-gray-400">
-                Dashboard
-              </p>
-            </div>
+      <main className="ov-container">
+        {/* ============ HEADER ============ */}
+        <motion.header
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+          className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between"
+        >
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#818781]">
+              Operations & Analytics Studio
+            </p>
+            <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-[#242824] sm:text-3xl">
+              {settings.restaurantName || "THE CRUNCH"}
+            </h1>
+          </div>
 
-            <div className="order-2 flex w-full shrink-0 flex-col items-stretch gap-3 sm:order-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-              <span className="text-sm font-medium uppercase tracking-wide text-gray-400">Sales Report</span>
-              <PeriodDropdown
-                period={period}
-                subKey={subKey}
-                timezone={timezone}
-                disabled={hasCustomRange}
-                onSelect={(p, key) => {
-                  setPeriod(p);
-                  setSubKey(key);
-                }}
-              />
-              <DateRangePicker value={dateRange} onChange={setDateRange} />
-            </div>
-          </header>
-
-          {/* Status banners */}
-          {error && (
-            <Card className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
-              <p className="text-base font-semibold text-red-700">Dashboard data failed to load</p>
-              <p className="mt-1 text-sm text-red-500">{error}</p>
-            </Card>
-          )}
-          {noOrdersInRange && (
-            <Card className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-              <p className="text-base font-semibold text-amber-800">
-                No orders match the selected {hasCustomRange ? "date range" : "period"}
-              </p>
-              <p className="mt-1 text-sm text-amber-700">
-                {hasCustomRange
-                  ? "Try adjusting the date range."
-                  : "Try selecting a different period to view sales data."}
-              </p>
-            </Card>
-          )}
-
-          {/* KPIs */}
-          <section className="mb-6 grid grid-cols-1 gap-4 sm:mb-8 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3">
-            <KpiCard
-              label="Total Orders"
-              value={totalOrders.toLocaleString()}
-              hint={`${cancelledOrders} cancelled · ${refundedOrders} refunded`}
+          <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:items-center">
+            <PeriodDropdown
+              period={period}
+              subKey={subKey}
+              timezone={timezone}
+              disabled={hasCustomRange}
+              onSelect={(p, key) => {
+                setPeriod(p);
+                setSubKey(key);
+              }}
             />
-            <KpiCard
-              label="Total Revenue"
-              value={money(totalRevenue, wholeNumber)}
-              hint={`${finalizedSalesCount} completed paid orders`}
-            />
-            <KpiCard label="Avg Order Value" value={money(avgOrderValue)} hint="Per finalized sale" />
-          </section>
+            <DateRangePicker value={dateRange} onChange={setDateRange} />
+          </div>
+        </motion.header>
 
-          {/* Sales chart + payment methods */}
-          <section className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
-            <Card className="min-w-0 rounded-2xl border-0 bg-white p-5 shadow-md sm:p-7 lg:col-span-8">
-              <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        {/* ============ STATUS BANNERS ============ */}
+        {error && (
+          <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-[#C05656]/20 bg-[#C05656]/10 px-4 py-3 text-xs font-medium text-[#C05656]">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>Dashboard data failed to load: {error}</span>
+          </div>
+        )}
+        {noOrdersInRange && (
+          <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-[#A68A3A]/20 bg-[#A68A3A]/10 px-4 py-3 text-xs font-medium text-[#A68A3A]">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>No orders match the selected {hasCustomRange ? "date range" : "period"}</span>
+          </div>
+        )}
+
+        {/* ============ 4 KPI CARDS (ALIGNED 4-COL ON DESKTOP) ============ */}
+        <motion.section
+          aria-labelledby="kpi-heading"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.38, delay: 0.05, ease: "easeOut" }}
+          className="ov-kpi-grid"
+        >
+          <h2 id="kpi-heading" className="sr-only">Key Performance Indicators</h2>
+          <KpiCard
+            label="Total Orders"
+            value={totalOrders.toLocaleString()}
+            hint={`${cancelledOrders} cancelled · ${refundedOrders} refunded`}
+            icon={ShoppingBag}
+          />
+          <KpiCard
+            label="Total Revenue"
+            value={money(totalRevenue, wholeNumber)}
+            hint={`${finalizedSalesCount} completed paid orders`}
+            icon={DollarSign}
+          />
+          <KpiCard
+            label="Avg Order Value"
+            value={money(avgOrderValue)}
+            hint="Per finalized sale"
+            icon={Calculator}
+          />
+          <KpiCard
+            label="Finalized Sales"
+            value={finalizedSalesCount.toLocaleString()}
+            hint="Completed paid orders"
+            icon={CheckCircle}
+          />
+        </motion.section>
+
+        {/* ============ MAIN ANALYTICS GRID (8:4 RATIO) ============ */}
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.42, delay: 0.1, ease: "easeOut" }}
+          className="ov-main-grid"
+        >
+          {/* Order & Sales Review (8 columns) */}
+          <section aria-labelledby="sales-heading" className="ov-card flex flex-col justify-between">
+            <div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">Order & Sales Review</h2>
-                  <p className="mt-0.5 text-sm text-gray-400">{formatSpan(activeRange, timezone)}</p>
-                  <p className="mt-2 text-base font-semibold text-[#7C2D2D]">
-                    {money(totalRevenue, wholeNumber)}{" "}
-                    <span className="text-sm font-normal text-gray-400">
-                      as of {formatDisplayDate(activeRange.end, timezone)}
-                    </span>
+                  <h2 id="sales-heading" className="text-lg font-bold tracking-tight text-[#242824] sm:text-xl">
+                    Order & Sales Review
+                  </h2>
+                  <p className="mt-0.5 text-xs text-[#818781]">
+                    {formatSpan(activeRange, timezone)}
                   </p>
                 </div>
 
-                <div className="flex w-fit max-w-full overflow-x-auto rounded-xl bg-[#F0EBE6] p-1">
+                {/* Sales / Orders view switch */}
+                <div className="ov-view-toggle self-start sm:self-auto" role="group" aria-label="Sales view selection">
                   {(["sales", "orders"] as const).map((v) => (
                     <button
                       key={v}
                       onClick={() => setSalesView(v)}
-                      className={`rounded-lg px-4 py-2 text-sm font-medium capitalize transition ${
-                        salesView === v ? "bg-[#7C2D2D] text-white shadow-sm" : "text-[#9B8E8E]"
-                      }`}
+                      className={`ov-view-toggle-btn ${salesView === v ? "active" : ""}`}
+                      aria-pressed={salesView === v}
+                      type="button"
                     >
-                      {v}
+                      {v === "sales" ? "Sales" : "Orders"}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-500">
-                <span className="flex items-center gap-2">
-                  <span className="inline-block h-2.5 w-4 rounded-sm bg-[#7C2D2D]" />
-                  {hasCustomRange ? "Selected range" : activeOption.label}
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="inline-block h-2.5 w-4 rounded-sm bg-gray-300" />
-                  Previous {periodLabel}
-                </span>
+              {/* Metric bar & Legend */}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E9E4] pb-3.5">
+                <div>
+                  <span className="text-xl font-bold tracking-tight text-[#486C5D] sm:text-2xl">
+                    {salesView === "sales" ? money(totalRevenue, wholeNumber) : `${totalOrders.toLocaleString()} orders`}
+                  </span>
+                  <span className="ml-2 text-xs text-[#818781]">
+                    as of {formatDisplayDate(activeRange.end, timezone)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-[#818781]">
+                  <span className="flex items-center gap-1.5 font-medium text-[#242824]">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#789486]" />
+                    {hasCustomRange ? "Selected range" : activeOption.label}
+                  </span>
+                  <span className="flex items-center gap-1.5 font-medium text-[#818781]">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#C2C9C2]" />
+                    Previous {periodLabel}
+                  </span>
+                </div>
               </div>
+            </div>
 
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F0EBE6" />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#9B8E8E" }} axisLine={false} tickLine={false} minTickGap={12} />
+            {/* Recharts Area + Line */}
+            <div className="mt-4 h-[300px] sm:h-[320px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="sageGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#789486" stopOpacity={0.22} />
+                      <stop offset="100%" stopColor="#789486" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EAECE8" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: "#818781", fontWeight: 500 }}
+                    axisLine={false}
+                    tickLine={false}
+                    dy={6}
+                    minTickGap={12}
+                  />
                   <YAxis
-                    tick={{ fontSize: 13, fill: "#9B8E8E" }}
+                    tick={{ fontSize: 11, fill: "#818781", fontWeight: 500 }}
                     axisLine={false}
                     tickLine={false}
                     tickFormatter={axisFormatter}
+                    tickCount={5}
                   />
-                  <Tooltip formatter={(v: number) => [axisFormatter(v)]} contentStyle={TOOLTIP_STYLE} />
+                  <Tooltip
+                    content={
+                      <CustomStudioTooltip
+                        currencySymbol={currencySymbol}
+                        salesView={salesView}
+                      />
+                    }
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="current"
+                    stroke="none"
+                    fill="url(#sageGradient)"
+                  />
                   <Line
                     type="monotone"
                     dataKey="current"
-                    name={`This ${periodLabel}`}
-                    stroke={BRAND}
+                    name={hasCustomRange ? "Selected range" : activeOption.label}
+                    stroke="#789486"
                     strokeWidth={2.5}
-                    dot={{ r: 4, fill: BRAND }}
+                    dot={{ r: 3.5, fill: "#789486", stroke: "#FFFFFF", strokeWidth: 2 }}
+                    activeDot={{ r: 5.5, fill: "#486C5D", stroke: "#FFFFFF", strokeWidth: 2 }}
                   />
                   <Line
                     type="monotone"
                     dataKey="previous"
                     name={`Previous ${periodLabel}`}
-                    stroke="#C8B8B8"
+                    stroke="#B8BEB8"
                     strokeWidth={1.5}
-                    strokeDasharray="4 3"
-                    dot={{ r: 3, fill: "#C8B8B8" }}
+                    strokeDasharray="4 4"
+                    dot={false}
+                    activeDot={{ r: 4.5, fill: "#B8BEB8", stroke: "#FFFFFF", strokeWidth: 2 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
-            </Card>
+            </div>
+          </section>
 
-            <Panel title="Payment Methods" className="h-full lg:col-span-4">
-              {payments.length > 0 ? (
-                <>
-                  <ResponsiveContainer width="100%" height={200}>
+          {/* Payment Methods (4 columns) */}
+          <section aria-labelledby="payments-heading" className="ov-card flex flex-col justify-between">
+            <div>
+              <h2 id="payments-heading" className="text-lg font-bold tracking-tight text-[#242824] sm:text-xl">
+                Payment Methods
+              </h2>
+              <p className="mt-0.5 text-xs text-[#818781]">
+                Breakdown by payment type
+              </p>
+            </div>
+
+            {payments.length > 0 ? (
+              <div className="my-auto flex flex-col items-center">
+                <div className="h-[180px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={payments} dataKey="count" nameKey="label" innerRadius={55} outerRadius={85} paddingAngle={3}>
+                      <Pie
+                        data={payments}
+                        dataKey="count"
+                        nameKey="label"
+                        innerRadius={50}
+                        outerRadius={74}
+                        paddingAngle={3}
+                      >
                         {payments.map((entry, i) => (
-                          <Cell key={entry.label} fill={PAYMENT_COLORS[entry.label] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length]} />
+                          <Cell
+                            key={entry.label}
+                            fill={PAYMENT_COLORS[entry.label] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length]}
+                          />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={TOOLTIP_STYLE} />
+                      <Tooltip
+                        formatter={(val: number, name: string) => [`${val} orders`, name]}
+                        contentStyle={{
+                          borderRadius: 12,
+                          border: "1px solid #E5E9E4",
+                          boxShadow: "0 8px 24px rgba(36,40,36,0.08)",
+                          fontSize: 12,
+                          backgroundColor: "#FFFFFF",
+                          color: "#242824",
+                        }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
+                </div>
 
-                  <div className="mt-3 space-y-2">
-                    {payments.map((entry, i) => (
-                      <div key={entry.label} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className="inline-block h-3 w-3 rounded-sm"
-                            style={{ backgroundColor: PAYMENT_COLORS[entry.label] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }}
-                          />
-                          <span className="text-gray-600">{entry.label}</span>
-                        </div>
-                        <span className="font-medium text-gray-800">{entry.pct}%</span>
+                {/* Legend breakdown list */}
+                <div className="mt-3 flex w-full flex-col gap-2">
+                  {payments.map((entry, i) => (
+                    <div
+                      key={entry.label}
+                      className="flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs transition hover:bg-[#F8F9F6]"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor:
+                              PAYMENT_COLORS[entry.label] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+                          }}
+                        />
+                        <span className="truncate font-medium text-[#242824]">{entry.label}</span>
                       </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <EmptyState message="No payment data yet." />
-              )}
-            </Panel>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[#818781]">{entry.count}</span>
+                        <span className="rounded-md bg-[#F8F9F6] px-1.5 py-0.5 font-bold text-[#242824]">
+                          {entry.pct}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <EmptyState
+                message="No payment data for this period."
+                title="Payment Methods"
+                icon={<PieIcon size={20} />}
+              />
+            )}
+          </section>
+        </motion.div>
+
+        {/* ============ LOWER ANALYTICS ROW (2 EQUAL COLUMNS) ============ */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.15, ease: "easeOut" }}
+          className="ov-lower-grid"
+        >
+          {/* Top-Selling Items */}
+          <section aria-labelledby="topitems-heading" className="ov-card">
+            <div className="mb-4">
+              <h2 id="topitems-heading" className="text-lg font-bold tracking-tight text-[#242824] sm:text-xl">
+                Top-Selling Items
+              </h2>
+              <p className="mt-0.5 text-xs text-[#818781]">By quantity sold</p>
+            </div>
+            <TopItemsChart items={topItems} />
           </section>
 
-          {/* Top items and order types */}
-          <section className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Panel title="Top-Selling Items">
-              <TopItemsChart items={topItems} />
-            </Panel>
-
-            <Panel title="Order Types">
-              {orderTypes.length > 0 ? (
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={orderTypes} layout="vertical" margin={{ top: 0, right: 30, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F0EBE6" horizontal={false} />
-                    <XAxis
-                      type="number"
-                      domain={[0, 100]}
-                      tick={{ fontSize: 12, fill: "#9B8E8E" }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => `${v}%`}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="label"
-                      width={84}
-                      tick={{ fontSize: 12, fill: "#9B8E8E" }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip formatter={(v: number) => [`${v}%`, "Share"]} contentStyle={TOOLTIP_STYLE} />
-                    <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
-                      {orderTypes.map((entry, i) => (
-                        <Cell key={entry.label} fill={FALLBACK_COLORS[i % FALLBACK_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState message="No order type data yet." />
-              )}
-            </Panel>
+          {/* Order Types */}
+          <section aria-labelledby="ordertypes-heading" className="ov-card">
+            <div className="mb-4">
+              <h2 id="ordertypes-heading" className="text-lg font-bold tracking-tight text-[#242824] sm:text-xl">
+                Order Types
+              </h2>
+              <p className="mt-0.5 text-xs text-[#818781]">Share of total orders</p>
+            </div>
+            {orderTypes.length > 0 ? (
+              <div className="flex flex-col gap-2.5">
+                {orderTypes.map((entry, i) => (
+                  <OrderTypeBar
+                    key={entry.label}
+                    label={entry.label}
+                    pct={entry.pct}
+                    color={FALLBACK_COLORS[i % FALLBACK_COLORS.length]}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                message="No order type data for this period."
+                title="Order Types"
+                icon={<Layers size={20} />}
+              />
+            )}
           </section>
-        </div>
+        </motion.div>
       </main>
     </div>
   );

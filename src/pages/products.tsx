@@ -143,33 +143,164 @@ body{background:var(--bg)}
 .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted);padding:0 4px}
 .dot{width:7px;height:7px;border-radius:50%}
 .burger{display:none;background:none;border:0;color:var(--text);cursor:pointer;padding:8px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:28px}
-@media (min-width: 1200px){.grid{grid-template-columns:repeat(auto-fill,minmax(380px,1fr))}}
-@media (min-width: 1440px){.grid{grid-template-columns:repeat(auto-fill,minmax(400px,1fr))}}
-@media (max-width: 1024px){.grid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:24px}}
-@media (max-width: 768px){.grid{grid-template-columns:repeat(auto-fill,minmax(100%,1fr));gap:20px}}
-@media (max-width: 480px){.grid{gap:16px}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
+/* Products Grid — Compact, Responsive Catalog */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+  width: 100%;
+}
+@media (min-width: 1280px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 20px;
+  }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+@media (min-width: 360px) and (max-width: 767px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+@media (max-width: 359px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    max-width: 320px;
+    margin: 0 auto;
+  }
+}
+
+/* Featured Menu — Responsive Poster Gallery */
+.featured-menu-section {
+  width: 100%;
+  max-width: 1050px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.featured-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 24px;
+}
+.featured-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  width: 100%;
+  justify-content: center;
+  justify-items: center;
+  align-items: start;
+  box-sizing: border-box;
+}
+.featured-menu-card {
+  width: min(100%, 320px);
+  max-width: 320px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #1A1A1A;
+  border: 1px solid rgba(201, 168, 76, 0.28);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.65), 0 2px 6px -1px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  position: relative;
+  transition: transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 300ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.featured-menu-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  max-height: 460px;
+  object-fit: contain;
+  object-position: center;
+}
+
+/* Tablet: 700px to 1099px — 2 columns, 3rd poster centered on row 2 */
+@media (min-width: 700px) and (max-width: 1099px) {
+  .featured-menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 300px));
+    gap: 24px;
+    justify-content: center;
+    justify-items: center;
+  }
+  .featured-menu-card {
+    width: 100%;
+    max-width: 300px;
+  }
+  .featured-menu-card:nth-child(3) {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+}
+
+/* Desktop: 1100px and above — 3 columns in ONE centered row */
+@media (min-width: 1100px) {
+  .featured-menu-grid {
+    grid-template-columns: repeat(3, minmax(260px, 300px));
+    gap: 24px;
+    justify-content: center;
+    justify-items: center;
+  }
+  .featured-menu-card {
+    width: 100%;
+    max-width: 300px;
+  }
+  .featured-menu-card:nth-child(3) {
+    grid-column: auto;
+    justify-self: stretch;
+  }
+}
+
+/* Desktop Hover */
+@media (hover: hover) and (pointer: fine) {
+  .featured-menu-card:hover {
+    transform: translateY(-4px) scale(1.012);
+    box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.75), 0 0 18px 0 rgba(201, 168, 76, 0.22);
+    border-color: rgba(201, 168, 76, 0.55);
+  }
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .featured-menu-card,
+  .featured-menu-card:hover {
+    transform: none !important;
+    transition: none !important;
+  }
+}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
 .card:hover{border-color:rgba(233,190,95,.45);transform:translateY(-4px)}
-.thumb{position:relative;aspect-ratio:4/3;background:#1f1d1a;overflow:hidden}
+.thumb{position:relative;aspect-ratio:16/10;max-height:200px;background:#1f1d1a;overflow:hidden}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.chip{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:rgba(89,92,86,0.3);color:var(--muted)}
+.chip{font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(89,92,86,0.3);color:var(--muted)}
 .chip-gold{background:var(--butter);color:${CHARCOAL}}
 .tabs{position:sticky;top:${NAV_H}px;z-index:50;background:rgba(26,26,26,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
-.tabs-in{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding: 8px 0}
+.tabs-in{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding: 6px 0}
 .tabs-in::-webkit-scrollbar{display:none}
-.tab{position:relative;background:none;border:0;padding:14px 20px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap;border-radius:12px;transition:color 0.2s ease, background 0.2s ease}
+.tab{position:relative;background:none;border:0;padding:10px 18px;font-size:13.5px;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap;border-radius:10px;transition:color 0.2s ease, background 0.2s ease}
 .tab:hover{color:var(--text);background:rgba(245,232,182,.06)}
 .tab.on{color:var(--butter);font-weight:600;background:rgba(233,190,95,.12)}
-.tab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:6px;width:24px;height:3px;background:var(--butter);border-radius:2px;box-shadow:0 0 12px var(--butter)}
+.tab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:4px;width:20px;height:3px;background:var(--butter);border-radius:2px;box-shadow:0 0 12px var(--butter)}
+@media (max-width: 600px){.tab{padding:8px 12px;font-size:12px}}
 /* Section header improvements */
-.section-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12;margin-bottom:28}
-.section-title{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-0.025em;line-height:1.1;margin:0;color:var(--blond)}
-.section-subtitle{color:var(--muted);font-size:clamp(13px,1.6vw,14px);line-height:1.6;margin:0}
-.h2{font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-.025em;line-height:1.1;color:var(--blond)}
-.sub{color:var(--muted);font-size:14px;line-height:1.6}
-.section{margin-top:100px}
-.skel{border-radius:16px;background:linear-gradient(90deg,${CHARCOAL},${GREY_FOG},${CHARCOAL});background-size:200% 100%;animation:sh 1.4s infinite}
+.section-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.section-title{font-size:clamp(22px,3vw,30px);font-weight:800;letter-spacing:-0.025em;line-height:1.1;margin:0;color:var(--blond)}
+.section-subtitle{color:var(--muted);font-size:clamp(12px,1.4vw,13.5px);line-height:1.5;margin:0}
+.h2{font-size:clamp(24px,3.5vw,36px);font-weight:800;letter-spacing:-.025em;line-height:1.1;color:var(--blond)}
+.sub{color:var(--muted);font-size:13px;line-height:1.5}
+.section{margin-top:60px}
+.skel{border-radius:14px;background:linear-gradient(90deg,${CHARCOAL},${GREY_FOG},${CHARCOAL});background-size:200% 100%;animation:sh 1.4s infinite}
 .fixed-btn{position:fixed;bottom:22px;right:22px;z-index:90}
 .input{width:100%;font:inherit;font-size:14px;color:var(--text);background:rgba(89,92,86,0.15);border:1px solid var(--line);border-radius:12px;padding:14px 18px;outline:none;transition:border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease}
 .input:focus{border-color:rgba(233,190,95,0.5);background:rgba(89,92,86,0.2);box-shadow:0 0 0 4px rgba(233,190,95,0.15)}
@@ -185,7 +316,7 @@ body{background:var(--bg)}
   0%,100%{opacity:1;transform:scale(1)}
   50%{opacity:0.6;transform:scale(0.9)}
 }
-@media(max-width:768px){.links,.status.hide-m{display:none}.burger{display:flex}.grid{grid-template-columns:1fr}}
+@media(max-width:768px){.links,.status.hide-m{display:none}.burger{display:flex}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 `
 
@@ -311,18 +442,21 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
       className="card"
       variants={fadeUp}
       whileHover={{
-        y: -8,
-        boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)',
-        transition: { duration: 0.3, ease: easeOut },
+        y: -4,
+        boxShadow: '0 16px 32px -8px rgba(0,0,0,0.5)',
+        transition: { duration: 0.25, ease: easeOut },
       }}
-      whileTap={{ scale: 0.99 }}
+      whileTap={{ scale: 0.98 }}
       layout
       style={{
-        background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
+        background: 'linear-gradient(180deg, rgba(22,20,18,0.98) 0%, rgba(14,13,11,0.98) 100%)',
         border: '1px solid var(--line)',
-        borderRadius: 20,
+        borderRadius: 14,
         overflow: 'hidden',
         position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
       }}
     >
       {/* Image container with proper aspect ratio to prevent layout shift */}
@@ -330,7 +464,8 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
         className="thumb"
         whileHover={{ opacity: 1 }}
         style={{
-          aspectRatio: '4/3',
+          aspectRatio: '16/10',
+          maxHeight: 200,
           background: BLACK,
           overflow: 'hidden',
           position: 'relative',
@@ -357,14 +492,14 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
             className="chip chip-gold"
             style={{
               position: 'absolute',
-              top: 14,
-              left: 14,
+              top: 8,
+              left: 8,
               zIndex: 2,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: 700,
-              padding: '5px 12px',
+              padding: '3px 8px',
               borderRadius: 9999,
-              boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
+              boxShadow: '0 2px 8px rgba(245,200,66,0.3)',
             }}
           >
             {p.badge}
@@ -376,13 +511,13 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
           <span
             style={{
               position: 'absolute',
-              top: 14,
-              right: 14,
+              top: 8,
+              right: 8,
               zIndex: 2,
               background: 'rgba(0,0,0,0.7)',
               borderRadius: '50%',
-              width: 32,
-              height: 32,
+              width: 26,
+              height: 26,
               display: 'grid',
               placeItems: 'center',
               backdropFilter: 'blur(8px)',
@@ -390,7 +525,7 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
             }}
             aria-label="Spicy level"
           >
-            <Flame size={16} color="#f87171" />
+            <Flame size={13} color="#f87171" />
           </span>
         )}
 
@@ -402,77 +537,83 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
             transition={{ delay: 0.1, duration: 0.2 }}
             style={{
               position: 'absolute',
-              bottom: 14,
-              left: 14,
+              bottom: 8,
+              left: 8,
               zIndex: 2,
               display: 'flex',
               alignItems: 'center',
-              gap: 5,
-              padding: '6px 12px',
-              background: 'rgba(11,10,8,0.9)',
-              backdropFilter: 'blur(12px)',
+              gap: 4,
+              padding: '3px 7px',
+              background: 'rgba(11,10,8,0.85)',
+              backdropFilter: 'blur(8px)',
               borderRadius: 9999,
-              border: '1px solid rgba(245,200,66,0.3)',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+              border: '1px solid rgba(245,200,66,0.25)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
             }}
           >
-            <Star size={13} fill="var(--gold)" color="var(--gold)" />
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)' }}>{p.rating.toFixed(1)}</span>
+            <Star size={11} fill="var(--gold)" color="var(--gold)" />
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold)' }}>{p.rating.toFixed(1)}</span>
           </motion.div>
         )}
       </motion.div>
 
       {/* Content area */}
       <div style={{
-        padding: 'clamp(18px,3vw,24px)',
+        padding: 'clamp(10px, 1.8vw, 14px)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
+        gap: 6,
         flex: 1,
-        minHeight: 160,
+        justifyContent: 'space-between',
       }}>
         {/* Name & category */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+        <div>
           <h3 style={{
-            fontSize: 'clamp(17px,2.2vw,20px)',
+            fontSize: 'clamp(14px, 1.5vw, 16px)',
             fontWeight: 700,
-            lineHeight: 1.25,
+            lineHeight: 1.3,
             color: 'var(--text)',
-            letterSpacing: '-0.015em',
+            letterSpacing: '-0.01em',
             margin: 0,
-          }}>
-            {p.name}
-          </h3>
-        </div>
-
-        {/* Description */}
-        {p.description && (
-          <p style={{
-            fontSize: 'clamp(13px,1.6vw,14.5px)',
-            lineHeight: 1.55,
-            color: 'var(--muted)',
-            margin: 0,
-            flex: 1,
             display: '-webkit-box',
-            WebkitLineClamp: 3,
+            WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
           }}>
-            {p.description}
-          </p>
-        )}
+            {p.name}
+          </h3>
+
+          {/* Description */}
+          {p.description && (
+            <p style={{
+              fontSize: 'clamp(11.5px, 1.3vw, 13px)',
+              lineHeight: 1.4,
+              color: 'var(--muted)',
+              marginTop: 4,
+              marginBottom: 0,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}>
+              {p.description}
+            </p>
+          )}
+        </div>
 
         {/* Price & Order button */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginTop: 'auto',
+          flexWrap: 'wrap',
+          gap: 6,
+          marginTop: 6,
           paddingTop: 8,
-          borderTop: '1px solid rgba(255,255,255,0.04)',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
         }}>
           <span style={{
-            fontSize: 'clamp(22px,2.8vw,26px)',
+            fontSize: 'clamp(16px, 1.8vw, 19px)',
             fontWeight: 800,
             color: 'var(--text)',
             letterSpacing: '-0.02em',
@@ -483,26 +624,27 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
           <motion.button
             className="btn btn-gold"
             onClick={onOrder}
-            whileTap={{ scale: 0.96 }}
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }}
+            whileTap={{ scale: 0.95 }}
+            whileHover={{ scale: 1.02, boxShadow: '0 4px 16px rgba(245,200,66,0.35)' }}
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
-              gap: 10,
-              padding: '14px 24px',
-              fontSize: 'clamp(13px,1.6vw,14.5px)',
+              gap: 5,
+              padding: '7px 12px',
+              fontSize: 'clamp(11.5px, 1.3vw, 13px)',
               fontWeight: 600,
-              borderRadius: 12,
+              borderRadius: 8,
               background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
               color: '#15120a',
               border: 'none',
-              boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
+              boxShadow: '0 2px 10px rgba(245,200,66,0.25)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
             aria-label={`Order ${p.name}`}
           >
-            <ShoppingBag size={16} />
+            <ShoppingBag size={13} />
             <span>Order Now</span>
-            <ArrowRight size={16} style={{ transition: 'transform 0.2s ease' }} />
           </motion.button>
         </div>
       </div>
@@ -1554,73 +1696,91 @@ function VerticalAdPoster({
   )
 }
 
-// ── Featured Today — Premium Vertical Campaign Posters ──────────────────────
+// ── Featured Menu Poster — Clean Image-First Gallery Card ─────────────────────
+function FeaturedMenuPoster({ image, alt, index }: { image: string; alt: string; index: number }) {
+  const [canHover, setCanHover] = useState(false)
+
+  useEffect(() => {
+    const mqHover = window.matchMedia('(hover: hover) and (pointer: fine)')
+    const mqMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setCanHover(mqHover.matches && !mqMotion.matches)
+    update()
+    mqHover.addEventListener?.('change', update)
+    mqMotion.addEventListener?.('change', update)
+    return () => {
+      mqHover.removeEventListener?.('change', update)
+      mqMotion.removeEventListener?.('change', update)
+    }
+  }, [])
+
+  return (
+    <motion.article
+      className="featured-menu-card"
+      variants={fadeUp}
+      whileHover={canHover ? {
+        y: -4,
+        scale: 1.012,
+        boxShadow: '0 16px 36px -6px rgba(0, 0, 0, 0.75), 0 0 16px 0 rgba(201, 168, 76, 0.22)',
+        borderColor: 'rgba(201, 168, 76, 0.55)',
+        transition: { duration: 0.3, ease: easeOut },
+      } : undefined}
+      style={{
+        position: 'relative',
+        borderRadius: 14,
+        overflow: 'hidden',
+        background: BLACK,
+        border: '1px solid rgba(201, 168, 76, 0.28)',
+        boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.65), 0 2px 6px -1px rgba(0, 0, 0, 0.4)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxSizing: 'border-box',
+      }}
+    >
+      <Photo
+        src={image}
+        alt={alt}
+        priority={true}
+        style={{
+          width: '100%',
+          height: 'auto',
+          maxWidth: '100%',
+          maxHeight: 460,
+          objectFit: 'contain',
+          objectPosition: 'center',
+          display: 'block',
+          aspectRatio: index === 0 ? '1055 / 1491' : '1040 / 1512',
+        }}
+      />
+    </motion.article>
+  )
+}
+
+// ── Featured Menu — Premium Poster Gallery ───────────────────────────────────
 function FeaturedStrip() {
-  const featuredPromos = [
-    {
-      img: PROMO_IMAGES[0],
-      title: 'Family Bucket',
-      subtitle: 'Perfect for sharing',
-      desc: '8pc chicken + 2 large sides + 4 drinks',
-      price: '₱699',
-      badge: 'Best Value',
-      accent: '#f5c842',
-      bgWords: 'FAMILY BUCKET',
-    },
-    {
-      img: PROMO_IMAGES[1],
-      title: 'Spicy Challenge',
-      subtitle: 'Dare to try',
-      desc: 'Try our hottest glaze — free drink if you finish',
-      price: '₱199',
-      badge: 'New',
-      accent: '#f87171',
-      bgWords: 'SPICY CHALLENGE',
-    },
-    {
-      img: PROMO_IMAGES[2],
-      title: 'Lunch Combo',
-      subtitle: 'Mon–Fri 11 AM – 2 PM',
-      desc: '2pc chicken + rice + drink',
-      price: '₱249',
-      badge: 'Limited Time',
-      accent: '#f5c842',
-      bgWords: 'LUNCH COMBO',
-    },
+  const featuredPosters = [
+    { img: PROMO_IMAGES[0], alt: 'THE CRUNCH OVERLOAD promotional poster' },
+    { img: PROMO_IMAGES[1], alt: 'THE CRUNCH BUCKET promotional poster' },
+    { img: PROMO_IMAGES[2], alt: 'THE CRUNCH Rice Meals and Sauces promotional poster' },
   ]
 
   return (
-    <section style={{ marginTop: 80 }}>
+    <div className="featured-menu-section">
       <motion.div variants={fadeUp}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
-          <h2 className="h2" style={{ fontSize: 'clamp(28px,5vw,44px)' }}>Featured Today</h2>
+        <div className="featured-menu-header">
+          <h2 className="h2" style={{ fontSize: 'clamp(26px, 4vw, 36px)', margin: 0 }}>Featured Menu</h2>
         </div>
       </motion.div>
       <motion.div
         variants={staggerContainer}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))',
-          gap: 'clamp(20px, 3vw, 28px)',
-          perspective: '1200px',
-        }}
+        className="featured-menu-grid"
       >
-        {featuredPromos.map((promo) => (
-          <VerticalAdPoster
-            key={promo.title}
-            image={promo.img}
-            title={promo.title}
-            subtitle={promo.subtitle}
-            description={promo.desc}
-            badge={promo.badge}
-            price={promo.price}
-            showPrice={true}
-            accentColor={promo.accent}
-            bgWords={promo.bgWords}
-          />
+        {featuredPosters.map((poster, index) => (
+          <FeaturedMenuPoster key={poster.alt} image={poster.img} alt={poster.alt} index={index} />
         ))}
       </motion.div>
-    </section>
+    </div>
   )
 }
 
@@ -1950,7 +2110,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
       <FoodPreviewGallery products={products} />
 
       {/* FEATURED STRIP */}
-      <motion.section variants={staggerContainer} style={{ padding: '0 var(--pad) 60px', background: BLACK }}>
+      <motion.section variants={staggerContainer} style={{ padding: '20px 0 60px', background: BLACK }}>
         <div className="wrap">
           <FeaturedStrip />
         </div>
@@ -1975,7 +2135,7 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
         </div>
       </div>
 
-      <motion.main className="wrap" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ paddingTop: 40, paddingBottom: 120, background: BLACK }}>
+      <motion.main className="wrap" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ paddingTop: 24, paddingBottom: 64, background: BLACK }}>
         {/* PRODUCTS GRID */}
         <motion.section variants={staggerContainer} style={{ background: BLACK }}>
           <div className="section-header">
@@ -2004,12 +2164,12 @@ export default function Products({ isAuthenticated = false, onLogout }: Products
 
         {/* PROMOS */}
         {!loading.r && promos.length > 0 && (
-          <motion.section className="section" variants={staggerContainer} style={{ background: BLACK }}>
+          <motion.section className="section" variants={staggerContainer} style={{ background: BLACK, marginTop: 48 }}>
             <div className="section-header">
               <motion.h2 className="section-title" variants={fadeUp}>Deals & Promos</motion.h2>
               <motion.p className="section-subtitle" variants={fadeUp}>Current offers and limited-time specials.</motion.p>
             </div>
-            <motion.div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))' }} variants={staggerContainer} role="list">
+            <motion.div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,260px),1fr))', gap: 16 }} variants={staggerContainer} role="list">
               {[...featured, ...regular].map(p => (
                 <motion.div key={p.id} variants={fadeUp} role="listitem">
                   <PromoCard p={p} />
