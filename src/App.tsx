@@ -22,13 +22,10 @@ import Menu from "./pages/menu";
 import Order from "./pages/Order";
 import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
-import Products from "./pages/Products";
+import Products from "./pages/products";
 import Settings from "./pages/settings";
 import MyAccount from "./pages/my-account";
-import {
-  ROLE_HOME_PATHS,
-  resolveRootRoute,
-} from "./lib/rootRoutePolicy";
+import { ROLE_HOME_PATHS, resolveRootRoute } from "./lib/rootRoutePolicy";
 
 // ── Shared / Auth
 import Login from "./pages/login";
@@ -56,10 +53,7 @@ const PERMISSION_ROUTE_MAP: Partial<Record<PermissionKey, string>> = {
   settings: "/settings",
 };
 
-function getHomePathForRole(
-  role: Role,
-  permissions: PermissionsMap,
-): string {
+function getHomePathForRole(role: Role, permissions: PermissionsMap): string {
   if (!role) return "/login";
   if (role === "customer") return ROLE_HOME_PATHS.customer;
 
@@ -129,7 +123,10 @@ function ProtectedRoute({
   if (!permissionsReady) {
     return null;
   }
-  if (permissionKey && !hasPagePermission(userRole, permissionKey, permissions)) {
+  if (
+    permissionKey &&
+    !hasPagePermission(userRole, permissionKey, permissions)
+  ) {
     return <Navigate to="/unauthorized" replace />;
   }
   return element;
@@ -148,7 +145,9 @@ function Unauthorized() {
       className="min-h-screen flex flex-col items-center justify-center gap-4"
     >
       <h1 className="text-4xl font-bold text-red-500">403</h1>
-      <p className="text-gray-600">You don't have permission to view this page.</p>
+      <p className="text-gray-600">
+        You don't have permission to view this page.
+      </p>
       <button
         onClick={() => (window.location.href = redirectTo)}
         className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-black"
@@ -274,14 +273,7 @@ export default function App() {
       />
 
       {/* ── Customer landing (public, but passes auth state for nav) ── */}
-      <Route
-        path="/products"
-        element={
-          <Products
-            isAuthenticated={isAuth}
-          />
-        }
-      />
+      <Route path="/products" element={<Products isAuthenticated={isAuth} />} />
 
       {/* ── Customer menu ────────────────────────────────────── */}
       <Route
@@ -310,10 +302,7 @@ export default function App() {
         path="/sales-reports"
         element={protect(<SalesReports />, "salesReports")}
       />
-      <Route
-        path="/menu"
-        element={protect(<Menu />, "menus")}
-      />
+      <Route path="/menu" element={protect(<Menu />, "menus")} />
       <Route
         path="/users"
         element={protect(<StaffAccounts />, "userAccounts")}
