@@ -15,7 +15,7 @@ const MAX_FB = 200
 const CATEGORIES = ['All', 'Chicken', 'Sides', 'Drinks', 'Combos'] as const
 type Category = (typeof CATEGORIES)[number]
 
-interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string }
+interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string; archived: boolean }
 interface Flavor { name: string; accent: string; desc: string; img: string }
 interface Promo { id: string; title: string; subtitle?: string; description: string; img: string; badge?: string; validUntil?: string; discount?: string; highlight?: boolean }
 
@@ -54,6 +54,7 @@ const mapProducts = (data: unknown[]): Product[] =>
         price: Number(r?.price ?? 0),
         spicy: Boolean(r?.spicy),
         img: resolvedImg,
+        archived: String(r?.availability_status ?? r?.availabilityStatus ?? '').trim().toLowerCase() === 'hidden',
       };
     })
     .filter(p => p.id > 0 && p.name)
@@ -1877,15 +1878,16 @@ function FoodPreviewGallery({ products }: { products: Product[] }) {
     'Signature Chicken': '#fde047',
   };
 
-  const galleryItems = VERIFIED_LOCAL_FOOD_IMAGES.map(item => {
+  const galleryItems = VERIFIED_LOCAL_FOOD_IMAGES.flatMap(item => {
     const normalized = normalizeProductName(item.displayName);
     const matchedProduct = products.find(p => normalizeProductName(p.name) === normalized);
-    return {
+    if (matchedProduct?.archived) return [];
+    return [{
       ...item,
       hasProduct: !!matchedProduct,
       product: matchedProduct,
       accent: accentMap[item.displayName] || '#f5c842',
-    };
+    }];
   });
 
   // Responsive column count based on viewport
@@ -1981,10 +1983,10 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
   }, [])
 
   const filtered = useMemo(
-    () => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())),
+    () => products.filter(p => !p.archived && (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())),
     [products, category, search]
   )
-  const feedbackOptions = useMemo(() => products.map(p => ({ id: p.id, name: p.name })), [products])
+  const feedbackOptions = useMemo(() => products.filter(p => !p.archived).map(p => ({ id: p.id, name: p.name })), [products])
   const featured = promos.filter(p => p.highlight)
   const regular = promos.filter(p => !p.highlight)
 
