@@ -233,6 +233,9 @@ export function Sidebar() {
     });
   }, [permissions, staffRole]);
 
+  const primaryItems = visibleItems.filter((item) => item.path !== "/settings");
+  const settingsItems = visibleItems.filter((item) => item.path === "/settings");
+
   const closeSidebar = () => setIsOpen(false);
 
   const handleLogout = () => {
@@ -243,7 +246,13 @@ export function Sidebar() {
 
   const iconSize = isMobile ? "w-5 h-5" : "w-4 h-4";
   const profileLink = (
-    <NavLink to="/my-account" end onClick={closeSidebar}>
+    <NavLink
+      to="/my-account"
+      end
+      onClick={closeSidebar}
+      aria-label="Open My Profile"
+      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
+    >
       {({ isActive }) => (
         <Button
           variant="ghost"
@@ -269,14 +278,19 @@ export function Sidebar() {
     <>
       {staffRole && user && (
         <div className="fixed right-4 top-4 z-40 flex max-w-[calc(100vw-6rem)] items-center gap-2 font-['Poppins',sans-serif] sm:right-6 sm:top-6">
-          <div className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-lg sm:px-4">
+          <NavLink
+            to="/my-account"
+            aria-label={`Open My Profile for ${user.username}`}
+            title="Open My Profile"
+            className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-lg transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 sm:px-4"
+          >
             <p className="truncate text-xs font-semibold text-slate-900 sm:text-sm">
               {user.username}
             </p>
             <p className="truncate text-[10px] font-medium text-slate-500 sm:text-xs">
               {ROLE_LABELS[staffRole]}
             </p>
-          </div>
+          </NavLink>
           <InventoryNotificationCenter role={role} embedded />
         </div>
       )}
@@ -365,20 +379,28 @@ export function Sidebar() {
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.18 }}
               >
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "w-2.5 h-2.5 rounded-full flex-shrink-0",
-                      isOnline ? "bg-green-400" : "bg-gray-300",
-                    )}
-                  />
-                  <span className="text-sm font-semibold text-gray-900 truncate">
-                    {user.username}
+                <NavLink
+                  to="/my-account"
+                  onClick={closeSidebar}
+                  aria-label={`Open My Profile for ${user.username}`}
+                  title="Open My Profile"
+                  className="group -mx-2 rounded-lg px-2 py-1 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "w-2.5 h-2.5 rounded-full flex-shrink-0",
+                        isOnline ? "bg-green-400" : "bg-gray-300",
+                      )}
+                    />
+                    <span className="truncate text-sm font-semibold text-gray-900 group-hover:underline">
+                      {user.username}
+                    </span>
+                  </div>
+                  <span className="block pl-[18px] text-xs text-gray-400">
+                    {role ? ROLE_LABELS[role] : user.role}
                   </span>
-                </div>
-                <span className="text-xs text-gray-400 pl-[18px]">
-                  {role ? ROLE_LABELS[role] : user.role}
-                </span>
+                </NavLink>
               </motion.div>
             )}
 
@@ -395,8 +417,7 @@ export function Sidebar() {
                 "[&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]",
               )}
             >
-              {staffRole !== "cashier" && profileLink}
-              {visibleItems.map(({ label, path, icon: Icon }, index) => (
+              {primaryItems.map(({ label, path, icon: Icon }, index) => (
                 <NavLink key={path} to={path} end onClick={closeSidebar}>
                   {({ isActive }) => (
                     <motion.div
@@ -428,7 +449,39 @@ export function Sidebar() {
                   )}
                 </NavLink>
               ))}
-              {staffRole === "cashier" && profileLink}
+              {profileLink}
+              {settingsItems.map(({ label, path, icon: Icon }, index) => (
+                <NavLink key={path} to={path} end onClick={closeSidebar}>
+                  {({ isActive }) => (
+                    <motion.div
+                      initial={{ x: -16, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: 0.1 + (primaryItems.length + index + 1) * 0.045 }}
+                    >
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5 gap-3 h-auto",
+                          isActive
+                            ? "bg-gray-100 text-black font-semibold"
+                            : "text-gray-500 hover:text-black hover:bg-gray-50",
+                          isMobile && "py-3 text-base",
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            "flex-shrink-0 transition-colors duration-200",
+                            iconSize,
+                            isActive ? "text-black" : "text-gray-400",
+                          )}
+                          strokeWidth={isActive ? 2.2 : 1.8}
+                        />
+                        <span className="truncate">{label}</span>
+                      </Button>
+                    </motion.div>
+                  )}
+                </NavLink>
+              ))}
             </nav>
 
             {/* Log out */}

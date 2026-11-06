@@ -21,7 +21,10 @@ assert.match(
   sidebar,
   /const cashierOrder = \["Cashier View", "Cook View", "Overview", "Sales & Reports"\]/,
 );
-assert.match(sidebar, /staffRole === "cashier" && profileLink/);
+assert.match(sidebar, /const primaryItems = visibleItems\.filter/);
+assert.match(sidebar, /const settingsItems = visibleItems\.filter/);
+assert.ok(sidebar.indexOf("{profileLink}") > sidebar.indexOf("primaryItems.map"));
+assert.ok(sidebar.indexOf("{profileLink}") < sidebar.indexOf("settingsItems.map"));
 
 for (const label of [
   "Total Sales",

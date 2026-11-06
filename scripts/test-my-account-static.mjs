@@ -22,6 +22,15 @@ assert.doesNotMatch(login, /cook:\s*"\/orders"/);
 assert.match(staffAccounts, /"administrator", "cashier", "inventory_manager"/);
 assert.doesNotMatch(staffAccounts, /role:\s*"cook"/);
 assert.match(sidebar, /to="\/my-account"/);
+assert.equal(
+  (sidebar.match(/to="\/my-account"/g) ?? []).length,
+  3,
+  "navbar nametag, sidebar nametag, and My Profile item must share the authenticated profile route",
+);
+assert.match(sidebar, /aria-label=\{`Open My Profile for \$\{user\.username\}`\}/);
+assert.match(sidebar, /focus-visible:ring-2/);
+assert.ok(sidebar.indexOf("{profileLink}") > sidebar.indexOf("primaryItems.map"));
+assert.ok(sidebar.indexOf("{profileLink}") < sidebar.indexOf("settingsItems.map"));
 
 assert.match(account, /api\.get<OwnAccount>\("\/users\/me"\)/);
 assert.match(account, /api\.put<OwnAccount>\("\/users\/me", \{ username: cleanUsername \}\)/);
