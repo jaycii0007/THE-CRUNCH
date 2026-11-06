@@ -15,17 +15,15 @@ import type {
 } from "../../types/inventory";
 import { toNumber } from "../../utils/formatters";
 import { ButtonSpinner } from "@/components/ui/spinner";
-import {
-  blockInvalidNumberKeys,
-  sanitizeNumberInput,
-} from "../../utils/inputUtils";
+import { blockInvalidNumberKeys } from "../../utils/inputUtils";
 import { parseSupplierProducts } from "../../utils/supplierUtils";
 import {
   getAlertSeverity,
   getAppliedThresholds,
 } from "../../utils/stockUtils";
 
-const QUANTITY_MAX = 999;
+const QUANTITY_MAX = 100_000;
+const QUANTITY_PATTERN = /^\d+(?:\.\d{0,2})?$/;
 let nextDraftItemUid = 1;
 
 type DraftItem = {
@@ -260,9 +258,15 @@ export function CreatePOModal({
         errors.name = `Already added as Material ${(firstRowByName.get(key) ?? 0) + 1}.`;
       } else firstRowByName.set(key, index);
 
-      const quantity = toNumber(item.quantity, Number.NaN);
-      if (!Number.isInteger(quantity) || quantity < 1 || quantity > QUANTITY_MAX) {
-        errors.quantity = `Enter a whole number from 1 to ${QUANTITY_MAX}.`;
+      const rawQuantity = item.quantity.trim();
+      const quantity = toNumber(rawQuantity, Number.NaN);
+      if (
+        !QUANTITY_PATTERN.test(rawQuantity) ||
+        !Number.isFinite(quantity) ||
+        quantity < 1 ||
+        quantity > QUANTITY_MAX
+      ) {
+        errors.quantity = "Enter a quantity from 1 to 100,000 with up to two decimal places.";
       }
       return errors;
     });
@@ -693,7 +697,7 @@ export function CreatePOModal({
                           {nameError && <p role="alert" className="mt-1 text-[11px] text-red-500">{nameError}</p>}
                           {!nameError && newAssociation && <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">New to supplier</span>}
                         </div>
-                        <div><label htmlFor={`po-item-qty-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Quantity</label><input id={`po-item-qty-${item.uid}`} type="text" inputMode="numeric" value={item.quantity} onChange={(event) => { updateItem(item.uid, { quantity: String(sanitizeNumberInput(event.target.value, { allowDecimal: false, maxDigits: 3 })) }); setIsDirty(true); }} onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: false })} onBlur={() => updateItem(item.uid, { quantityTouched: true })} aria-invalid={!!quantityError} className={fieldClass(!!quantityError)} />{quantityError && <p role="alert" className="mt-1 text-[11px] text-red-500">{quantityError}</p>}</div>
+                        <div><label htmlFor={`po-item-qty-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Quantity</label><input id={`po-item-qty-${item.uid}`} type="text" inputMode="decimal" value={item.quantity} onChange={(event) => { updateItem(item.uid, { quantity: event.target.value, quantityTouched: true }); setIsDirty(true); }} onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: true })} onBlur={() => updateItem(item.uid, { quantityTouched: true })} aria-invalid={!!quantityError} className={fieldClass(!!quantityError)} />{quantityError && <p role="alert" className="mt-1 text-[11px] text-red-500">{quantityError}</p>}</div>
                         <div><label className="mb-1 block text-[11px] text-slate-500">Unit</label><input value={item.unit} readOnly tabIndex={-1} placeholder="From inventory" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500" /></div>
                       </div>
                     </div>

@@ -1086,7 +1086,6 @@ export default function Inventory() {
           className="mb-7 flex flex-wrap items-start justify-between gap-4"
         >
           <div>
-            <p className="mb-1 text-[12px] font-semibold" style={{ color: T.accent }}>Menu administration</p>
             <h1 className="text-[30px] font-semibold tracking-tight" style={{ color: T.ink, letterSpacing: "-0.02em" }}>Menu Management</h1>
             <p className="mt-1 max-w-[560px] text-[13px]" style={{ color: T.muted }}>
               Manage menu items, prices, categories, ingredients, promotions and availability.

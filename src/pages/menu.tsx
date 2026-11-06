@@ -106,6 +106,7 @@ const DATETIME: Intl.DateTimeFormatOptions = {
 };
 
 type PaymentMethod = "cash" | "gcash_onsite" | "grabfood" | "foodpanda";
+const MAX_CASH_TENDERED = 100_000;
 type OrderTypeVal = "dine-in" | "take-out" | "delivery";
 type ToastType = "success" | "error" | "info" | "warning";
 type Settle = "refund" | "cancel";
@@ -1038,6 +1039,7 @@ function AmountModal({
 }) {
   const { money, s } = useFmt();
   const [input, setInput] = useState("");
+  const [inputError, setInputError] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [proofError, setProofError] = useState("");
   const proofInputRef = useRef<HTMLInputElement>(null);
@@ -1054,24 +1056,46 @@ function AmountModal({
   useEffect(() => {
     if (show) {
       setInput("");
+      setInputError("");
     }
   }, [show]);
 
-  const tendered = parseFloat(input) || 0;
-  const enough = tendered >= amountDue;
+  const completeCashInput = /^\d+(?:\.\d{0,2})?$/.test(input);
+  const tendered = completeCashInput ? Number(input) : 0;
+  const validTendered =
+    completeCashInput &&
+    Number.isFinite(tendered) &&
+    tendered >= 0 &&
+    tendered <= MAX_CASH_TENDERED;
+  const enough = validTendered && tendered >= amountDue;
   const quick = [50, 100, 200, 500, 1000].filter((d) => d >= amountDue);
-  const press = (k: string) =>
-    setInput((p) =>
-      k === "⌫"
-        ? p.slice(0, -1)
-        : p.length > 8
-          ? p
-          : k === "00"
-            ? p
-              ? p + "00"
-              : p
-            : p + k,
-    );
+  const updateCashInput = (rawValue: string) => {
+    if (rawValue === "") {
+      setInput("");
+      setInputError("");
+      return;
+    }
+    const normalizedValue = rawValue.startsWith(".") ? `0${rawValue}` : rawValue;
+    if (!/^\d+(?:\.\d{0,2})?$/.test(normalizedValue)) {
+      setInputError("Enter a valid amount with up to two decimal places.");
+      return;
+    }
+    const numericValue = Number(normalizedValue);
+    if (Number.isFinite(numericValue) && numericValue > MAX_CASH_TENDERED) {
+      setInputError(`Cash tendered cannot exceed ${money(MAX_CASH_TENDERED)}.`);
+      return;
+    }
+    setInput(normalizedValue);
+    setInputError("");
+  };
+  const press = (key: string) => {
+    if (key === "⌫") {
+      updateCashInput(input.slice(0, -1));
+      return;
+    }
+    if (key === "00" && !input) return;
+    updateCashInput(`${input}${key}`);
+  };
   const selectProof = (nextFile?: File) => {
     setProofError("");
     if (!nextFile) {
@@ -1103,22 +1127,33 @@ function AmountModal({
         {method === "cash" ? (
           <>
             <p className={`${eyebrow} mb-1.5`}>Cash tendered</p>
-            <div
-              className={`mb-3 flex min-h-[52px] items-center gap-2 rounded-xl border-2 bg-neutral-50 px-4 ${input ? "border-neutral-900" : "border-neutral-200"}`}
+            <label
+              className={`mb-1 flex min-h-[52px] items-center gap-2 rounded-xl border-2 bg-neutral-50 px-4 ${inputError ? "border-red-400" : input ? "border-neutral-900" : "border-neutral-200"}`}
             >
               <span className="text-neutral-400">{getCurrencySymbol(s)}</span>
-              <span
-                className={`flex-1 text-2xl font-semibold ${input ? "" : "text-neutral-300"}`}
-              >
-                {input || "0"}
-              </span>
-            </div>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={input}
+                onChange={(event) => updateCashInput(event.target.value)}
+                placeholder="0.00"
+                aria-label="Cash tendered amount"
+                aria-invalid={Boolean(inputError)}
+                aria-describedby={inputError ? "cash-tendered-error" : undefined}
+                className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
+              />
+            </label>
+            {inputError && (
+              <p id="cash-tendered-error" role="alert" className="mb-3 text-xs font-medium text-red-500">
+                {inputError}
+              </p>
+            )}
             {quick.length > 0 && (
-              <div className="mb-3 flex flex-wrap gap-1.5">
+              <div className={`${inputError ? "mb-3" : "mt-2 mb-3"} flex flex-wrap gap-1.5`}>
                 {quick.map((a) => (
                   <button
                     key={a}
-                    onClick={() => setInput(String(a))}
+                    onClick={() => updateCashInput(String(a))}
                     className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600"
                   >
                     {money(a)}
@@ -1144,7 +1179,7 @@ function AmountModal({
                 </p>
               </div>
             </div>
-            {input && !enough && (
+            {input && validTendered && !enough && (
               <p className="mb-2 text-sm font-medium text-red-500">
                 {money(amountDue - tendered)} short
               </p>
@@ -1179,7 +1214,7 @@ function AmountModal({
             </div>
             <button
               className={`${B.green} mb-2`}
-              disabled={!input || !enough}
+              disabled={!input || !enough || Boolean(inputError)}
               onClick={() => onConfirm({ tendered })}
             >
               Confirm payment
@@ -2401,6 +2436,18 @@ export default function CashierView() {
   }) => {
     if (placingRef.current) return;
     if (!isOnline) return toast("error", "No connection. Cannot place order.");
+    if (
+      paymentMethod === "cash" &&
+      (
+        !Number.isFinite(tendered) ||
+        tendered < 0 ||
+        tendered > MAX_CASH_TENDERED ||
+        Math.abs(tendered * 100 - Math.round(tendered * 100)) > 1e-6
+      )
+    ) {
+      toast("error", "Cash tendered must be between ₱0.00 and ₱100,000.00 with up to two decimal places.");
+      return;
+    }
     placingRef.current = true;
     setShowAmount(false);
     setPlacing(true);

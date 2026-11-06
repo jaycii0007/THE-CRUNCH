@@ -558,7 +558,10 @@ export default function StockManager() {
       getAlertSeverity(p, stockAlertSettings) === "out",
   );
   const po = usePurchaseOrders({
-    enabled: activeTab === "purchases" || activeTab === "purchase-history",
+    enabled:
+      activeTab === "dashboard" ||
+      activeTab === "purchases" ||
+      activeTab === "purchase-history",
     outOfStock,
     criticalStock,
     lowStock,
@@ -966,11 +969,14 @@ export default function StockManager() {
                   totalProductsValue={dashboard.totalProductsCounted.length.toString()}
                   lowStockValue={dashboard.lowStockItems.length.toString()}
                   criticalStockValue={dashboard.alertCriticalStock.length.toString()}
-                  attentionValue={dashboard.attentionItems.length.toString()}
+                  pendingPOValue={po.poOrders
+                    .filter((order) => order.status === "Ordered")
+                    .length.toString()}
                   wholeChickenProducts={dashboard.wholeChickenProducts}
                   choppedChickenProducts={dashboard.choppedChickenProducts}
                   dashboardSubTab={dashboard.dashboardSubTab}
                   onSummarySelect={dashboard.selectDashboardSummary}
+                  onPendingPOSelect={() => setTab("purchases")}
                   mainStockContent={
                     <div
                       id="dashboard-main-stock"

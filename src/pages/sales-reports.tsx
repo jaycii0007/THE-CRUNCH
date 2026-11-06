@@ -728,6 +728,28 @@ function processRawRows(rows: RawOrderRow[]): {
 
 // --- Print Helper ---
 
+const escapePrintHtml = (value: unknown) =>
+  String(value ?? "").replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[character]!,
+  );
+
+const formatPrintCurrency = (
+  value: number,
+  settings: GeneralRestaurantSettings,
+) =>
+  formatCurrencyAmount(value, settings, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 function triggerPrint(
   revenue: number,
   period: Period,
@@ -780,11 +802,14 @@ function triggerPrint(
 
   const rows = completedOrders
     .map((o, i) => {
-      const fmtDate = parseDateSafe(o.date)
+      const fmtDateTime = parseDateSafe(o.date)
         ? formatInSettingsTimezone(o.date, restaurantSettings, {
             month: "short",
             day: "numeric",
             year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
           })
         : "—";
       const fmtHandover = parseDateSafe(o.handoverTimestamp)
@@ -803,17 +828,29 @@ function triggerPrint(
         : "—";
       return `
         <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
-          <td>${o.transactionId}</td>
-          <td>${fmtDate}</td>
-          <td>${o.time}</td>
-          <td style="max-width:200px">${o.items.map((it) => `${it.name} ×${it.quantity}`).join(", ")}</td>
-          <td>${o.orderType === "delivery" ? (o.paymentReference ?? "—") : "—"}</td>
-          <td>${o.orderType === "delivery" ? (o.riderName ?? "—") : "—"}</td>
-          <td>${o.orderType === "delivery" ? fmtHandover : "—"}</td>
-          <td>${o.orderType === "delivery" ? (o.handoverStaffName ?? "—") : "—"}</td>
-          <td>${o.cashierName ?? "—"}</td>
-          <td style="text-transform:capitalize;color:${DEEP}">${o.paymentCategory}</td>
-          <td style="text-align:right;font-weight:700">${formatReportCurrency(o.total, restaurantSettings)}</td>
+          <td class="txn">${escapePrintHtml(o.transactionId)}</td>
+          <td class="date-time">${escapePrintHtml(fmtDateTime)}</td>
+          <td class="items">${o.items
+            .map(
+              (item) =>
+                `<div><span>${escapePrintHtml(item.name)}</span> <strong>×${escapePrintHtml(item.quantity)}</strong></div>`,
+            )
+            .join("")}</td>
+          <td class="payment">
+            <div class="payment-method">${escapePrintHtml(normalizePaymentMethod(o.paymentCategory))}</div>
+            ${o.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(o.paymentReference)}</div>` : ""}
+            ${
+              o.orderType === "delivery"
+                ? `<div class="delivery-details">
+                    <div><strong>Rider:</strong> ${escapePrintHtml(o.riderName ?? "—")}</div>
+                    <div><strong>Handover:</strong> ${escapePrintHtml(fmtHandover)}</div>
+                    <div><strong>Confirmed by:</strong> ${escapePrintHtml(o.handoverStaffName ?? "—")}</div>
+                  </div>`
+                : ""
+            }
+          </td>
+          <td>${escapePrintHtml(o.cashierName ?? "—")}</td>
+          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}</td>
         </tr>
       `;
     })
@@ -849,21 +886,33 @@ function triggerPrint(
         .summary-card-value { font-size: 20px; font-weight: 700; margin-bottom: 2px; color: #0f172a; }
         .summary-card-sub { font-size: 10px; color: #94a3b8; }
         .section-title { font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
-        colgroup col:nth-child(1) { width: 10%; } colgroup col:nth-child(2) { width: 9%; }
-        colgroup col:nth-child(3) { width: 8%; }  colgroup col:nth-child(4) { width: 21%; }
-        colgroup col:nth-child(5) { width: 11%; } colgroup col:nth-child(6) { width: 14%; }
-        colgroup col:nth-child(7) { width: 10%; } colgroup col:nth-child(8) { width: 8%; }
-        colgroup col:nth-child(9) { width: 9%; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+        colgroup col:nth-child(1) { width: 13%; }
+        colgroup col:nth-child(2) { width: 16%; }
+        colgroup col:nth-child(3) { width: 28%; }
+        colgroup col:nth-child(4) { width: 20%; }
+        colgroup col:nth-child(5) { width: 11%; }
+        colgroup col:nth-child(6) { width: 12%; }
         thead tr { background: #f8fafc; }
-        thead th { padding: 9px 10px; text-align: left; font-size: 9px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
+        thead { display: table-header-group; }
+        tfoot { display: table-footer-group; }
+        thead th { padding: 8px 7px; text-align: left; font-size: 8px; font-weight: 700; color: #64748b; letter-spacing: .8px; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; }
         thead th:last-child { text-align: right; }
-        tbody td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; word-break: break-word; overflow-wrap: break-word; white-space: normal; vertical-align: top; line-height: 1.4; }
+        tbody td { padding: 7px; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; white-space: normal; vertical-align: top; line-height: 1.35; }
         tbody td:last-child { text-align: right; font-weight: 700; }
-        tfoot td { padding: 12px 10px; border-top: 2px solid #e2e8f0; font-weight: 700; font-size: 13px; }
-        tr { page-break-inside: avoid; }
+        .txn, .amount { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
+        .txn { font-size: 9px; font-weight: 600; }
+        .date-time { font-variant-numeric: tabular-nums; }
+        .items > div + div { margin-top: 3px; }
+        .payment-method { color: ${DEEP}; font-weight: 600; }
+        .secondary { margin-top: 2px; color: #64748b; font-size: 8.5px; overflow-wrap: anywhere; }
+        .delivery-details { margin-top: 5px; padding-top: 4px; border-top: 1px dashed #cbd5e1; color: #64748b; font-size: 8px; line-height: 1.45; }
+        .delivery-details strong { color: #475569; }
+        .amount { min-width: 90px; font-variant-numeric: tabular-nums; font-size: 10px; }
+        tfoot td { padding: 10px 7px; border-top: 2px solid #cbd5e1; font-weight: 700; font-size: 12px; }
+        tr { break-inside: avoid; page-break-inside: avoid; }
         .footer { margin-top: 24px; text-align: center; font-size: 10px; color: #cbd5e1; }
-        @page { margin: 12mm; size: A4; }
+        @page { margin: 10mm; size: A4 landscape; }
       </style>
     </head>
     <body>
@@ -897,7 +946,7 @@ function triggerPrint(
       <div class="revenue-hero">
         <div>
           <p class="revenue-label">Total Revenue</p>
-          <p class="revenue-amount">${formatReportCurrency(revenue, restaurantSettings)}</p>
+          <p class="revenue-amount">${formatPrintCurrency(revenue, restaurantSettings)}</p>
         </div>
         <div class="revenue-stats">
           <div class="stat-item"><p class="stat-number">${paidCompleted.length}</p><p class="stat-label">Paid Orders</p></div>
@@ -908,7 +957,7 @@ function triggerPrint(
       <div class="summary-grid">
         <div class="summary-card">
           <p class="summary-card-label">Total Sales</p>
-          <p class="summary-card-value" style="color:${DEEP}">${formatReportCurrency(
+          <p class="summary-card-value" style="color:${DEEP}">${formatPrintCurrency(
             paidCompleted.reduce((sum, log) => sum + log.total, 0),
             restaurantSettings,
           )}</p>
@@ -921,7 +970,7 @@ function triggerPrint(
         </div>
         <div class="summary-card">
           <p class="summary-card-label">GCash Sales</p>
-          <p class="summary-card-value">${formatReportCurrency(
+          <p class="summary-card-value">${formatPrintCurrency(
             gcashSales.reduce((sum, log) => sum + log.total, 0),
             restaurantSettings,
           )}</p>
@@ -929,7 +978,7 @@ function triggerPrint(
         </div>
         <div class="summary-card">
           <p class="summary-card-label">Cash Sales</p>
-          <p class="summary-card-value">${formatReportCurrency(
+          <p class="summary-card-value">${formatPrintCurrency(
             cashSales.reduce((sum, log) => sum + log.total, 0),
             restaurantSettings,
           )}</p>
@@ -937,35 +986,35 @@ function triggerPrint(
         </div>
         <div class="summary-card">
           <p class="summary-card-label">Cash on Pickup</p>
-          <p class="summary-card-value">${formatReportCurrency(cashOnPickupSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-value">${formatPrintCurrency(cashOnPickupSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
           <p class="summary-card-sub">${cashOnPickupSales.length} orders</p>
         </div>
         <div class="summary-card">
           <p class="summary-card-label">GrabFood</p>
-          <p class="summary-card-value">${formatReportCurrency(grabFoodSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-value">${formatPrintCurrency(grabFoodSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
           <p class="summary-card-sub">${grabFoodSales.length} orders</p>
         </div>
         <div class="summary-card">
           <p class="summary-card-label">Foodpanda</p>
-          <p class="summary-card-value">${formatReportCurrency(foodpandaSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-value">${formatPrintCurrency(foodpandaSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
           <p class="summary-card-sub">${foodpandaSales.length} orders</p>
         </div>
       </div>
       <p class="section-title">Completed Orders (${completedOrders.length})</p>
       <table>
-        <colgroup><col/><col/><col/><col/><col/><col/><col/><col/><col/><col/><col/></colgroup>
+        <colgroup><col/><col/><col/><col/><col/><col/></colgroup>
         <thead>
           <tr>
-            <th>Txn ID</th><th>Date</th><th>Time</th><th>Items</th>
-            <th>Reference</th><th>Rider</th><th>Handover</th><th>Confirmed By</th><th>Cashier</th><th>Payment</th>
+            <th>Transaction ID</th><th>Date &amp; Time</th><th>Items</th>
+            <th>Payment / Reference</th><th>Cashier</th>
             <th style="text-align:right">Amount</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
         <tfoot>
           <tr>
-            <td colspan="10" style="text-align:right;color:#0f172a">Total Revenue</td>
-            <td style="text-align:right;color:${DEEP};font-size:15px">${formatReportCurrency(revenue, restaurantSettings)}</td>
+            <td colspan="5" style="text-align:right;color:#0f172a">Total Revenue</td>
+            <td style="text-align:right;color:${DEEP};font-size:15px">${formatPrintCurrency(revenue, restaurantSettings)}</td>
           </tr>
         </tfoot>
       </table>
@@ -1577,7 +1626,8 @@ function RevenueDropdown({
   ref={ref}
   style={{
     position: "relative",
-    minWidth: 300,
+    minWidth: 0,
+    width: "100%",
     // Only rise above other UI while the period menu is open.
     // When closed, stay low so the notification popup is never covered.
     zIndex: open ? 40 : 1,
@@ -1591,6 +1641,7 @@ function RevenueDropdown({
             border: "1px solid #e2e8f0",
             borderRadius: 20,
             padding: "18px 20px",
+            minHeight: 122,
             cursor: "pointer",
             boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
             userSelect: "none",
@@ -2199,9 +2250,11 @@ function RefundModal({
 function SummaryBar({
   logs,
   filterDescription,
+  leadingCard,
 }: {
   logs: SaleLog[];
   filterDescription: string;
+  leadingCard?: React.ReactNode;
 }) {
   const [showTotalSales, setShowTotalSales] = useState(false);
   const paidCompleted = logs.filter(isFinalizedSale);
@@ -2262,6 +2315,7 @@ function SummaryBar({
           alignItems: "stretch",
         }}
       >
+        {leadingCard}
         {stats.map((stat) => {
           const Component = stat.clickable ? motion.button : motion.div;
           return (
@@ -4141,16 +4195,6 @@ export default function SalesReports() {
               Transaction history & audit trail
             </p>
           </div>
-          <div style={{ width: isMobile ? "100%" : "auto" }}>
-            <RevenueDropdown
-              period={period}
-              setPeriod={setPeriod}
-              logs={logs}
-              orders={orders}
-              restaurantSettings={restaurantSettings}
-              generatedBy={String(user?.username || user?.email || "Staff")}
-            />
-          </div>
         </motion.div>
 
         {/* Summary Bar */}
@@ -4162,6 +4206,16 @@ export default function SalesReports() {
           <SummaryBar
             logs={scopedLogs}
             filterDescription={summaryFilterDescription}
+            leadingCard={(
+              <RevenueDropdown
+                period={period}
+                setPeriod={setPeriod}
+                logs={logs}
+                orders={orders}
+                restaurantSettings={restaurantSettings}
+                generatedBy={String(user?.username || user?.email || "Staff")}
+              />
+            )}
           />
         </motion.div>
 

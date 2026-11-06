@@ -11,11 +11,12 @@ export function DashboardTab({
   totalProductsValue,
   lowStockValue,
   criticalStockValue,
-  attentionValue,
+  pendingPOValue,
   wholeChickenProducts,
   choppedChickenProducts,
   dashboardSubTab,
   onSummarySelect,
+  onPendingPOSelect,
   mainStockContent,
   lastUpdatesContent,
 }: {
@@ -26,11 +27,12 @@ export function DashboardTab({
   totalProductsValue: string;
   lowStockValue: string;
   criticalStockValue: string;
-  attentionValue: string;
+  pendingPOValue: string;
   wholeChickenProducts: Product[];
   choppedChickenProducts: Product[];
   dashboardSubTab: "main-stock" | "last-updates";
   onSummarySelect: (key: DashboardSummaryKey) => void;
+  onPendingPOSelect: () => void;
   mainStockContent: ReactNode;
   lastUpdatesContent: ReactNode;
 }) {
@@ -50,7 +52,10 @@ export function DashboardTab({
         animate="show"
         className="space-y-6 pt-6"
       >
-        <motion.div variants={staggerVariants} className="grid grid-cols-4 gap-4">
+        <motion.div
+          variants={staggerVariants}
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+        >
           <KPICard
             itemVariants={itemVariants}
             label="Total Products"
@@ -77,11 +82,11 @@ export function DashboardTab({
           />
           <KPICard
             itemVariants={itemVariants}
-            label="Needs Attention"
-            value={attentionValue}
-            sub="low or out of stock"
+            label="Pending POs"
+            value={pendingPOValue}
+            sub="awaiting receipt"
             accent="indigo"
-            onClick={() => onSummarySelect("attention")}
+            onClick={onPendingPOSelect}
           />
         </motion.div>
 
