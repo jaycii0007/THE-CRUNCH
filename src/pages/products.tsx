@@ -12,23 +12,16 @@ import { Navbar } from '@/components/Navbar';
 // ── Types & helpers ────────────────────────────────────────────────────────
 const NAV_H = 72
 const MAX_FB = 200
-const CATEGORIES = ['All', 'Chicken', 'Sides', 'Drinks', 'Combos'] as const
-type Category = (typeof CATEGORIES)[number]
+type Category = string
 
 interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string; archived: boolean }
 interface Flavor { name: string; accent: string; desc: string; img: string }
 interface Promo { id: string; title: string; subtitle?: string; description: string; img: string; badge?: string; validUntil?: string; discount?: string; highlight?: boolean }
+interface MenuCategoryRecord { name: string; display_order?: number; is_active?: boolean | number }
 
 const fmt = (v: number) => formatCurrencyAmount(v)
 
-const normCat = (v: unknown): Category => {
-  const r = String(v ?? '').toLowerCase()
-  if (r.includes('drink') || r.includes('beverage') || r.includes('soda')) return 'Drinks'
-  if (r.includes('side')) return 'Sides'
-  if (r.includes('combo')) return 'Combos'
-  if (r.includes('chicken') || r.includes('rice meal') || r.includes('menu food')) return 'Chicken'
-  return 'All'
-}
+const normCat = (v: unknown): Category => String(v ?? '').trim()
 
 const mapProducts = (data: unknown[]): Product[] =>
   data
@@ -1948,6 +1941,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
   const { user } = useAuth()
 
   const [products, setProducts] = useState<Product[]>([])
+  const [menuCategories, setMenuCategories] = useState<MenuCategoryRecord[]>([])
   const [_flavors, setFlavors] = useState<Flavor[]>([])
   const [promos, setPromos] = useState<Promo[]>([])
   const [loading, setLoading] = useState({ p: true, f: true, r: true })
@@ -1977,14 +1971,38 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
         .catch(() => { })
         .finally(() => { if (!cancelled) setLoading(s => ({ ...s, [key]: false })) })
     load<Product>('/api/products?item_type=menu_item', 'p', setProducts, mapProducts)
+    api.get<MenuCategoryRecord[]>('/settings/menu-categories?activeOnly=1')
+      .then(rows => { if (!cancelled) setMenuCategories(Array.isArray(rows) ? rows : []) })
+      .catch(() => { if (!cancelled) setMenuCategories([]) })
     load<Flavor>('/api/flavors', 'f', setFlavors)
     load<Promo>('/api/promos', 'r', setPromos)
     return () => { cancelled = true }
   }, [])
 
+  const categoryOptions = useMemo(() => {
+    const actual = new Map<string, string>()
+    products.filter(p => !p.archived).forEach(p => actual.set(p.category.toLowerCase(), p.category))
+    const ordered: string[] = []
+    const seen = new Set<string>()
+    const addIfUsed = (value: string) => {
+      const key = value.trim().toLowerCase()
+      const actualName = actual.get(key)
+      if (!actualName || seen.has(key)) return
+      seen.add(key)
+      ordered.push(actualName)
+    }
+    const configured = [...menuCategories]
+      .filter(item => item.is_active === true || item.is_active === 1)
+      .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0) || a.name.localeCompare(b.name))
+    configured.forEach(item => addIfUsed(item.name))
+    const remaining = [...actual.values()].sort((a, b) => a.localeCompare(b))
+    remaining.forEach(addIfUsed)
+    return ['All', ...ordered]
+  }, [menuCategories, products])
+  const selectedCategory = categoryOptions.includes(category) ? category : 'All'
   const filtered = useMemo(
-    () => products.filter(p => !p.archived && (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())),
-    [products, category, search]
+    () => products.filter(p => !p.archived && (selectedCategory === 'All' || p.category === selectedCategory) && p.name.toLowerCase().includes(search.toLowerCase())),
+    [products, search, selectedCategory]
   )
   const feedbackOptions = useMemo(() => products.filter(p => !p.archived).map(p => ({ id: p.id, name: p.name })), [products])
   const featured = promos.filter(p => p.highlight)
@@ -2010,7 +2028,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
                 style={{ paddingLeft: 48, paddingRight: 48, fontSize: 15, height: 52 }}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search chicken, sides, drinks, combos..."
+                placeholder="Search the menu..."
                 aria-label="Search the menu"
               />
               {search && <button onClick={() => setSearch('')} aria-label="Clear search" style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer', display: 'flex' }}><X size={18} /></button>}
@@ -2032,12 +2050,12 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
       {/* CATEGORY TABS */}
       <div className="tabs">
         <div className="wrap tabs-in" role="tablist">
-          {CATEGORIES.map(c => (
+          {categoryOptions.map(c => (
             <motion.button
               key={c}
               role="tab"
-              aria-selected={category === c}
-              className={`tab ${category === c ? 'on' : ''}`}
+              aria-selected={selectedCategory === c}
+              className={`tab ${selectedCategory === c ? 'on' : ''}`}
               onClick={() => setCategory(c)}
               whileTap={{ scale: 0.97 }}
               variants={fadeIn}

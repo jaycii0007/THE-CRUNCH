@@ -343,8 +343,8 @@ const bindFlag = ({ s, set }: TabProps, key: FlagKey) => ({
 });
 
 // Text input with an accent border while focused.
-export function SI({ value, onChange, type = "text", placeholder = "" }: {
-  value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+export function SI({ value, onChange, type = "text", placeholder = "", ariaLabel }: {
+  value: string; onChange: (v: string) => void; type?: string; placeholder?: string; ariaLabel?: string;
 }) {
   const [focused, setFocused] = useState(false);
   const isMobile = useViewport() === "mobile";
@@ -359,6 +359,7 @@ export function SI({ value, onChange, type = "text", placeholder = "" }: {
         boxShadow: focused ? "0 0 0 3px rgba(224,90,30,.1)" : "none",
       }}
       type={type}
+      aria-label={ariaLabel}
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
@@ -929,6 +930,13 @@ interface InventoryCategorySetting {
   is_active: boolean | number;
 }
 
+interface MenuCategorySetting {
+  category_id: number;
+  name: string;
+  display_order: number;
+  is_active: boolean | number;
+}
+
 interface InventoryUnitSetting {
   unit_id: number;
   name: string;
@@ -937,11 +945,15 @@ interface InventoryUnitSetting {
 }
 
 function CategoriesUnitsTab() {
+  const [menuCategories, setMenuCategories] = useState<MenuCategorySetting[]>([]);
   const [categories, setCategories] = useState<InventoryCategorySetting[]>([]);
   const [units, setUnits] = useState<InventoryUnitSetting[]>([]);
+  const [menuCategoryName, setMenuCategoryName] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [unitName, setUnitName] = useState("");
   const [unitAbbreviation, setUnitAbbreviation] = useState("");
+  const [menuCategoryDrafts, setMenuCategoryDrafts] = useState<Record<number, string>>({});
+  const [categoryDrafts, setCategoryDrafts] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -950,12 +962,16 @@ function CategoriesUnitsTab() {
     setLoading(true);
     setError(null);
     try {
-      const [nextCategories, nextUnits] = await Promise.all([
+      const [nextMenuCategories, nextCategories, nextUnits] = await Promise.all([
+        api.get<MenuCategorySetting[]>("/settings/menu-categories?activeOnly=0"),
         api.get<InventoryCategorySetting[]>("/settings/inventory-categories"),
         api.get<InventoryUnitSetting[]>("/settings/inventory-units"),
       ]);
+      setMenuCategories(nextMenuCategories);
       setCategories(nextCategories);
       setUnits(nextUnits);
+      setMenuCategoryDrafts(Object.fromEntries(nextMenuCategories.map((category) => [category.category_id, category.name])));
+      setCategoryDrafts(Object.fromEntries(nextCategories.map((category) => [category.category_id, category.name])));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load categories and units.");
     } finally {
@@ -964,6 +980,26 @@ function CategoriesUnitsTab() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const createMenuCategory = async () => {
+    const name = menuCategoryName.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.post<MenuCategorySetting>("/settings/menu-categories", {
+        name,
+        display_order: menuCategories.length,
+      });
+      setMenuCategories((current) => [...current, created].sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name)));
+      setMenuCategoryDrafts((current) => ({ ...current, [created.category_id]: created.name }));
+      setMenuCategoryName("");
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Failed to add menu category.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const createCategory = async () => {
     const name = categoryName.trim();
@@ -976,9 +1012,65 @@ function CategoriesUnitsTab() {
         date_tracking_type: "none",
       });
       setCategories((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setCategoryDrafts((current) => ({ ...current, [created.category_id]: created.name }));
       setCategoryName("");
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to add category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renameMenuCategory = async (category: MenuCategorySetting) => {
+    const name = String(menuCategoryDrafts[category.category_id] ?? "").trim();
+    if (!name || name === category.name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patch<MenuCategorySetting>(
+        `/settings/menu-categories/${category.category_id}`,
+        { name },
+      );
+      setMenuCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+      setMenuCategoryDrafts((current) => ({ ...current, [updated.category_id]: updated.name }));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to rename menu category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renameCategory = async (category: InventoryCategorySetting) => {
+    const name = String(categoryDrafts[category.category_id] ?? "").trim();
+    if (!name || name === category.name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patch<InventoryCategorySetting>(
+        `/settings/inventory-categories/${category.category_id}`,
+        { name },
+      );
+      setCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+      setCategoryDrafts((current) => ({ ...current, [updated.category_id]: updated.name }));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to rename inventory category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleMenuCategory = async (category: MenuCategorySetting) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patch<MenuCategorySetting>(
+        `/settings/menu-categories/${category.category_id}`,
+        { is_active: !category.is_active },
+      );
+      setMenuCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to update menu category.");
     } finally {
       setBusy(false);
     }
@@ -1007,10 +1099,11 @@ function CategoriesUnitsTab() {
   const toggleCategory = async (category: InventoryCategorySetting) => {
     if (busy) return;
     setBusy(true);
+    setError(null);
     try {
       const updated = await api.patch<InventoryCategorySetting>(
         `/settings/inventory-categories/${category.category_id}`,
-        { is_active: !Boolean(category.is_active) },
+        { is_active: !category.is_active },
       );
       setCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
     } catch (updateError) {
@@ -1026,7 +1119,7 @@ function CategoriesUnitsTab() {
     try {
       const updated = await api.patch<InventoryUnitSetting>(
         `/settings/inventory-units/${unit.unit_id}`,
-        { is_active: !Boolean(unit.is_active) },
+        { is_active: !unit.is_active },
       );
       setUnits((current) => current.map((item) => item.unit_id === updated.unit_id ? updated : item));
     } catch (updateError) {
@@ -1047,6 +1140,29 @@ function CategoriesUnitsTab() {
     <div style={{ display: "grid", gap: 16 }}>
       {error && <ErrorPanel message={error} onRetry={load} />}
       <Section>
+        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 4 }}>Menu Categories</h3>
+        <Hint>Used by Menu Management, Cashier POS, and the customer menu.</Hint>
+        <div style={{ display: "flex", gap: 8, margin: "10px 0" }}>
+          <SI value={menuCategoryName} onChange={setMenuCategoryName} placeholder="Menu category name" />
+          <button type="button" onClick={() => void createMenuCategory()} disabled={busy || !menuCategoryName.trim()} style={accentButton(busy || !menuCategoryName.trim())}>Add</button>
+        </div>
+        {menuCategories.map((category) => (
+          <div key={category.category_id} style={rowStyle}>
+            <SI
+              value={menuCategoryDrafts[category.category_id] ?? category.name}
+              onChange={(value) => setMenuCategoryDrafts((current) => ({ ...current, [category.category_id]: value }))}
+              ariaLabel={`Rename ${category.name}`}
+            />
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button type="button" disabled={busy || !(menuCategoryDrafts[category.category_id] ?? "").trim() || (menuCategoryDrafts[category.category_id] ?? category.name).trim() === category.name} onClick={() => void renameMenuCategory(category)} style={secondaryButton()}>Save</button>
+              <button type="button" disabled={busy} onClick={() => void toggleMenuCategory(category)} style={secondaryButton()}>
+                {category.is_active ? "Active" : "Inactive"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </Section>
+      <Section>
         <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>Inventory Categories</h3>
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
           <SI value={categoryName} onChange={setCategoryName} placeholder="Category name" />
@@ -1054,10 +1170,17 @@ function CategoriesUnitsTab() {
         </div>
         {categories.map((category) => (
           <div key={category.category_id} style={rowStyle}>
-            <span style={typo("0.8rem", INK, 500)}>{category.name}</span>
-            <button type="button" disabled={busy} onClick={() => void toggleCategory(category)} style={secondaryButton()}>
-              {Boolean(category.is_active) ? "Active" : "Inactive"}
-            </button>
+            <SI
+              value={categoryDrafts[category.category_id] ?? category.name}
+              onChange={(value) => setCategoryDrafts((current) => ({ ...current, [category.category_id]: value }))}
+              ariaLabel={`Rename ${category.name}`}
+            />
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button type="button" disabled={busy || !(categoryDrafts[category.category_id] ?? "").trim() || (categoryDrafts[category.category_id] ?? category.name).trim() === category.name} onClick={() => void renameCategory(category)} style={secondaryButton()}>Save</button>
+              <button type="button" disabled={busy} onClick={() => void toggleCategory(category)} style={secondaryButton()}>
+                {category.is_active ? "Active" : "Inactive"}
+              </button>
+            </div>
           </div>
         ))}
       </Section>
@@ -1072,7 +1195,7 @@ function CategoriesUnitsTab() {
           <div key={unit.unit_id} style={rowStyle}>
             <span style={typo("0.8rem", INK, 500)}>{unit.name}{unit.abbreviation ? ` (${unit.abbreviation})` : ""}</span>
             <button type="button" disabled={busy} onClick={() => void toggleUnit(unit)} style={secondaryButton()}>
-              {Boolean(unit.is_active) ? "Active" : "Inactive"}
+              {unit.is_active ? "Active" : "Inactive"}
             </button>
           </div>
         ))}

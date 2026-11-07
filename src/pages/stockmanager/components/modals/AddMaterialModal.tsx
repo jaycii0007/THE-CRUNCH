@@ -98,6 +98,9 @@ export function AddMaterialModal({
                 setRawMaterialForm((p) => ({ ...p, category: v }))
               }
             >
+              <option value="" disabled>
+                Select category
+              </option>
               {activeInventoryCategoryOptions.map((category) => (
                 <option key={category} value={category}>
                   {category}
