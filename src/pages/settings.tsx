@@ -535,13 +535,6 @@ export function BusinessTab(p: TabProps) {
         <Hint>Name, currency, and time zone are fixed system settings.</Hint>
       </Section>
       <Section>
-        <FR label="Email"><SI {...bindText(p, "email")} type="email" placeholder="Email address" /></FR>
-        <FR label="Phone"><SI {...bindText(p, "phone")} placeholder="Phone number" /></FR>
-        <FR label="Address" last><SI {...bindText(p, "address")} placeholder="Street address" /></FR>
-        <FR label="Business TIN"><SI {...bindText(p, "businessTin")} placeholder="Configured tax identification number" /></FR>
-        <FR label="Registration details" last><SI {...bindText(p, "businessRegistrationDetails")} placeholder="Business registration / permit details" /></FR>
-      </Section>
-      <Section>
         {HOUR_FIELDS.map(([key, label], i) => (
           <FR key={key} label={label} last={i === HOUR_FIELDS.length - 1}>
             <SI {...bindText(p, key)} type="time" />
@@ -1076,6 +1069,34 @@ function CategoriesUnitsTab() {
     }
   };
 
+  const deleteMenuCategory = async (category: MenuCategorySetting) => {
+    if (busy || !window.confirm(`Permanently delete "${category.name}"? This cannot be undone.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.delete(`/settings/menu-categories/${category.category_id}`);
+      await load();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete menu category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteInventoryCategory = async (category: InventoryCategorySetting) => {
+    if (busy || !window.confirm(`Permanently delete "${category.name}"? This cannot be undone.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.delete(`/settings/inventory-categories/${category.category_id}`);
+      await load();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete inventory category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createUnit = async () => {
     const name = unitName.trim();
     if (!name || busy) return;
@@ -1132,7 +1153,7 @@ function CategoriesUnitsTab() {
   if (loading) return <div style={{ ...S.panel, height: 180, opacity: 0.6 }} />;
 
   const rowStyle: CSSProperties = {
-    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
     padding: "10px 0", borderBottom: "1px solid #f0ede8",
   };
 
@@ -1158,6 +1179,7 @@ function CategoriesUnitsTab() {
               <button type="button" disabled={busy} onClick={() => void toggleMenuCategory(category)} style={secondaryButton()}>
                 {category.is_active ? "Active" : "Inactive"}
               </button>
+              <button type="button" disabled={busy} onClick={() => void deleteMenuCategory(category)} style={{ ...secondaryButton(), color: ERROR, borderColor: "#f5c2c0" }}>Delete</button>
             </div>
           </div>
         ))}
@@ -1180,6 +1202,7 @@ function CategoriesUnitsTab() {
               <button type="button" disabled={busy} onClick={() => void toggleCategory(category)} style={secondaryButton()}>
                 {category.is_active ? "Active" : "Inactive"}
               </button>
+              <button type="button" disabled={busy} onClick={() => void deleteInventoryCategory(category)} style={{ ...secondaryButton(), color: ERROR, borderColor: "#f5c2c0" }}>Delete</button>
             </div>
           </div>
         ))}
@@ -1677,7 +1700,7 @@ export const NAV_GROUPS: NavGroup[] = [
 export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
   profile:       { title: "My Profile",              desc: "Update your own account details and password." },
   master_data:   { title: "Categories & Units",      desc: "Maintain the category and unit choices used by inventory forms." },
-  business:      { title: "Business Information",    desc: "Restaurant identity, contact details, and operating hours." },
+  business:      { title: "Business Information",    desc: "Restaurant identity and operating hours." },
   payment_methods: { title: "Payment Methods",       desc: "Configure the in-store GCash QR and customer delivery-platform links." },
   ordering:      { title: "Online Ordering",         desc: "Accept online orders, set a minimum order, and control the store status." },
   inventory:     { title: "Inventory Configuration", desc: "Low and critical stock thresholds." },
