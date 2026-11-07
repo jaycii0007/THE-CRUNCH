@@ -343,8 +343,8 @@ const bindFlag = ({ s, set }: TabProps, key: FlagKey) => ({
 });
 
 // Text input with an accent border while focused.
-export function SI({ value, onChange, type = "text", placeholder = "", ariaLabel }: {
-  value: string; onChange: (v: string) => void; type?: string; placeholder?: string; ariaLabel?: string;
+export function SI({ value, onChange, type = "text", placeholder = "", ariaLabel, disabled = false }: {
+  value: string; onChange: (v: string) => void; type?: string; placeholder?: string; ariaLabel?: string; disabled?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const isMobile = useViewport() === "mobile";
@@ -359,6 +359,7 @@ export function SI({ value, onChange, type = "text", placeholder = "", ariaLabel
         boxShadow: focused ? "0 0 0 3px rgba(224,90,30,.1)" : "none",
       }}
       type={type}
+      disabled={disabled}
       aria-label={ariaLabel}
       value={value}
       placeholder={placeholder}
@@ -928,6 +929,7 @@ interface MenuCategorySetting {
   name: string;
   display_order: number;
   is_active: boolean | number;
+  system_key?: string | null;
 }
 
 interface InventoryUnitSetting {
@@ -1173,13 +1175,20 @@ function CategoriesUnitsTab() {
               value={menuCategoryDrafts[category.category_id] ?? category.name}
               onChange={(value) => setMenuCategoryDrafts((current) => ({ ...current, [category.category_id]: value }))}
               ariaLabel={`Rename ${category.name}`}
+              disabled={category.system_key === "chicken_flavors"}
             />
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-              <button type="button" disabled={busy || !(menuCategoryDrafts[category.category_id] ?? "").trim() || (menuCategoryDrafts[category.category_id] ?? category.name).trim() === category.name} onClick={() => void renameMenuCategory(category)} style={secondaryButton()}>Save</button>
-              <button type="button" disabled={busy} onClick={() => void toggleMenuCategory(category)} style={secondaryButton()}>
-                {category.is_active ? "Active" : "Inactive"}
-              </button>
-              <button type="button" disabled={busy} onClick={() => void deleteMenuCategory(category)} style={{ ...secondaryButton(), color: ERROR, borderColor: "#f5c2c0" }}>Delete</button>
+              {category.system_key === "chicken_flavors" ? (
+                <span style={{ color: ACCENT, background: "#fff3ed", borderRadius: 999, padding: "7px 10px", fontSize: 12, fontWeight: 700 }}>Built-in · Active</span>
+              ) : (
+                <>
+                  <button type="button" disabled={busy || !(menuCategoryDrafts[category.category_id] ?? "").trim() || (menuCategoryDrafts[category.category_id] ?? category.name).trim() === category.name} onClick={() => void renameMenuCategory(category)} style={secondaryButton()}>Save</button>
+                  <button type="button" disabled={busy} onClick={() => void toggleMenuCategory(category)} style={secondaryButton()}>
+                    {category.is_active ? "Active" : "Inactive"}
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => void deleteMenuCategory(category)} style={{ ...secondaryButton(), color: ERROR, borderColor: "#f5c2c0" }}>Delete</button>
+                </>
+              )}
             </div>
           </div>
         ))}
