@@ -95,7 +95,7 @@ interface ApiRow {
 
 interface IngredientInput { productId: string; quantityRequired: string }
 interface IngredientOption { id: number; name: string; category: string }
-interface MenuCategoryRecord { name: string; display_order: number; is_active: boolean | number }
+interface MenuCategoryRecord { name: string; display_order: number; is_active: boolean | number; system_key?: string | null }
 
 interface MenuItem {
   id: number;
@@ -251,6 +251,7 @@ const priceNumber = (value: string) => parseFloat(String(value).replace(/[^0-9.]
 function useMenuAdmin(onError: (message: string) => void) {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [apiCategories, setApiCategories] = useState<string[]>([]);
+  const [chickenFlavorCategoryName, setChickenFlavorCategoryName] = useState("");
   const [ingredientOptions, setIngredientOptions] = useState<IngredientOption[]>([]);
   const [loading, setLoading] = useState(true);
   const onErrorRef = useRef(onError);
@@ -276,6 +277,9 @@ function useMenuAdmin(onError: (message: string) => void) {
           .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0) || a.name.localeCompare(b.name))
           .map((c) => c.name.trim())
           .filter(Boolean),
+      );
+      setChickenFlavorCategoryName(
+        categoryRows.find((category) => category.system_key === "chicken_flavors")?.name.trim() ?? "",
       );
 
       setIngredientOptions(
@@ -304,7 +308,7 @@ function useMenuAdmin(onError: (message: string) => void) {
     ? apiCategories
     : [...new Set(items.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
-  return { items, categories, ingredientOptions, loading, reload };
+  return { items, categories, chickenFlavorCategoryName, ingredientOptions, loading, reload };
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -534,9 +538,10 @@ const formFromItem = (item: MenuItem): FormValues => ({
   isPromotional: item.isPromotional, promoPrice: item.promoPrice, promoLabel: item.promoLabel,
 });
 
-function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, onSaved }: {
+function MenuFormModal({ item, categories, chickenFlavorCategoryName, ingredientOptions, toast, onClose, onSaved }: {
   item: MenuItem | null; // null means "add a new item"
   categories: string[];
+  chickenFlavorCategoryName: string;
   ingredientOptions: IngredientOption[];
   toast: Toast;
   onClose: () => void;
@@ -554,6 +559,9 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
 
   // The current category is always selectable, even if Settings no longer lists it
   const categoryOptions = values.category && !categories.includes(values.category) ? [values.category, ...categories] : categories;
+  const isChickenFlavor = Boolean(
+    chickenFlavorCategoryName && values.category === chickenFlavorCategoryName,
+  );
 
   const updateIngredient = (index: number, patch: Partial<IngredientInput>) =>
     set({ ingredients: values.ingredients.map((row, i) => (i === index ? { ...row, ...patch } : row)) });
@@ -567,22 +575,28 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
 
   async function submit() {
     const warn = (message: string) => toast(message, "warning");
-    const price = Number(values.price);
+    const price = isChickenFlavor ? 0 : Number(values.price);
     const promoPrice = values.isPromotional && values.promoPrice.trim() ? Number(values.promoPrice) : null;
 
-    if (!values.name.trim() || !values.category.trim() || !values.price.trim()) return warn("Please fill in Name, Category, and Price.");
-    if (!Number.isFinite(price) || price < 1) return warn("Price must be at least \u20B11.");
+    if (!values.name.trim() || !values.category.trim()) return warn("Please fill in Name and Category.");
+    if (!isChickenFlavor && !values.price.trim()) return warn("Please enter a selling price.");
+    if (!isChickenFlavor && (!Number.isFinite(price) || price < 1)) return warn("Price must be at least \u20B11.");
     if (promoPrice !== null && (!Number.isFinite(promoPrice) || promoPrice < 1)) return warn("Promo price must be at least \u20B11.");
 
     try {
       setSaving(true);
-      const ingredients = buildIngredientPayload(values.ingredients);
+      const ingredients = isChickenFlavor ? null : buildIngredientPayload(values.ingredients);
 
       let image: string | undefined;
       if (imageFile) image = await uploadProductImage(imageFile);
       else if (isEdit && imagePreview) image = imagePreview;
 
-      const shared = {
+      const shared = isChickenFlavor ? {
+        name: values.name.trim(),
+        category: values.category.trim(),
+        item_type: "menu_item",
+        price: 0,
+      } : {
         name: values.name.trim(),
         category: values.category.trim(),
         item_type: "menu_item",
@@ -597,12 +611,16 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
       };
 
       if (isEdit) {
-        const payload: Record<string, unknown> = { ...shared, unit: item.unit || DEFAULT_UNIT };
+        const payload: Record<string, unknown> = isChickenFlavor
+          ? { ...shared }
+          : { ...shared, unit: item.unit || DEFAULT_UNIT };
         if (image) payload.image = image;
         await tryEndpoints([`/products/${item.rawProductId ?? item.id}`], "PUT", payload);
         toast(`"${shared.name}" updated successfully.`, "success");
       } else {
-        await api.post("/products", { ...shared, unit: DEFAULT_UNIT, quantity: 0, image: image ?? PLACEHOLDER_IMG });
+        await api.post("/products", isChickenFlavor
+          ? { ...shared, image: image ?? PLACEHOLDER_IMG }
+          : { ...shared, unit: DEFAULT_UNIT, quantity: 0, image: image ?? PLACEHOLDER_IMG });
         toast(`"${shared.name}" added successfully.`, "success");
       }
       onSaved();
@@ -634,9 +652,9 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
             {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
           </select>
         </Field>
-        <NumberInput label={"Price (\u20B1) *"} placeholder="0.00" value={values.price} onChange={(price) => set({ price })} maxDecimals={2} />
+        {!isChickenFlavor && <NumberInput label={"Price (\u20B1) *"} placeholder="0.00" value={values.price} onChange={(price) => set({ price })} maxDecimals={2} />}
       </div>
-      {isEdit && (
+      {!isChickenFlavor && isEdit && (
         item.hasRecipe ? (
           <Field label="Available servings (from ingredients)">
             <div className={inputClass} style={inputStyle} aria-readonly="true">{Number(item.availableServings ?? 0)}</div>
@@ -652,7 +670,7 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
           </Field>
         )
       )}
-      <Field label="Description (optional)">
+      {!isChickenFlavor && <Field label="Description (optional)">
         <textarea
           {...inputProps}
           className={`${inputClass} resize-none`}
@@ -661,9 +679,9 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
           value={values.description}
           onChange={(e) => set({ description: e.target.value })}
         />
-      </Field>
+      </Field>}
 
-      <p className={sectionTitle} style={{ color: T.ink }}>Availability</p>
+      {!isChickenFlavor && <><p className={sectionTitle} style={{ color: T.ink }}>Availability</p>
       <div className="grid grid-cols-3 gap-2">
         {OVERRIDE_MODES.map((mode) => {
           const active = values.overrideMode === mode;
@@ -684,9 +702,9 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
           );
         })}
       </div>
-      {isEdit && <p className="mt-2 text-[11.5px]" style={{ color: T.muted }}>Current customer status: {item.availabilityStatus}</p>}
+      {isEdit && <p className="mt-2 text-[11.5px]" style={{ color: T.muted }}>Current customer status: {item.availabilityStatus}</p>}</>}
 
-      <p className={sectionTitle} style={{ color: T.ink }}>Ingredients</p>
+      {!isChickenFlavor && <><p className={sectionTitle} style={{ color: T.ink }}>Ingredients</p>
       <div className="space-y-2">
         {values.ingredients.length === 0 && (
           <p className="rounded-xl px-3 py-2.5 text-[11.5px]" style={{ color: T.muted, background: T.surfaceMuted, border: `1px dashed ${T.faint}` }}>
@@ -706,9 +724,9 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
         <Button variant="ghost" small type="button" onClick={() => set({ ingredients: [...values.ingredients, { productId: "", quantityRequired: "" }] })}>
           + Add ingredient
         </Button>
-      </div>
+      </div></>}
 
-      <p className={sectionTitle} style={{ color: T.ink }}>Promotion</p>
+      {!isChickenFlavor && <><p className={sectionTitle} style={{ color: T.ink }}>Promotion</p>
       <label className="mb-3 flex cursor-pointer items-center gap-2 text-[12.5px]" style={{ color: T.ink }}>
         <input type="checkbox" checked={values.isPromotional} onChange={(e) => set({ isPromotional: e.target.checked })} style={{ accentColor: T.accent }} />
         Mark this item as promotional
@@ -718,7 +736,7 @@ function MenuFormModal({ item, categories, ingredientOptions, toast, onClose, on
           <NumberInput label="Promo price" placeholder="0.00" value={values.promoPrice} onChange={(promoPrice) => set({ promoPrice })} maxDecimals={2} />
           <TextInput label="Promo label" placeholder="e.g. Summer special" value={values.promoLabel} onChange={(promoLabel) => set({ promoLabel })} />
         </div>
-      )}
+      )}</>}
 
       <p className={sectionTitle} style={{ color: T.ink }}>Photo</p>
       <label
@@ -759,7 +777,9 @@ const rowHover = {
 function MenuAdminTab() {
   const { addNotification } = useNotifications();
   const toast: Toast = (label, type = "info") => addNotification({ id: `${Date.now()}-${Math.random()}`, label, type });
-  const { items, categories, ingredientOptions, loading, reload } = useMenuAdmin((message) => toast(message, "error"));
+  const { items, categories, chickenFlavorCategoryName, ingredientOptions, loading, reload } = useMenuAdmin((message) => toast(message, "error"));
+  const isChickenFlavor = (item: MenuItem) =>
+    Boolean(chickenFlavorCategoryName && item.category === chickenFlavorCategoryName);
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -775,15 +795,18 @@ function MenuAdminTab() {
   const visible = items.filter((item) =>
     (categoryFilter === "all" || item.category === categoryFilter) &&
     (statusFilter === "archived" ? isArchived(item) : !isArchived(item)) &&
-    (statusFilter === "all" || statusFilter === "archived" || (statusFilter === "unavailable") === isUnavailable(item)) &&
+    (statusFilter === "all" || statusFilter === "archived" ||
+      (isChickenFlavor(item)
+        ? statusFilter === "available"
+        : (statusFilter === "unavailable") === isUnavailable(item))) &&
     (!term || [item.name, item.category, item.menuCode, item.promoLabel].some((text) => text.toLowerCase().includes(term))),
   );
 
   // Numbers for the summary cards
   const activeItems = items.filter((item) => !isArchived(item));
-  const unavailableItems = activeItems.filter(isUnavailable);
+  const unavailableItems = activeItems.filter((item) => !isChickenFlavor(item) && isUnavailable(item));
   const promoCount = activeItems.filter((item) => item.isPromotional).length;
-  const markedOutCount = activeItems.filter((item) => item.availabilityStatus === "Out of Stock").length;
+  const markedOutCount = activeItems.filter((item) => !isChickenFlavor(item) && item.availabilityStatus === "Out of Stock").length;
 
   async function toggleAvailability(item: MenuItem) {
     if (availabilitySavingId !== null) return;
@@ -955,8 +978,8 @@ function MenuAdminTab() {
                         </span>
                       </td>
                       <td className="px-4 py-3.5">
-                        <div className="text-[13px] font-semibold tabular-nums" style={{ color: T.ink }}>{formatPeso(priceNumber(item.price))}</div>
-                        {item.isPromotional && (
+                        <div className="text-[13px] font-semibold tabular-nums" style={{ color: T.ink }}>{isChickenFlavor(item) ? "Selection only" : formatPeso(priceNumber(item.price))}</div>
+                        {!isChickenFlavor(item) && item.isPromotional && (
                           <div className="mt-1 flex items-center gap-1.5">
                             <span className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold" style={{ background: T.accentSoft, color: T.accent }}>
                               {item.promoLabel || "Promo"}
@@ -968,10 +991,12 @@ function MenuAdminTab() {
                         )}
                       </td>
                       <td className="px-4 py-3.5">
-                        <StatusBadge unavailable={isUnavailable(item)} archived={isArchived(item)} />
+                        {isChickenFlavor(item)
+                          ? <span className="text-[11.5px] font-semibold" style={{ color: T.deep }}>No stock tracking</span>
+                          : <StatusBadge unavailable={isUnavailable(item)} archived={isArchived(item)} />}
                         <div className="mt-1.5 text-[11.5px]" style={{ color: T.muted }}>
-                          {item.hasRecipe ? `${sellableQuantity(item)} servings` : `${item.stock} ${item.unit}`}
-                          {item.overrideMode !== "Auto" && ` \u00B7 ${item.overrideMode}`}
+                          {!isChickenFlavor(item) && (item.hasRecipe ? `${sellableQuantity(item)} servings` : `${item.stock} ${item.unit}`)}
+                          {!isChickenFlavor(item) && item.overrideMode !== "Auto" && ` \u00B7 ${item.overrideMode}`}
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
@@ -981,9 +1006,9 @@ function MenuAdminTab() {
                           ) : (
                             <>
                               <Button variant="ghost" small onClick={() => setFormTarget(item)}>Edit</Button>
-                              <Button variant="ghost" small disabled={availabilitySavingId !== null} onClick={() => void toggleAvailability(item)}>
+                              {!isChickenFlavor(item) && <Button variant="ghost" small disabled={availabilitySavingId !== null} onClick={() => void toggleAvailability(item)}>
                                 {availabilitySavingId === item.id ? "Saving..." : item.overrideMode === "Auto" ? "Force out" : "Set auto"}
-                              </Button>
+                              </Button>}
                               <Button variant="danger" small onClick={() => setDeleteTarget(item)}>Delete</Button>
                             </>
                           )}
@@ -1005,7 +1030,7 @@ function MenuAdminTab() {
       {formTarget !== null && (
         <MenuFormModal
           item={formTarget === "new" ? null : formTarget}
-          categories={categories} ingredientOptions={ingredientOptions} toast={toast}
+          categories={categories} chickenFlavorCategoryName={chickenFlavorCategoryName} ingredientOptions={ingredientOptions} toast={toast}
           onClose={() => setFormTarget(null)}
           onSaved={() => { setFormTarget(null); void reload(); }}
         />

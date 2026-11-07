@@ -761,12 +761,7 @@ const CartRow = memo(
     onEditFlavor: (item: CartItem) => void;
   }) => {
     const { money } = useFmt();
-    const max = Math.min(
-      getEffectiveMaxQuantity(item.remainingStock),
-      item.selectedFlavorRemainingStock == null
-        ? Number.POSITIVE_INFINITY
-        : getEffectiveMaxQuantity(item.selectedFlavorRemainingStock),
-    );
+    const max = getEffectiveMaxQuantity(item.remainingStock);
     const step =
       "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
     return (
@@ -2080,18 +2075,11 @@ export default function CashierView() {
                 (p) =>
                   p.id === item.selectedFlavorProductId &&
                   p.categorySystemKey === "chicken_flavors" &&
-                  !isUnavailable(p.availabilityStatus),
+                  norm(p.availabilityStatus) !== "hidden",
               )
             : null;
-          const max = cur
-            ? Math.min(
-                getEffectiveMaxQuantity(cur.remainingStock),
-                currentFlavor
-                  ? getEffectiveMaxQuantity(currentFlavor.remainingStock)
-                  : item.selectedFlavorProductId
-                    ? 0
-                    : Number.POSITIVE_INFINITY,
-              )
+          const max = cur && (!item.selectedFlavorProductId || currentFlavor)
+            ? getEffectiveMaxQuantity(cur.remainingStock)
             : 0;
           return cur && max > 0
             ? [{
@@ -2391,8 +2379,7 @@ export default function CashierView() {
   const chickenFlavors = useMemo(
     () => products.filter((product) =>
       product.categorySystemKey === "chicken_flavors" &&
-      !isUnavailable(product.availabilityStatus) &&
-      getEffectiveMaxQuantity(product.remainingStock) > 0),
+      norm(product.availabilityStatus) !== "hidden"),
     [products],
   );
   const cashierProducts = useMemo(
@@ -2461,10 +2448,7 @@ export default function CashierView() {
     if (!flavor) return;
     const nextKey = `${flavorTarget.item.id}:${flavor.id}`;
     setCart((current) => {
-      const max = Math.min(
-        getEffectiveMaxQuantity(flavorTarget.item.remainingStock),
-        getEffectiveMaxQuantity(flavor.remainingStock),
-      );
+      const max = getEffectiveMaxQuantity(flavorTarget.item.remainingStock);
       if (flavorTarget.editingCartKey) {
         const editing = current.find((entry) => entry.cartKey === flavorTarget.editingCartKey);
         if (!editing) return current;
@@ -2516,11 +2500,8 @@ export default function CashierView() {
       setCart((prev) =>
         prev.flatMap((item) => {
           if (item.cartKey !== cartKey) return [item];
-          const max = Math.min(
-            getEffectiveMaxQuantity(products.find((p) => p.id === item.id)?.remainingStock ?? item.remainingStock),
-            item.selectedFlavorProductId
-              ? getEffectiveMaxQuantity(products.find((p) => p.id === item.selectedFlavorProductId)?.remainingStock ?? 0)
-              : Number.POSITIVE_INFINITY,
+          const max = getEffectiveMaxQuantity(
+            products.find((p) => p.id === item.id)?.remainingStock ?? item.remainingStock,
           );
           const quantity = Math.min(Math.max(0, item.quantity + delta), max);
           return quantity > 0 ? [{ ...item, quantity }] : [];
