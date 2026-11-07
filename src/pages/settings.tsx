@@ -1365,6 +1365,23 @@ interface InventoryCategorySetting {
   is_active: boolean | number;
 }
 
+type InventoryTrackingType = InventoryCategorySetting["date_tracking_type"];
+const INVENTORY_TRACKING_OPTIONS: {
+  value: InventoryTrackingType;
+  label: string;
+}[] = [
+  { value: "expiry", label: "Expiry Date" },
+  { value: "shelf_life", label: "Shelf Life" },
+  { value: "none", label: "No Tracking" },
+];
+
+function inventoryTrackingLabel(value: InventoryTrackingType): string {
+  return (
+    INVENTORY_TRACKING_OPTIONS.find((option) => option.value === value)
+      ?.label ?? value
+  );
+}
+
 interface MenuCategorySetting {
   category_id: number;
   name: string;
@@ -1388,6 +1405,12 @@ function CategoriesUnitsTab() {
   const [units, setUnits] = useState<InventoryUnitSetting[]>([]);
   const [menuCategoryName, setMenuCategoryName] = useState("");
   const [categoryName, setCategoryName] = useState("");
+  const [categoryTracking, setCategoryTracking] = useState<
+    InventoryTrackingType | ""
+  >("");
+  const [categoryTrackingDrafts, setCategoryTrackingDrafts] = useState<
+    Record<number, InventoryTrackingType>
+  >({});
   const [unitName, setUnitName] = useState("");
   const [unitAbbreviation, setUnitAbbreviation] = useState("");
   const [menuCategoryDrafts, setMenuCategoryDrafts] = useState<
@@ -1429,6 +1452,14 @@ function CategoriesUnitsTab() {
           nextCategories.map((category) => [
             category.category_id,
             category.name,
+          ]),
+        ),
+      );
+      setCategoryTrackingDrafts(
+        Object.fromEntries(
+          nextCategories.map((category) => [
+            category.category_id,
+            category.date_tracking_type,
           ]),
         ),
       );
@@ -1484,7 +1515,7 @@ function CategoriesUnitsTab() {
 
   const createCategory = async () => {
     const name = categoryName.trim();
-    if (!name || busy) return;
+    if (!name || !categoryTracking || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -1492,7 +1523,7 @@ function CategoriesUnitsTab() {
         "/settings/inventory-categories",
         {
           name,
-          date_tracking_type: "none",
+          date_tracking_type: categoryTracking,
         },
       );
       setCategories((current) =>
@@ -1502,12 +1533,75 @@ function CategoriesUnitsTab() {
         ...current,
         [created.category_id]: created.name,
       }));
+      setCategoryTrackingDrafts((current) => ({
+        ...current,
+        [created.category_id]: created.date_tracking_type,
+      }));
       setCategoryName("");
+      setCategoryTracking("");
+      if (created.date_tracking_type !== categoryTracking) {
+        setError(
+          "Category was created, but the server did not save the selected date tracking method. Verify the backend category API before using it.",
+        );
+      }
     } catch (createError) {
       setError(
         createError instanceof Error
           ? createError.message
           : "Failed to add category.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveCategoryTracking = async (category: InventoryCategorySetting) => {
+    const selected =
+      categoryTrackingDrafts[category.category_id] ??
+      category.date_tracking_type;
+    if (busy || selected === category.date_tracking_type) return;
+    if (
+      !window.confirm(
+        `Change date tracking for "${category.name}" from ${inventoryTrackingLabel(category.date_tracking_type)} to ${inventoryTrackingLabel(selected)}? ` +
+          "This affects all materials in this category. Existing batch dates are not automatically created or converted.",
+      )
+    )
+      return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      await api.patch<InventoryCategorySetting>(
+        `/settings/inventory-categories/${category.category_id}`,
+        { date_tracking_type: selected },
+      );
+      // Re-read the persisted value. Some older APIs ignore unknown PATCH fields.
+      const latest = await api.get<InventoryCategorySetting[]>(
+        "/settings/inventory-categories",
+      );
+      setCategories(latest);
+      const saved = latest.find(
+        (item) => item.category_id === category.category_id,
+      );
+      if (!saved || saved.date_tracking_type !== selected) {
+        setCategoryTrackingDrafts((current) => ({
+          ...current,
+          [category.category_id]:
+            saved?.date_tracking_type ?? category.date_tracking_type,
+        }));
+        throw new Error(
+          "The server did not save the tracking change. The backend PATCH route may need support for date_tracking_type.",
+        );
+      }
+      setCategoryTrackingDrafts((current) => ({
+        ...current,
+        [category.category_id]: saved.date_tracking_type,
+      }));
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Failed to update category date tracking.",
       );
     } finally {
       setBusy(false);
@@ -1843,37 +1937,95 @@ function CategoriesUnitsTab() {
         ))}
       </Section>
       <Section>
-        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>
+        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 4 }}>
           Inventory Categories
         </h3>
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          <SI
-            value={categoryName}
-            onChange={setCategoryName}
-            placeholder="Category name"
+        <Hint>
+          Choose whether each category tracks an Expiry Date, Shelf Life, or no
+          date. This applies to all materials in that category.
+        </Hint>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginBottom: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ flex: "1 1 180px", minWidth: 150 }}>
+            <SI
+              value={categoryName}
+              onChange={setCategoryName}
+              placeholder="Category name"
+            />
+          </div>
+          <SS
+            value={categoryTracking}
+            onChange={setCategoryTracking}
+            options={[
+              { value: "", label: "Choose date tracking" },
+              ...INVENTORY_TRACKING_OPTIONS,
+            ]}
           />
           <button
             type="button"
             onClick={() => void createCategory()}
-            disabled={busy || !categoryName.trim()}
-            style={accentButton(busy || !categoryName.trim())}
+            disabled={busy || !categoryName.trim() || !categoryTracking}
+            style={accentButton(
+              busy || !categoryName.trim() || !categoryTracking,
+            )}
           >
             Add
           </button>
         </div>
         {categories.map((category) => (
           <div key={category.category_id} style={rowStyle}>
-            <SI
-              value={categoryDrafts[category.category_id] ?? category.name}
-              onChange={(value) =>
-                setCategoryDrafts((current) => ({
-                  ...current,
-                  [category.category_id]: value,
-                }))
-              }
-              ariaLabel={`Rename ${category.name}`}
-            />
-            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <div style={{ flex: "1 1 170px", minWidth: 140 }}>
+              <SI
+                value={categoryDrafts[category.category_id] ?? category.name}
+                onChange={(value) =>
+                  setCategoryDrafts((current) => ({
+                    ...current,
+                    [category.category_id]: value,
+                  }))
+                }
+                ariaLabel={`Rename ${category.name}`}
+              />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <SS
+                value={
+                  categoryTrackingDrafts[category.category_id] ??
+                  category.date_tracking_type
+                }
+                onChange={(value) =>
+                  setCategoryTrackingDrafts((current) => ({
+                    ...current,
+                    [category.category_id]: value,
+                  }))
+                }
+                options={INVENTORY_TRACKING_OPTIONS}
+              />
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  (categoryTrackingDrafts[category.category_id] ??
+                    category.date_tracking_type) === category.date_tracking_type
+                }
+                onClick={() => void saveCategoryTracking(category)}
+                style={secondaryButton()}
+              >
+                Save Tracking
+              </button>
               <button
                 type="button"
                 disabled={
@@ -1886,7 +2038,7 @@ function CategoriesUnitsTab() {
                 onClick={() => void renameCategory(category)}
                 style={secondaryButton()}
               >
-                Save
+                Save Name
               </button>
               <button
                 type="button"
