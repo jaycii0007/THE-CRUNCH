@@ -114,7 +114,7 @@ export function SkeletonKPICard({
   theme = "admin",
   className,
   ...props
-}: { theme?: "admin" | "customer"; className?: string }) {
+}: { theme?: "admin" | "customer"; className?: string } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn("sm-kpi-card", className)}
@@ -126,6 +126,7 @@ export function SkeletonKPICard({
       }}
       aria-busy="true"
       role="status"
+      {...props}
     >
       <Skeleton theme={theme} height={16} width="60%" radius={4} variant="shimmer" />
       <Skeleton theme={theme} height={36} width="50%" radius={4} variant="shimmer" style={{ marginTop: "8px" }} />

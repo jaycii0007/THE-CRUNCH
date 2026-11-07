@@ -22,7 +22,7 @@ import {
   Search,
   Image as ImageIcon,
 } from "lucide-react";
-import { SkeletonTable, SkeletonSectionCard, SkeletonKPICard } from "@/components/ui/skeleton";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { Sidebar } from "@/components/Sidebar";
 import {
   api,

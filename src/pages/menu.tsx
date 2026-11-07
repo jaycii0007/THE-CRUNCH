@@ -75,7 +75,7 @@ import {
   printHtml,
   type ReceiptDto,
 } from "../lib/receipt";
-import { Skeleton, SkeletonProductCard, SkeletonTable, SkeletonSectionCard, SkeletonKPICard, SkeletonListItem } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonProductCard, SkeletonSectionCard, SkeletonKPICard, SkeletonListItem } from "@/components/ui/skeleton";
 
 /* ───────────────────────── setup ───────────────────────── */
 

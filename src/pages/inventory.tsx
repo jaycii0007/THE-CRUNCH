@@ -8,7 +8,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { ProductImage } from "@/components/ProductImage";
 import { api, apiCall } from "@/lib/api";
 import { motion } from "framer-motion";
-import { SkeletonTable, SkeletonProductCard } from "@/components/ui/skeleton";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { useNotifications } from "@/lib/NotificationContext";
 import {
   fetchGeneralSettings,

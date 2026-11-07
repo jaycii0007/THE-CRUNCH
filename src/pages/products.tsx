@@ -98,7 +98,19 @@ const PROMO_IMAGES = [
 ]
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@700;800&display=swap');
+
+/* Pencerio Font — Hairline (only available weight) */
+@font-face {
+  font-family: 'Pencerio';
+  src: url('/fonts/ClashDisplay_Complete/Pencerio_Complete/Fonts/WEB/fonts/Pencerio-Hairline.woff2') format('woff2'),
+       url('/fonts/ClashDisplay_Complete/Pencerio_Complete/Fonts/WEB/fonts/Pencerio-Hairline.woff') format('woff'),
+       url('/fonts/ClashDisplay_Complete/Pencerio_Complete/Fonts/WEB/fonts/Pencerio-Hairline.ttf') format('truetype');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 :root{
@@ -1444,14 +1456,14 @@ function HeroSection() {
               fontWeight: 800,
               letterSpacing: '-0.035em',
               lineHeight: 1.0,
-              marginBottom: 'clamp(14px, 2.5vw, 20px)',
-              fontFamily: 'Inter, system-ui, sans-serif',
+              marginBottom: 'clamp(16px, 2.5vw, 24px)',
+              fontFamily: 'Poppins, Inter, system-ui, sans-serif',
               textShadow: `0 4px 40px rgba(0,0,0,0.5)`,
             }}
           >
-            <span style={{ display: 'block', color: CREAM }}>SIGNATURE</span>
-            <span style={{ display: 'block', color: GOLD, marginTop: '-0.04em' }}>GLAZED</span>
-            <span style={{ display: 'block', color: CREAM, opacity: 0.92, fontWeight: 700, fontSize: 'clamp(30px, 6vw, 62px)', marginTop: '-0.015em' }}>CHICKEN</span>
+            <span style={{ display: 'block', color: CREAM, fontWeight: 800, letterSpacing: '-0.03em' }}>SIGNATURE</span>
+            <span style={{ display: 'block', color: GOLD, marginTop: '-0.04em', fontWeight: 800, letterSpacing: '-0.03em' }}>GLAZED</span>
+            <span style={{ display: 'block', color: CREAM, opacity: 0.92, fontWeight: 800, fontSize: 'clamp(30px, 6vw, 62px)', marginTop: '-0.015em', letterSpacing: '-0.03em' }}>CHICKEN</span>
           </motion.h2>
 
           {/* Supporting description */}
@@ -1460,11 +1472,11 @@ function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.15, duration: 0.8, ease: easeOut }}
             style={{
-              fontSize: 'clamp(15px, 2.3vw, 20px)',
-              maxWidth: 560,
-              marginBottom: 'clamp(32px, 4.5vw, 42px)',
-              fontWeight: 400,
-              lineHeight: 1.75,
+              fontSize: 'clamp(13px, 1.8vw, 16px)',
+              maxWidth: 480,
+              marginBottom: 'clamp(20px, 3.5vw, 28px)',
+              fontWeight: 500,
+              lineHeight: 1.6,
               color: `rgba(245,240,232,0.85)`,
               textShadow: '0 1px 3px rgba(0,0,0,0.4)',
             }}
@@ -1475,36 +1487,36 @@ function HeroSection() {
           {/* Explore Menu CTA - Gold button */}
           <motion.button
             style={{
-              fontSize: 'clamp(15px, 2vw, 17px)',
-              padding: 'clamp(17px, 2.8vw, 20px) clamp(36px, 6vw, 54px)',
+              fontSize: 'clamp(14px, 1.6vw, 15px)',
+              padding: 'clamp(12px, 2vw, 14px) clamp(22px, 4vw, 28px)',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 14,
+              gap: 10,
               width: 'fit-content',
-              borderRadius: 16,
+              borderRadius: 12,
               background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
               color: BLACK,
               border: 'none',
-              boxShadow: `0 10px 40px -6px ${GOLD}45, inset 0 1px 0 rgba(255,255,255,0.18), 0 0 0 1px ${GOLD}30`,
+              boxShadow: `0 6px 24px -4px ${GOLD}40, inset 0 1px 0 rgba(255,255,255,0.15), 0 0 0 1px ${GOLD}25`,
               fontWeight: 600,
-              letterSpacing: '0.015em',
+              letterSpacing: '0.01em',
               position: 'relative',
               overflow: 'hidden',
               transform: reduceMotion ? 'none' : `translateZ(100px) translateX(${mousePos.x * -18}px) translateY(${mousePos.y * -10}px)`,
-              transition: reduceMotion ? 'none' : 'transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, background 0.3s ease',
+              transition: reduceMotion ? 'none' : 'transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, background 0.2s ease',
             }}
             whileHover={{
-              scale: 1.035,
-              boxShadow: `0 20px 56px -8px ${GOLD}55, inset 0 1px 0 rgba(255,255,255,0.22), 0 0 0 1px ${GOLD}50`,
+              y: -2,
+              boxShadow: `0 12px 32px -6px ${GOLD}50, inset 0 1px 0 rgba(255,255,255,0.2), 0 0 0 1px ${GOLD}40`,
               background: `linear-gradient(135deg, ${GOLD_LIGHT} 0%, ${GOLD} 100%)`,
-              transition: { duration: 0.35, ease: easeOut },
+              transition: { duration: 0.2, ease: easeOut },
             }}
-            whileTap={{ scale: 0.97 }}
+            whileTap={{ scale: 0.98, y: 0 }}
             onClick={() => window.location.href = '/usersmenu?showOrderModal=true'}
           >
-            <ShoppingBag size={20} />
+            <ShoppingBag size={17} />
             <span>Explore Menu</span>
-            <ArrowRight size={20} style={{ transition: 'transform 0.35s ease' }} />
+            <ArrowRight size={17} style={{ transition: 'transform 0.2s ease' }} />
           </motion.button>
         </motion.div>
 
@@ -1516,9 +1528,9 @@ function HeroSection() {
           style={{
             display: 'flex',
             flexWrap: 'wrap',
-            gap: 'clamp(12px, 1.8vw, 16px)',
-            marginTop: 'clamp(32px, 5vw, 44px)',
-            paddingTop: 'clamp(22px, 4vw, 28px)',
+            gap: 'clamp(8px, 1.2vw, 12px)',
+            marginTop: 'clamp(24px, 4vw, 32px)',
+            paddingTop: 'clamp(16px, 3vw, 24px)',
             borderTop: `1px solid ${GOLD}18`,
           }}
         >
@@ -1535,17 +1547,17 @@ function HeroSection() {
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 10,
-                padding: 'clamp(11px, 1.6vw, 13px) clamp(18px, 3vw, 22px)',
+                gap: 8,
+                padding: 'clamp(8px, 1.2vw, 10px) clamp(12px, 2vw, 16px)',
                 background: `rgba(26,26,26,0.8)`,
                 border: `1px solid ${GOLD}25`,
                 borderRadius: 999,
-                fontSize: 'clamp(12px, 2vw, 14px)',
-                fontWeight: 500,
+                fontSize: 'clamp(11px, 1.4vw, 12px)',
+                fontWeight: 600,
                 color: `rgba(245,240,232,0.8)`,
                 whiteSpace: 'nowrap',
                 backdropFilter: 'blur(12px)',
-                transition: 'border-color 0.35s ease, color 0.35s ease, background 0.35s ease, box-shadow 0.35s ease',
+                transition: 'border-color 0.25s ease, color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = `${GOLD}60`
@@ -1560,7 +1572,7 @@ function HeroSection() {
                 e.currentTarget.style.boxShadow = 'none'
               }}
             >
-              <badge.icon size={16} color={GOLD} />
+              <badge.icon size={14} color={GOLD} />
               {badge.text}
             </motion.span>
           ))}
@@ -2448,7 +2460,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
       {/* CATEGORY TABS */}
       <div className="tabs">
         <div className="wrap tabs-in" role="tablist">
-          {CATEGORIES.map(c => (
+          {categoryOptions.map((c: string) => (
             <motion.button
               key={c}
               role="tab"

@@ -2,7 +2,6 @@ import { motion, type Variants } from "framer-motion";
 import type { ReactNode, RefObject } from "react";
 import { KPICard } from "../KPICard";
 import type { DashboardSummaryKey, Product } from "../../types/inventory";
-import { SkeletonKPICard, SkeletonSectionCard, SkeletonTable, SkeletonProductCard } from "@/components/ui/skeleton";
 
 export function DashboardTab({
   pageVariants,

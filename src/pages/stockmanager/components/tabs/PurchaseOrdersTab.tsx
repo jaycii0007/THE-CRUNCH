@@ -2,7 +2,7 @@ import { motion, type Variants } from "framer-motion";
 import { EmptyState } from "../EmptyState";
 import { POBadge } from "../POBadge";
 import { KPICard } from "../KPICard";
-import { SkeletonKPICard, SkeletonTable } from "@/components/ui/skeleton";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import type { DashboardSummaryKey, Product, PurchaseOrder } from "../../types/inventory";
 
 function TrashIcon() {

@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Eye, EyeOff, LockKeyhole, Save, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
-import { SkeletonSectionCard, SkeletonFormField, SkeletonKPICard } from "@/components/ui/skeleton";
+import { SkeletonSectionCard, SkeletonFormField } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/authcontext";
 import { api } from "@/lib/api";
 import { normalizeRole } from "@/lib/permissions";

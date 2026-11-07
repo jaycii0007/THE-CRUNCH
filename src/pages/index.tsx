@@ -37,7 +37,7 @@ import {
   getCurrencySymbol,
 } from "@/lib/restaurantSettings";
 import { summarizeFinancialOrders } from "@/lib/financialStatus";
-import { SkeletonSectionCard, SkeletonKPICard, SkeletonChart } from "@/components/ui/skeleton";
+import { SkeletonKPICard, SkeletonChart } from "@/components/ui/skeleton";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Types                                   */

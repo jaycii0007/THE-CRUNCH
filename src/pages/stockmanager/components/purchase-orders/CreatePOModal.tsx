@@ -14,11 +14,9 @@ import type {
   Supplier,
 } from "../../types/inventory";
 import { toNumber } from "../../utils/formatters";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ButtonSpinner } from "@/components/ui/spinner";
 import {
   blockInvalidNumberKeys,
-  sanitizeNumberInput,
 } from "../../utils/inputUtils";
 import { parseSupplierProducts } from "../../utils/supplierUtils";
 import {
