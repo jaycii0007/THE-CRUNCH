@@ -100,6 +100,11 @@ interface Recipe {
   available: boolean;
   nutrition: Nutrition | null;
 }
+interface MenuCategoryRecord {
+  name: string;
+  display_order?: number;
+  is_active?: boolean | number;
+}
 interface CartItem {
   recipe: Recipe;
   quantity: number;
@@ -224,7 +229,6 @@ function newCheckoutRequestId() {
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const CATEGORY_ORDER = ["Chicken", "Sides", "Drinks", "Combos"] as const;
 const LOW_STOCK_THRESHOLD = 5;
 const PLACEHOLDER_IMG = "/img/placeholder.jpg";
 const DEFAULT_BILLING: BillingSettings = { taxRate: 0, serviceCharge: 0 };
@@ -293,14 +297,44 @@ const isUnavailable = (v: unknown) =>
     normalizeName(v),
   );
 
-// Maps any backend category string to one of the fixed menu categories.
 const normalizeCategory = (v: unknown): string => {
-  const r = normalizeName(v);
-  if (r.includes("drink") || r.includes("beverage")) return "Drinks";
-  if (r.includes("side")) return "Sides";
-  if (r.includes("combo")) return "Combos";
-  return "Chicken";
+  return String(v ?? "").trim();
 };
+
+function getVisibleCategories(
+  recipes: Recipe[],
+  configuredCategories: MenuCategoryRecord[],
+): string[] {
+  const productCategories = new Map<string, string>();
+  for (const recipe of recipes) {
+    const name = normalizeCategory(recipe.category);
+    productCategories.set(normalizeName(name), name);
+  }
+
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const addIfUsed = (value: unknown) => {
+    const key = normalizeName(value);
+    const actualName = productCategories.get(key);
+    if (!actualName || seen.has(key)) return;
+    seen.add(key);
+    ordered.push(actualName);
+  };
+
+  configuredCategories
+    .filter((category) => category.is_active === true || category.is_active === 1)
+    .sort(
+      (a, b) =>
+        Number(a.display_order ?? 0) - Number(b.display_order ?? 0) ||
+        a.name.localeCompare(b.name),
+    )
+    .forEach((category) => addIfUsed(category.name));
+  [...productCategories.values()]
+    .sort((a, b) => a.localeCompare(b))
+    .forEach(addIfUsed);
+
+  return ["All", ...ordered];
+}
 
 // "HH:mm" -> minutes since midnight (null if invalid).
 const parseTimeMins = (v: string) => {
@@ -2308,14 +2342,19 @@ export default function Delicacy() {
     if (showLoading) setLoading(true);
     setLoadError(false);
     try {
-      const recipes = mapMenuRows(
-        await api.get<InventoryMenuRow[]>("/products?item_type=menu_item"),
-      );
-      setMenuItems(recipes);
-      setCategories([
-        "All",
-        ...CATEGORY_ORDER.filter((c) => recipes.some((r) => r.category === c)),
+      const [productRows, configuredCategories] = await Promise.all([
+        api.get<InventoryMenuRow[]>("/products?item_type=menu_item"),
+        api
+          .get<MenuCategoryRecord[]>("/settings/menu-categories?activeOnly=1")
+          .catch(() => []),
       ]);
+      const recipes = mapMenuRows(productRows);
+      const visibleCategories = getVisibleCategories(recipes, configuredCategories);
+      setMenuItems(recipes);
+      setCategories(visibleCategories);
+      setActiveCategory((current) =>
+        visibleCategories.includes(current) ? current : "All",
+      );
       // Re-sync the cart with fresh stock: drop sold-out items and cap quantities.
       setCart((prev) =>
         prev.flatMap((item) => {

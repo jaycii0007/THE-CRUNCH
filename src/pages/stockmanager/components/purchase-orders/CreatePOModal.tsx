@@ -15,6 +15,7 @@ import type {
 } from "../../types/inventory";
 import { toNumber } from "../../utils/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ButtonSpinner } from "@/components/ui/spinner";
 import {
   blockInvalidNumberKeys,
   sanitizeNumberInput,
@@ -25,7 +26,8 @@ import {
   getAppliedThresholds,
 } from "../../utils/stockUtils";
 
-const QUANTITY_MAX = 999;
+const QUANTITY_MAX = 100_000;
+const QUANTITY_PATTERN = /^\d+(?:\.\d{0,2})?$/;
 let nextDraftItemUid = 1;
 
 type DraftItem = {
@@ -260,9 +262,15 @@ export function CreatePOModal({
         errors.name = `Already added as Material ${(firstRowByName.get(key) ?? 0) + 1}.`;
       } else firstRowByName.set(key, index);
 
-      const quantity = toNumber(item.quantity, Number.NaN);
-      if (!Number.isInteger(quantity) || quantity < 1 || quantity > QUANTITY_MAX) {
-        errors.quantity = `Enter a whole number from 1 to ${QUANTITY_MAX}.`;
+      const rawQuantity = item.quantity.trim();
+      const quantity = toNumber(rawQuantity, Number.NaN);
+      if (
+        !QUANTITY_PATTERN.test(rawQuantity) ||
+        !Number.isFinite(quantity) ||
+        quantity < 1 ||
+        quantity > QUANTITY_MAX
+      ) {
+        errors.quantity = "Enter a quantity from 1 to 100,000 with up to two decimal places.";
       }
       return errors;
     });
@@ -693,7 +701,7 @@ export function CreatePOModal({
                           {nameError && <p role="alert" className="mt-1 text-[11px] text-red-500">{nameError}</p>}
                           {!nameError && newAssociation && <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">New to supplier</span>}
                         </div>
-                        <div><label htmlFor={`po-item-qty-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Quantity</label><input id={`po-item-qty-${item.uid}`} type="text" inputMode="numeric" value={item.quantity} onChange={(event) => { updateItem(item.uid, { quantity: String(sanitizeNumberInput(event.target.value, { allowDecimal: false, maxDigits: 3 })) }); setIsDirty(true); }} onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: false })} onBlur={() => updateItem(item.uid, { quantityTouched: true })} aria-invalid={!!quantityError} className={fieldClass(!!quantityError)} />{quantityError && <p role="alert" className="mt-1 text-[11px] text-red-500">{quantityError}</p>}</div>
+                        <div><label htmlFor={`po-item-qty-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Quantity</label><input id={`po-item-qty-${item.uid}`} type="text" inputMode="decimal" value={item.quantity} onChange={(event) => { updateItem(item.uid, { quantity: event.target.value, quantityTouched: true }); setIsDirty(true); }} onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: true })} onBlur={() => updateItem(item.uid, { quantityTouched: true })} aria-invalid={!!quantityError} className={fieldClass(!!quantityError)} />{quantityError && <p role="alert" className="mt-1 text-[11px] text-red-500">{quantityError}</p>}</div>
                         <div><label className="mb-1 block text-[11px] text-slate-500">Unit</label><input value={item.unit} readOnly tabIndex={-1} placeholder="From inventory" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500" /></div>
                       </div>
                     </div>
@@ -730,7 +738,7 @@ export function CreatePOModal({
               {step > 1 && <button type="button" onClick={() => setStep((step - 1) as 1 | 2)} disabled={isSubmitting} className="flex-1 rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:flex-none">Back</button>}
               {step === 1 && <button type="button" onClick={goToMaterials} className="flex-1 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 sm:flex-none">Next: Materials</button>}
               {step === 2 && <button type="button" onClick={goToReview} className="flex-1 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 sm:flex-none">Next: Review</button>}
-              {step === 3 && <button type="button" onClick={() => void handleSubmit()} disabled={!isValid || isSubmitting} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">{isSubmitting ? <Skeleton width={16} height={16} variant="shimmer" theme="admin" aria-label="Saving" /> : initialOrder ? "Save Changes" : "Create Purchase Order"}</button>}
+              {step === 3 && <button type="button" onClick={() => void handleSubmit()} disabled={!isValid || isSubmitting} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">{isSubmitting ? <ButtonSpinner message="Saving..." /> : initialOrder ? "Save Changes" : "Create Purchase Order"}</button>}
             </div>
           </div>
         </footer>

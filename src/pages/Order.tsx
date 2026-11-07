@@ -60,6 +60,8 @@ interface OrderItem {
   quantity: number;
   name: string;
   note?: string | null;
+  selectedFlavorProductId?: number | null;
+  selectedFlavorName?: string | null;
 }
 
 interface OrderCard {
@@ -355,7 +357,14 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
           {order.items.map((item, i) => (
             <li key={i} className="flex items-baseline gap-3">
               <span className="w-9 text-base font-bold text-slate-900">{item.quantity}×</span>
-              <span className="flex-1 text-base text-slate-700">{item.name}</span>
+              <span className="flex-1 text-base text-slate-700">
+                {item.name}
+                {item.selectedFlavorName && (
+                  <span className="block text-sm font-semibold text-amber-700">
+                    Flavor: {item.selectedFlavorName}
+                  </span>
+                )}
+              </span>
             </li>
           ))}
         </ul>

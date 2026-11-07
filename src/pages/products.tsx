@@ -12,23 +12,16 @@ import { Navbar } from '@/components/Navbar';
 // ── Types & helpers ────────────────────────────────────────────────────────
 const NAV_H = 72
 const MAX_FB = 200
-const CATEGORIES = ['All', 'Chicken', 'Sides', 'Drinks', 'Combos'] as const
-type Category = (typeof CATEGORIES)[number]
+type Category = string
 
-interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string }
+interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string; archived: boolean }
 interface Flavor { name: string; accent: string; desc: string; img: string }
 interface Promo { id: string; title: string; subtitle?: string; description: string; img: string; badge?: string; validUntil?: string; discount?: string; highlight?: boolean }
+interface MenuCategoryRecord { name: string; display_order?: number; is_active?: boolean | number }
 
 const fmt = (v: number) => formatCurrencyAmount(v)
 
-const normCat = (v: unknown): Category => {
-  const r = String(v ?? '').toLowerCase()
-  if (r.includes('drink') || r.includes('beverage') || r.includes('soda')) return 'Drinks'
-  if (r.includes('side')) return 'Sides'
-  if (r.includes('combo')) return 'Combos'
-  if (r.includes('chicken') || r.includes('rice meal') || r.includes('menu food')) return 'Chicken'
-  return 'All'
-}
+const normCat = (v: unknown): Category => String(v ?? '').trim()
 
 const mapProducts = (data: unknown[]): Product[] =>
   data
@@ -54,6 +47,7 @@ const mapProducts = (data: unknown[]): Product[] =>
         price: Number(r?.price ?? 0),
         spicy: Boolean(r?.spicy),
         img: resolvedImg,
+        archived: String(r?.availability_status ?? r?.availabilityStatus ?? '').trim().toLowerCase() === 'hidden',
       };
     })
     .filter(p => p.id > 0 && p.name)
@@ -688,7 +682,9 @@ function PromoCard({ p }: { p: Promo }) {
 // ── Hero Section: Signature Glazed Chicken — Premium Black & Gold ─────────────
 function HeroSection() {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
-  const [isMobile, setIsMobile] = useState(false)
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  )
   const [reduceMotion, setReduceMotion] = useState(false)
 
   useEffect(() => {
@@ -720,6 +716,416 @@ function HeroSection() {
     setMousePos({ x: 0, y: 0 })
   }, [isMobile, reduceMotion])
 
+  // Mobile View (< 768px): Dedicated clean layout — zero overlapping, professional hierarchy
+  if (isMobile) {
+    return (
+      <motion.section
+        style={{
+          position: 'relative',
+          width: '100%',
+          borderRadius: 20,
+          overflow: 'hidden',
+          background: BLACK,
+          boxShadow: '0 24px 60px -15px rgba(0,0,0,0.85), 0 0 0 1px rgba(201,168,76,0.18)',
+          isolation: 'isolate',
+        }}
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: easeOut }}
+      >
+        {/* Base: Subtle gold radial glow */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `radial-gradient(ellipse 90% 50% at 50% 15%, ${GOLD}18 0%, ${BLACK} 65%, #0a0a0a 100%)`,
+            pointerEvents: 'none',
+            zIndex: 0,
+          }}
+        />
+
+        {/* Ambient gold rim light at top */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: '8%',
+            right: '8%',
+            height: '2px',
+            background: `linear-gradient(90deg, transparent, ${GOLD}40 20%, ${GOLD}80 50%, ${GOLD}40 80%, transparent)`,
+            pointerEvents: 'none',
+            zIndex: 1,
+            filter: 'blur(0.5px)',
+          }}
+        />
+
+        {/* Background watermark typography — faint, non-intrusive */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '5%',
+            left: 0,
+            right: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            pointerEvents: 'none',
+            zIndex: 1,
+            overflow: 'hidden',
+            opacity: 0.05,
+            fontSize: 'clamp(56px, 16vw, 90px)',
+            fontWeight: 900,
+            lineHeight: 0.8,
+            letterSpacing: '-0.04em',
+            color: GOLD,
+            transform: 'rotate(-2deg)',
+            userSelect: 'none',
+          }}
+          aria-hidden="true"
+        >
+          <span>SIGNATURE</span>
+          <span>GLAZED</span>
+          <span>CHICKEN</span>
+        </div>
+
+        {/* Mobile Content Stack — Zero overlap, professional hierarchy */}
+        <div
+          style={{
+            position: 'relative',
+            zIndex: 10,
+            padding: 'clamp(18px, 4.5vw, 24px)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* 1. Premium Badge */}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.5, ease: easeOut }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: `linear-gradient(135deg, ${GOLD}1A 0%, ${GOLD}08 100%)`,
+              border: `1px solid ${GOLD}40`,
+              padding: '7px 14px',
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 600,
+              color: GOLD_LIGHT,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              width: 'fit-content',
+              marginBottom: 14,
+              boxShadow: `0 4px 16px -4px ${GOLD}20`,
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: GOLD,
+                animation: reduceMotion ? 'none' : 'pulse 2.2s infinite ease-in-out',
+                boxShadow: `0 0 8px ${GOLD}`,
+              }}
+            />
+            7 Signature Glazes
+          </motion.div>
+
+          {/* 2. Main Headline */}
+          <motion.h2
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25, duration: 0.6, ease: easeOut }}
+            style={{
+              fontSize: 'clamp(28px, 7.5vw, 38px)',
+              fontWeight: 800,
+              letterSpacing: '-0.035em',
+              lineHeight: 1.05,
+              marginBottom: 16,
+              fontFamily: 'Inter, system-ui, sans-serif',
+              textShadow: '0 2px 20px rgba(0,0,0,0.6)',
+            }}
+          >
+            <span style={{ display: 'block', color: CREAM }}>SIGNATURE</span>
+            <span style={{ display: 'block', color: GOLD, marginTop: '-0.02em' }}>GLAZED</span>
+            <span
+              style={{
+                display: 'block',
+                color: CREAM,
+                opacity: 0.92,
+                fontWeight: 700,
+                fontSize: 'clamp(22px, 6vw, 30px)',
+                marginTop: '-0.01em',
+              }}
+            >
+              CHICKEN
+            </span>
+          </motion.h2>
+
+          {/* 3. Hero Visual Showcase — Framed appetizing food presentation */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.35, duration: 0.7, ease: easeOut }}
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: 'clamp(200px, 54vw, 260px)',
+              borderRadius: 16,
+              overflow: 'hidden',
+              marginBottom: 18,
+              border: `1px solid ${GOLD}40`,
+              boxShadow: `0 16px 40px -10px rgba(0,0,0,0.9), 0 0 30px -8px ${GOLD}20`,
+              background: '#0d0d0d',
+            }}
+          >
+            {/* Primary Hero Image */}
+            <Photo
+              src={HERO_IMAGE_1}
+              alt="Signature glazed chicken - hero view"
+              priority
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center 35%',
+              }}
+            />
+
+            {/* Subtle gradient overlay for depth */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background:
+                  'linear-gradient(180deg, rgba(10,10,10,0.2) 0%, transparent 45%, rgba(10,10,10,0.7) 100%)',
+                pointerEvents: 'none',
+              }}
+            />
+
+            {/* Gold corner brackets */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: 24,
+                height: 24,
+                borderTop: `2px solid ${GOLD}80`,
+                borderLeft: `2px solid ${GOLD}80`,
+                borderRadius: '16px 0 0 0',
+                pointerEvents: 'none',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                width: 24,
+                height: 24,
+                borderTop: `2px solid ${GOLD}80`,
+                borderRight: `2px solid ${GOLD}80`,
+                borderRadius: '0 16px 0 0',
+                pointerEvents: 'none',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                width: 24,
+                height: 24,
+                borderBottom: `2px solid ${GOLD}50`,
+                borderLeft: `2px solid ${GOLD}50`,
+                borderRadius: '0 0 0 16px',
+                pointerEvents: 'none',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                right: 0,
+                width: 24,
+                height: 24,
+                borderBottom: `2px solid ${GOLD}50`,
+                borderRight: `2px solid ${GOLD}50`,
+                borderRadius: '0 0 16px 0',
+                pointerEvents: 'none',
+              }}
+            />
+
+            {/* "Hand-Glazed" Badge */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                zIndex: 3,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'rgba(10,10,10,0.88)',
+                border: `1px solid ${GOLD}50`,
+                padding: '5px 11px',
+                borderRadius: 999,
+                fontSize: 10.5,
+                fontWeight: 600,
+                color: GOLD_LIGHT,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                backdropFilter: 'blur(8px)',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+              }}
+            >
+              <span
+                style={{
+                  width: 5,
+                  height: 5,
+                  borderRadius: '50%',
+                  background: GOLD,
+                  boxShadow: `0 0 6px ${GOLD}`,
+                }}
+              />
+              Hand-Glazed
+            </div>
+
+            {/* Supporting View Inset Thumbnail */}
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 10,
+                right: 10,
+                width: 'clamp(68px, 18vw, 84px)',
+                height: 'clamp(52px, 14vw, 64px)',
+                borderRadius: 8,
+                overflow: 'hidden',
+                border: `1.5px solid ${GOLD}60`,
+                boxShadow: '0 8px 20px rgba(0,0,0,0.85)',
+                zIndex: 3,
+              }}
+            >
+              <Photo
+                src={HERO_IMAGE_2}
+                alt="Signature glazed chicken - supporting view"
+                priority
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  objectPosition: 'center',
+                }}
+              />
+            </div>
+          </motion.div>
+
+          {/* 4. Supporting Description */}
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45, duration: 0.6, ease: easeOut }}
+            style={{
+              fontSize: 'clamp(13.5px, 3.6vw, 15px)',
+              fontWeight: 400,
+              lineHeight: 1.6,
+              color: 'rgba(245,240,232,0.85)',
+              marginBottom: 18,
+              textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+            }}
+          >
+            Hand-crafted daily with our secret spice rubs. Choose from 7 signature glazes — each bite delivers the perfect crunch.
+          </motion.p>
+
+          {/* 5. Explore Menu CTA Button */}
+          <motion.button
+            style={{
+              width: '100%',
+              fontSize: 15,
+              padding: '13px 22px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              borderRadius: 14,
+              background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
+              color: BLACK,
+              border: 'none',
+              boxShadow: `0 8px 24px -4px ${GOLD}40, inset 0 1px 0 rgba(255,255,255,0.2)`,
+              fontWeight: 600,
+              letterSpacing: '0.015em',
+              cursor: 'pointer',
+              marginBottom: 18,
+            }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => (window.location.href = '/usersmenu?showOrderModal=true')}
+          >
+            <ShoppingBag size={18} />
+            <span>Explore Menu</span>
+            <ArrowRight size={18} />
+          </motion.button>
+
+          {/* 6. Trust Badges */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 8,
+              paddingTop: 16,
+              borderTop: `1px solid ${GOLD}18`,
+            }}
+          >
+            {[
+              { icon: CheckCircle, text: '7 Signature Glazes' },
+              { icon: CheckCircle, text: '250+ Branches Nationwide' },
+              { icon: CheckCircle, text: 'Fresh Daily, Never Frozen' },
+            ].map((badge) => (
+              <div
+                key={badge.text}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  padding: '7px 12px',
+                  background: 'rgba(26,26,26,0.75)',
+                  border: `1px solid ${GOLD}22`,
+                  borderRadius: 999,
+                  fontSize: 11.5,
+                  fontWeight: 500,
+                  color: 'rgba(245,240,232,0.85)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <badge.icon size={13} color={GOLD} style={{ flexShrink: 0 }} />
+                <span>{badge.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Bottom gold accent line */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: '8%',
+            right: '8%',
+            height: '1px',
+            background: `linear-gradient(90deg, transparent, ${GOLD}40, ${GOLD}70 50%, ${GOLD}40, transparent)`,
+            opacity: 0.6,
+            pointerEvents: 'none',
+            zIndex: 5,
+          }}
+        />
+      </motion.section>
+    )
+  }
+
+  // Desktop View (>= 768px): Cinematic 3D magazine composition
   return (
     <motion.section
       onMouseMove={handleMouseMove}
@@ -827,9 +1233,9 @@ function HeroSection() {
       <motion.div
         style={{
           position: 'absolute',
-          bottom: isMobile ? '8%' : '5%',
-          right: isMobile ? '4%' : '3%',
-          width: isMobile ? '48%' : '32%',
+          bottom: '5%',
+          right: '3%',
+          width: '32%',
           aspectRatio: '4/3',
           borderRadius: '18px 6px 18px 6px',
           overflow: 'hidden',
@@ -877,9 +1283,9 @@ function HeroSection() {
       <motion.div
         style={{
           position: 'absolute',
-          top: isMobile ? '6%' : '10%',
-          left: isMobile ? '4%' : '7%',
-          width: isMobile ? '72%' : '50%',
+          top: '10%',
+          left: '7%',
+          width: '50%',
           aspectRatio: '3/4',
           borderRadius: '22px 10px 22px 10px',
           overflow: 'hidden',
@@ -992,7 +1398,7 @@ function HeroSection() {
       >
         <motion.div
           style={{
-            maxWidth: isMobile ? '100%' : '600px',
+            maxWidth: '600px',
             transform: reduceMotion ? 'none' : `translateZ(80px) translateX(${mousePos.x * -12}px) translateY(${mousePos.y * -8}px)`,
             transition: reduceMotion ? 'none' : 'transform 0.9s cubic-bezier(0.22, 1, 0.36, 1)',
           }}
@@ -1863,15 +2269,16 @@ function FoodPreviewGallery({ products }: { products: Product[] }) {
     'Signature Chicken': '#fde047',
   };
 
-  const galleryItems = VERIFIED_LOCAL_FOOD_IMAGES.map(item => {
+  const galleryItems = VERIFIED_LOCAL_FOOD_IMAGES.flatMap(item => {
     const normalized = normalizeProductName(item.displayName);
     const matchedProduct = products.find(p => normalizeProductName(p.name) === normalized);
-    return {
+    if (matchedProduct?.archived) return [];
+    return [{
       ...item,
       hasProduct: !!matchedProduct,
       product: matchedProduct,
       accent: accentMap[item.displayName] || '#f5c842',
-    };
+    }];
   });
 
   // Responsive column count based on viewport
@@ -1932,6 +2339,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
   const { user } = useAuth()
 
   const [products, setProducts] = useState<Product[]>([])
+  const [menuCategories, setMenuCategories] = useState<MenuCategoryRecord[]>([])
   const [_flavors, setFlavors] = useState<Flavor[]>([])
   const [promos, setPromos] = useState<Promo[]>([])
   const [loading, setLoading] = useState({ p: true, f: true, r: true })
@@ -1961,16 +2369,40 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
         .catch(() => { })
         .finally(() => { if (!cancelled) setLoading(s => ({ ...s, [key]: false })) })
     load<Product>('/api/products?item_type=menu_item', 'p', setProducts, mapProducts)
+    api.get<MenuCategoryRecord[]>('/settings/menu-categories?activeOnly=1')
+      .then(rows => { if (!cancelled) setMenuCategories(Array.isArray(rows) ? rows : []) })
+      .catch(() => { if (!cancelled) setMenuCategories([]) })
     load<Flavor>('/api/flavors', 'f', setFlavors)
     load<Promo>('/api/promos', 'r', setPromos)
     return () => { cancelled = true }
   }, [])
 
+  const categoryOptions = useMemo(() => {
+    const actual = new Map<string, string>()
+    products.filter(p => !p.archived).forEach(p => actual.set(p.category.toLowerCase(), p.category))
+    const ordered: string[] = []
+    const seen = new Set<string>()
+    const addIfUsed = (value: string) => {
+      const key = value.trim().toLowerCase()
+      const actualName = actual.get(key)
+      if (!actualName || seen.has(key)) return
+      seen.add(key)
+      ordered.push(actualName)
+    }
+    const configured = [...menuCategories]
+      .filter(item => item.is_active === true || item.is_active === 1)
+      .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0) || a.name.localeCompare(b.name))
+    configured.forEach(item => addIfUsed(item.name))
+    const remaining = [...actual.values()].sort((a, b) => a.localeCompare(b))
+    remaining.forEach(addIfUsed)
+    return ['All', ...ordered]
+  }, [menuCategories, products])
+  const selectedCategory = categoryOptions.includes(category) ? category : 'All'
   const filtered = useMemo(
-    () => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())),
-    [products, category, search]
+    () => products.filter(p => !p.archived && (selectedCategory === 'All' || p.category === selectedCategory) && p.name.toLowerCase().includes(search.toLowerCase())),
+    [products, search, selectedCategory]
   )
-  const feedbackOptions = useMemo(() => products.map(p => ({ id: p.id, name: p.name })), [products])
+  const feedbackOptions = useMemo(() => products.filter(p => !p.archived).map(p => ({ id: p.id, name: p.name })), [products])
   const featured = promos.filter(p => p.highlight)
   const regular = promos.filter(p => !p.highlight)
 
@@ -1994,7 +2426,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
                 style={{ paddingLeft: 0, paddingRight: 0, fontSize: 15, height: 44, background: 'transparent', border: 'none', boxShadow: 'none', color: 'var(--text)', width: '100%', outline: 'none' }}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search chicken, sides, drinks, combos..."
+                placeholder="Search the menu..."
                 aria-label="Search the menu"
               />
               {search && <button onClick={() => setSearch('')} aria-label="Clear search" style={{ background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer', display: 'flex', padding: 4, borderRadius: 8, transition: 'color 0.2s, background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text)'} onMouseLeave={(e) => e.currentTarget.style.color = 'var(--muted)'}><X size={18} /></button>}
@@ -2014,14 +2446,14 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
       </motion.section>
 
       {/* CATEGORY TABS */}
-      <div style={{ position: 'sticky', top: NAV_H, zIndex: 50, margin: '0 calc(-1 * var(--pad))', padding: '8px var(--pad)', borderRadius: 0, borderTop: 'none', borderBottom: '1px solid var(--line)', background: 'rgba(26,26,26,0.96)', backdropFilter: 'blur(16px)' }}>
-        <div className="wrap tabs-in" role="tablist" style={{ padding: 0 }}>
+      <div className="tabs">
+        <div className="wrap tabs-in" role="tablist">
           {CATEGORIES.map(c => (
             <motion.button
               key={c}
               role="tab"
-              aria-selected={category === c}
-              className={`tab ${category === c ? 'on' : ''}`}
+              aria-selected={selectedCategory === c}
+              className={`tab ${selectedCategory === c ? 'on' : ''}`}
               onClick={() => setCategory(c)}
               whileTap={{ scale: 0.97 }}
               variants={fadeIn}

@@ -11,6 +11,11 @@ import {
 } from "../../utils/inputUtils";
 import { getPOItemDateTrackingType } from "../../utils/purchaseOrderUtils";
 
+const RECEIPT_NUMBER_MAX_LENGTH = 25;
+const RECEIPT_NUMBER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 /-]*$/;
+const RECEIVED_QUANTITY_MAX = 100_000;
+const RECEIVED_QUANTITY_PATTERN = /^\d+(?:\.\d{0,2})?$/;
+
 function getUsableUntilPreview(
   receivedDate: string,
   months: number,
@@ -76,6 +81,7 @@ export function ReceivePOModal({
   onShowToast: (message: string, type: "success" | "error") => void;
 }) {
   const [receiptNo, setReceiptNo] = useState(order.receiptNo || "");
+  const [receiptNoError, setReceiptNoError] = useState("");
   const today = toLocalISODate();
   const [receivedDate, setReceivedDate] = useState(
     order.receivedDate || today,
@@ -97,6 +103,42 @@ export function ReceivePOModal({
   const [itemReceivedQuantities, setItemReceivedQuantities] = useState<Record<number, string>>(
     () => Object.fromEntries(order.items.map((item) => [item.id, String(item.quantity)])),
   );
+  const [itemReceivedQuantityErrors, setItemReceivedQuantityErrors] = useState<Record<number, string>>({});
+
+  const updateReceiptNo = (value: string) => {
+    if (value.length > RECEIPT_NUMBER_MAX_LENGTH) {
+      setReceiptNoError(`Receipt number cannot exceed ${RECEIPT_NUMBER_MAX_LENGTH} characters.`);
+      return;
+    }
+    if (value && !RECEIPT_NUMBER_PATTERN.test(value)) {
+      setReceiptNoError("Use letters, numbers, spaces, hyphens, or slashes only.");
+      return;
+    }
+    setReceiptNo(value);
+    setReceiptNoError("");
+  };
+
+  const updateReceivedQuantity = (itemId: number, value: string) => {
+    const setError = (message: string) =>
+      setItemReceivedQuantityErrors((current) => ({ ...current, [itemId]: message }));
+    if (value === "") {
+      setItemReceivedQuantities((current) => ({ ...current, [itemId]: "" }));
+      setItemReceivedQuantityErrors((current) => ({ ...current, [itemId]: "" }));
+      return;
+    }
+    const normalizedValue = value.startsWith(".") ? `0${value}` : value;
+    if (!/^\d+(?:\.\d{0,2})?$/.test(normalizedValue)) {
+      setError("Enter a valid quantity with up to two decimal places.");
+      return;
+    }
+    const numericValue = Number(normalizedValue);
+    if (Number.isFinite(numericValue) && numericValue > RECEIVED_QUANTITY_MAX) {
+      setError("Actual received quantity cannot exceed 100,000.");
+      return;
+    }
+    setItemReceivedQuantities((current) => ({ ...current, [itemId]: normalizedValue }));
+    setItemReceivedQuantityErrors((current) => ({ ...current, [itemId]: "" }));
+  };
 
   const handleConfirm = async () => {
     if (!receiptNo.trim()) {
@@ -104,6 +146,17 @@ export function ReceivePOModal({
         "Please enter the receipt number before completing the order.",
         "error",
       );
+      return;
+    }
+    if (
+      receiptNo.length > RECEIPT_NUMBER_MAX_LENGTH ||
+      !RECEIPT_NUMBER_PATTERN.test(receiptNo.trim())
+    ) {
+      const message = receiptNo.length > RECEIPT_NUMBER_MAX_LENGTH
+        ? `Receipt number cannot exceed ${RECEIPT_NUMBER_MAX_LENGTH} characters.`
+        : "Receipt number may contain only letters, numbers, spaces, hyphens, and slashes.";
+      setReceiptNoError(message);
+      onShowToast(message, "error");
       return;
     }
     if (!receivedBy.trim()) {
@@ -124,10 +177,20 @@ export function ReceivePOModal({
     const invalidQuantity = order.items.find((item) => {
       const raw = itemReceivedQuantities[item.id] ?? "";
       const quantity = Number(raw);
-      return !/^\d+$/.test(raw) || !Number.isInteger(quantity) || quantity < 0 || quantity > 999;
+      return (
+        !RECEIVED_QUANTITY_PATTERN.test(raw) ||
+        !Number.isFinite(quantity) ||
+        quantity < 0 ||
+        quantity > RECEIVED_QUANTITY_MAX
+      );
     });
     if (invalidQuantity) {
-      onShowToast(`Actual received quantity for ${invalidQuantity.name} must be a whole number from 0 to 999.`, "error");
+      const message = `Actual received quantity for ${invalidQuantity.name} must be from 0 to 100,000 with up to two decimal places.`;
+      setItemReceivedQuantityErrors((current) => ({
+        ...current,
+        [invalidQuantity.id]: message,
+      }));
+      onShowToast(message, "error");
       return;
     }
     if (!order.items.some((item) => Number(itemReceivedQuantities[item.id]) > 0)) {
@@ -245,10 +308,17 @@ export function ReceivePOModal({
               <input
                 type="text"
                 value={receiptNo}
-                onChange={(e) => setReceiptNo(e.target.value)}
+                onChange={(event) => updateReceiptNo(event.target.value)}
                 placeholder="e.g. DR-2026-001"
+                aria-invalid={Boolean(receiptNoError)}
+                aria-describedby={receiptNoError ? "po-receipt-number-error" : undefined}
                 className="mt-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-200"
               />
+              {receiptNoError && (
+                <p id="po-receipt-number-error" role="alert" className="mt-1 text-[11px] text-red-500">
+                  {receiptNoError}
+                </p>
+              )}
             </div>
             <div className="rounded-xl border border-slate-100 px-4 py-4">
               <label
@@ -345,18 +415,20 @@ export function ReceivePOModal({
                     Actual Received Quantity ({item.unit})
                   </label>
                   <input
-                    type="number"
-                    min="0"
-                    max="999"
-                    step="1"
+                    type="text"
+                    inputMode="decimal"
                     value={itemReceivedQuantities[item.id] ?? ""}
-                    onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: false })}
-                    onChange={(event) => setItemReceivedQuantities((current) => ({
-                      ...current,
-                      [item.id]: sanitizeNumberInput(event.target.value, { allowDecimal: false }),
-                    }))}
+                    onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: true })}
+                    onChange={(event) => updateReceivedQuantity(item.id, event.target.value)}
+                    aria-invalid={Boolean(itemReceivedQuantityErrors[item.id])}
+                    aria-describedby={itemReceivedQuantityErrors[item.id] ? `po-received-quantity-error-${item.id}` : undefined}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-200"
                   />
+                  {itemReceivedQuantityErrors[item.id] && (
+                    <p id={`po-received-quantity-error-${item.id}`} role="alert" className="mt-1 text-[11px] text-red-500">
+                      {itemReceivedQuantityErrors[item.id]}
+                    </p>
+                  )}
                 </div>
                 {usesShelfLife ? (
                   <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">

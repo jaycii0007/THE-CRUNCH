@@ -344,8 +344,8 @@ const bindFlag = ({ s, set }: TabProps, key: FlagKey) => ({
 });
 
 // Text input with an accent border while focused.
-export function SI({ value, onChange, type = "text", placeholder = "" }: {
-  value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+export function SI({ value, onChange, type = "text", placeholder = "", ariaLabel, disabled = false }: {
+  value: string; onChange: (v: string) => void; type?: string; placeholder?: string; ariaLabel?: string; disabled?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const isMobile = useViewport() === "mobile";
@@ -360,6 +360,8 @@ export function SI({ value, onChange, type = "text", placeholder = "" }: {
         boxShadow: focused ? "0 0 0 3px rgba(224,90,30,.1)" : "none",
       }}
       type={type}
+      disabled={disabled}
+      aria-label={ariaLabel}
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
@@ -533,13 +535,6 @@ export function BusinessTab(p: TabProps) {
         <FR label="Currency"><Value>{s.currency}</Value></FR>
         <FR label="Time zone" last><Value>{s.timezone}</Value></FR>
         <Hint>Name, currency, and time zone are fixed system settings.</Hint>
-      </Section>
-      <Section>
-        <FR label="Email"><SI {...bindText(p, "email")} type="email" placeholder="Email address" /></FR>
-        <FR label="Phone"><SI {...bindText(p, "phone")} placeholder="Phone number" /></FR>
-        <FR label="Address" last><SI {...bindText(p, "address")} placeholder="Street address" /></FR>
-        <FR label="Business TIN"><SI {...bindText(p, "businessTin")} placeholder="Configured tax identification number" /></FR>
-        <FR label="Registration details" last><SI {...bindText(p, "businessRegistrationDetails")} placeholder="Business registration / permit details" /></FR>
       </Section>
       <Section>
         {HOUR_FIELDS.map(([key, label], i) => (
@@ -930,6 +925,14 @@ interface InventoryCategorySetting {
   is_active: boolean | number;
 }
 
+interface MenuCategorySetting {
+  category_id: number;
+  name: string;
+  display_order: number;
+  is_active: boolean | number;
+  system_key?: string | null;
+}
+
 interface InventoryUnitSetting {
   unit_id: number;
   name: string;
@@ -938,11 +941,15 @@ interface InventoryUnitSetting {
 }
 
 function CategoriesUnitsTab() {
+  const [menuCategories, setMenuCategories] = useState<MenuCategorySetting[]>([]);
   const [categories, setCategories] = useState<InventoryCategorySetting[]>([]);
   const [units, setUnits] = useState<InventoryUnitSetting[]>([]);
+  const [menuCategoryName, setMenuCategoryName] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [unitName, setUnitName] = useState("");
   const [unitAbbreviation, setUnitAbbreviation] = useState("");
+  const [menuCategoryDrafts, setMenuCategoryDrafts] = useState<Record<number, string>>({});
+  const [categoryDrafts, setCategoryDrafts] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -951,12 +958,16 @@ function CategoriesUnitsTab() {
     setLoading(true);
     setError(null);
     try {
-      const [nextCategories, nextUnits] = await Promise.all([
+      const [nextMenuCategories, nextCategories, nextUnits] = await Promise.all([
+        api.get<MenuCategorySetting[]>("/settings/menu-categories?activeOnly=0"),
         api.get<InventoryCategorySetting[]>("/settings/inventory-categories"),
         api.get<InventoryUnitSetting[]>("/settings/inventory-units"),
       ]);
+      setMenuCategories(nextMenuCategories);
       setCategories(nextCategories);
       setUnits(nextUnits);
+      setMenuCategoryDrafts(Object.fromEntries(nextMenuCategories.map((category) => [category.category_id, category.name])));
+      setCategoryDrafts(Object.fromEntries(nextCategories.map((category) => [category.category_id, category.name])));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load categories and units.");
     } finally {
@@ -965,6 +976,26 @@ function CategoriesUnitsTab() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const createMenuCategory = async () => {
+    const name = menuCategoryName.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.post<MenuCategorySetting>("/settings/menu-categories", {
+        name,
+        display_order: menuCategories.length,
+      });
+      setMenuCategories((current) => [...current, created].sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name)));
+      setMenuCategoryDrafts((current) => ({ ...current, [created.category_id]: created.name }));
+      setMenuCategoryName("");
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Failed to add menu category.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const createCategory = async () => {
     const name = categoryName.trim();
@@ -977,9 +1008,93 @@ function CategoriesUnitsTab() {
         date_tracking_type: "none",
       });
       setCategories((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setCategoryDrafts((current) => ({ ...current, [created.category_id]: created.name }));
       setCategoryName("");
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to add category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renameMenuCategory = async (category: MenuCategorySetting) => {
+    const name = String(menuCategoryDrafts[category.category_id] ?? "").trim();
+    if (!name || name === category.name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patch<MenuCategorySetting>(
+        `/settings/menu-categories/${category.category_id}`,
+        { name },
+      );
+      setMenuCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+      setMenuCategoryDrafts((current) => ({ ...current, [updated.category_id]: updated.name }));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to rename menu category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renameCategory = async (category: InventoryCategorySetting) => {
+    const name = String(categoryDrafts[category.category_id] ?? "").trim();
+    if (!name || name === category.name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patch<InventoryCategorySetting>(
+        `/settings/inventory-categories/${category.category_id}`,
+        { name },
+      );
+      setCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+      setCategoryDrafts((current) => ({ ...current, [updated.category_id]: updated.name }));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to rename inventory category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleMenuCategory = async (category: MenuCategorySetting) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patch<MenuCategorySetting>(
+        `/settings/menu-categories/${category.category_id}`,
+        { is_active: !category.is_active },
+      );
+      setMenuCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to update menu category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteMenuCategory = async (category: MenuCategorySetting) => {
+    if (busy || !window.confirm(`Permanently delete "${category.name}"? This cannot be undone.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.delete(`/settings/menu-categories/${category.category_id}`);
+      await load();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete menu category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteInventoryCategory = async (category: InventoryCategorySetting) => {
+    if (busy || !window.confirm(`Permanently delete "${category.name}"? This cannot be undone.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.delete(`/settings/inventory-categories/${category.category_id}`);
+      await load();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete inventory category.");
     } finally {
       setBusy(false);
     }
@@ -1008,10 +1123,11 @@ function CategoriesUnitsTab() {
   const toggleCategory = async (category: InventoryCategorySetting) => {
     if (busy) return;
     setBusy(true);
+    setError(null);
     try {
       const updated = await api.patch<InventoryCategorySetting>(
         `/settings/inventory-categories/${category.category_id}`,
-        { is_active: !Boolean(category.is_active) },
+        { is_active: !category.is_active },
       );
       setCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
     } catch (updateError) {
@@ -1027,7 +1143,7 @@ function CategoriesUnitsTab() {
     try {
       const updated = await api.patch<InventoryUnitSetting>(
         `/settings/inventory-units/${unit.unit_id}`,
-        { is_active: !Boolean(unit.is_active) },
+        { is_active: !unit.is_active },
       );
       setUnits((current) => current.map((item) => item.unit_id === updated.unit_id ? updated : item));
     } catch (updateError) {
@@ -1040,13 +1156,44 @@ function CategoriesUnitsTab() {
   if (loading) return <SkeletonSectionCard theme="admin" />;
 
   const rowStyle: CSSProperties = {
-    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
     padding: "10px 0", borderBottom: "1px solid #f0ede8",
   };
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {error && <ErrorPanel message={error} onRetry={load} />}
+      <Section>
+        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 4 }}>Menu Categories</h3>
+        <Hint>Used by Menu Management, Cashier POS, and the customer menu.</Hint>
+        <div style={{ display: "flex", gap: 8, margin: "10px 0" }}>
+          <SI value={menuCategoryName} onChange={setMenuCategoryName} placeholder="Menu category name" />
+          <button type="button" onClick={() => void createMenuCategory()} disabled={busy || !menuCategoryName.trim()} style={accentButton(busy || !menuCategoryName.trim())}>Add</button>
+        </div>
+        {menuCategories.map((category) => (
+          <div key={category.category_id} style={rowStyle}>
+            <SI
+              value={menuCategoryDrafts[category.category_id] ?? category.name}
+              onChange={(value) => setMenuCategoryDrafts((current) => ({ ...current, [category.category_id]: value }))}
+              ariaLabel={`Rename ${category.name}`}
+              disabled={category.system_key === "chicken_flavors"}
+            />
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              {category.system_key === "chicken_flavors" ? (
+                <span style={{ color: ACCENT, background: "#fff3ed", borderRadius: 999, padding: "7px 10px", fontSize: 12, fontWeight: 700 }}>Built-in · Active</span>
+              ) : (
+                <>
+                  <button type="button" disabled={busy || !(menuCategoryDrafts[category.category_id] ?? "").trim() || (menuCategoryDrafts[category.category_id] ?? category.name).trim() === category.name} onClick={() => void renameMenuCategory(category)} style={secondaryButton()}>Save</button>
+                  <button type="button" disabled={busy} onClick={() => void toggleMenuCategory(category)} style={secondaryButton()}>
+                    {category.is_active ? "Active" : "Inactive"}
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => void deleteMenuCategory(category)} style={{ ...secondaryButton(), color: ERROR, borderColor: "#f5c2c0" }}>Delete</button>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </Section>
       <Section>
         <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>Inventory Categories</h3>
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -1055,10 +1202,18 @@ function CategoriesUnitsTab() {
         </div>
         {categories.map((category) => (
           <div key={category.category_id} style={rowStyle}>
-            <span style={typo("0.8rem", INK, 500)}>{category.name}</span>
-            <button type="button" disabled={busy} onClick={() => void toggleCategory(category)} style={secondaryButton()}>
-              {Boolean(category.is_active) ? "Active" : "Inactive"}
-            </button>
+            <SI
+              value={categoryDrafts[category.category_id] ?? category.name}
+              onChange={(value) => setCategoryDrafts((current) => ({ ...current, [category.category_id]: value }))}
+              ariaLabel={`Rename ${category.name}`}
+            />
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button type="button" disabled={busy || !(categoryDrafts[category.category_id] ?? "").trim() || (categoryDrafts[category.category_id] ?? category.name).trim() === category.name} onClick={() => void renameCategory(category)} style={secondaryButton()}>Save</button>
+              <button type="button" disabled={busy} onClick={() => void toggleCategory(category)} style={secondaryButton()}>
+                {category.is_active ? "Active" : "Inactive"}
+              </button>
+              <button type="button" disabled={busy} onClick={() => void deleteInventoryCategory(category)} style={{ ...secondaryButton(), color: ERROR, borderColor: "#f5c2c0" }}>Delete</button>
+            </div>
           </div>
         ))}
       </Section>
@@ -1073,7 +1228,7 @@ function CategoriesUnitsTab() {
           <div key={unit.unit_id} style={rowStyle}>
             <span style={typo("0.8rem", INK, 500)}>{unit.name}{unit.abbreviation ? ` (${unit.abbreviation})` : ""}</span>
             <button type="button" disabled={busy} onClick={() => void toggleUnit(unit)} style={secondaryButton()}>
-              {Boolean(unit.is_active) ? "Active" : "Inactive"}
+              {unit.is_active ? "Active" : "Inactive"}
             </button>
           </div>
         ))}
@@ -1558,7 +1713,7 @@ export const NAV_GROUPS: NavGroup[] = [
 export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
   profile:       { title: "My Profile",              desc: "Update your own account details and password." },
   master_data:   { title: "Categories & Units",      desc: "Maintain the category and unit choices used by inventory forms." },
-  business:      { title: "Business Information",    desc: "Restaurant identity, contact details, and operating hours." },
+  business:      { title: "Business Information",    desc: "Restaurant identity and operating hours." },
   payment_methods: { title: "Payment Methods",       desc: "Configure the in-store GCash QR and customer delivery-platform links." },
   ordering:      { title: "Online Ordering",         desc: "Accept online orders, set a minimum order, and control the store status." },
   inventory:     { title: "Inventory Configuration", desc: "Low and critical stock thresholds." },

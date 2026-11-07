@@ -94,7 +94,7 @@ function sanitizeStockManagerTab(value: unknown): Tab {
 
 const BLANK_RAW_MATERIAL: RawMaterialForm = {
   name: "",
-  category: "Sauces",
+  category: "",
   unit: "liter",
   description: "",
   useDefaultThresholds: false,
@@ -110,12 +110,6 @@ const RAW_MATERIAL_UNITS = [
   "pack",
   "bottle",
   "case",
-] as const;
-const RAW_MATERIAL_CATEGORIES = [
-  "Sauces",
-  "Raw Material",
-  "Ingredients",
-  "Aromatics",
 ] as const;
 const STATUS_BADGE: Record<StockStatus, string> = {
   critical: "bg-orange-100 text-orange-600",
@@ -556,7 +550,10 @@ export default function StockManager() {
       getAlertSeverity(p, stockAlertSettings) === "out",
   );
   const po = usePurchaseOrders({
-    enabled: activeTab === "purchases" || activeTab === "purchase-history",
+    enabled:
+      activeTab === "dashboard" ||
+      activeTab === "purchases" ||
+      activeTab === "purchase-history",
     outOfStock,
     criticalStock,
     lowStock,
@@ -627,8 +624,15 @@ export default function StockManager() {
       )
       .map((category) => category.name.trim())
       .filter(Boolean);
-    return names.length > 0 ? names : [...RAW_MATERIAL_CATEGORIES];
-  }, [inventoryCategories]);
+    const currentCategory = rawMaterialForm.category.trim();
+    if (
+      currentCategory &&
+      !names.some((name) => name.toLowerCase() === currentCategory.toLowerCase())
+    ) {
+      return [currentCategory, ...names];
+    }
+    return names;
+  }, [inventoryCategories, rawMaterialForm.category]);
   const activeInventoryUnitOptions = useMemo(() => {
     const names = inventoryUnits
       .filter((unit) => unit.is_active === true || unit.is_active === 1)
@@ -642,6 +646,10 @@ export default function StockManager() {
     const description = rawMaterialForm.description.trim();
     if (!name) {
       showToast("Please enter a raw material name.", "error");
+      return;
+    }
+    if (!rawMaterialForm.category.trim()) {
+      showToast("Please select an inventory category.", "error");
       return;
     }
     if (name.length < 2 || name.length > MATERIAL_NAME_MAX_LENGTH) {
@@ -736,6 +744,10 @@ export default function StockManager() {
     const description = rawMaterialForm.description.trim();
     if (!name) {
       showToast("Please enter a raw material name.", "error");
+      return;
+    }
+    if (!rawMaterialForm.category.trim()) {
+      showToast("Please select an inventory category.", "error");
       return;
     }
     if (name.length < 2 || name.length > MATERIAL_NAME_MAX_LENGTH) {
@@ -936,11 +948,14 @@ export default function StockManager() {
                   totalProductsValue={dashboard.totalProductsCounted.length.toString()}
                   lowStockValue={dashboard.lowStockItems.length.toString()}
                   criticalStockValue={dashboard.alertCriticalStock.length.toString()}
-                  attentionValue={dashboard.attentionItems.length.toString()}
+                  pendingPOValue={po.poOrders
+                    .filter((order) => order.status === "Ordered")
+                    .length.toString()}
                   wholeChickenProducts={dashboard.wholeChickenProducts}
                   choppedChickenProducts={dashboard.choppedChickenProducts}
                   dashboardSubTab={dashboard.dashboardSubTab}
                   onSummarySelect={dashboard.selectDashboardSummary}
+                  onPendingPOSelect={() => setTab("purchases")}
                   mainStockContent={
                     <div
                       id="dashboard-main-stock"

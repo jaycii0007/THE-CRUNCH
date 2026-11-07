@@ -106,6 +106,7 @@ const DATETIME: Intl.DateTimeFormatOptions = {
 };
 
 type PaymentMethod = "cash" | "gcash_onsite" | "grabfood" | "foodpanda";
+const MAX_CASH_TENDERED = 100_000;
 type OrderTypeVal = "dine-in" | "take-out" | "delivery";
 type ToastType = "success" | "error" | "info" | "warning";
 type Settle = "refund" | "cancel";
@@ -128,13 +129,18 @@ interface MenuItem {
   name: string;
   price: number;
   category: string;
+  categorySystemKey?: string | null;
   remainingStock: number;
   availabilityStatus: string;
   image?: string | null;
 }
 interface CartItem extends MenuItem {
+  cartKey: string;
   quantity: number;
   note?: string;
+  selectedFlavorProductId?: number;
+  selectedFlavorName?: string;
+  selectedFlavorRemainingStock?: number;
 }
 interface OnlineOrder {
   id: number;
@@ -151,7 +157,7 @@ interface OnlineOrder {
   prepStartedAt?: string | number | null;
   startedAt?: string | number | null;
   readyAt?: string | number | null;
-  items: { name: string; quantity: number }[];
+  items: { name: string; quantity: number; selectedFlavorName?: string | null }[];
 }
 interface ShiftOrder {
   id: number;
@@ -167,7 +173,7 @@ interface ShiftOrder {
   readyAt?: string | number | null;
   refundRequestId?: number | null;
   refundRequestStatus?: "Pending" | "Ignored" | "Actioned" | null;
-  items: { name: string; quantity: number; price: number }[];
+  items: { name: string; quantity: number; price: number; selectedFlavorName?: string | null }[];
 }
 
 /* ───────────────────────── helpers ───────────────────────── */
@@ -275,6 +281,9 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
       name: String(p.product_name ?? p.name ?? `Product #${p.id}`),
       price: Number(p.price ?? 0),
       category: String(p.category ?? "UNCATEGORIZED").toUpperCase(),
+      categorySystemKey: p.category_system_key
+        ? String(p.category_system_key).trim().toLowerCase()
+        : null,
       remainingStock: Math.max(
         0,
         Math.floor(
@@ -598,7 +607,9 @@ function OrderRow({
         <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
       </div>
       <p className="text-sm text-neutral-600">
-        {o.items.map((i) => `${i.quantity}× ${i.name}`).join("  ·  ")}
+        {o.items
+          .map((i) => `${i.quantity}× ${i.name}${i.selectedFlavorName ? ` (${i.selectedFlavorName})` : ""}`)
+          .join("  ·  ")}
       </p>
     </div>
   );
@@ -673,18 +684,89 @@ const ProductCard = memo(
   },
 );
 
+function ChickenFlavorModal({
+  item,
+  flavors,
+  selectedFlavorId,
+  onSelect,
+  onConfirm,
+  onCancel,
+}: {
+  item: MenuItem | null;
+  flavors: MenuItem[];
+  selectedFlavorId: number | null;
+  onSelect: (id: number) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal show={!!item} onClose={onCancel}>
+      <ModalHead
+        eyebrow="Required selection"
+        title="Choose Chicken Flavor"
+        onClose={onCancel}
+      />
+      <div className="space-y-3 p-5 sm:p-6">
+        <p className="text-sm text-neutral-600">
+          Select exactly one flavor for <strong>{item?.name}</strong>. The meal price will not change.
+        </p>
+        {flavors.length === 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            No active chicken flavors with available ingredients are configured. Ask an Administrator to add or restore a flavor in Menu Management.
+          </div>
+        ) : (
+          <div className="max-h-72 space-y-2 overflow-y-auto">
+            {flavors.map((flavor) => {
+              const selected = selectedFlavorId === flavor.id;
+              return (
+                <button
+                  type="button"
+                  key={flavor.id}
+                  onClick={() => onSelect(flavor.id)}
+                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition ${selected ? "border-amber-500 bg-amber-50" : "border-neutral-200 hover:border-neutral-400"}`}
+                >
+                  <span className="font-semibold text-neutral-800">{flavor.name}</span>
+                  {selected && <Check className="h-5 w-5 text-amber-600" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2 pt-2">
+          <button type="button" className={B.ghost} onClick={onCancel}>Cancel</button>
+          <button
+            type="button"
+            className={B.green}
+            disabled={!selectedFlavorId || flavors.length === 0}
+            onClick={onConfirm}
+          >
+            Confirm flavor
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 const CartRow = memo(
   ({
     item,
     onRemove,
     onQty,
+    onEditFlavor,
   }: {
     item: CartItem;
-    onRemove: (id: number) => void;
-    onQty: (id: number, d: number) => void;
+    onRemove: (cartKey: string) => void;
+    onQty: (cartKey: string, d: number) => void;
+    onEditFlavor: (item: CartItem) => void;
   }) => {
     const { money } = useFmt();
-    const max = getEffectiveMaxQuantity(item.remainingStock);
+    const max = Math.min(
+      getEffectiveMaxQuantity(item.remainingStock),
+      item.selectedFlavorRemainingStock == null
+        ? Number.POSITIVE_INFINITY
+        : getEffectiveMaxQuantity(item.selectedFlavorRemainingStock),
+    );
     const step =
       "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
     return (
@@ -712,6 +794,11 @@ const CartRow = memo(
               {item.name}
             </p>
             <p className="text-xs text-neutral-400">{money(item.price)} each</p>
+            {item.selectedFlavorName && (
+              <p className="mt-0.5 text-xs font-semibold text-amber-700">
+                Flavor: {item.selectedFlavorName}
+              </p>
+            )}
           </div>
           <span className="text-sm font-semibold text-neutral-900">
             {money(item.price * item.quantity)}
@@ -719,7 +806,7 @@ const CartRow = memo(
         </div>
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <button className={step} onClick={() => onQty(item.id, -1)}>
+            <button className={step} onClick={() => onQty(item.cartKey, -1)}>
               <Minus className="h-3.5 w-3.5 text-neutral-600" />
             </button>
             <input
@@ -732,22 +819,32 @@ const CartRow = memo(
                   e.target.value,
                   item.remainingStock,
                 );
-                if (v > 0) onQty(item.id, v - item.quantity);
+                if (v > 0) onQty(item.cartKey, v - item.quantity);
               }}
               className="h-9 w-12 rounded-lg border border-neutral-200 text-center text-sm font-semibold outline-none focus:border-neutral-900"
             />
             <button
               className={step}
               disabled={item.quantity >= max}
-              onClick={() => onQty(item.id, 1)}
+              onClick={() => onQty(item.cartKey, 1)}
             >
               <Plus className="h-3.5 w-3.5 text-neutral-600" />
             </button>
           </div>
           <div className="flex gap-1">
+            {item.selectedFlavorProductId && (
+              <button
+                type="button"
+                title="Change chicken flavor"
+                onClick={() => onEditFlavor(item)}
+                className="rounded-lg px-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+              >
+                Change flavor
+              </button>
+            )}
             <button
               title="Remove"
-              onClick={() => onRemove(item.id)}
+              onClick={() => onRemove(item.cartKey)}
               className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-red-50"
             >
               <Trash2 className="h-4 w-4 text-neutral-300 hover:text-red-500" />
@@ -907,6 +1004,11 @@ function ProceedModal({
               <p key={k} className="text-sm text-neutral-700">
                 <b className="mr-2">{i.quantity}×</b>
                 {i.name}
+                {i.selectedFlavorName && (
+                  <span className="block pl-7 text-xs font-semibold text-amber-700">
+                    Flavor: {i.selectedFlavorName}
+                  </span>
+                )}
               </p>
             ))}
           </div>
@@ -1042,6 +1144,7 @@ function AmountModal({
 }) {
   const { money, s } = useFmt();
   const [input, setInput] = useState("");
+  const [inputError, setInputError] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [proofError, setProofError] = useState("");
   const proofInputRef = useRef<HTMLInputElement>(null);
@@ -1058,24 +1161,46 @@ function AmountModal({
   useEffect(() => {
     if (show) {
       setInput("");
+      setInputError("");
     }
   }, [show]);
 
-  const tendered = parseFloat(input) || 0;
-  const enough = tendered >= amountDue;
+  const completeCashInput = /^\d+(?:\.\d{0,2})?$/.test(input);
+  const tendered = completeCashInput ? Number(input) : 0;
+  const validTendered =
+    completeCashInput &&
+    Number.isFinite(tendered) &&
+    tendered >= 0 &&
+    tendered <= MAX_CASH_TENDERED;
+  const enough = validTendered && tendered >= amountDue;
   const quick = [50, 100, 200, 500, 1000].filter((d) => d >= amountDue);
-  const press = (k: string) =>
-    setInput((p) =>
-      k === "⌫"
-        ? p.slice(0, -1)
-        : p.length > 8
-          ? p
-          : k === "00"
-            ? p
-              ? p + "00"
-              : p
-            : p + k,
-    );
+  const updateCashInput = (rawValue: string) => {
+    if (rawValue === "") {
+      setInput("");
+      setInputError("");
+      return;
+    }
+    const normalizedValue = rawValue.startsWith(".") ? `0${rawValue}` : rawValue;
+    if (!/^\d+(?:\.\d{0,2})?$/.test(normalizedValue)) {
+      setInputError("Enter a valid amount with up to two decimal places.");
+      return;
+    }
+    const numericValue = Number(normalizedValue);
+    if (Number.isFinite(numericValue) && numericValue > MAX_CASH_TENDERED) {
+      setInputError(`Cash tendered cannot exceed ${money(MAX_CASH_TENDERED)}.`);
+      return;
+    }
+    setInput(normalizedValue);
+    setInputError("");
+  };
+  const press = (key: string) => {
+    if (key === "⌫") {
+      updateCashInput(input.slice(0, -1));
+      return;
+    }
+    if (key === "00" && !input) return;
+    updateCashInput(`${input}${key}`);
+  };
   const selectProof = (nextFile?: File) => {
     setProofError("");
     if (!nextFile) {
@@ -1107,22 +1232,33 @@ function AmountModal({
         {method === "cash" ? (
           <>
             <p className={`${eyebrow} mb-1.5`}>Cash tendered</p>
-            <div
-              className={`mb-3 flex min-h-[52px] items-center gap-2 rounded-xl border-2 bg-neutral-50 px-4 ${input ? "border-neutral-900" : "border-neutral-200"}`}
+            <label
+              className={`mb-1 flex min-h-[52px] items-center gap-2 rounded-xl border-2 bg-neutral-50 px-4 ${inputError ? "border-red-400" : input ? "border-neutral-900" : "border-neutral-200"}`}
             >
               <span className="text-neutral-400">{getCurrencySymbol(s)}</span>
-              <span
-                className={`flex-1 text-2xl font-semibold ${input ? "" : "text-neutral-300"}`}
-              >
-                {input || "0"}
-              </span>
-            </div>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={input}
+                onChange={(event) => updateCashInput(event.target.value)}
+                placeholder="0.00"
+                aria-label="Cash tendered amount"
+                aria-invalid={Boolean(inputError)}
+                aria-describedby={inputError ? "cash-tendered-error" : undefined}
+                className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
+              />
+            </label>
+            {inputError && (
+              <p id="cash-tendered-error" role="alert" className="mb-3 text-xs font-medium text-red-500">
+                {inputError}
+              </p>
+            )}
             {quick.length > 0 && (
-              <div className="mb-3 flex flex-wrap gap-1.5">
+              <div className={`${inputError ? "mb-3" : "mt-2 mb-3"} flex flex-wrap gap-1.5`}>
                 {quick.map((a) => (
                   <button
                     key={a}
-                    onClick={() => setInput(String(a))}
+                    onClick={() => updateCashInput(String(a))}
                     className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600"
                   >
                     {money(a)}
@@ -1148,7 +1284,7 @@ function AmountModal({
                 </p>
               </div>
             </div>
-            {input && !enough && (
+            {input && validTendered && !enough && (
               <p className="mb-2 text-sm font-medium text-red-500">
                 {money(amountDue - tendered)} short
               </p>
@@ -1183,7 +1319,7 @@ function AmountModal({
             </div>
             <button
               className={`${B.green} mb-2`}
-              disabled={!input || !enough}
+              disabled={!input || !enough || Boolean(inputError)}
               onClick={() => onConfirm({ tendered })}
             >
               Confirm payment
@@ -1456,6 +1592,11 @@ function SuccessModal({
               <div key={k} className="flex justify-between gap-3 text-sm">
                 <span className="text-neutral-600">
                   {i.productName}{" "}
+                  {i.selectedFlavorName && (
+                    <span className="block text-xs font-semibold text-amber-700">
+                      Flavor: {i.selectedFlavorName}
+                    </span>
+                  )}
                   <span className="text-neutral-400">×{i.quantity}</span>
                   {i.note && (
                     <em className="block text-xs text-neutral-400">{i.note}</em>
@@ -1722,6 +1863,11 @@ function HistoryModal({
                     <p key={k} className="flex justify-between gap-3">
                       <span>
                         {i.name} ×{i.quantity}
+                        {i.selectedFlavorName && (
+                          <span className="block text-xs font-semibold text-amber-700">
+                            Flavor: {i.selectedFlavorName}
+                          </span>
+                        )}
                       </span>
                       <span className="font-medium">
                         {money(i.price * i.quantity)}
@@ -1784,6 +1930,11 @@ export default function CashierView() {
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [flavorTarget, setFlavorTarget] = useState<{
+    item: MenuItem;
+    editingCartKey?: string;
+  } | null>(null);
+  const [selectedFlavorId, setSelectedFlavorId] = useState<number | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [orderType, setOrderType] = useState<OrderTypeVal>("dine-in");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -1924,9 +2075,36 @@ export default function CashierView() {
       setCart((prev) =>
         prev.flatMap((item) => {
           const cur = next.find((p) => p.id === item.id);
-          const max = cur ? getEffectiveMaxQuantity(cur.remainingStock) : 0;
+          const currentFlavor = item.selectedFlavorProductId
+            ? next.find(
+                (p) =>
+                  p.id === item.selectedFlavorProductId &&
+                  p.categorySystemKey === "chicken_flavors" &&
+                  !isUnavailable(p.availabilityStatus),
+              )
+            : null;
+          const max = cur
+            ? Math.min(
+                getEffectiveMaxQuantity(cur.remainingStock),
+                currentFlavor
+                  ? getEffectiveMaxQuantity(currentFlavor.remainingStock)
+                  : item.selectedFlavorProductId
+                    ? 0
+                    : Number.POSITIVE_INFINITY,
+              )
+            : 0;
           return cur && max > 0
-            ? [{ ...item, ...cur, quantity: Math.min(item.quantity, max) }]
+            ? [{
+                ...item,
+                ...cur,
+                quantity: Math.min(item.quantity, max),
+                ...(currentFlavor
+                  ? {
+                      selectedFlavorName: currentFlavor.name,
+                      selectedFlavorRemainingStock: currentFlavor.remainingStock,
+                    }
+                  : {}),
+              }]
             : [];
         }),
       );
@@ -2210,18 +2388,29 @@ export default function CashierView() {
   };
 
   /* ── cart ── */
-  const categories = useMemo(
-    () => ["ALL", ...[...new Set(products.map((p) => p.category))].sort()],
+  const chickenFlavors = useMemo(
+    () => products.filter((product) =>
+      product.categorySystemKey === "chicken_flavors" &&
+      !isUnavailable(product.availabilityStatus) &&
+      getEffectiveMaxQuantity(product.remainingStock) > 0),
     [products],
+  );
+  const cashierProducts = useMemo(
+    () => products.filter((product) => product.categorySystemKey !== "chicken_flavors"),
+    [products],
+  );
+  const categories = useMemo(
+    () => ["ALL", ...[...new Set(cashierProducts.map((p) => p.category))].sort()],
+    [cashierProducts],
   );
   const filtered = useMemo(
     () =>
-      products.filter(
+      cashierProducts.filter(
         (p) =>
           (category === "ALL" || p.category === category) &&
           p.name.toLowerCase().includes(search.toLowerCase()),
       ),
-    [products, category, search],
+    [cashierProducts, category, search],
   );
   const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
   const gross = cart.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -2234,38 +2423,104 @@ export default function CashierView() {
 
   // A discount approval is tied to the items and quantities it was issued for.
   // Editing a note must not cancel it, so only items/quantities are watched.
-  const cartSignature = cart.map((i) => `${i.id}:${i.quantity}`).join(",");
+  const cartSignature = cart.map((i) => `${i.cartKey}:${i.quantity}`).join(",");
   useEffect(() => {
     setDiscountApproval(null);
     if (!cart.length) setCheckoutStep(1);
   }, [cartSignature]);
 
-  const addToCart = useCallback((item: MenuItem) => {
+  const addDirectToCart = useCallback((item: MenuItem) => {
     const max = getEffectiveMaxQuantity(item.remainingStock);
     if (isUnavailable(item.availabilityStatus) || max === 0) return;
     setCart((prev) => {
-      const ex = prev.find((c) => c.id === item.id);
-      if (!ex) return [...prev, { ...item, quantity: 1 }];
+      const cartKey = `${item.id}:`;
+      const ex = prev.find((c) => c.cartKey === cartKey);
+      if (!ex) return [...prev, { ...item, cartKey, quantity: 1 }];
       return ex.quantity >= max
         ? prev
         : prev.map((c) =>
-            c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c,
+            c.cartKey === cartKey ? { ...c, quantity: c.quantity + 1 } : c,
           );
     });
   }, []);
 
+  const requestAddToCart = useCallback((item: MenuItem) => {
+    if (item.categorySystemKey !== "menu_food") return addDirectToCart(item);
+    setSelectedFlavorId(null);
+    setFlavorTarget({ item });
+  }, [addDirectToCart]);
+
+  const editCartFlavor = useCallback((item: CartItem) => {
+    setSelectedFlavorId(item.selectedFlavorProductId ?? null);
+    setFlavorTarget({ item, editingCartKey: item.cartKey });
+  }, []);
+
+  const confirmFlavor = useCallback(() => {
+    if (!flavorTarget || !selectedFlavorId) return;
+    const flavor = chickenFlavors.find((entry) => entry.id === selectedFlavorId);
+    if (!flavor) return;
+    const nextKey = `${flavorTarget.item.id}:${flavor.id}`;
+    setCart((current) => {
+      const max = Math.min(
+        getEffectiveMaxQuantity(flavorTarget.item.remainingStock),
+        getEffectiveMaxQuantity(flavor.remainingStock),
+      );
+      if (flavorTarget.editingCartKey) {
+        const editing = current.find((entry) => entry.cartKey === flavorTarget.editingCartKey);
+        if (!editing) return current;
+        const collision = current.find((entry) => entry.cartKey === nextKey && entry.cartKey !== editing.cartKey);
+        if (collision) {
+          return current
+            .filter((entry) => entry.cartKey !== editing.cartKey)
+            .map((entry) => entry.cartKey === collision.cartKey
+              ? { ...entry, quantity: Math.min(max, entry.quantity + editing.quantity) }
+              : entry);
+        }
+        return current.map((entry) => entry.cartKey === editing.cartKey
+          ? {
+              ...entry,
+              cartKey: nextKey,
+              selectedFlavorProductId: flavor.id,
+              selectedFlavorName: flavor.name,
+              selectedFlavorRemainingStock: flavor.remainingStock,
+              quantity: Math.min(max, entry.quantity),
+            }
+          : entry);
+      }
+      const existing = current.find((entry) => entry.cartKey === nextKey);
+      if (existing) {
+        return existing.quantity >= max ? current : current.map((entry) =>
+          entry.cartKey === nextKey
+            ? { ...entry, quantity: entry.quantity + 1 }
+            : entry);
+      }
+      return [...current, {
+        ...flavorTarget.item,
+        cartKey: nextKey,
+        quantity: 1,
+        selectedFlavorProductId: flavor.id,
+        selectedFlavorName: flavor.name,
+        selectedFlavorRemainingStock: flavor.remainingStock,
+      }];
+    });
+    setFlavorTarget(null);
+    setSelectedFlavorId(null);
+  }, [chickenFlavors, flavorTarget, selectedFlavorId]);
+
   const removeFromCart = useCallback(
-    (id: number) => setCart((p) => p.filter((c) => c.id !== id)),
+    (cartKey: string) => setCart((p) => p.filter((c) => c.cartKey !== cartKey)),
     [],
   );
   const updateQty = useCallback(
-    (id: number, delta: number) => {
+    (cartKey: string, delta: number) => {
       setCart((prev) =>
         prev.flatMap((item) => {
-          if (item.id !== id) return [item];
-          const max = getEffectiveMaxQuantity(
-            products.find((p) => p.id === id)?.remainingStock ??
-              item.remainingStock,
+          if (item.cartKey !== cartKey) return [item];
+          const max = Math.min(
+            getEffectiveMaxQuantity(products.find((p) => p.id === item.id)?.remainingStock ?? item.remainingStock),
+            item.selectedFlavorProductId
+              ? getEffectiveMaxQuantity(products.find((p) => p.id === item.selectedFlavorProductId)?.remainingStock ?? 0)
+              : Number.POSITIVE_INFINITY,
           );
           const quantity = Math.min(Math.max(0, item.quantity + delta), max);
           return quantity > 0 ? [{ ...item, quantity }] : [];
@@ -2278,6 +2533,8 @@ export default function CashierView() {
   // Puts the whole order form back to its starting state (used by Void and New order).
   const clearOrderForm = () => {
     setCart([]);
+    setFlavorTarget(null);
+    setSelectedFlavorId(null);
     setCheckoutStep(1);
     setOrderType("dine-in");
     setPaymentMethod("cash");
@@ -2342,6 +2599,9 @@ export default function CashierView() {
         items: cart.map((item) => ({
           product_id: item.id,
           qty: item.quantity,
+          ...(item.selectedFlavorProductId && {
+            selected_flavor_product_id: item.selectedFlavorProductId,
+          }),
         })),
       });
       const approvedDiscount = response.discount;
@@ -2414,6 +2674,18 @@ export default function CashierView() {
   }) => {
     if (placingRef.current) return;
     if (!isOnline) return toast("error", "No connection. Cannot place order.");
+    if (
+      paymentMethod === "cash" &&
+      (
+        !Number.isFinite(tendered) ||
+        tendered < 0 ||
+        tendered > MAX_CASH_TENDERED ||
+        Math.abs(tendered * 100 - Math.round(tendered * 100)) > 1e-6
+      )
+    ) {
+      toast("error", "Cash tendered must be between ₱0.00 and ₱100,000.00 with up to two decimal places.");
+      return;
+    }
     placingRef.current = true;
     setShowAmount(false);
     setPlacing(true);
@@ -2466,6 +2738,9 @@ export default function CashierView() {
         items: cart.map((i) => ({
           product_id: i.id,
           qty: i.quantity,
+          ...(i.selectedFlavorProductId && {
+            selected_flavor_product_id: i.selectedFlavorProductId,
+          }),
           subtotal: i.price * i.quantity,
           name: i.name,
           price: i.price,
@@ -2750,7 +3025,7 @@ export default function CashierView() {
                   <ProductCard
                     key={item.id}
                     item={item}
-                    onAdd={addToCart}
+                    onAdd={requestAddToCart}
                     quantity={cart.find((c) => c.id === item.id)?.quantity ?? 0}
                   />
                 ))}
@@ -2797,10 +3072,11 @@ export default function CashierView() {
               <AnimatePresence>
                 {cart.map((item) => (
                   <CartRow
-                    key={item.id}
+                    key={item.cartKey}
                     item={item}
                     onRemove={removeFromCart}
                     onQty={updateQty}
+                    onEditFlavor={editCartFlavor}
                   />
                 ))}
               </AnimatePresence>
@@ -2811,11 +3087,16 @@ export default function CashierView() {
                 </p>
                 {cart.map((item) => (
                   <div
-                    key={item.id}
+                    key={item.cartKey}
                     className="flex items-start justify-between gap-3 rounded-xl border border-neutral-100 bg-neutral-50 p-3"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-neutral-800">{item.name}</p>
+                      {item.selectedFlavorName && (
+                        <p className="text-xs font-semibold text-amber-700">
+                          Flavor: {item.selectedFlavorName}
+                        </p>
+                      )}
                       <p className="text-xs text-neutral-400">
                         {item.quantity} × {fmt.money(item.price)}
                       </p>
@@ -3027,6 +3308,17 @@ export default function CashierView() {
         </aside>
       </div>
 
+      <ChickenFlavorModal
+        item={flavorTarget?.item ?? null}
+        flavors={chickenFlavors}
+        selectedFlavorId={selectedFlavorId}
+        onSelect={setSelectedFlavorId}
+        onConfirm={confirmFlavor}
+        onCancel={() => {
+          setFlavorTarget(null);
+          setSelectedFlavorId(null);
+        }}
+      />
       <ConfirmModal
         show={showVoidConfirm}
         title="Void current order?"
