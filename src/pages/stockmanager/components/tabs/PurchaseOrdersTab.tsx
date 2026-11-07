@@ -2,6 +2,7 @@ import { motion, type Variants } from "framer-motion";
 import { EmptyState } from "../EmptyState";
 import { POBadge } from "../POBadge";
 import { KPICard } from "../KPICard";
+import { SkeletonKPICard, SkeletonTable } from "@/components/ui/skeleton";
 import type { DashboardSummaryKey, Product, PurchaseOrder } from "../../types/inventory";
 
 function TrashIcon() {
@@ -66,43 +67,46 @@ export function PurchaseOrdersTab({
         className="space-y-5"
       >
         <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
-            {
-              label: "Active Orders",
-              value: filteredPOs.length,
-              accent: "slate",
-              summary: "poDraft" as const,
-              sub: "purchase orders being prepared",
-            },
-            {
-              label: "Inventory Items",
-              value: filteredPOs.reduce((sum, order) => sum + order.items.length, 0),
-              accent: "yellow",
-              summary: "poDraft" as const,
-              sub: "lines across active orders",
-            },
-            {
-              label: "Units Requested",
-              value: filteredPOs.reduce(
-                (sum, order) =>
-                  sum + order.items.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0),
-                0,
-              ),
-              accent: "blue",
-              summary: "poDraft" as const,
-              sub: "inventory units in active orders",
-            },
-          ].map((k) => (
-            <KPICard
-              key={k.label}
-              itemVariants={itemVariants}
-              label={k.label}
-              value={k.value.toString()}
-              sub={k.sub}
-              accent={k.accent}
-              onClick={() => onSummarySelect(k.summary)}
-            />
-          ))}
+          {(() => {
+            const cards = [
+              {
+                label: "Active Orders",
+                value: filteredPOs.length,
+                accent: "slate" as const,
+                summary: "poDraft" as const,
+                sub: "purchase orders being prepared",
+              },
+              {
+                label: "Inventory Items",
+                value: filteredPOs.reduce((sum, order) => sum + order.items.length, 0),
+                accent: "amber" as const,
+                summary: "poDraft" as const,
+                sub: "lines across active orders",
+              },
+              {
+                label: "Units Requested",
+                value: filteredPOs.reduce(
+                  (sum, order) =>
+                    sum + order.items.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0),
+                  0,
+                ),
+                accent: "blue" as const,
+                summary: "poDraft" as const,
+                sub: "inventory units in active orders",
+              },
+            ] as const;
+            return cards.map((k) => (
+              <KPICard
+                key={k.label}
+                itemVariants={itemVariants}
+                label={k.label}
+                value={k.value.toString()}
+                sub={k.sub}
+                accent={k.accent}
+                onClick={() => onSummarySelect(k.summary)}
+              />
+            ));
+          })()}
         </motion.div>
         {(criticalStock.length > 0 || lowStock.length > 0) && (
           <motion.div variants={itemVariants}>{restockBanner}</motion.div>
@@ -151,9 +155,7 @@ export function PurchaseOrdersTab({
             </div>
             <div className="divide-y divide-slate-50">
               {poLoading ? (
-                <div className="py-12 text-center text-sm text-slate-400 animate-pulse">
-                  Loading purchase orders{"\u2026"}
-                </div>
+                <SkeletonTable rowCount={5} columnCount={8} theme="admin" showHeader={false} />
               ) : filteredPOs.length === 0 ? (
                 <EmptyState message="No active purchase orders found." />
               ) : (

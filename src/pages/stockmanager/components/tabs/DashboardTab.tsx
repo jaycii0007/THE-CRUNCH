@@ -2,6 +2,7 @@ import { motion, type Variants } from "framer-motion";
 import type { ReactNode, RefObject } from "react";
 import { KPICard } from "../KPICard";
 import type { DashboardSummaryKey, Product } from "../../types/inventory";
+import { SkeletonKPICard, SkeletonSectionCard, SkeletonTable, SkeletonProductCard } from "@/components/ui/skeleton";
 
 export function DashboardTab({
   pageVariants,
@@ -48,9 +49,9 @@ export function DashboardTab({
         variants={staggerVariants}
         initial="hidden"
         animate="show"
-        className="space-y-6 pt-6"
+        style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "24px 0" }}
       >
-        <motion.div variants={staggerVariants} className="grid grid-cols-4 gap-4">
+        <motion.div variants={staggerVariants} className="sm-kpi-grid">
           <KPICard
             itemVariants={itemVariants}
             label="Total Products"
@@ -64,7 +65,7 @@ export function DashboardTab({
             label="Low Stock"
             value={lowStockValue}
             sub="warning threshold"
-            accent="yellow"
+            accent="amber"
             onClick={() => onSummarySelect("low")}
           />
           <KPICard
@@ -72,7 +73,7 @@ export function DashboardTab({
             label="Critical Stock"
             value={criticalStockValue}
             sub="urgent restock"
-            accent="rose"
+            accent="critical"
             onClick={() => onSummarySelect("critical")}
           />
           <KPICard
@@ -80,7 +81,7 @@ export function DashboardTab({
             label="Needs Attention"
             value={attentionValue}
             sub="low or out of stock"
-            accent="indigo"
+            accent="info"
             onClick={() => onSummarySelect("attention")}
           />
         </motion.div>
@@ -88,57 +89,41 @@ export function DashboardTab({
         {(wholeChickenProducts.length > 0 || choppedChickenProducts.length > 0) && (
           <motion.div
             variants={itemVariants}
-            className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100 rounded-2xl p-4 flex items-center gap-6"
+            className="sm-chicken-banner"
+            role="region"
+            aria-label="Chicken inventory"
           >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">{"\uD83C\uDF57"}</span>
-              <span className="text-xs font-bold text-orange-700 uppercase tracking-wider">
-                Chicken Inventory
-              </span>
-            </div>
-            <div className="flex gap-6 flex-1">
+            <svg className="sm-chicken-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+            <span className="sm-chicken-label">Chicken Inventory</span>
+            <div className="sm-chicken-items">
               {wholeChickenProducts.map((p) => (
-                <div key={p.product_id} className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-orange-400" />
-                  <div>
-                    <p className="text-xs text-orange-600 font-medium">
-                      Whole Chicken
-                    </p>
-                    <p className="text-sm font-bold text-orange-800">
-                      {p.mainStock}{" "}
-                      <span className="text-xs font-normal text-orange-500">
-                        {p.unit}
-                      </span>
-                    </p>
+                <div key={p.product_id} className="sm-chicken-item">
+                  <span className="sm-chicken-dot sm-chicken-dot--whole" />
+                  <div className="sm-chicken-info">
+                    <span className="sm-chicken-type">Whole Chicken</span>
+                    <span className="sm-chicken-qty">{p.mainStock}<span className="sm-chicken-unit"> {p.unit}</span></span>
                   </div>
                 </div>
               ))}
-              {wholeChickenProducts.length > 0 &&
-                choppedChickenProducts.length > 0 && (
-                  <div className="flex items-center text-orange-200 text-lg font-light">
-                    {"\u2192"}
-                  </div>
-                )}
+              {wholeChickenProducts.length > 0 && choppedChickenProducts.length > 0 && (
+                <span className="sm-chicken-separator" aria-hidden="true">→</span>
+              )}
               {choppedChickenProducts.map((p) => (
-                <div key={p.product_id} className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-amber-500" />
-                  <div>
-                    <p className="text-xs text-amber-600 font-medium">
-                      Chopped Chicken
-                    </p>
-                    <p className="text-sm font-bold text-amber-800">
-                      {p.mainStock}{" "}
-                      <span className="text-xs font-normal text-amber-500">
-                        {p.unit}
-                      </span>
-                    </p>
+                <div key={p.product_id} className="sm-chicken-item">
+                  <span className="sm-chicken-dot sm-chicken-dot--chopped" />
+                  <div className="sm-chicken-info">
+                    <span className="sm-chicken-type">Chopped Chicken</span>
+                    <span className="sm-chicken-qty">{p.mainStock}<span className="sm-chicken-unit"> {p.unit}</span></span>
                   </div>
                 </div>
               ))}
+              <p className="sm-chicken-note">Delivered whole → chopped separately in inventory</p>
             </div>
-            <p className="text-xs text-orange-400 italic">
-              Delivered whole {"\u2192"} chopped separately in inventory
-            </p>
           </motion.div>
         )}
 

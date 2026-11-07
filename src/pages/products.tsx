@@ -6,7 +6,7 @@ import { useViewport } from '@/hooks/use-tablet'
 import { api, resolveAssetUrl } from '@/lib/api'
 import { fetchGeneralSettings, formatCurrencyAmount } from '@/lib/restaurantSettings'
 import { useAuth } from '@/context/authcontext'
-import { FullscreenSpinner } from "@/components/ui/spinner";
+import { SkeletonProductCard } from "@/components/ui/skeleton";
 import { Navbar } from '@/components/Navbar';
 
 // ── Types & helpers ────────────────────────────────────────────────────────
@@ -144,6 +144,7 @@ body{background:var(--bg)}
 .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted);padding:0 4px}
 .dot{width:7px;height:7px;border-radius:50%}
 .burger{display:none;background:none;border:0;color:var(--text);cursor:pointer;padding:8px}
+
 /* Products Grid — Compact, Responsive Catalog */
 .grid {
   display: grid;
@@ -444,33 +445,17 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
       variants={fadeUp}
       whileHover={{
         y: -4,
-        boxShadow: '0 16px 32px -8px rgba(0,0,0,0.5)',
-        transition: { duration: 0.25, ease: easeOut },
+        boxShadow: '0 12px 32px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.25)',
+        borderColor: 'rgba(233,190,95,0.45)',
+        transition: { duration: 0.3, ease: easeOut },
       }}
       whileTap={{ scale: 0.98 }}
       layout
-      style={{
-        background: 'linear-gradient(180deg, rgba(22,20,18,0.98) 0%, rgba(14,13,11,0.98) 100%)',
-        border: '1px solid var(--line)',
-        borderRadius: 14,
-        overflow: 'hidden',
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-      }}
     >
       {/* Image container with proper aspect ratio to prevent layout shift */}
       <motion.div
         className="thumb"
         whileHover={{ opacity: 1 }}
-        style={{
-          aspectRatio: '16/10',
-          maxHeight: 200,
-          background: BLACK,
-          overflow: 'hidden',
-          position: 'relative',
-        }}
       >
         <Photo src={p.img} alt={p.name} priority={false} />
 
@@ -521,7 +506,6 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
               height: 26,
               display: 'grid',
               placeItems: 'center',
-              backdropFilter: 'blur(8px)',
               border: '1px solid rgba(255,255,255,0.1)',
             }}
             aria-label="Spicy level"
@@ -546,7 +530,6 @@ function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
               gap: 4,
               padding: '3px 7px',
               background: 'rgba(11,10,8,0.85)',
-              backdropFilter: 'blur(8px)',
               borderRadius: 9999,
               border: '1px solid rgba(245,200,66,0.25)',
               boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
@@ -659,18 +642,20 @@ function PromoCard({ p }: { p: Promo }) {
     <motion.article
       className="card"
       variants={fadeUp}
-      whileHover={{ y: -8, boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)', transition: { duration: 0.3, ease: easeOut } }}
+      whileHover={{ y: -8, boxShadow: '0 20px 48px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.35)', borderColor: 'rgba(233,190,95,0.5)', transition: { duration: 0.3, ease: easeOut } }}
       whileTap={{ scale: 0.99 }}
       style={{
-        background: 'linear-gradient(180deg, rgba(19,17,16,0.98) 0%, rgba(11,10,8,0.98) 100%)',
-        border: '1px solid var(--line)',
+        background: BLACK,
+        border: '1px solid rgba(89,92,86,0.25)',
         borderRadius: 20,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
+        boxShadow: '0 8px 24px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.1)',
+        transition: 'border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease',
       }}
     >
-      <div style={{ aspectRatio: '16/9', position: 'relative', overflow: 'hidden', background: '#1a1712' }}>
+      <div style={{ aspectRatio: '16/9', position: 'relative', overflow: 'hidden', background: BLACK }}>
         <Photo src={p.img ? resolveAssetUrl(p.img) : ''} alt={p.title} />
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 40%, rgba(11,10,8,0.95) 100%)' }} />
         {p.badge && <span className="chip chip-gold" style={{ position: 'absolute', top: 16, left: 16, fontSize: 12, padding: '6px 14px', fontWeight: 700, boxShadow: '0 4px 16px rgba(245,200,66,0.3)' }}>{p.badge}</span>}
@@ -1338,10 +1323,10 @@ function VerticalAdPoster({
         borderRadius: 16,
         overflow: 'visible',
         background: BLACK,
-        border: '1px solid var(--line)',
-        boxShadow: '0 8px 32px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.02)',
+        border: '1px solid rgba(201, 168, 76, 0.25)',
+        boxShadow: '0 8px 24px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.1), inset 0 1px 0 rgba(255,255,255,0.03)',
         transformStyle: 'preserve-3d',
-        transition: 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.4s cubic-bezier(0.22, 1, 0.36, 1), z-index 0s',
+        transition: 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.4s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.4s cubic-bezier(0.22, 1, 0.36, 1), z-index 0s',
         cursor: isMobile ? 'pointer' : 'default',
         aspectRatio: '3/4',
         isolation: 'isolate',
@@ -1352,7 +1337,8 @@ function VerticalAdPoster({
         scale: 1.035,
         rotateX: -2,
         rotateY: 1.5,
-        boxShadow: '0 32px 64px -16px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,200,66,0.2), 0 0 40px -8px rgba(245,200,66,0.12)',
+        boxShadow: '0 24px 64px -16px rgba(0,0,0,0.65), 0 0 0 1px rgba(201,168,76,0.35), 0 0 32px -8px rgba(201,168,76,0.15), inset 0 1px 0 rgba(255,255,255,0.03)',
+        borderColor: 'rgba(201, 168, 76, 0.5)',
         transition: { duration: 0.4, ease: easeOut },
         zIndex: 20,
       } : {}}
@@ -1721,7 +1707,7 @@ function FeaturedMenuPoster({ image, alt, index }: { image: string; alt: string;
       whileHover={canHover ? {
         y: -4,
         scale: 1.012,
-        boxShadow: '0 16px 36px -6px rgba(0, 0, 0, 0.75), 0 0 16px 0 rgba(201, 168, 76, 0.22)',
+        boxShadow: '0 16px 36px -6px rgba(0, 0, 0, 0.75), 0 0 18px 0 rgba(201, 168, 76, 0.22)',
         borderColor: 'rgba(201, 168, 76, 0.55)',
         transition: { duration: 0.3, ease: easeOut },
       } : undefined}
@@ -1769,7 +1755,7 @@ function FeaturedStrip() {
   return (
     <div className="featured-menu-section">
       <motion.div variants={fadeUp}>
-        <div className="featured-menu-header">
+        <div style={{ padding: '16px 20px', marginBottom: 24, display: 'inline-flex', alignItems: 'center', borderRadius: 12 }}>
           <h2 className="h2" style={{ fontSize: 'clamp(26px, 4vw, 36px)', margin: 0 }}>Featured Menu</h2>
         </div>
       </motion.div>
@@ -1899,9 +1885,9 @@ function FoodPreviewGallery({ products }: { products: Product[] }) {
 
   return (
     <motion.section className="section" variants={staggerContainer} style={{ marginTop: 80, background: BLACK }}>
-      <div className="section-header" style={{ maxWidth: 1280, margin: '0 auto 28px', padding: '0 24px' }}>
+      <div className="section-header" style={{ maxWidth: 1280, margin: '0 auto 28px', padding: '16px 24px', display: 'inline-flex', alignItems: 'center', gap: 16, borderRadius: 12 }}>
         <motion.h2 className="section-title" variants={fadeUp}>Food Preview Gallery</motion.h2>
-        <motion.p className="section-subtitle" variants={fadeUp}>
+        <motion.p className="section-subtitle" variants={fadeUp} style={{ color: 'var(--muted)' }}>
 
         </motion.p>
       </div>
@@ -2001,17 +1987,17 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
 
           {/* Search Bar */}
           <motion.div variants={fadeUp} style={{ marginTop: 40 }}>
-            <div style={{ position: 'relative', maxWidth: 560 }}>
-              <Search size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+            <div style={{ position: 'relative', maxWidth: 560, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(26,26,26,0.8)', border: '1px solid var(--line)', borderRadius: 12, backdropFilter: 'blur(16px)' }}>
+              <Search size={18} style={{ color: 'var(--muted)', flexShrink: 0 }} />
               <input
                 className="input"
-                style={{ paddingLeft: 48, paddingRight: 48, fontSize: 15, height: 52 }}
+                style={{ paddingLeft: 0, paddingRight: 0, fontSize: 15, height: 44, background: 'transparent', border: 'none', boxShadow: 'none', color: 'var(--text)', width: '100%', outline: 'none' }}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search chicken, sides, drinks, combos..."
                 aria-label="Search the menu"
               />
-              {search && <button onClick={() => setSearch('')} aria-label="Clear search" style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer', display: 'flex' }}><X size={18} /></button>}
+              {search && <button onClick={() => setSearch('')} aria-label="Clear search" style={{ background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer', display: 'flex', padding: 4, borderRadius: 8, transition: 'color 0.2s, background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text)'} onMouseLeave={(e) => e.currentTarget.style.color = 'var(--muted)'}><X size={18} /></button>}
             </div>
           </motion.div>
         </div>
@@ -2028,8 +2014,8 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
       </motion.section>
 
       {/* CATEGORY TABS */}
-      <div className="tabs">
-        <div className="wrap tabs-in" role="tablist">
+      <div style={{ position: 'sticky', top: NAV_H, zIndex: 50, margin: '0 calc(-1 * var(--pad))', padding: '8px var(--pad)', borderRadius: 0, borderTop: 'none', borderBottom: '1px solid var(--line)', background: 'rgba(26,26,26,0.96)', backdropFilter: 'blur(16px)' }}>
+        <div className="wrap tabs-in" role="tablist" style={{ padding: 0 }}>
           {CATEGORIES.map(c => (
             <motion.button
               key={c}
@@ -2039,6 +2025,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
               onClick={() => setCategory(c)}
               whileTap={{ scale: 0.97 }}
               variants={fadeIn}
+              style={{ background: category === c ? 'rgba(233,190,95,0.12)' : 'transparent', borderRadius: 10, border: category === c ? '1px solid var(--butter)' : 'none', boxShadow: category === c ? '0 4px 16px -4px rgba(0,0,0,0.4)' : 'none' }}
             >
               {c}
             </motion.button>
@@ -2049,13 +2036,15 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
       <motion.main className="wrap" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ paddingTop: 24, paddingBottom: 64, background: BLACK }}>
         {/* PRODUCTS GRID */}
         <motion.section variants={staggerContainer} style={{ background: BLACK }}>
-          <div className="section-header">
+          <div className="section-header" style={{ padding: '16px 20px', display: 'inline-flex', alignItems: 'center', gap: 16, borderRadius: 12, marginBottom: 24 }}>
             <motion.h2 className="section-title" variants={fadeUp}>Our Menu</motion.h2>
-            <motion.p className="section-subtitle" variants={fadeUp}>{filtered.length} item{filtered.length !== 1 ? 's' : ''}</motion.p>
+            <motion.p className="section-subtitle" variants={fadeUp} style={{ color: 'var(--muted)' }}>{filtered.length} item{filtered.length !== 1 ? 's' : ''}</motion.p>
           </div>
 
           {loading.p ? (
-            <FullscreenSpinner message="Loading menu..." />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "18px", width: "100%" }}>
+              {[...Array(6)].map((_, i) => <SkeletonProductCard key={i} theme="customer" />)}
+            </div>
           ) : filtered.length === 0 ? (
             <motion.div variants={fadeIn} style={{ textAlign: 'center', padding: '80px 0' }}>
               <p style={{ fontSize: 18, fontWeight: 700 }}>No items found</p>
@@ -2076,9 +2065,9 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
         {/* PROMOS */}
         {!loading.r && promos.length > 0 && (
           <motion.section className="section" variants={staggerContainer} style={{ background: BLACK, marginTop: 48 }}>
-            <div className="section-header">
+            <div className="section-header" style={{ padding: '16px 20px', display: 'inline-flex', alignItems: 'center', gap: 16, borderRadius: 12, marginBottom: 24 }}>
               <motion.h2 className="section-title" variants={fadeUp}>Deals & Promos</motion.h2>
-              <motion.p className="section-subtitle" variants={fadeUp}>Current offers and limited-time specials.</motion.p>
+              <motion.p className="section-subtitle" variants={fadeUp} style={{ color: 'var(--muted)' }}>Current offers and limited-time specials.</motion.p>
             </div>
             <motion.div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,260px),1fr))', gap: 16 }} variants={staggerContainer} role="list">
               {[...featured, ...regular].map(p => (
@@ -2096,21 +2085,26 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
       <footer style={{ background: BLACK, borderTop: '1px solid var(--line)', padding: '48px 0 32px', marginTop: 60 }}>
         <div className="wrap">
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 28 }}>
-            <div>
+            {/* Left — Business Information */}
+            <div style={{ flex: '1 1 280px', minWidth: 240 }}>
               <p style={{ fontWeight: 800, fontSize: 18 }}>The <span style={{ color: 'var(--gold)' }}>Crunch</span></p>
               <p className="sub" style={{ marginTop: 6, fontSize: 13.5 }}>6 Falcon St., cor Dahlia Fairview,<br />Quezon City, Philippines</p>
               <a href="https://www.google.com/maps/place/The+Crunch+-+Fairview+Branch/@14.7002687,121.0662915,21z" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 13.5, fontWeight: 600, color: 'var(--gold)', textDecoration: 'none' }}>
                 <MapPin size={14} />View on Google Maps
               </a>
             </div>
-            <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+            {/* Center — Social Media */}
+            <div style={{ flex: '1 1 180px', minWidth: 160, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <p className="sub" style={{ fontSize: 12 }}>Follow us</p>
-              <a className="link" style={{ padding: 0, textDecoration: 'none' }} href="https://www.instagram.com/thecrunchfairview" target="_blank" rel="noopener noreferrer">Instagram</a>
-              <a className="link" style={{ padding: 0, textDecoration: 'none' }} href="https://www.facebook.com/thecrunchfairview" target="_blank" rel="noopener noreferrer">Facebook</a>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                <a className="link" style={{ padding: 0, textDecoration: 'none', color: 'var(--gold)', transition: 'color 0.2s ease' }} href="https://www.instagram.com/thecrunchfairview" target="_blank" rel="noopener noreferrer">Instagram</a>
+                <a className="link" style={{ padding: 0, textDecoration: 'none', color: 'var(--gold)', transition: 'color 0.2s ease' }} href="https://www.facebook.com/thecrunchfairview" target="_blank" rel="noopener noreferrer">Facebook</a>
+              </div>
             </div>
-            <div>
+            {/* Right — Operating Hours */}
+            <div style={{ flex: '1 1 200px', minWidth: 180, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
               <p className="sub" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}><Clock size={13} />Hours</p>
-              <p className="sub" style={{ marginTop: 6, fontSize: 13.5 }}>Mon–Fri: 10 AM – 10 PM<br />Sat–Sun: 11 AM – 8:30 PM</p>
+              <p className="sub" style={{ marginTop: 6, fontSize: 13.5, textAlign: 'right' }}>Mon–Fri: 10 AM – 10 PM<br />Sat–Sun: 11 AM – 8:30 PM</p>
             </div>
           </div>
           <p className="sub" style={{ marginTop: 36, paddingTop: 18, borderTop: '1px solid var(--line)', fontSize: 12, textAlign: 'center' }}>© {new Date().getFullYear()} The Crunch Fairview. All rights reserved.</p>
@@ -2119,7 +2113,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
 
       {/* FEEDBACK */}
       <AnimatePresence>{feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} options={feedbackOptions} userId={userId} />}</AnimatePresence>
-      <motion.button className="btn btn-gold fixed-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, borderRadius: 999, padding: '11px 18px', boxShadow: '0 6px 24px rgba(0,0,0,.4)' }} onClick={() => setFeedbackOpen(v => !v)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+      <motion.button className="btn btn-gold fixed-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, borderRadius: 999, padding: '11px 18px', background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)', color: '#15120a', border: 'none', boxShadow: '0 4px 16px rgba(245,200,66,0.3)' }} onClick={() => setFeedbackOpen(v => !v)} whileHover={{ scale: 1.03, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }} whileTap={{ scale: 0.97 }}>
         <MessageSquare size={15} />{feedbackOpen ? 'Close' : 'Feedback'}
       </motion.button>
     </div>

@@ -4,6 +4,7 @@ import { formatInSettingsTimezone } from "@/lib/restaurantSettings";
 import { SectionCard } from "../SectionCard";
 import { KPICard } from "../KPICard";
 import { DashboardSummaryModal } from "../DashboardSummaryModal";
+import { SkeletonKPICard, SkeletonSectionCard } from "@/components/ui/skeleton";
 import type { ReportData } from "../../types/inventory";
 import { fmtInt } from "../../utils/formatters";
 import {
@@ -204,49 +205,58 @@ export function StockMovementReportPanel({
           </div>
         )}
         {reportLoading && (
-          <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center shadow-sm animate-pulse">
-            <p className="text-sm text-slate-400">Building your report...</p>
-          </div>
+          <>
+            <SkeletonSectionCard theme="admin" />
+            <div className="grid grid-cols-4 gap-4 mt-6">
+              <SkeletonKPICard theme="admin" />
+              <SkeletonKPICard theme="admin" />
+              <SkeletonKPICard theme="admin" />
+              <SkeletonKPICard theme="admin" />
+            </div>
+          </>
         )}
         {reportData && !reportLoading && (
           <div className="space-y-4">
             <div className="grid grid-cols-4 gap-4">
-              {[
-                {
-                  label: "Total Received",
-                  value: fmtInt(reportData.totalReceived),
-                  accent: "emerald",
-                  metric: "received" as const,
-                },
-                {
-                  label: "Total Withdrawn",
-                  value: fmtInt(reportData.totalWithdrawn),
-                  accent: "indigo",
-                  metric: "withdrawn" as const,
-                },
-                {
-                  label: "Total Returned",
-                  value: fmtInt(reportData.totalReturned),
-                  accent: "amber",
-                  metric: "returned" as const,
-                },
-                {
-                  label: "Total Wasted",
-                  value: fmtInt(reportData.totalWasted),
-                  accent: "rose",
-                  metric: "wasted" as const,
-                },
-              ].map((card) => (
-                <KPICard
-                  key={card.label}
-                  itemVariants={itemVariants}
-                  label={card.label}
-                  value={card.value}
-                  sub={reportData.period}
-                  accent={card.accent}
-                  onClick={() => setSelectedMetric(card.metric)}
-                />
-              ))}
+              {(() => {
+                const cards = [
+                  {
+                    label: "Total Received",
+                    value: fmtInt(reportData.totalReceived),
+                    accent: "emerald" as const,
+                    metric: "received" as const,
+                  },
+                  {
+                    label: "Total Withdrawn",
+                    value: fmtInt(reportData.totalWithdrawn),
+                    accent: "indigo" as const,
+                    metric: "withdrawn" as const,
+                  },
+                  {
+                    label: "Total Returned",
+                    value: fmtInt(reportData.totalReturned),
+                    accent: "amber" as const,
+                    metric: "returned" as const,
+                  },
+                  {
+                    label: "Total Wasted",
+                    value: fmtInt(reportData.totalWasted),
+                    accent: "rose" as const,
+                    metric: "wasted" as const,
+                  },
+                ] as const;
+                return cards.map((card) => (
+                  <KPICard
+                    key={card.label}
+                    itemVariants={itemVariants}
+                    label={card.label}
+                    value={card.value}
+                    sub={reportData.period}
+                    accent={card.accent}
+                    onClick={() => setSelectedMetric(card.metric)}
+                  />
+                ));
+              })()}
             </div>
             <SectionCard
               title={`Stock Movement \u2014 ${reportData.period}`}

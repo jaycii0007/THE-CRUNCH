@@ -14,7 +14,7 @@ import type {
   Supplier,
 } from "../../types/inventory";
 import { toNumber } from "../../utils/formatters";
-import { ButtonSpinner } from "@/components/ui/spinner";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   blockInvalidNumberKeys,
   sanitizeNumberInput,
@@ -730,7 +730,7 @@ export function CreatePOModal({
               {step > 1 && <button type="button" onClick={() => setStep((step - 1) as 1 | 2)} disabled={isSubmitting} className="flex-1 rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:flex-none">Back</button>}
               {step === 1 && <button type="button" onClick={goToMaterials} className="flex-1 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 sm:flex-none">Next: Materials</button>}
               {step === 2 && <button type="button" onClick={goToReview} className="flex-1 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 sm:flex-none">Next: Review</button>}
-              {step === 3 && <button type="button" onClick={() => void handleSubmit()} disabled={!isValid || isSubmitting} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">{isSubmitting ? <ButtonSpinner message="Saving..." /> : initialOrder ? "Save Changes" : "Create Purchase Order"}</button>}
+              {step === 3 && <button type="button" onClick={() => void handleSubmit()} disabled={!isValid || isSubmitting} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">{isSubmitting ? <Skeleton width={16} height={16} variant="shimmer" theme="admin" aria-label="Saving" /> : initialOrder ? "Save Changes" : "Create Purchase Order"}</button>}
             </div>
           </div>
         </footer>

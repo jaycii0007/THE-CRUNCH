@@ -2,6 +2,7 @@ import { motion, type Variants } from "framer-motion";
 import { EmptyState } from "../EmptyState";
 import { POBadge } from "../POBadge";
 import { KPICard } from "../KPICard";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { fmtFilterDate, fmtReceivedDate } from "../../utils/formatters";
 import type { DashboardSummaryKey, PurchaseOrder } from "../../types/inventory";
 
@@ -68,41 +69,44 @@ export function PurchaseHistoryTab({
           variants={itemVariants}
           className="grid grid-cols-1 md:grid-cols-3 gap-4"
         >
-          {[
-            {
-              label: "History Records",
-              value: filteredCompletedPOs.length,
-              accent: "emerald",
-              summary: "historyCompleted" as const,
-              sub: "received or cancelled",
-            },
-            {
-              label: "Received",
-              value: filteredCompletedPOs.filter(
-                (o) => o.status === "Received",
-              ).length,
-              accent: "sky",
-              summary: "historyToday" as const,
-              sub: "received into inventory",
-            },
-            {
-              label: "Cancelled",
-              value: filteredCompletedPOs.filter((o) => o.status === "Cancelled").length,
-              accent: "slate",
-              summary: "historyReceipt" as const,
-              sub: "preserved for audit history",
-            },
-          ].map((k) => (
-            <KPICard
-              key={k.label}
-              itemVariants={itemVariants}
-              label={k.label}
-              value={k.value.toString()}
-              sub={k.sub}
-              accent={k.accent}
-              onClick={() => onSummarySelect(k.summary)}
-            />
-          ))}
+          {(() => {
+            const cards = [
+              {
+                label: "History Records",
+                value: filteredCompletedPOs.length,
+                accent: "emerald" as const,
+                summary: "historyCompleted" as const,
+                sub: "received or cancelled",
+              },
+              {
+                label: "Received",
+                value: filteredCompletedPOs.filter(
+                  (o) => o.status === "Received",
+                ).length,
+                accent: "blue" as const,
+                summary: "historyToday" as const,
+                sub: "received into inventory",
+              },
+              {
+                label: "Cancelled",
+                value: filteredCompletedPOs.filter((o) => o.status === "Cancelled").length,
+                accent: "slate" as const,
+                summary: "historyReceipt" as const,
+                sub: "preserved for audit history",
+              },
+            ] as const;
+            return cards.map((k) => (
+              <KPICard
+                key={k.label}
+                itemVariants={itemVariants}
+                label={k.label}
+                value={k.value.toString()}
+                sub={k.sub}
+                accent={k.accent}
+                onClick={() => onSummarySelect(k.summary)}
+              />
+            ));
+          })()}
         </motion.div>
         <motion.div variants={itemVariants}>
           <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
@@ -224,9 +228,7 @@ export function PurchaseHistoryTab({
             </div>
             <div className="divide-y divide-slate-50">
               {poLoading ? (
-                <div className="py-12 text-center text-sm text-slate-400 animate-pulse">
-                  Loading purchase order history{"\u2026"}
-                </div>
+                <SkeletonTable rowCount={5} columnCount={7} theme="admin" showHeader={false} />
               ) : filteredCompletedPOs.length === 0 ? (
                 <EmptyState
                   message={

@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import { Printer, X } from "lucide-react";
-import { SectionSpinner } from "@/components/ui/spinner";
+import { SkeletonSectionCard, Skeleton } from "@/components/ui/skeleton";
 import { buildReceiptHtml, type ReceiptDto } from "@/lib/receipt";
 
 export function ReceiptViewerModal({
@@ -47,7 +47,10 @@ export function ReceiptViewerModal({
         </div>
         <div className="min-h-0 flex-1 bg-slate-100 p-3">
           {loading ? (
-            <SectionSpinner message="Loading receipt…" />
+            <>
+              <SkeletonSectionCard theme="admin" />
+              <Skeleton width="60%" height={16} variant="shimmer" theme="admin" aria-label="Loading receipt" style={{ marginTop: "16px" }} />
+            </>
           ) : error ? (
             <div className="flex h-full items-center justify-center text-sm font-medium text-red-600">{error}</div>
           ) : receipt ? (

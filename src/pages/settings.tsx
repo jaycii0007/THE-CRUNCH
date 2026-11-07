@@ -3,6 +3,7 @@
   type CSSProperties, type DragEvent as ReactDragEvent, type ReactNode,
 } from "react";
 import { Lock, ChevronDown, ChevronUp, Star, MessageSquare, Upload } from "lucide-react";
+import { SkeletonSectionCard, SkeletonListItem } from "@/components/ui/skeleton";
 import { useAuth } from "../context/authcontext";
 import { api } from "../lib/api";
 import { normalizePermissionsMap, normalizeRole, type PermissionsMap } from "../lib/permissions";
@@ -1036,7 +1037,7 @@ function CategoriesUnitsTab() {
     }
   };
 
-  if (loading) return <div style={{ ...S.panel, height: 180, opacity: 0.6 }} />;
+  if (loading) return <SkeletonSectionCard theme="admin" />;
 
   const rowStyle: CSSProperties = {
     display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
@@ -1411,9 +1412,12 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
   // Loading placeholders
   if (loading) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {[1, 2, 3].map((i) => <div key={i} style={{ ...S.panel, height: 88, opacity: 0.5 + i * 0.1 }} />)}
-      </div>
+      <>
+        <SkeletonSectionCard theme="admin" />
+        <SkeletonListItem theme="admin" />
+        <SkeletonListItem theme="admin" />
+        <SkeletonListItem theme="admin" />
+      </>
     );
   }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { SectionSpinner } from "@/components/ui/spinner";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { Sidebar } from "@/components/Sidebar";
 import { staffApi } from "../lib/api";
 import type { StaffMember } from "../lib/api";
@@ -782,7 +782,7 @@ export default function StaffAccounts() {
             </thead>
             <tbody>
               {isLoading ? (
-                <SectionSpinner message="Loading staff accounts..." />
+                <SkeletonTable rowCount={5} columnCount={7} theme="admin" showHeader={false} />
               ) : filteredEmployees.length === 0 ? (
                 <tr>
                   <td

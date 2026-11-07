@@ -8,7 +8,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { ProductImage } from "@/components/ProductImage";
 import { api, apiCall } from "@/lib/api";
 import { motion } from "framer-motion";
-import { SectionSpinner } from "@/components/ui/spinner";
+import { SkeletonTable, SkeletonProductCard } from "@/components/ui/skeleton";
 import { useNotifications } from "@/lib/NotificationContext";
 import {
   fetchGeneralSettings,
@@ -913,7 +913,7 @@ function MenuAdminTab() {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <SectionSpinner message="Loading menu items..." />
+                    <SkeletonTable rowCount={5} columnCount={5} theme="admin" showHeader={false} />
                   ) : visible.length === 0 ? (
                     <tr>
                       <td colSpan={TABLE_COLUMNS.length} className="px-4 py-16 text-center">
@@ -1086,7 +1086,6 @@ export default function Inventory() {
           className="mb-7 flex flex-wrap items-start justify-between gap-4"
         >
           <div>
-            <p className="mb-1 text-[12px] font-semibold" style={{ color: T.accent }}>Menu administration</p>
             <h1 className="text-[30px] font-semibold tracking-tight" style={{ color: T.ink, letterSpacing: "-0.02em" }}>Menu Management</h1>
             <p className="mt-1 max-w-[560px] text-[13px]" style={{ color: T.muted }}>
               Manage menu items, prices, categories, ingredients, promotions and availability.

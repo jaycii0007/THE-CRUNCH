@@ -22,7 +22,7 @@ import {
   Search,
   Image as ImageIcon,
 } from "lucide-react";
-import { SectionSpinner } from "@/components/ui/spinner";
+import { SkeletonTable, SkeletonSectionCard, SkeletonKPICard } from "@/components/ui/skeleton";
 import { Sidebar } from "@/components/Sidebar";
 import {
   api,
@@ -2769,12 +2769,6 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-function LoadingState({ label }: { label: string }) {
-  return (
-    <SectionSpinner message={label} />
-  );
-}
-
 // --- Pagination ---
 
 interface LogPaginationProps {
@@ -3668,7 +3662,7 @@ function OrdersTab({
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={8} className="p-0">
-                    <LoadingState label="Refreshing order history and payment totals." />
+                    <SkeletonTable rowCount={5} columnCount={8} theme="admin" showHeader={false} />
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
@@ -4450,7 +4444,7 @@ export default function SalesReports() {
 
               <AnimatePresence>
                 {isLoading ? (
-                  <LoadingState label="Pulling paid completed sales from the latest order activity." />
+                  <SkeletonTable rowCount={5} columnCount={7} theme="admin" showHeader={false} />
                 ) : dates.length === 0 ? (
                   <EmptyState
                     key="empty"

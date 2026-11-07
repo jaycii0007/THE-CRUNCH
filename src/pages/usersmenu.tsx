@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
-import { FullscreenSpinner } from "@/components/ui/spinner";
+import { SkeletonProductCard } from "@/components/ui/skeleton";
 import { api, authApi, resolveAssetUrl } from "../lib/api";
 import {
   fetchGeneralSettings,
@@ -3242,7 +3242,9 @@ export default function Delicacy() {
 
           {/* ── Product grid ── */}
           {loading ? (
-            <FullscreenSpinner message="Loading menu..." />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "18px", width: "100%" }}>
+              {[...Array(6)].map((_, i) => <SkeletonProductCard key={i} theme="customer" />)}
+            </div>
           ) : loadError ? (
             <div style={{ textAlign: "center", padding: "72px 0" }}>
               <p style={{ color: C.muted, fontSize: 14, margin: "0 0 16px" }}>

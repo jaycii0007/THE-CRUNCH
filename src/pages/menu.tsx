@@ -75,7 +75,7 @@ import {
   printHtml,
   type ReceiptDto,
 } from "../lib/receipt";
-import { ButtonSpinner, SectionSpinner, FullscreenSpinner } from "@/components/ui/spinner";
+import { Skeleton, SkeletonProductCard, SkeletonTable, SkeletonSectionCard, SkeletonKPICard, SkeletonListItem } from "@/components/ui/skeleton";
 
 /* ───────────────────────── setup ───────────────────────── */
 
@@ -616,25 +616,28 @@ const ProductCard = memo(
   ({
     item,
     onAdd,
-    inCart,
+    quantity,
   }: {
     item: MenuItem;
     onAdd: (i: MenuItem) => void;
-    inCart: boolean;
+    quantity: number;
   }) => {
     const { money } = useFmt();
     const out =
       isUnavailable(item.availabilityStatus) ||
       getEffectiveMaxQuantity(item.remainingStock) === 0;
+    const inCart = quantity > 0;
+    const sageBorder = "border-[#789486]";
+    const sageShadow = "shadow-[0_4px_14px_-2px_rgba(120,148,134,0.15)]";
     return (
       <motion.button
         layout
         disabled={out}
         onClick={() => onAdd(item)}
-        whileHover={out ? {} : { y: -3 }}
-        whileTap={out ? {} : { scale: 0.97 }}
-        transition={SP}
-        className={`relative overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-shadow hover:shadow-md ${inCart ? "border-neutral-900 ring-1 ring-neutral-900" : "border-neutral-200"} ${out ? "cursor-not-allowed opacity-50" : ""}`}
+        whileHover={out ? {} : { y: -2 }}
+        whileTap={out ? {} : { scale: 0.98 }}
+        transition={{ type: "spring", stiffness: 400, damping: 28 }}
+        className={`relative overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-all duration-200 ease-out ${inCart ? `${sageBorder} ${sageShadow}` : "border-neutral-200 hover:shadow-md"} ${out ? "cursor-not-allowed opacity-50" : ""}`}
       >
         <div className="flex aspect-square w-full items-center justify-center overflow-hidden bg-neutral-100">
           {item.image ? (
@@ -652,11 +655,12 @@ const ProductCard = memo(
           </span>
         )}
         {inCart && (
-          <span className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900">
-            <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+          <span className="absolute right-3 bottom-3 flex h-6 min-w-[26px] items-center justify-center gap-1 rounded-full bg-[#789486] px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+            <span aria-hidden="true">×</span>
+            <span>{quantity}</span>
           </span>
         )}
-        <div className="p-3 sm:p-4">
+        <div className="p-3 sm:p-4 pb-8 sm:pb-10">
           <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-snug text-neutral-800">
             {item.name}
           </p>
@@ -789,7 +793,7 @@ function ConfirmModal({
           disabled={busy}
           onClick={onConfirm}
         >
-          {busy && <ButtonSpinner color="white" />}
+          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />}
           {confirmLabel}
         </button>
         <button className={B.ghost} disabled={busy} onClick={onCancel}>
@@ -847,7 +851,7 @@ function RefundRequestModal({
           disabled={busy || !trimmedReason}
           onClick={onConfirm}
         >
-          {busy && <ButtonSpinner color="white" />}
+          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />}
           Send refund request
         </button>
         <button className={B.ghost} disabled={busy} onClick={onCancel}>Cancel</button>
@@ -924,7 +928,7 @@ function ProceedModal({
               onClick={onConfirm}
             >
               {busy ? (
-                <ButtonSpinner color="white" message="Processing…" />
+                <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />
               ) : (
                 "Confirm & proceed to queue"
               )}
@@ -1372,7 +1376,7 @@ function DiscountAuthorizationModal({
           disabled={!code.trim() || busy}
           onClick={() => onConfirm(code)}
         >
-          {busy && <ButtonSpinner color="white" />}Authorize discount
+          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />} Authorize discount
         </button>
         <button className={B.ghost} disabled={busy} onClick={onCancel}>
           Cancel
@@ -1602,8 +1606,14 @@ function HistoryModal({
         ))}
       </div>
       {loading ? (
-        <div className="flex h-32 items-center justify-center">
-          <SectionSpinner />
+        <div className="space-y-3 p-4" role="status" aria-busy="true" aria-label="Loading order history">
+          <SkeletonSectionCard theme="customer" />
+          <SkeletonKPICard theme="customer" />
+          <SkeletonKPICard theme="customer" />
+          <SkeletonKPICard theme="customer" />
+          <SkeletonListItem theme="customer" hasIcon hasAction />
+          <SkeletonListItem theme="customer" hasIcon hasAction />
+          <SkeletonListItem theme="customer" hasIcon hasAction />
         </div>
       ) : !orders.length ? (
         <Empty icon={<Receipt className="h-8 w-8 text-neutral-200" />}>
@@ -1672,7 +1682,7 @@ function HistoryModal({
                     onClick={() => onSettle(o)}
                   >
                     {settlingId === o.id ? (
-                      <ButtonSpinner />
+                      <Skeleton width={16} height={16} variant="shimmer" theme="admin" aria-label="Processing" />
                     ) : action === "refund" ? (
                       <RotateCcw className="h-4 w-4 text-red-600" />
                     ) : (
@@ -1687,8 +1697,11 @@ function HistoryModal({
                     title="Request administrator refund review"
                     onClick={() => onRequestRefund(o)}
                   >
-                    {requestingId === o.id ? <ButtonSpinner /> : <RotateCcw className="h-3.5 w-3.5" />}
-                    Request refund
+                    {requestingId === o.id ? (
+                      <Skeleton width={14} height={14} variant="shimmer" theme="admin" aria-label="Requesting refund" />
+                    ) : (
+                      <span>Request refund</span>
+                    )}
                   </button>
                 )}
                 {o.refundRequestStatus && (
@@ -2597,7 +2610,7 @@ export default function CashierView() {
                               disabled={settlingId === o.id}
                               onClick={() => setCancelId(o.id)}
                             >
-                              {settlingId === o.id && <ButtonSpinner />}
+                              {settlingId === o.id && <Skeleton width={14} height={14} variant="shimmer" theme="admin" aria-label="Processing" />}
                               {action === "refund"
                                 ? "Refund order"
                                 : "Void order"}
@@ -2704,7 +2717,13 @@ export default function CashierView() {
 
           <div className="flex-1 overflow-y-auto px-4 pb-8 sm:px-8">
             {loadingProducts && !products.length ? (
-              <FullscreenSpinner message="Loading menu..." />
+              <div className="space-y-4 p-4" role="status" aria-busy="true" aria-label="Loading menu">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "16px" }}>
+                  {[...Array(6)].map((_, i) => (
+                    <SkeletonProductCard key={i} theme="customer" />
+                  ))}
+                </div>
+              </div>
             ) : productsError ? (
               <Empty>
                 <p className="text-red-400">{productsError}</p>
@@ -2732,7 +2751,7 @@ export default function CashierView() {
                     key={item.id}
                     item={item}
                     onAdd={addToCart}
-                    inCart={cart.some((c) => c.id === item.id)}
+                    quantity={cart.find((c) => c.id === item.id)?.quantity ?? 0}
                   />
                 ))}
               </motion.div>
@@ -2995,7 +3014,7 @@ export default function CashierView() {
                 disabled={placing || loadingPaymentQr || !isOnline || !customerType}
                 onClick={openPayment}
               >
-                {placing && <ButtonSpinner color="white" />}
+                {placing && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Placing order" />}
                 {payBtnLabel}
                   </button>
                 </div>

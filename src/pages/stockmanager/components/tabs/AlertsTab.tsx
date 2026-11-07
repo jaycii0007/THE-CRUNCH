@@ -143,7 +143,7 @@ export function AlertsTab({
             )}
           </div>
         </motion.div>
-        <motion.div variants={itemVariants} className="grid grid-cols-4 gap-4">
+        <motion.div variants={itemVariants} className="sm-kpi-grid">
           <KPICard
             itemVariants={itemVariants}
             label="Normal"
@@ -155,7 +155,7 @@ export function AlertsTab({
               )
               .length.toString()}
             sub="items in safe range"
-            accent="green"
+            accent="emerald"
             onClick={() => onSummarySelect("normal")}
           />
           <KPICard
@@ -163,7 +163,7 @@ export function AlertsTab({
             label="Warning Items"
             value={lowStock.length.toString()}
             sub="need reordering soon"
-            accent="yellow"
+            accent="amber"
             onClick={() => onSummarySelect("low")}
           />
           <KPICard
@@ -171,7 +171,7 @@ export function AlertsTab({
             label="Critical Items"
             value={alertCriticalStock.length.toString()}
             sub="order immediately"
-            accent="orange"
+            accent="critical"
             onClick={() => onSummarySelect("critical")}
           />
           <KPICard

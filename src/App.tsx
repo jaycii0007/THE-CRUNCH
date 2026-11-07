@@ -1,7 +1,11 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import React from "react";
 import { useAuth } from "./context/authcontext";
-import { FullscreenSpinner } from "@/components/ui/spinner";
+import {
+  SkeletonSectionCard,
+  SkeletonKPICard,
+  SkeletonChart,
+} from "@/components/ui/skeleton";
 import {
   PermissionKey,
   PermissionsMap,
@@ -22,7 +26,7 @@ import Menu from "./pages/menu";
 import Order from "./pages/Order";
 import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
-import Products from "./pages/Products";
+import Products from "./pages/products";
 import Settings from "./pages/settings";
 import MyAccount from "./pages/my-account";
 import {
@@ -240,8 +244,16 @@ export default function App() {
 
   if (rootRoute.kind === "pending") {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-[#1A1A1A]">
-        <FullscreenSpinner message="Loading The Crunch..." />
+      <div className="min-h-screen w-full bg-slate-50 flex items-center justify-center p-8">
+        <div className="w-full max-w-7xl">
+          <div className="grid grid-cols-4 gap-4">
+            <SkeletonKPICard theme="admin" />
+            <SkeletonKPICard theme="admin" />
+            <SkeletonKPICard theme="admin" />
+            <SkeletonKPICard theme="admin" />
+          </div>
+          <SkeletonChart theme="admin" className="mt-6 h-64" />
+        </div>
       </div>
     );
   }

@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Eye, EyeOff, LockKeyhole, Save, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
-import { SectionSpinner } from "@/components/ui/spinner";
+import { SkeletonSectionCard, SkeletonFormField, SkeletonKPICard } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/authcontext";
 import { api } from "@/lib/api";
 import { normalizeRole } from "@/lib/permissions";
@@ -266,7 +266,12 @@ export default function MyAccount() {
         </header>
 
         {loading ? (
-          <SectionSpinner message="Loading your account..." />
+          <div className={isCustomer ? "relative z-10 space-y-4" : "space-y-4"}>
+            <SkeletonSectionCard theme={isCustomer ? "customer" : "admin"} />
+            <SkeletonFormField theme={isCustomer ? "customer" : "admin"} label />
+            <SkeletonFormField theme={isCustomer ? "customer" : "admin"} label />
+            <SkeletonFormField theme={isCustomer ? "customer" : "admin"} label />
+          </div>
         ) : loadError || !account ? (
           <div className={isCustomer ? "relative z-10 rounded-2xl border border-white/[0.09] bg-[#121010] p-8 text-center shadow-sm" : "rounded-2xl bg-white p-8 text-center shadow-sm"}>
             <p className="text-sm text-red-600">{loadError || "Account details are unavailable."}</p>

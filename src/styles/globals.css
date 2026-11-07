@@ -472,3 +472,63 @@ body, #root {
     transform: none !important;
   }
 }
+
+/* ========================================================================== */
+/* SKELETON LOADING ANIMATIONS                                                */
+/* ========================================================================== */
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes skeleton-breathing {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* Skeleton base utilities */
+.skeleton-base {
+  background-repeat: no-repeat;
+}
+
+.skeleton-interactive {
+  cursor: progress;
+}
+
+/* Reduced motion support for skeleton animations */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-base {
+    animation: none !important;
+    background-image: none !important;
+    opacity: 0.5;
+  }
+}
+
+/* Theme-aware skeleton color overrides for customer-facing (dark/gold) theme */
+[data-theme="customer"] .skeleton-base {
+  background-color: #2A2A2A;
+}
+
+[data-theme="customer"] .skeleton-base[style*="shimmer"] {
+  background-image: linear-gradient(
+    90deg,
+    #2A2A2A 25%,
+    #3A3A3A 50%,
+    #2A2A2A 75%
+  );
+}
+
+/* Admin theme (light/neutral) - uses CSS variables from design system */
+[data-theme="admin"] .skeleton-base {
+  background-color: var(--sm-border, var(--ov-border, #E5E9E4));
+}
+
+[data-theme="admin"] .skeleton-base[style*="shimmer"] {
+  background-image: linear-gradient(
+    90deg,
+    var(--sm-border, var(--ov-border, #E5E9E4)) 25%,
+    var(--sm-border-strong, var(--ov-border, #D0D5D1)) 50%,
+    var(--sm-border, var(--ov-border, #E5E9E4)) 75%
+  );
+}

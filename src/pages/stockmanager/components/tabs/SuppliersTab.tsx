@@ -6,7 +6,8 @@ import { EmptyState } from "../EmptyState";
 import { FormField } from "../FormField";
 import { SectionCard } from "../SectionCard";
 import { StyledInput } from "../StyledInput";
-import { ButtonSpinner } from "@/components/ui/spinner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import type { Product, Supplier, SupplierHistory } from "../../types/inventory";
 import { parseSupplierProducts } from "../../utils/supplierUtils";
 
@@ -368,15 +369,13 @@ export function SuppliersTab({
                   disabled={historyLoading}
                   className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {historyLoading && <ButtonSpinner />}
+                  {historyLoading && <Skeleton width={12} height={12} variant="shimmer" theme="admin" aria-label="Refreshing" />}
                   Refresh
                 </button>
               </div>
             </div>
             {historyLoading ? (
-              <div className="py-12 text-center text-sm text-slate-400 animate-pulse">
-                Loading history{"\u2026"}
-              </div>
+              <SkeletonTable rowCount={5} columnCount={5} theme="admin" showHeader={false} />
             ) : filteredHistory.length === 0 ? (
               <EmptyState
                 message={

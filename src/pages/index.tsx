@@ -37,7 +37,7 @@ import {
   getCurrencySymbol,
 } from "@/lib/restaurantSettings";
 import { summarizeFinancialOrders } from "@/lib/financialStatus";
-import { SectionSpinner } from "@/components/ui/spinner";
+import { SkeletonSectionCard, SkeletonKPICard, SkeletonChart } from "@/components/ui/skeleton";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Types                                   */
@@ -909,7 +909,15 @@ export default function AdminDashboard() {
     return (
       <div className="ov-canvas flex items-center justify-center">
         <Sidebar />
-        <SectionSpinner message="Loading Overview Dashboard..." />
+        <div className="w-full max-w-7xl p-6">
+          <div className="grid grid-cols-4 gap-4">
+            <SkeletonKPICard theme="admin" />
+            <SkeletonKPICard theme="admin" />
+            <SkeletonKPICard theme="admin" />
+            <SkeletonKPICard theme="admin" />
+          </div>
+          <SkeletonChart theme="admin" className="mt-6 h-64" />
+        </div>
       </div>
     );
   }
