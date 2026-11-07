@@ -1,13 +1,37 @@
 ﻿import {
-  createContext, useCallback, useContext, useEffect, useRef, useState,
-  type CSSProperties, type DragEvent as ReactDragEvent, type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
+  type ReactNode,
 } from "react";
-import { Lock, ChevronDown, ChevronUp, Star, MessageSquare, Upload } from "lucide-react";
-import { SkeletonSectionCard, SkeletonListItem } from "@/components/ui/skeleton";
+import {
+  Lock,
+  ChevronDown,
+  ChevronUp,
+  Star,
+  MessageSquare,
+  Upload,
+} from "lucide-react";
+import {
+  SkeletonSectionCard,
+  SkeletonListItem,
+} from "@/components/ui/skeleton";
 import { useAuth } from "../context/authcontext";
 import { api } from "../lib/api";
-import { normalizePermissionsMap, normalizeRole, type PermissionsMap } from "../lib/permissions";
-import { saveGeneralSettings, syncGeneralSettings } from "../lib/restaurantSettings";
+import {
+  normalizePermissionsMap,
+  normalizeRole,
+  type PermissionsMap,
+} from "../lib/permissions";
+import {
+  saveGeneralSettings,
+  syncGeneralSettings,
+} from "../lib/restaurantSettings";
 import {
   EMPTY_PAYMENT_QR,
   fetchPaymentQrConfiguration,
@@ -174,15 +198,26 @@ interface OwnAccount {
 }
 
 // Setter shared by every settings tab.
-type SetField = <K extends keyof RestaurantSettings>(key: K, value: RestaurantSettings[K]) => void;
+type SetField = <K extends keyof RestaurantSettings>(
+  key: K,
+  value: RestaurantSettings[K],
+) => void;
 interface TabProps {
   s: RestaurantSettings;
   set: SetField;
 }
 
 // Keys whose value is a plain string / a boolean. Used by the bind helpers below.
-type TextKey = { [K in keyof RestaurantSettings]: string extends RestaurantSettings[K] ? K : never }[keyof RestaurantSettings];
-type FlagKey = { [K in keyof RestaurantSettings]: RestaurantSettings[K] extends boolean ? K : never }[keyof RestaurantSettings];
+type TextKey = {
+  [K in keyof RestaurantSettings]: string extends RestaurantSettings[K]
+    ? K
+    : never;
+}[keyof RestaurantSettings];
+type FlagKey = {
+  [K in keyof RestaurantSettings]: RestaurantSettings[K] extends boolean
+    ? K
+    : never;
+}[keyof RestaurantSettings];
 
 /* -------------------------------------------------------------------------- */
 /* Settings defaults & normalizing                                            */
@@ -231,10 +266,16 @@ function readBoolean(value: unknown, fallback = false): boolean {
 }
 
 // Turns whatever the API returns into a complete, safe settings object.
-function normalizeSettings(src: Record<string, unknown> | null | undefined): RestaurantSettings {
+function normalizeSettings(
+  src: Record<string, unknown> | null | undefined,
+): RestaurantSettings {
   const text = (key: string, fallback = "") => readString(src?.[key], fallback);
   const flag = (key: string) => readBoolean(src?.[key], true);
-  const oneOf = <T extends string>(key: string, options: readonly { value: T }[], fallback: T): T =>
+  const oneOf = <T extends string>(
+    key: string,
+    options: readonly { value: T }[],
+    fallback: T,
+  ): T =>
     options.find((option) => option.value === src?.[key])?.value ?? fallback;
 
   return {
@@ -291,40 +332,79 @@ const typo = (size: string, color = INK, weight = 500): CSSProperties => ({
 
 const S = {
   input: {
-    fontFamily: FONT, fontSize: "0.85rem", color: INK, background: "#f7f6f5",
-    border: "1px solid #e4e1dc", borderRadius: 10, padding: "10px 12px",
-    width: "100%", minWidth: 0, boxSizing: "border-box", outline: "none",
+    fontFamily: FONT,
+    fontSize: "0.85rem",
+    color: INK,
+    background: "#f7f6f5",
+    border: "1px solid #e4e1dc",
+    borderRadius: 10,
+    padding: "10px 12px",
+    width: "100%",
+    minWidth: 0,
+    boxSizing: "border-box",
+    outline: "none",
     transition: "border-color .15s, box-shadow .15s",
   } as CSSProperties,
   pillSelect: {
-    fontFamily: FONT, fontSize: "0.85rem", fontWeight: 500, color: INK,
-    background: "#f0eeec", border: "none", borderRadius: 99, padding: "9px 34px 9px 16px",
-    cursor: "pointer", outline: "none", appearance: "none",
+    fontFamily: FONT,
+    fontSize: "0.85rem",
+    fontWeight: 500,
+    color: INK,
+    background: "#f0eeec",
+    border: "none",
+    borderRadius: 99,
+    padding: "9px 34px 9px 16px",
+    cursor: "pointer",
+    outline: "none",
+    appearance: "none",
   } as CSSProperties,
   panel: {
-    background: "#fff", border: "1px solid #eae7e2", borderRadius: 12,
+    background: "#fff",
+    border: "1px solid #eae7e2",
+    borderRadius: 12,
   } as CSSProperties,
   // The large white card that holds the settings menu and content.
   card: {
-    display: "flex", width: "100%", minWidth: 0, maxWidth: 1100, margin: "0 auto",
-    background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #eae7e2",
+    display: "flex",
+    width: "100%",
+    minWidth: 0,
+    maxWidth: 1100,
+    margin: "0 auto",
+    background: "#fff",
+    borderRadius: 16,
+    overflow: "hidden",
+    border: "1px solid #eae7e2",
     boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04)",
   } as CSSProperties,
 };
 
 // Dark action button. Greyed out while disabled.
 const accentButton = (disabled = false): CSSProperties => ({
-  fontFamily: FONT, fontSize: "0.82rem", fontWeight: 600, borderRadius: 10, letterSpacing: ".01em",
-  padding: "10px 18px", border: "none", background: INK, color: "#fff",
-  textAlign: "center", transition: "all .15s",
+  fontFamily: FONT,
+  fontSize: "0.82rem",
+  fontWeight: 600,
+  borderRadius: 10,
+  letterSpacing: ".01em",
+  padding: "10px 18px",
+  border: "none",
+  background: INK,
+  color: "#fff",
+  textAlign: "center",
+  transition: "all .15s",
   opacity: disabled ? 0.55 : 1,
   cursor: disabled ? "not-allowed" : "pointer",
 });
 
 const secondaryButton = (): CSSProperties => ({
-  fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600, borderRadius: 9,
-  padding: "7px 10px", border: "1px solid #ddd8d2", background: "#fff",
-  color: "#5a5652", cursor: "pointer",
+  fontFamily: FONT,
+  fontSize: "0.75rem",
+  fontWeight: 600,
+  borderRadius: 9,
+  padding: "7px 10px",
+  border: "1px solid #ddd8d2",
+  background: "#fff",
+  color: "#5a5652",
+  cursor: "pointer",
 });
 
 /* -------------------------------------------------------------------------- */
@@ -344,8 +424,20 @@ const bindFlag = ({ s, set }: TabProps, key: FlagKey) => ({
 });
 
 // Text input with an accent border while focused.
-export function SI({ value, onChange, type = "text", placeholder = "", ariaLabel, disabled = false }: {
-  value: string; onChange: (v: string) => void; type?: string; placeholder?: string; ariaLabel?: string; disabled?: boolean;
+export function SI({
+  value,
+  onChange,
+  type = "text",
+  placeholder = "",
+  ariaLabel,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+  ariaLabel?: string;
+  disabled?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const isMobile = useViewport() === "mobile";
@@ -372,12 +464,24 @@ export function SI({ value, onChange, type = "text", placeholder = "", ariaLabel
 }
 
 // Pill-shaped dropdown. Full width on phones so it lines up with the inputs.
-export function SS<T extends string>({ value, onChange, options }: {
-  value: T; onChange: (v: T) => void; options: readonly { value: T; label: string }[];
+export function SS<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: readonly { value: T; label: string }[];
 }) {
   const isMobile = useViewport() === "mobile";
   return (
-    <div style={{ position: "relative", display: isMobile ? "block" : "inline-block", maxWidth: "100%" }}>
+    <div
+      style={{
+        position: "relative",
+        display: isMobile ? "block" : "inline-block",
+        maxWidth: "100%",
+      }}
+    >
       <select
         style={{
           ...S.pillSelect,
@@ -389,18 +493,34 @@ export function SS<T extends string>({ value, onChange, options }: {
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
       >
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
       </select>
       <ChevronDown
         size={14}
         color={MUTED}
-        style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+        style={{
+          position: "absolute",
+          right: 14,
+          top: "50%",
+          transform: "translateY(-50%)",
+          pointerEvents: "none",
+        }}
       />
     </div>
   );
 }
 
-export function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+export function Toggle({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <button
       type="button"
@@ -408,15 +528,28 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (v: bool
       aria-checked={value}
       onClick={() => onChange(!value)}
       style={{
-        position: "relative", width: 44, height: 24, borderRadius: 99, border: "none",
-        cursor: "pointer", background: value ? INK : "#e4e1dc", padding: 0, flexShrink: 0,
+        position: "relative",
+        width: 44,
+        height: 24,
+        borderRadius: 99,
+        border: "none",
+        cursor: "pointer",
+        background: value ? INK : "#e4e1dc",
+        padding: 0,
+        flexShrink: 0,
         transition: "background .2s",
       }}
     >
       <span
         style={{
-          position: "absolute", top: 3, left: value ? 23 : 3, width: 18, height: 18,
-          borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.18)",
+          position: "absolute",
+          top: 3,
+          left: value ? 23 : 3,
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          background: "#fff",
+          boxShadow: "0 1px 3px rgba(0,0,0,.18)",
           transition: "left .18s",
         }}
       />
@@ -425,41 +558,79 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (v: bool
 }
 
 // Form row: label on the left, control on the right. On phones the label sits above the control.
-export function FR({ label, last = false, children }: { label: string; last?: boolean; children: ReactNode }) {
+export function FR({
+  label,
+  last = false,
+  children,
+}: {
+  label: string;
+  last?: boolean;
+  children: ReactNode;
+}) {
   const viewport = useViewport();
   const stacked = viewport === "mobile";
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: stacked ? "minmax(0,1fr)" : `${viewport === "tablet" ? 150 : 175}px minmax(0,1fr)`,
+        gridTemplateColumns: stacked
+          ? "minmax(0,1fr)"
+          : `${viewport === "tablet" ? 150 : 175}px minmax(0,1fr)`,
         alignItems: stacked ? "stretch" : "center",
         gap: stacked ? 8 : 16,
         padding: stacked ? "14px 0" : "20px 0",
         borderBottom: last ? "none" : "1px solid #ececec",
       }}
     >
-      <p style={typo(stacked ? "0.8rem" : "0.85rem", stacked ? "#5a5652" : INK)}>{label}</p>
+      <p
+        style={typo(stacked ? "0.8rem" : "0.85rem", stacked ? "#5a5652" : INK)}
+      >
+        {label}
+      </p>
       <div style={{ minWidth: 0 }}>{children}</div>
     </div>
   );
 }
 
 // Toggle row: label and optional description on the left, switch on the right.
-export function TR({ label, desc, value, onChange, last = false }: {
-  label: string; desc?: string; value: boolean; onChange: (v: boolean) => void; last?: boolean;
+export function TR({
+  label,
+  desc,
+  value,
+  onChange,
+  last = false,
+}: {
+  label: string;
+  desc?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  last?: boolean;
 }) {
   const isMobile = useViewport() === "mobile";
   return (
     <div
       style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: isMobile ? "14px 0" : "20px 0", borderBottom: last ? "none" : "1px solid #ececec", gap: 16,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: isMobile ? "14px 0" : "20px 0",
+        borderBottom: last ? "none" : "1px solid #ececec",
+        gap: 16,
       }}
     >
       <div style={{ minWidth: 0 }}>
         <p style={typo("0.85rem")}>{label}</p>
-        {desc && <p style={{ ...typo("0.74rem", MUTED, 400), margin: "3px 0 0", lineHeight: 1.6 }}>{desc}</p>}
+        {desc && (
+          <p
+            style={{
+              ...typo("0.74rem", MUTED, 400),
+              margin: "3px 0 0",
+              lineHeight: 1.6,
+            }}
+          >
+            {desc}
+          </p>
+        )}
       </div>
       <Toggle value={value} onChange={onChange} />
     </div>
@@ -472,24 +643,55 @@ export function Section({ children }: { children: ReactNode }) {
 }
 
 export function Hint({ children }: { children: ReactNode }) {
-  return <p style={{ ...typo("0.74rem", "#b0aaa3", 400), padding: "10px 0 18px", lineHeight: 1.6 }}>{children}</p>;
+  return (
+    <p
+      style={{
+        ...typo("0.74rem", "#b0aaa3", 400),
+        padding: "10px 0 18px",
+        lineHeight: 1.6,
+      }}
+    >
+      {children}
+    </p>
+  );
 }
 
 // Read-only value shown inside a form row.
-function Value({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
+function Value({
+  children,
+  muted = false,
+}: {
+  children: ReactNode;
+  muted?: boolean;
+}) {
   return (
-    <span style={{ ...typo("0.8rem", muted ? "#5a5652" : INK, muted ? 400 : 600), overflowWrap: "anywhere" }}>
+    <span
+      style={{
+        ...typo("0.8rem", muted ? "#5a5652" : INK, muted ? 400 : 600),
+        overflowWrap: "anywhere",
+      }}
+    >
       {children}
     </span>
   );
 }
 
 // Error message with a retry button.
-function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorPanel({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     <div style={{ ...S.panel, padding: "28px 20px", textAlign: "center" }}>
-      <p style={{ ...typo("0.8rem", ERROR, 400), marginBottom: 10 }}>{message}</p>
-      <button onClick={onRetry} style={accentButton()}>Try again</button>
+      <p style={{ ...typo("0.8rem", ERROR, 400), marginBottom: 10 }}>
+        {message}
+      </p>
+      <button onClick={onRetry} style={accentButton()}>
+        Try again
+      </button>
     </div>
   );
 }
@@ -498,18 +700,42 @@ function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void
 export function LockedSection({ label }: { label: string }) {
   const isMobile = useViewport() === "mobile";
   return (
-    <div style={{ background: "#f7f6f5", borderRadius: 16, padding: isMobile ? "36px 20px" : "48px 32px", textAlign: "center" }}>
+    <div
+      style={{
+        background: "#f7f6f5",
+        borderRadius: 16,
+        padding: isMobile ? "36px 20px" : "48px 32px",
+        textAlign: "center",
+      }}
+    >
       <div
         style={{
-          width: 52, height: 52, borderRadius: 12, background: "#fff",
-          display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px",
+          width: 52,
+          height: 52,
+          borderRadius: 12,
+          background: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          margin: "0 auto 16px",
         }}
       >
         <Lock size={22} color={ACCENT} />
       </div>
-      <p style={{ ...typo("0.9rem", INK, 600), margin: "0 0 8px" }}>Access Restricted</p>
-      <p style={{ ...typo("0.78rem", MUTED, 400), lineHeight: 1.7, maxWidth: 300, marginInline: "auto" }}>
-        Only administrators can access <strong style={{ color: "#5a5652" }}>{label}</strong>. Contact your administrator if you need access.
+      <p style={{ ...typo("0.9rem", INK, 600), margin: "0 0 8px" }}>
+        Access Restricted
+      </p>
+      <p
+        style={{
+          ...typo("0.78rem", MUTED, 400),
+          lineHeight: 1.7,
+          maxWidth: 300,
+          marginInline: "auto",
+        }}
+      >
+        Only administrators can access{" "}
+        <strong style={{ color: "#5a5652" }}>{label}</strong>. Contact your
+        administrator if you need access.
       </p>
     </div>
   );
@@ -531,9 +757,15 @@ export function BusinessTab(p: TabProps) {
   return (
     <>
       <Section>
-        <FR label="System name"><Value>{s.restaurantName}</Value></FR>
-        <FR label="Currency"><Value>{s.currency}</Value></FR>
-        <FR label="Time zone" last><Value>{s.timezone}</Value></FR>
+        <FR label="System name">
+          <Value>{s.restaurantName}</Value>
+        </FR>
+        <FR label="Currency">
+          <Value>{s.currency}</Value>
+        </FR>
+        <FR label="Time zone" last>
+          <Value>{s.timezone}</Value>
+        </FR>
         <Hint>Name, currency, and time zone are fixed system settings.</Hint>
       </Section>
       <Section>
@@ -562,7 +794,8 @@ function DeliveryPlatformLinksSection() {
 
   useEffect(() => {
     let cancelled = false;
-    api.get<DeliveryPlatformLinks>("/settings/delivery-links")
+    api
+      .get<DeliveryPlatformLinks>("/settings/delivery-links")
       .then((links) => {
         if (cancelled) return;
         setGrabfoodUrl(links.grabfoodUrl || "");
@@ -570,13 +803,19 @@ function DeliveryPlatformLinksSection() {
       })
       .catch((loadError) => {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Unable to load delivery links.");
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load delivery links.",
+          );
         }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const save = async () => {
@@ -585,15 +824,22 @@ function DeliveryPlatformLinksSection() {
     setError("");
     setNotice("");
     try {
-      const links = await api.put<DeliveryPlatformLinks>("/settings/delivery-links", {
-        grabfoodUrl,
-        foodpandaUrl,
-      });
+      const links = await api.put<DeliveryPlatformLinks>(
+        "/settings/delivery-links",
+        {
+          grabfoodUrl,
+          foodpandaUrl,
+        },
+      );
       setGrabfoodUrl(links.grabfoodUrl || "");
       setFoodpandaUrl(links.foodpandaUrl || "");
       setNotice("Delivery platform links saved.");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save delivery links.");
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Unable to save delivery links.",
+      );
     } finally {
       setSaving(false);
     }
@@ -602,11 +848,18 @@ function DeliveryPlatformLinksSection() {
   return (
     <Section>
       <div style={{ padding: 20 }}>
-        <p style={{ ...typo("0.86rem", INK, 700), margin: "0 0 6px" }}>Delivery Platform Links</p>
-        <Hint>Customers see these links after choosing Delivery Order. Clear a field to disable that platform.</Hint>
+        <p style={{ ...typo("0.86rem", INK, 700), margin: "0 0 6px" }}>
+          Delivery Platform Links
+        </p>
+        <Hint>
+          Customers see these links after choosing Delivery Order. Clear a field
+          to disable that platform.
+        </Hint>
         <div style={{ display: "grid", gap: 14, marginTop: 18 }}>
           <label style={{ display: "grid", gap: 6 }}>
-            <span style={typo("0.76rem", "#5a5652", 600)}>GrabFood Ordering URL</span>
+            <span style={typo("0.76rem", "#5a5652", 600)}>
+              GrabFood Ordering URL
+            </span>
             <input
               data-testid="grabfood-ordering-url"
               type="url"
@@ -622,7 +875,9 @@ function DeliveryPlatformLinksSection() {
             />
           </label>
           <label style={{ display: "grid", gap: 6 }}>
-            <span style={typo("0.76rem", "#5a5652", 600)}>Foodpanda Ordering URL</span>
+            <span style={typo("0.76rem", "#5a5652", 600)}>
+              Foodpanda Ordering URL
+            </span>
             <input
               data-testid="foodpanda-ordering-url"
               type="url"
@@ -647,9 +902,21 @@ function DeliveryPlatformLinksSection() {
               {saving ? "Saving..." : "Save Delivery Links"}
             </button>
           </div>
-          {loading && <p style={typo("0.75rem", MUTED, 400)}>Loading saved delivery links...</p>}
-          {error && <p role="alert" style={typo("0.75rem", ERROR, 500)}>{error}</p>}
-          {notice && <p role="status" style={typo("0.75rem", SUCCESS, 500)}>{notice}</p>}
+          {loading && (
+            <p style={typo("0.75rem", MUTED, 400)}>
+              Loading saved delivery links...
+            </p>
+          )}
+          {error && (
+            <p role="alert" style={typo("0.75rem", ERROR, 500)}>
+              {error}
+            </p>
+          )}
+          {notice && (
+            <p role="status" style={typo("0.75rem", SUCCESS, 500)}>
+              {notice}
+            </p>
+          )}
         </div>
       </div>
     </Section>
@@ -659,9 +926,8 @@ function DeliveryPlatformLinksSection() {
 function PaymentMethodsTab() {
   const previewRef = useRef("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [configuration, setConfiguration] = useState<PaymentQrConfiguration>(
-    EMPTY_PAYMENT_QR,
-  );
+  const [configuration, setConfiguration] =
+    useState<PaymentQrConfiguration>(EMPTY_PAYMENT_QR);
   const [previewUrl, setPreviewUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedPreview, setSelectedPreview] = useState("");
@@ -682,15 +948,20 @@ function PaymentMethodsTab() {
     setError("");
     try {
       const next = await fetchPaymentQrConfiguration();
-      const nextPreview = next.configured && next.imageUrl
-        ? await fetchPaymentQrObjectUrl(next.imageUrl)
-        : "";
+      const nextPreview =
+        next.configured && next.imageUrl
+          ? await fetchPaymentQrObjectUrl(next.imageUrl)
+          : "";
       setConfiguration(next);
       replacePreview(nextPreview);
     } catch (loadError) {
       setConfiguration(EMPTY_PAYMENT_QR);
       replacePreview("");
-      setError(loadError instanceof Error ? loadError.message : "Unable to load the GCash QR image.");
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load the GCash QR image.",
+      );
     } finally {
       setLoading(false);
     }
@@ -773,9 +1044,17 @@ function PaymentMethodsTab() {
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       await load();
-      setNotice(wasConfigured ? "GCash QR image replaced successfully." : "GCash QR image uploaded successfully.");
+      setNotice(
+        wasConfigured
+          ? "GCash QR image replaced successfully."
+          : "GCash QR image uploaded successfully.",
+      );
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload the GCash QR image.");
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "Unable to upload the GCash QR image.",
+      );
     } finally {
       setBusy(false);
     }
@@ -783,7 +1062,12 @@ function PaymentMethodsTab() {
 
   const remove = async () => {
     if (busy || !configuration.configured) return;
-    if (!window.confirm("Remove the active GCash QR image? Cashiers will be unable to use QR checkout until a new image is uploaded.")) return;
+    if (
+      !window.confirm(
+        "Remove the active GCash QR image? Cashiers will be unable to use QR checkout until a new image is uploaded.",
+      )
+    )
+      return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -794,7 +1078,11 @@ function PaymentMethodsTab() {
       await load();
       setNotice("GCash QR image removed.");
     } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : "Unable to remove the GCash QR image.");
+      setError(
+        removeError instanceof Error
+          ? removeError.message
+          : "Unable to remove the GCash QR image.",
+      );
     } finally {
       setBusy(false);
     }
@@ -805,86 +1093,221 @@ function PaymentMethodsTab() {
     <>
       <Section>
         <div style={{ padding: 20 }}>
-        <p style={{ ...typo("0.86rem", INK, 700), margin: "0 0 6px" }}>In-store GCash QR</p>
-        <Hint>Cashiers can display this image during manual GCash checkout. Payment is marked Paid only after the cashier confirms receipt.</Hint>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 20, marginTop: 18, alignItems: "start" }}>
-          <div style={{ minHeight: 220, display: "grid", placeItems: "center", border: "1px solid #e2ded9", borderRadius: 14, background: "#faf9f7", padding: 12, position: "relative" }}>
-            {shownPreview ? (
-              <>
-                <img src={shownPreview} alt={selectedFile ? "Selected GCash QR preview" : "Active GCash QR"} style={{ width: "100%", maxHeight: 260, objectFit: "contain", borderRadius: 10 }} />
-                <span style={{ position: "absolute", top: 10, left: 10, borderRadius: 999, padding: "5px 9px", background: selectedFile ? "#fff7ed" : "#ecfdf5", color: selectedFile ? ACCENT : SUCCESS, fontFamily: FONT, fontSize: "0.66rem", fontWeight: 700 }}>
-                  {selectedFile ? "PREVIEW — NOT UPLOADED" : "ACTIVE QR"}
-                </span>
-              </>
-            ) : (
-              <p style={{ ...typo("0.75rem", MUTED, 500), textAlign: "center" }}>{loading ? "Loading QR image..." : "No GCash QR configured"}</p>
-            )}
-          </div>
-          <div>
+          <p style={{ ...typo("0.86rem", INK, 700), margin: "0 0 6px" }}>
+            In-store GCash QR
+          </p>
+          <Hint>
+            Cashiers can display this image during manual GCash checkout.
+            Payment is marked Paid only after the cashier confirms receipt.
+          </Hint>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+              gap: 20,
+              marginTop: 18,
+              alignItems: "start",
+            }}
+          >
             <div
-              data-testid="gcash-qr-drop-zone"
-              onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
-              onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setIsDragging(true); }}
-              onDragLeave={(event) => { event.preventDefault(); setIsDragging(false); }}
-              onDrop={handleDrop}
               style={{
-                border: `2px dashed ${isDragging ? ACCENT : "#d8d2cb"}`,
+                minHeight: 220,
+                display: "grid",
+                placeItems: "center",
+                border: "1px solid #e2ded9",
                 borderRadius: 14,
-                background: isDragging ? "#fff7ed" : "#faf9f7",
-                padding: "22px 16px",
-                marginBottom: 12,
-                textAlign: "center",
-                transition: "border-color .15s, background .15s",
+                background: "#faf9f7",
+                padding: 12,
+                position: "relative",
               }}
             >
-              <Upload size={28} color={isDragging ? ACCENT : MUTED} aria-hidden="true" />
-              <p style={{ ...typo("0.82rem", INK, 650), margin: "8px 0 3px" }}>Drop a QR image here</p>
-              <p style={{ ...typo("0.7rem", MUTED, 400), margin: "0 0 12px" }}>or select one from your device</p>
-              <input
-                ref={fileInputRef}
-                key={configuration.updatedAt || "no-payment-qr"}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
-                disabled={busy}
-                onChange={(event) => chooseFile(event.currentTarget.files?.[0])}
-                style={{ display: "none" }}
-                aria-label="Choose GCash QR image"
-              />
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => fileInputRef.current?.click()}
-                style={{ ...accentButton(busy), display: "inline-flex", alignItems: "center", gap: 7 }}
-              >
-                <Upload size={15} aria-hidden="true" />
-                {configuration.configured ? "Choose Replacement Image" : "Choose Image"}
-              </button>
-              {selectedFile && (
-                <p style={{ ...typo("0.7rem", SUCCESS, 600), margin: "11px 0 0", overflowWrap: "anywhere" }}>
-                  Selected: {selectedFile.name}
+              {shownPreview ? (
+                <>
+                  <img
+                    src={shownPreview}
+                    alt={
+                      selectedFile
+                        ? "Selected GCash QR preview"
+                        : "Active GCash QR"
+                    }
+                    style={{
+                      width: "100%",
+                      maxHeight: 260,
+                      objectFit: "contain",
+                      borderRadius: 10,
+                    }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 10,
+                      left: 10,
+                      borderRadius: 999,
+                      padding: "5px 9px",
+                      background: selectedFile ? "#fff7ed" : "#ecfdf5",
+                      color: selectedFile ? ACCENT : SUCCESS,
+                      fontFamily: FONT,
+                      fontSize: "0.66rem",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selectedFile ? "PREVIEW — NOT UPLOADED" : "ACTIVE QR"}
+                  </span>
+                </>
+              ) : (
+                <p
+                  style={{
+                    ...typo("0.75rem", MUTED, 500),
+                    textAlign: "center",
+                  }}
+                >
+                  {loading ? "Loading QR image..." : "No GCash QR configured"}
                 </p>
               )}
             </div>
-            <p style={{ ...typo("0.72rem", MUTED, 400), lineHeight: 1.6, margin: "0 0 14px" }}>PNG, JPG, or WebP. Maximum 5 MB. The server verifies the actual file content.</p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <button type="button" onClick={() => void upload()} disabled={!selectedFile || busy} style={accentButton(!selectedFile || busy)}>
-                {busy ? "Uploading..." : configuration.configured ? "Save Replacement" : "Upload QR"}
-              </button>
-              {selectedFile && !busy && (
-                <button type="button" onClick={() => chooseFile()} style={secondaryButton()}>
-                  Clear Selection
+            <div>
+              <div
+                data-testid="gcash-qr-drop-zone"
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                  setIsDragging(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  setIsDragging(false);
+                }}
+                onDrop={handleDrop}
+                style={{
+                  border: `2px dashed ${isDragging ? ACCENT : "#d8d2cb"}`,
+                  borderRadius: 14,
+                  background: isDragging ? "#fff7ed" : "#faf9f7",
+                  padding: "22px 16px",
+                  marginBottom: 12,
+                  textAlign: "center",
+                  transition: "border-color .15s, background .15s",
+                }}
+              >
+                <Upload
+                  size={28}
+                  color={isDragging ? ACCENT : MUTED}
+                  aria-hidden="true"
+                />
+                <p
+                  style={{ ...typo("0.82rem", INK, 650), margin: "8px 0 3px" }}
+                >
+                  Drop a QR image here
+                </p>
+                <p
+                  style={{ ...typo("0.7rem", MUTED, 400), margin: "0 0 12px" }}
+                >
+                  or select one from your device
+                </p>
+                <input
+                  ref={fileInputRef}
+                  key={configuration.updatedAt || "no-payment-qr"}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                  disabled={busy}
+                  onChange={(event) =>
+                    chooseFile(event.currentTarget.files?.[0])
+                  }
+                  style={{ display: "none" }}
+                  aria-label="Choose GCash QR image"
+                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    ...accentButton(busy),
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                  }}
+                >
+                  <Upload size={15} aria-hidden="true" />
+                  {configuration.configured
+                    ? "Choose Replacement Image"
+                    : "Choose Image"}
                 </button>
+                {selectedFile && (
+                  <p
+                    style={{
+                      ...typo("0.7rem", SUCCESS, 600),
+                      margin: "11px 0 0",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    Selected: {selectedFile.name}
+                  </p>
+                )}
+              </div>
+              <p
+                style={{
+                  ...typo("0.72rem", MUTED, 400),
+                  lineHeight: 1.6,
+                  margin: "0 0 14px",
+                }}
+              >
+                PNG, JPG, or WebP. Maximum 5 MB. The server verifies the actual
+                file content.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => void upload()}
+                  disabled={!selectedFile || busy}
+                  style={accentButton(!selectedFile || busy)}
+                >
+                  {busy
+                    ? "Uploading..."
+                    : configuration.configured
+                      ? "Save Replacement"
+                      : "Upload QR"}
+                </button>
+                {selectedFile && !busy && (
+                  <button
+                    type="button"
+                    onClick={() => chooseFile()}
+                    style={secondaryButton()}
+                  >
+                    Clear Selection
+                  </button>
+                )}
+                {configuration.configured && (
+                  <button
+                    type="button"
+                    onClick={() => void remove()}
+                    disabled={busy}
+                    style={{
+                      ...accentButton(),
+                      background: "#fff",
+                      color: ERROR,
+                      border: `1px solid ${ERROR}`,
+                    }}
+                  >
+                    Remove QR image
+                  </button>
+                )}
+              </div>
+              {error && (
+                <p style={{ ...typo("0.75rem", ERROR, 500), marginTop: 12 }}>
+                  {error}
+                </p>
               )}
-              {configuration.configured && (
-                <button type="button" onClick={() => void remove()} disabled={busy} style={{ ...accentButton(), background: "#fff", color: ERROR, border: `1px solid ${ERROR}` }}>
-                  Remove QR image
-                </button>
+              {notice && (
+                <p style={{ ...typo("0.75rem", SUCCESS, 500), marginTop: 12 }}>
+                  {notice}
+                </p>
               )}
             </div>
-            {error && <p style={{ ...typo("0.75rem", ERROR, 500), marginTop: 12 }}>{error}</p>}
-            {notice && <p style={{ ...typo("0.75rem", SUCCESS, 500), marginTop: 12 }}>{notice}</p>}
           </div>
-        </div>
         </div>
       </Section>
       <DeliveryPlatformLinksSection />
@@ -896,10 +1319,18 @@ export function InventoryTab(p: TabProps) {
   return (
     <Section>
       <FR label="Low stock threshold">
-        <SI {...bindText(p, "defaultLowStockThreshold")} type="number" placeholder="e.g. 10" />
+        <SI
+          {...bindText(p, "defaultLowStockThreshold")}
+          type="number"
+          placeholder="e.g. 10"
+        />
       </FR>
       <FR label="Critical threshold" last>
-        <SI {...bindText(p, "defaultCriticalStockThreshold")} type="number" placeholder="e.g. 5" />
+        <SI
+          {...bindText(p, "defaultCriticalStockThreshold")}
+          type="number"
+          placeholder="e.g. 5"
+        />
       </FR>
     </Section>
   );
@@ -909,11 +1340,20 @@ function ProfileTab() {
   return (
     <Section>
       <FR label="Signed-in account" last>
-        <a href="/my-account" style={{ ...accentButton(), display: "inline-block", textDecoration: "none" }}>
+        <a
+          href="/my-account"
+          style={{
+            ...accentButton(),
+            display: "inline-block",
+            textDecoration: "none",
+          }}
+        >
           Open My Profile
         </a>
       </FR>
-      <Hint>Update your own display name and password on the secure profile page.</Hint>
+      <Hint>
+        Update your own display name and password on the secure profile page.
+      </Hint>
     </Section>
   );
 }
@@ -941,15 +1381,21 @@ interface InventoryUnitSetting {
 }
 
 function CategoriesUnitsTab() {
-  const [menuCategories, setMenuCategories] = useState<MenuCategorySetting[]>([]);
+  const [menuCategories, setMenuCategories] = useState<MenuCategorySetting[]>(
+    [],
+  );
   const [categories, setCategories] = useState<InventoryCategorySetting[]>([]);
   const [units, setUnits] = useState<InventoryUnitSetting[]>([]);
   const [menuCategoryName, setMenuCategoryName] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [unitName, setUnitName] = useState("");
   const [unitAbbreviation, setUnitAbbreviation] = useState("");
-  const [menuCategoryDrafts, setMenuCategoryDrafts] = useState<Record<number, string>>({});
-  const [categoryDrafts, setCategoryDrafts] = useState<Record<number, string>>({});
+  const [menuCategoryDrafts, setMenuCategoryDrafts] = useState<
+    Record<number, string>
+  >({});
+  const [categoryDrafts, setCategoryDrafts] = useState<Record<number, string>>(
+    {},
+  );
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -958,24 +1404,48 @@ function CategoriesUnitsTab() {
     setLoading(true);
     setError(null);
     try {
-      const [nextMenuCategories, nextCategories, nextUnits] = await Promise.all([
-        api.get<MenuCategorySetting[]>("/settings/menu-categories?activeOnly=0"),
-        api.get<InventoryCategorySetting[]>("/settings/inventory-categories"),
-        api.get<InventoryUnitSetting[]>("/settings/inventory-units"),
-      ]);
+      const [nextMenuCategories, nextCategories, nextUnits] = await Promise.all(
+        [
+          api.get<MenuCategorySetting[]>(
+            "/settings/menu-categories?activeOnly=0",
+          ),
+          api.get<InventoryCategorySetting[]>("/settings/inventory-categories"),
+          api.get<InventoryUnitSetting[]>("/settings/inventory-units"),
+        ],
+      );
       setMenuCategories(nextMenuCategories);
       setCategories(nextCategories);
       setUnits(nextUnits);
-      setMenuCategoryDrafts(Object.fromEntries(nextMenuCategories.map((category) => [category.category_id, category.name])));
-      setCategoryDrafts(Object.fromEntries(nextCategories.map((category) => [category.category_id, category.name])));
+      setMenuCategoryDrafts(
+        Object.fromEntries(
+          nextMenuCategories.map((category) => [
+            category.category_id,
+            category.name,
+          ]),
+        ),
+      );
+      setCategoryDrafts(
+        Object.fromEntries(
+          nextCategories.map((category) => [
+            category.category_id,
+            category.name,
+          ]),
+        ),
+      );
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load categories and units.");
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Failed to load categories and units.",
+      );
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const createMenuCategory = async () => {
     const name = menuCategoryName.trim();
@@ -983,15 +1453,30 @@ function CategoriesUnitsTab() {
     setBusy(true);
     setError(null);
     try {
-      const created = await api.post<MenuCategorySetting>("/settings/menu-categories", {
-        name,
-        display_order: menuCategories.length,
-      });
-      setMenuCategories((current) => [...current, created].sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name)));
-      setMenuCategoryDrafts((current) => ({ ...current, [created.category_id]: created.name }));
+      const created = await api.post<MenuCategorySetting>(
+        "/settings/menu-categories",
+        {
+          name,
+          display_order: menuCategories.length,
+        },
+      );
+      setMenuCategories((current) =>
+        [...current, created].sort(
+          (a, b) =>
+            a.display_order - b.display_order || a.name.localeCompare(b.name),
+        ),
+      );
+      setMenuCategoryDrafts((current) => ({
+        ...current,
+        [created.category_id]: created.name,
+      }));
       setMenuCategoryName("");
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Failed to add menu category.");
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Failed to add menu category.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1003,15 +1488,27 @@ function CategoriesUnitsTab() {
     setBusy(true);
     setError(null);
     try {
-      const created = await api.post<InventoryCategorySetting>("/settings/inventory-categories", {
-        name,
-        date_tracking_type: "none",
-      });
-      setCategories((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setCategoryDrafts((current) => ({ ...current, [created.category_id]: created.name }));
+      const created = await api.post<InventoryCategorySetting>(
+        "/settings/inventory-categories",
+        {
+          name,
+          date_tracking_type: "none",
+        },
+      );
+      setCategories((current) =>
+        [...current, created].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setCategoryDrafts((current) => ({
+        ...current,
+        [created.category_id]: created.name,
+      }));
       setCategoryName("");
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Failed to add category.");
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Failed to add category.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1027,10 +1524,21 @@ function CategoriesUnitsTab() {
         `/settings/menu-categories/${category.category_id}`,
         { name },
       );
-      setMenuCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
-      setMenuCategoryDrafts((current) => ({ ...current, [updated.category_id]: updated.name }));
+      setMenuCategories((current) =>
+        current.map((item) =>
+          item.category_id === updated.category_id ? updated : item,
+        ),
+      );
+      setMenuCategoryDrafts((current) => ({
+        ...current,
+        [updated.category_id]: updated.name,
+      }));
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Failed to rename menu category.");
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Failed to rename menu category.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1046,10 +1554,21 @@ function CategoriesUnitsTab() {
         `/settings/inventory-categories/${category.category_id}`,
         { name },
       );
-      setCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
-      setCategoryDrafts((current) => ({ ...current, [updated.category_id]: updated.name }));
+      setCategories((current) =>
+        current.map((item) =>
+          item.category_id === updated.category_id ? updated : item,
+        ),
+      );
+      setCategoryDrafts((current) => ({
+        ...current,
+        [updated.category_id]: updated.name,
+      }));
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Failed to rename inventory category.");
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Failed to rename inventory category.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1064,37 +1583,69 @@ function CategoriesUnitsTab() {
         `/settings/menu-categories/${category.category_id}`,
         { is_active: !category.is_active },
       );
-      setMenuCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+      setMenuCategories((current) =>
+        current.map((item) =>
+          item.category_id === updated.category_id ? updated : item,
+        ),
+      );
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Failed to update menu category.");
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Failed to update menu category.",
+      );
     } finally {
       setBusy(false);
     }
   };
 
   const deleteMenuCategory = async (category: MenuCategorySetting) => {
-    if (busy || !window.confirm(`Permanently delete "${category.name}"? This cannot be undone.`)) return;
+    if (
+      busy ||
+      !window.confirm(
+        `Permanently delete "${category.name}"? This cannot be undone.`,
+      )
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
       await api.delete(`/settings/menu-categories/${category.category_id}`);
       await load();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete menu category.");
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Failed to delete menu category.",
+      );
     } finally {
       setBusy(false);
     }
   };
 
-  const deleteInventoryCategory = async (category: InventoryCategorySetting) => {
-    if (busy || !window.confirm(`Permanently delete "${category.name}"? This cannot be undone.`)) return;
+  const deleteInventoryCategory = async (
+    category: InventoryCategorySetting,
+  ) => {
+    if (
+      busy ||
+      !window.confirm(
+        `Permanently delete "${category.name}"? This cannot be undone.`,
+      )
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
-      await api.delete(`/settings/inventory-categories/${category.category_id}`);
+      await api.delete(
+        `/settings/inventory-categories/${category.category_id}`,
+      );
       await load();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete inventory category.");
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Failed to delete inventory category.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1106,15 +1657,24 @@ function CategoriesUnitsTab() {
     setBusy(true);
     setError(null);
     try {
-      const created = await api.post<InventoryUnitSetting>("/settings/inventory-units", {
-        name,
-        abbreviation: unitAbbreviation.trim() || null,
-      });
-      setUnits((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      const created = await api.post<InventoryUnitSetting>(
+        "/settings/inventory-units",
+        {
+          name,
+          abbreviation: unitAbbreviation.trim() || null,
+        },
+      );
+      setUnits((current) =>
+        [...current, created].sort((a, b) => a.name.localeCompare(b.name)),
+      );
       setUnitName("");
       setUnitAbbreviation("");
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Failed to add unit.");
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Failed to add unit.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1129,9 +1689,17 @@ function CategoriesUnitsTab() {
         `/settings/inventory-categories/${category.category_id}`,
         { is_active: !category.is_active },
       );
-      setCategories((current) => current.map((item) => item.category_id === updated.category_id ? updated : item));
+      setCategories((current) =>
+        current.map((item) =>
+          item.category_id === updated.category_id ? updated : item,
+        ),
+      );
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Failed to update category.");
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Failed to update category.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1145,9 +1713,17 @@ function CategoriesUnitsTab() {
         `/settings/inventory-units/${unit.unit_id}`,
         { is_active: !unit.is_active },
       );
-      setUnits((current) => current.map((item) => item.unit_id === updated.unit_id ? updated : item));
+      setUnits((current) =>
+        current.map((item) =>
+          item.unit_id === updated.unit_id ? updated : item,
+        ),
+      );
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Failed to update unit.");
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Failed to update unit.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1156,38 +1732,110 @@ function CategoriesUnitsTab() {
   if (loading) return <SkeletonSectionCard theme="admin" />;
 
   const rowStyle: CSSProperties = {
-    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
-    padding: "10px 0", borderBottom: "1px solid #f0ede8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
+    padding: "10px 0",
+    borderBottom: "1px solid #f0ede8",
   };
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {error && <ErrorPanel message={error} onRetry={load} />}
       <Section>
-        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 4 }}>Menu Categories</h3>
-        <Hint>Used by Menu Management, Cashier POS, and the customer menu.</Hint>
+        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 4 }}>
+          Menu Categories
+        </h3>
+        <Hint>
+          Used by Menu Management, Cashier POS, and the customer menu.
+        </Hint>
         <div style={{ display: "flex", gap: 8, margin: "10px 0" }}>
-          <SI value={menuCategoryName} onChange={setMenuCategoryName} placeholder="Menu category name" />
-          <button type="button" onClick={() => void createMenuCategory()} disabled={busy || !menuCategoryName.trim()} style={accentButton(busy || !menuCategoryName.trim())}>Add</button>
+          <SI
+            value={menuCategoryName}
+            onChange={setMenuCategoryName}
+            placeholder="Menu category name"
+          />
+          <button
+            type="button"
+            onClick={() => void createMenuCategory()}
+            disabled={busy || !menuCategoryName.trim()}
+            style={accentButton(busy || !menuCategoryName.trim())}
+          >
+            Add
+          </button>
         </div>
         {menuCategories.map((category) => (
           <div key={category.category_id} style={rowStyle}>
             <SI
-              value={menuCategoryDrafts[category.category_id] ?? category.name}
-              onChange={(value) => setMenuCategoryDrafts((current) => ({ ...current, [category.category_id]: value }))}
-              ariaLabel={`Rename ${category.name}`}
+              value={
+                category.system_key === "chicken_flavors"
+                  ? "Sauces"
+                  : (menuCategoryDrafts[category.category_id] ?? category.name)
+              }
+              onChange={(value) =>
+                setMenuCategoryDrafts((current) => ({
+                  ...current,
+                  [category.category_id]: value,
+                }))
+              }
+              ariaLabel={`Rename ${category.system_key === "chicken_flavors" ? "Sauces" : category.name}`}
               disabled={category.system_key === "chicken_flavors"}
             />
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
               {category.system_key === "chicken_flavors" ? (
-                <span style={{ color: ACCENT, background: "#fff3ed", borderRadius: 999, padding: "7px 10px", fontSize: 12, fontWeight: 700 }}>Built-in · Active</span>
+                <span
+                  style={{
+                    color: ACCENT,
+                    background: "#fff3ed",
+                    borderRadius: 999,
+                    padding: "7px 10px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  Built-in · Active
+                </span>
               ) : (
                 <>
-                  <button type="button" disabled={busy || !(menuCategoryDrafts[category.category_id] ?? "").trim() || (menuCategoryDrafts[category.category_id] ?? category.name).trim() === category.name} onClick={() => void renameMenuCategory(category)} style={secondaryButton()}>Save</button>
-                  <button type="button" disabled={busy} onClick={() => void toggleMenuCategory(category)} style={secondaryButton()}>
+                  <button
+                    type="button"
+                    disabled={
+                      busy ||
+                      !(
+                        menuCategoryDrafts[category.category_id] ?? ""
+                      ).trim() ||
+                      (
+                        menuCategoryDrafts[category.category_id] ??
+                        category.name
+                      ).trim() === category.name
+                    }
+                    onClick={() => void renameMenuCategory(category)}
+                    style={secondaryButton()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void toggleMenuCategory(category)}
+                    style={secondaryButton()}
+                  >
                     {category.is_active ? "Active" : "Inactive"}
                   </button>
-                  <button type="button" disabled={busy} onClick={() => void deleteMenuCategory(category)} style={{ ...secondaryButton(), color: ERROR, borderColor: "#f5c2c0" }}>Delete</button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void deleteMenuCategory(category)}
+                    style={{
+                      ...secondaryButton(),
+                      color: ERROR,
+                      borderColor: "#f5c2c0",
+                    }}
+                  >
+                    Delete
+                  </button>
                 </>
               )}
             </div>
@@ -1195,39 +1843,114 @@ function CategoriesUnitsTab() {
         ))}
       </Section>
       <Section>
-        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>Inventory Categories</h3>
+        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>
+          Inventory Categories
+        </h3>
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          <SI value={categoryName} onChange={setCategoryName} placeholder="Category name" />
-          <button type="button" onClick={() => void createCategory()} disabled={busy || !categoryName.trim()} style={accentButton(busy || !categoryName.trim())}>Add</button>
+          <SI
+            value={categoryName}
+            onChange={setCategoryName}
+            placeholder="Category name"
+          />
+          <button
+            type="button"
+            onClick={() => void createCategory()}
+            disabled={busy || !categoryName.trim()}
+            style={accentButton(busy || !categoryName.trim())}
+          >
+            Add
+          </button>
         </div>
         {categories.map((category) => (
           <div key={category.category_id} style={rowStyle}>
             <SI
               value={categoryDrafts[category.category_id] ?? category.name}
-              onChange={(value) => setCategoryDrafts((current) => ({ ...current, [category.category_id]: value }))}
+              onChange={(value) =>
+                setCategoryDrafts((current) => ({
+                  ...current,
+                  [category.category_id]: value,
+                }))
+              }
               ariaLabel={`Rename ${category.name}`}
             />
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-              <button type="button" disabled={busy || !(categoryDrafts[category.category_id] ?? "").trim() || (categoryDrafts[category.category_id] ?? category.name).trim() === category.name} onClick={() => void renameCategory(category)} style={secondaryButton()}>Save</button>
-              <button type="button" disabled={busy} onClick={() => void toggleCategory(category)} style={secondaryButton()}>
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  !(categoryDrafts[category.category_id] ?? "").trim() ||
+                  (
+                    categoryDrafts[category.category_id] ?? category.name
+                  ).trim() === category.name
+                }
+                onClick={() => void renameCategory(category)}
+                style={secondaryButton()}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void toggleCategory(category)}
+                style={secondaryButton()}
+              >
                 {category.is_active ? "Active" : "Inactive"}
               </button>
-              <button type="button" disabled={busy} onClick={() => void deleteInventoryCategory(category)} style={{ ...secondaryButton(), color: ERROR, borderColor: "#f5c2c0" }}>Delete</button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void deleteInventoryCategory(category)}
+                style={{
+                  ...secondaryButton(),
+                  color: ERROR,
+                  borderColor: "#f5c2c0",
+                }}
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}
       </Section>
       <Section>
-        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>Inventory Units</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(90px, .4fr) auto", gap: 8, marginBottom: 10 }}>
+        <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>
+          Inventory Units
+        </h3>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(90px, .4fr) auto",
+            gap: 8,
+            marginBottom: 10,
+          }}
+        >
           <SI value={unitName} onChange={setUnitName} placeholder="Unit name" />
-          <SI value={unitAbbreviation} onChange={setUnitAbbreviation} placeholder="Abbrev." />
-          <button type="button" onClick={() => void createUnit()} disabled={busy || !unitName.trim()} style={accentButton(busy || !unitName.trim())}>Add</button>
+          <SI
+            value={unitAbbreviation}
+            onChange={setUnitAbbreviation}
+            placeholder="Abbrev."
+          />
+          <button
+            type="button"
+            onClick={() => void createUnit()}
+            disabled={busy || !unitName.trim()}
+            style={accentButton(busy || !unitName.trim())}
+          >
+            Add
+          </button>
         </div>
         {units.map((unit) => (
           <div key={unit.unit_id} style={rowStyle}>
-            <span style={typo("0.8rem", INK, 500)}>{unit.name}{unit.abbreviation ? ` (${unit.abbreviation})` : ""}</span>
-            <button type="button" disabled={busy} onClick={() => void toggleUnit(unit)} style={secondaryButton()}>
+            <span style={typo("0.8rem", INK, 500)}>
+              {unit.name}
+              {unit.abbreviation ? ` (${unit.abbreviation})` : ""}
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void toggleUnit(unit)}
+              style={secondaryButton()}
+            >
               {unit.is_active ? "Active" : "Inactive"}
             </button>
           </div>
@@ -1247,12 +1970,20 @@ export function OrderingTab(p: TabProps) {
           {...bindFlag(p, "acceptOnlineOrders")}
         />
         <FR label="Minimum order (₱)" last>
-          <SI {...bindText(p, "minimumOrderAmount")} type="number" placeholder="e.g. 150" />
+          <SI
+            {...bindText(p, "minimumOrderAmount")}
+            type="number"
+            placeholder="e.g. 150"
+          />
         </FR>
       </Section>
       <Section>
         <FR label="Store status" last>
-          <SS value={p.s.storeStatusMode} onChange={(v) => p.set("storeStatusMode", v)} options={STORE_MODE_OPTIONS} />
+          <SS
+            value={p.s.storeStatusMode}
+            onChange={(v) => p.set("storeStatusMode", v)}
+            options={STORE_MODE_OPTIONS}
+          />
         </FR>
       </Section>
     </>
@@ -1262,9 +1993,15 @@ export function OrderingTab(p: TabProps) {
 export function BillingTab(p: TabProps) {
   return (
     <Section>
-      <FR label="VAT rate (%)"><SI {...bindText(p, "taxRate")} type="number" placeholder="e.g. 12" /></FR>
+      <FR label="VAT rate (%)">
+        <SI {...bindText(p, "taxRate")} type="number" placeholder="e.g. 12" />
+      </FR>
       <FR label="Service charge (%)" last>
-        <SI {...bindText(p, "serviceCharge")} type="number" placeholder="e.g. 10" />
+        <SI
+          {...bindText(p, "serviceCharge")}
+          type="number"
+          placeholder="e.g. 10"
+        />
       </FR>
     </Section>
   );
@@ -1274,7 +2011,10 @@ export function NotifTab(p: TabProps) {
   return (
     <>
       <Section>
-        <TR label="Toast notifications" {...bindFlag(p, "enableToastNotifications")} />
+        <TR
+          label="Toast notifications"
+          {...bindFlag(p, "enableToastNotifications")}
+        />
         <TR
           label="New order alerts"
           desc="Sound and visual alerts for incoming orders."
@@ -1289,10 +2029,17 @@ export function NotifTab(p: TabProps) {
       </Section>
       <Section>
         <FR label="Position">
-          <SS value={p.s.toastPosition} onChange={(v) => p.set("toastPosition", v)} options={TOAST_POSITION_OPTIONS} />
+          <SS
+            value={p.s.toastPosition}
+            onChange={(v) => p.set("toastPosition", v)}
+            options={TOAST_POSITION_OPTIONS}
+          />
         </FR>
         <FR label="Duration" last>
-          <SS {...bindText(p, "toastDuration")} options={TOAST_DURATION_OPTIONS} />
+          <SS
+            {...bindText(p, "toastDuration")}
+            options={TOAST_DURATION_OPTIONS}
+          />
         </FR>
       </Section>
     </>
@@ -1303,7 +2050,11 @@ export function SecurityTab(p: TabProps) {
   return (
     <Section>
       <FR label="Session timeout (min)" last>
-        <SI {...bindText(p, "sessionTimeout")} type="number" placeholder="e.g. 30" />
+        <SI
+          {...bindText(p, "sessionTimeout")}
+          type="number"
+          placeholder="e.g. 30"
+        />
       </FR>
     </Section>
   );
@@ -1333,12 +2084,16 @@ function usePermissionMatrix() {
     setMatrix(null);
     setError(null);
     setNotice(null);
-    api.get<Record<string, unknown>>("/settings/permissions")
+    api
+      .get<Record<string, unknown>>("/settings/permissions")
       .then((data) => {
-        if (!data || typeof data !== "object") throw new Error("Invalid permissions response");
+        if (!data || typeof data !== "object")
+          throw new Error("Invalid permissions response");
         // The API may return { permissions: {...} } or the map itself.
         const raw = "permissions" in data ? data.permissions : data;
-        const map = normalizePermissionsMap((raw as Partial<PermissionsMap> | null | undefined) ?? null);
+        const map = normalizePermissionsMap(
+          (raw as Partial<PermissionsMap> | null | undefined) ?? null,
+        );
         setMatrix(map as unknown as PermissionMatrix);
       })
       .catch(() => setError("Failed to load permissions. Please try again."));
@@ -1350,13 +2105,17 @@ function usePermissionMatrix() {
 
   const toggle = (role: string, page: string) => {
     if (role === "administrator") return;
-    setMatrix((current) => current ? {
-      ...current,
-      [role]: {
-        ...current[role],
-        [page]: current[role]?.[page] !== true,
-      },
-    } : current);
+    setMatrix((current) =>
+      current
+        ? {
+            ...current,
+            [role]: {
+              ...current[role],
+              [page]: current[role]?.[page] !== true,
+            },
+          }
+        : current,
+    );
     setNotice(null);
   };
 
@@ -1366,16 +2125,25 @@ function usePermissionMatrix() {
     setError(null);
     setNotice(null);
     try {
-      const response = await api.put<Record<string, unknown>>("/settings/permissions", {
-        permissions: matrix,
-      });
+      const response = await api.put<Record<string, unknown>>(
+        "/settings/permissions",
+        {
+          permissions: matrix,
+        },
+      );
       const raw = "permissions" in response ? response.permissions : response;
-      setMatrix(normalizePermissionsMap(
-        (raw as Partial<PermissionsMap> | null | undefined) ?? null,
-      ) as unknown as PermissionMatrix);
+      setMatrix(
+        normalizePermissionsMap(
+          (raw as Partial<PermissionsMap> | null | undefined) ?? null,
+        ) as unknown as PermissionMatrix,
+      );
       setNotice("Role permissions saved.");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to save permissions.");
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to save permissions.",
+      );
     } finally {
       setSaving(false);
     }
@@ -1385,75 +2153,151 @@ function usePermissionMatrix() {
 }
 
 export function RolesTab() {
-  const { matrix, error, saving, notice, reload, toggle, save } = usePermissionMatrix();
+  const { matrix, error, saving, notice, reload, toggle, save } =
+    usePermissionMatrix();
   const isMobile = useViewport() === "mobile";
 
   if (error) return <ErrorPanel message={error} onRetry={reload} />;
   if (!matrix) return <div style={{ ...S.panel, height: 200, opacity: 0.6 }} />;
 
   // Every page any role has a setting for, in the order the API returns them.
-  const pages = Array.from(new Set(ROLE_COLUMNS.flatMap((role) => Object.keys(matrix[role] ?? {}))));
+  const pages = Array.from(
+    new Set(ROLE_COLUMNS.flatMap((role) => Object.keys(matrix[role] ?? {}))),
+  );
 
   if (!pages.length) {
-    return <p style={{ ...typo("0.78rem", MUTED, 400), padding: "24px 0" }}>No permissions have been configured yet.</p>;
+    return (
+      <p style={{ ...typo("0.78rem", MUTED, 400), padding: "24px 0" }}>
+        No permissions have been configured yet.
+      </p>
+    );
   }
 
   const cellX = isMobile ? 8 : 14;
 
   return (
     <>
-    <Section>
-      {/* The table scrolls sideways inside its own box so the page never does. */}
-      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontFamily: FONT, fontSize: "0.78rem" }}>
-          <thead>
-            <tr style={{ borderBottom: "1px solid #f0ede8" }}>
-              <th style={{ padding: `11px ${isMobile ? 12 : 20}px 11px 0`, textAlign: "left", color: MUTED, fontWeight: 500 }}>Page</th>
-              {ROLE_COLUMNS.map((role) => (
-                <th key={role} style={{ padding: `11px ${cellX}px`, textAlign: "center", color: "#5a5652", fontWeight: 600 }}>
-                  {formatRoleLabel(role)}
+      <Section>
+        {/* The table scrolls sideways inside its own box so the page never does. */}
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table
+            style={{
+              width: "100%",
+              minWidth: 420,
+              borderCollapse: "collapse",
+              fontFamily: FONT,
+              fontSize: "0.78rem",
+            }}
+          >
+            <thead>
+              <tr style={{ borderBottom: "1px solid #f0ede8" }}>
+                <th
+                  style={{
+                    padding: `11px ${isMobile ? 12 : 20}px 11px 0`,
+                    textAlign: "left",
+                    color: MUTED,
+                    fontWeight: 500,
+                  }}
+                >
+                  Page
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {pages.map((page, i) => (
-              <tr key={page} style={{ borderBottom: i < pages.length - 1 ? "1px solid #f0ede8" : "none" }}>
-                <td style={{ padding: `10px ${isMobile ? 12 : 20}px 10px 0`, color: "#484340", fontWeight: 500 }}>{formatPermissionLabel(page)}</td>
-                {ROLE_COLUMNS.map((role) => {
-                  const allowed = matrix[role]?.[page] === true;
-                  return (
-                    <td key={role} style={{ padding: `10px ${cellX}px`, textAlign: "center" }}>
-                      <button
-                        type="button"
-                        onClick={() => toggle(role, page)}
-                        disabled={role === "administrator" || saving}
-                        style={{
-                          display: "inline-flex", alignItems: "center", justifyContent: "center",
-                          width: 20, height: 20, borderRadius: 5, fontSize: "0.68rem", fontWeight: 700,
-                          background: allowed ? "rgba(224,90,30,.1)" : "#f5f4f2",
-                          color: allowed ? ACCENT : "#c8c4be",
-                          border: "none", cursor: role === "administrator" ? "not-allowed" : "pointer",
-                        }}
-                        aria-label={allowed ? "Allowed" : "Not allowed"}
-                      >
-                        {allowed ? "✓" : "—"}
-                      </button>
-                    </td>
-                  );
-                })}
+                {ROLE_COLUMNS.map((role) => (
+                  <th
+                    key={role}
+                    style={{
+                      padding: `11px ${cellX}px`,
+                      textAlign: "center",
+                      color: "#5a5652",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {formatRoleLabel(role)}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <Hint>Administrator access is fixed. Select a Cashier or Inventory Manager cell, then save.</Hint>
-      {notice && <p style={{ ...typo("0.76rem", SUCCESS, 500), marginTop: 12 }}>{notice}</p>}
-      <button type="button" onClick={() => void save()} disabled={saving} style={{ ...accentButton(saving), marginTop: 14 }}>
-        {saving ? "Saving..." : "Save Role Permissions"}
-      </button>
-    </Section>
-    <DiscountPasswordSection />
+            </thead>
+            <tbody>
+              {pages.map((page, i) => (
+                <tr
+                  key={page}
+                  style={{
+                    borderBottom:
+                      i < pages.length - 1 ? "1px solid #f0ede8" : "none",
+                  }}
+                >
+                  <td
+                    style={{
+                      padding: `10px ${isMobile ? 12 : 20}px 10px 0`,
+                      color: "#484340",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {formatPermissionLabel(page)}
+                  </td>
+                  {ROLE_COLUMNS.map((role) => {
+                    const allowed = matrix[role]?.[page] === true;
+                    return (
+                      <td
+                        key={role}
+                        style={{
+                          padding: `10px ${cellX}px`,
+                          textAlign: "center",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggle(role, page)}
+                          disabled={role === "administrator" || saving}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: 20,
+                            height: 20,
+                            borderRadius: 5,
+                            fontSize: "0.68rem",
+                            fontWeight: 700,
+                            background: allowed
+                              ? "rgba(224,90,30,.1)"
+                              : "#f5f4f2",
+                            color: allowed ? ACCENT : "#c8c4be",
+                            border: "none",
+                            cursor:
+                              role === "administrator"
+                                ? "not-allowed"
+                                : "pointer",
+                          }}
+                          aria-label={allowed ? "Allowed" : "Not allowed"}
+                        >
+                          {allowed ? "✓" : "—"}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Hint>
+          Administrator access is fixed. Select a Cashier or Inventory Manager
+          cell, then save.
+        </Hint>
+        {notice && (
+          <p style={{ ...typo("0.76rem", SUCCESS, 500), marginTop: 12 }}>
+            {notice}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={saving}
+          style={{ ...accentButton(saving), marginTop: 14 }}
+        >
+          {saving ? "Saving..." : "Save Role Permissions"}
+        </button>
+      </Section>
+      <DiscountPasswordSection />
     </>
   );
 }
@@ -1463,28 +2307,40 @@ function DiscountPasswordSection() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [message, setMessage] = useState<{
+    text: string;
+    error: boolean;
+  } | null>(null);
 
   const save = async () => {
     setMessage(null);
     if (newPassword !== confirmPassword) {
-      setMessage({ text: "New password confirmation does not match.", error: true });
+      setMessage({
+        text: "New password confirmation does not match.",
+        error: true,
+      });
       return;
     }
     setSaving(true);
     try {
-      const response = await api.put<{ message: string }>("/settings/discount-password", {
-        currentAdminPassword,
-        newPassword,
-        confirmPassword,
-      });
+      const response = await api.put<{ message: string }>(
+        "/settings/discount-password",
+        {
+          currentAdminPassword,
+          newPassword,
+          confirmPassword,
+        },
+      );
       setCurrentAdminPassword("");
       setNewPassword("");
       setConfirmPassword("");
       setMessage({ text: response.message, error: false });
     } catch (error) {
       setMessage({
-        text: error instanceof Error ? error.message : "Failed to update discount password.",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Failed to update discount password.",
         error: true,
       });
     } finally {
@@ -1494,25 +2350,57 @@ function DiscountPasswordSection() {
 
   return (
     <Section>
-      <h3 style={{ ...typo("0.92rem", INK, 650), marginBottom: 4 }}>Discount Authorization Password</h3>
-      <Hint>Cashiers enter this password when applying a protected discount. It is stored only as a secure hash.</Hint>
+      <h3 style={{ ...typo("0.92rem", INK, 650), marginBottom: 4 }}>
+        Discount Authorization Password
+      </h3>
+      <Hint>
+        Cashiers enter this password when applying a protected discount. It is
+        stored only as a secure hash.
+      </Hint>
       <FR label="Current admin password">
-        <SI value={currentAdminPassword} onChange={setCurrentAdminPassword} type="password" />
+        <SI
+          value={currentAdminPassword}
+          onChange={setCurrentAdminPassword}
+          type="password"
+        />
       </FR>
       <FR label="New discount password">
-        <SI value={newPassword} onChange={setNewPassword} type="password" placeholder="8 to 72 characters" />
+        <SI
+          value={newPassword}
+          onChange={setNewPassword}
+          type="password"
+          placeholder="8 to 72 characters"
+        />
       </FR>
       <FR label="Confirm new password" last>
-        <SI value={confirmPassword} onChange={setConfirmPassword} type="password" />
+        <SI
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          type="password"
+        />
       </FR>
       {message && (
-        <p style={{ ...typo("0.76rem", message.error ? ERROR : SUCCESS, 500), marginTop: 8 }}>{message.text}</p>
+        <p
+          style={{
+            ...typo("0.76rem", message.error ? ERROR : SUCCESS, 500),
+            marginTop: 8,
+          }}
+        >
+          {message.text}
+        </p>
       )}
       <button
         type="button"
         onClick={() => void save()}
-        disabled={saving || !currentAdminPassword || !newPassword || !confirmPassword}
-        style={{ ...accentButton(saving || !currentAdminPassword || !newPassword || !confirmPassword), marginTop: 14 }}
+        disabled={
+          saving || !currentAdminPassword || !newPassword || !confirmPassword
+        }
+        style={{
+          ...accentButton(
+            saving || !currentAdminPassword || !newPassword || !confirmPassword,
+          ),
+          marginTop: 14,
+        }}
       >
         {saving ? "Updating..." : "Update Discount Password"}
       </button>
@@ -1537,7 +2425,10 @@ type SortKey = "newest" | "oldest" | "highest" | "lowest";
 
 const timeOf = (entry: FeedbackEntry) => new Date(entry.createdAt).getTime();
 
-const SORT_OPTIONS: Record<SortKey, { label: string; compare: (a: FeedbackEntry, b: FeedbackEntry) => number }> = {
+const SORT_OPTIONS: Record<
+  SortKey,
+  { label: string; compare: (a: FeedbackEntry, b: FeedbackEntry) => number }
+> = {
   newest: { label: "Newest", compare: (a, b) => timeOf(b) - timeOf(a) },
   oldest: { label: "Oldest", compare: (a, b) => timeOf(a) - timeOf(b) },
   highest: { label: "Highest", compare: (a, b) => b.rating - a.rating },
@@ -1551,14 +2442,27 @@ function StarDisplay({ rating }: { rating: number }) {
   return (
     <div style={{ display: "flex", gap: 2 }}>
       {[1, 2, 3, 4, 5].map((n) => (
-        <Star key={n} size={11} fill={n <= rating ? ACCENT : "none"} color={n <= rating ? ACCENT : "#d1cdc7"} />
+        <Star
+          key={n}
+          size={11}
+          fill={n <= rating ? ACCENT : "none"}
+          color={n <= rating ? ACCENT : "#d1cdc7"}
+        />
       ))}
     </div>
   );
 }
 
-export function FeedbackTab({ feedback, loading, error, onRetry }: {
-  feedback: FeedbackEntry[]; loading: boolean; error: string | null; onRetry: () => void;
+export function FeedbackTab({
+  feedback,
+  loading,
+  error,
+  onRetry,
+}: {
+  feedback: FeedbackEntry[];
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
 }) {
   const [sort, setSort] = useState<SortKey>("newest");
   const [rating, setRating] = useState(0);
@@ -1596,16 +2500,22 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
       {/* Rating filter and sorting. On phones the filter chips scroll sideways and the sort sits below. */}
       <div
         style={{
-          display: "flex", alignItems: isMobile ? "stretch" : "center",
-          flexDirection: isMobile ? "column" : "row", gap: isMobile ? 10 : 6, marginBottom: 10,
+          display: "flex",
+          alignItems: isMobile ? "stretch" : "center",
+          flexDirection: isMobile ? "column" : "row",
+          gap: isMobile ? 10 : 6,
+          marginBottom: 10,
           flexWrap: isMobile ? "nowrap" : "wrap",
         }}
       >
         <div
           style={{
-            display: "flex", alignItems: "center", gap: 6,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
             flexWrap: isMobile ? "nowrap" : "wrap",
-            overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 2 : 0,
+            overflowX: isMobile ? "auto" : "visible",
+            paddingBottom: isMobile ? 2 : 0,
           }}
         >
           {RATING_FILTERS.map((r) => (
@@ -1613,11 +2523,21 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
               key={r}
               onClick={() => setRating(r)}
               style={{
-                fontFamily: FONT, fontSize: "0.69rem", fontWeight: rating === r ? 600 : 400,
-                padding: isMobile ? "7px 14px" : "4px 10px", borderRadius: 99, border: "1px solid #e4e1dc",
-                background: rating === r ? ACCENT : "#fafaf9", color: rating === r ? "#fff" : "#7a7470",
-                cursor: "pointer", transition: "all .15s", flexShrink: 0,
-                boxShadow: rating === r ? "0 1px 4px rgba(224,90,30,.2)" : "0 1px 3px rgba(0,0,0,.06)",
+                fontFamily: FONT,
+                fontSize: "0.69rem",
+                fontWeight: rating === r ? 600 : 400,
+                padding: isMobile ? "7px 14px" : "4px 10px",
+                borderRadius: 99,
+                border: "1px solid #e4e1dc",
+                background: rating === r ? ACCENT : "#fafaf9",
+                color: rating === r ? "#fff" : "#7a7470",
+                cursor: "pointer",
+                transition: "all .15s",
+                flexShrink: 0,
+                boxShadow:
+                  rating === r
+                    ? "0 1px 4px rgba(224,90,30,.2)"
+                    : "0 1px 3px rgba(0,0,0,.06)",
               }}
             >
               {r === 0 ? "All" : `${r}★`}
@@ -1636,7 +2556,9 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
           }}
         >
           {(Object.keys(SORT_OPTIONS) as SortKey[]).map((key) => (
-            <option key={key} value={key}>{SORT_OPTIONS[key].label}</option>
+            <option key={key} value={key}>
+              {SORT_OPTIONS[key].label}
+            </option>
           ))}
         </select>
       </div>
@@ -1644,16 +2566,38 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
       {/* Reviews */}
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         {visible.map((entry) => (
-          <div key={entry.id} style={{ ...S.panel, padding: "12px 16px", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
+          <div
+            key={entry.id}
+            style={{
+              ...S.panel,
+              padding: "12px 16px",
+              boxShadow: "0 1px 4px rgba(0,0,0,.04)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+                marginBottom: 5,
+              }}
+            >
               <span style={typo("0.8rem", INK, 600)}>{entry.reviewerName}</span>
               <span style={typo("0.66rem", "#b0aaa3", 400)}>
-                {new Date(entry.createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })}
+                {new Date(entry.createdAt).toLocaleDateString("en-PH", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
               </span>
               <span
                 style={{
-                  ...typo("0.64rem", "#7a7470"), background: "#f5f2ee",
-                  border: "1px solid #ece6de", borderRadius: 99, padding: "2px 8px",
+                  ...typo("0.64rem", "#7a7470"),
+                  background: "#f5f2ee",
+                  border: "1px solid #ece6de",
+                  borderRadius: 99,
+                  padding: "2px 8px",
                 }}
               >
                 {entry.productName}
@@ -1661,12 +2605,27 @@ export function FeedbackTab({ feedback, loading, error, onRetry }: {
             </div>
             <StarDisplay rating={entry.rating} />
             {entry.message && (
-              <p style={{ ...typo("0.76rem", "#5a5652", 400), lineHeight: 1.7, margin: "6px 0 0", overflowWrap: "anywhere" }}>{entry.message}</p>
+              <p
+                style={{
+                  ...typo("0.76rem", "#5a5652", 400),
+                  lineHeight: 1.7,
+                  margin: "6px 0 0",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {entry.message}
+              </p>
             )}
           </div>
         ))}
         {!visible.length && (
-          <p style={{ ...typo("0.78rem", "#b0aaa3", 400), textAlign: "center", padding: "24px 0" }}>
+          <p
+            style={{
+              ...typo("0.78rem", "#b0aaa3", 400),
+              textAlign: "center",
+              padding: "24px 0",
+            }}
+          >
             No reviews match this filter.
           </p>
         )}
@@ -1698,7 +2657,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Admin",
-    items: [{ key: "roles", label: "Role Permissions" }],
+    items: [
+      { key: "roles", label: "Role Permissions" },
+      { key: "feedback", label: "Customer Feedback" },
+    ],
   },
   {
     label: "Inventory",
@@ -1711,17 +2673,47 @@ export const NAV_GROUPS: NavGroup[] = [
 
 // Page title and description shown above each tab.
 export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
-  profile:       { title: "My Profile",              desc: "Update your own account details and password." },
-  master_data:   { title: "Categories & Units",      desc: "Maintain the category and unit choices used by inventory forms." },
-  business:      { title: "Business Information",    desc: "Restaurant identity and operating hours." },
-  payment_methods: { title: "Payment Methods",       desc: "Configure the in-store GCash QR and customer delivery-platform links." },
-  ordering:      { title: "Online Ordering",         desc: "Accept online orders, set a minimum order, and control the store status." },
-  inventory:     { title: "Inventory Configuration", desc: "Low and critical stock thresholds." },
-  billing:       { title: "Tax & Charges",           desc: "VAT configuration and service charge rules." },
-  notifications: { title: "Notifications",           desc: "Alert channels and toast settings." },
-  roles:         { title: "Roles & Permissions",     desc: "Which pages each role can open, as saved in the system." },
-  security:      { title: "Security Settings",       desc: "Session timeout." },
-  feedback:      { title: "Customer Feedback",       desc: "Customer reviews and ratings from the menu page." },
+  profile: {
+    title: "My Profile",
+    desc: "Update your own account details and password.",
+  },
+  master_data: {
+    title: "Categories & Units",
+    desc: "Maintain the category and unit choices used by inventory forms.",
+  },
+  business: {
+    title: "Business Information",
+    desc: "Restaurant identity and operating hours.",
+  },
+  payment_methods: {
+    title: "Payment Methods",
+    desc: "Configure the in-store GCash QR and customer delivery-platform links.",
+  },
+  ordering: {
+    title: "Online Ordering",
+    desc: "Accept online orders, set a minimum order, and control the store status.",
+  },
+  inventory: {
+    title: "Inventory Configuration",
+    desc: "Low and critical stock thresholds.",
+  },
+  billing: {
+    title: "Tax & Charges",
+    desc: "VAT configuration and service charge rules.",
+  },
+  notifications: {
+    title: "Notifications",
+    desc: "Alert channels and toast settings.",
+  },
+  roles: {
+    title: "Roles & Permissions",
+    desc: "Which pages each role can open, as saved in the system.",
+  },
+  security: { title: "Security Settings", desc: "Session timeout." },
+  feedback: {
+    title: "Customer Feedback",
+    desc: "Customer reviews and ratings from the menu page.",
+  },
 };
 
 // Small count bubble shown next to "Customer Feedback".
@@ -1729,8 +2721,14 @@ function CountBadge({ count }: { count: number }) {
   return (
     <span
       style={{
-        fontSize: "0.62rem", fontWeight: 700, background: ACCENT, color: "#fff",
-        borderRadius: 99, padding: "2px 6px", minWidth: 17, textAlign: "center",
+        fontSize: "0.62rem",
+        fontWeight: 700,
+        background: ACCENT,
+        color: "#fff",
+        borderRadius: 99,
+        padding: "2px 6px",
+        minWidth: 17,
+        textAlign: "center",
       }}
     >
       {count > 99 ? "99+" : count}
@@ -1739,8 +2737,16 @@ function CountBadge({ count }: { count: number }) {
 }
 
 // One collapsible group of tabs in the settings menu (tablet and desktop).
-export function SidebarGroup({ group, active, feedbackCount, onSelect }: {
-  group: NavGroup; active: TabKey; feedbackCount: number; onSelect: (key: TabKey) => void;
+export function SidebarGroup({
+  group,
+  active,
+  feedbackCount,
+  onSelect,
+}: {
+  group: NavGroup;
+  active: TabKey;
+  feedbackCount: number;
+  onSelect: (key: TabKey) => void;
 }) {
   const [open, setOpen] = useState(true);
   const isTablet = useViewport() === "tablet";
@@ -1750,62 +2756,109 @@ export function SidebarGroup({ group, active, feedbackCount, onSelect }: {
       <button
         onClick={() => setOpen((prev) => !prev)}
         style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "8px 10px", background: "none", border: "none", cursor: "pointer",
-          fontFamily: FONT, fontSize: "0.62rem", fontWeight: 600, letterSpacing: ".09em",
-          textTransform: "uppercase", color: "#b0aaa3",
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "8px 10px",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: FONT,
+          fontSize: "0.62rem",
+          fontWeight: 600,
+          letterSpacing: ".09em",
+          textTransform: "uppercase",
+          color: "#b0aaa3",
         }}
       >
         {group.label}
-        {open ? <ChevronUp size={11} color="#c8c4be" /> : <ChevronDown size={11} color="#c8c4be" />}
+        {open ? (
+          <ChevronUp size={11} color="#c8c4be" />
+        ) : (
+          <ChevronDown size={11} color="#c8c4be" />
+        )}
       </button>
 
-      {open && group.items.map(({ key, label }) => {
-        const isActive = active === key;
-        return (
-          <button
-            key={key}
-            onClick={() => onSelect(key)}
-            style={{
-              width: "100%", display: "flex", alignItems: "center", gap: 10,
-              padding: isTablet ? "10px 12px" : "11px 14px", background: isActive ? "#f0eeec" : "none",
-              border: "none", borderRadius: 10, cursor: "pointer",
-              fontFamily: FONT, fontSize: isTablet ? "0.8rem" : "0.85rem", fontWeight: isActive ? 600 : 500,
-              color: isActive ? INK : "#5a5652",
-              textAlign: "left", transition: "background .12s, color .12s", marginBottom: 2,
-            }}
-          >
-            <span style={{ flex: 1 }}>{label}</span>
-            {key === "feedback" && feedbackCount > 0 && <CountBadge count={feedbackCount} />}
-          </button>
-        );
-      })}
+      {open &&
+        group.items.map(({ key, label }) => {
+          const isActive = active === key;
+          return (
+            <button
+              key={key}
+              onClick={() => onSelect(key)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: isTablet ? "10px 12px" : "11px 14px",
+                background: isActive ? "#f0eeec" : "none",
+                border: "none",
+                borderRadius: 10,
+                cursor: "pointer",
+                fontFamily: FONT,
+                fontSize: isTablet ? "0.8rem" : "0.85rem",
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? INK : "#5a5652",
+                textAlign: "left",
+                transition: "background .12s, color .12s",
+                marginBottom: 2,
+              }}
+            >
+              <span style={{ flex: 1 }}>{label}</span>
+              {key === "feedback" && feedbackCount > 0 && (
+                <CountBadge count={feedbackCount} />
+              )}
+            </button>
+          );
+        })}
     </div>
   );
 }
 
 // Phone version of the settings menu: compact grouped lists, one card per group.
-function MobileTabs({ active, feedbackCount, onSelect }: {
-  active: TabKey; feedbackCount: number; onSelect: (key: TabKey) => void;
+function MobileTabs({
+  active,
+  feedbackCount,
+  onSelect,
+}: {
+  active: TabKey;
+  feedbackCount: number;
+  onSelect: (key: TabKey) => void;
 }) {
   return (
-    <div style={{ borderBottom: "1px solid #f0eeec", padding: "18px 14px 10px" }}>
-      <h2 style={{ ...typo("1.15rem", INK, 700), letterSpacing: "-0.01em", padding: "0 4px 10px" }}>Settings</h2>
+    <div
+      style={{ borderBottom: "1px solid #f0eeec", padding: "18px 14px 10px" }}
+    >
+      <h2
+        style={{
+          ...typo("1.15rem", INK, 700),
+          letterSpacing: "-0.01em",
+          padding: "0 4px 10px",
+        }}
+      >
+        Settings
+      </h2>
       <div role="tablist" aria-orientation="vertical">
         {NAV_GROUPS.map((group) => (
           <div key={group.label} style={{ marginBottom: 10 }}>
             <p
               style={{
-                ...typo("0.62rem", "#b0aaa3", 600), letterSpacing: ".09em",
-                textTransform: "uppercase", padding: "0 4px 5px",
+                ...typo("0.62rem", "#b0aaa3", 600),
+                letterSpacing: ".09em",
+                textTransform: "uppercase",
+                padding: "0 4px 5px",
               }}
             >
               {group.label}
             </p>
             <div
               style={{
-                border: "1px solid #eae7e2", borderRadius: 12,
-                overflow: "hidden", background: "#fff",
+                border: "1px solid #eae7e2",
+                borderRadius: 12,
+                overflow: "hidden",
+                background: "#fff",
               }}
             >
               {group.items.map(({ key, label }, i) => {
@@ -1817,18 +2870,29 @@ function MobileTabs({ active, feedbackCount, onSelect }: {
                     aria-selected={isActive}
                     onClick={() => onSelect(key)}
                     style={{
-                      width: "100%", minHeight: 38, boxSizing: "border-box",
-                      display: "flex", alignItems: "center", gap: 8, textAlign: "left",
-                      padding: "9px 14px", cursor: "pointer", border: "none",
+                      width: "100%",
+                      minHeight: 38,
+                      boxSizing: "border-box",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      textAlign: "left",
+                      padding: "9px 14px",
+                      cursor: "pointer",
+                      border: "none",
                       borderTop: i === 0 ? "none" : "1px solid #f0eeec",
                       background: isActive ? "#f0eeec" : "#fff",
                       color: isActive ? INK : "#5a5652",
-                      fontFamily: FONT, fontSize: "0.83rem", fontWeight: isActive ? 600 : 500,
+                      fontFamily: FONT,
+                      fontSize: "0.83rem",
+                      fontWeight: isActive ? 600 : 500,
                       transition: "background .12s, color .12s",
                     }}
                   >
                     <span style={{ flex: 1 }}>{label}</span>
-                    {key === "feedback" && feedbackCount > 0 && <CountBadge count={feedbackCount} />}
+                    {key === "feedback" && feedbackCount > 0 && (
+                      <CountBadge count={feedbackCount} />
+                    )}
                   </button>
                 );
               })}
@@ -1847,7 +2911,11 @@ function MobileTabs({ active, feedbackCount, onSelect }: {
 type AccessStatus = "checking" | "allowed" | "denied" | "error";
 
 const isAdministrator = (role: unknown) =>
-  normalizeRole(String(role ?? "").trim().toLowerCase()) === "administrator";
+  normalizeRole(
+    String(role ?? "")
+      .trim()
+      .toLowerCase(),
+  ) === "administrator";
 
 // Checks the signed-in user's role with the API. If the check fails, access is denied.
 function useAdminAccess() {
@@ -1859,14 +2927,19 @@ function useAdminAccess() {
   const applyAccount = useCallback(
     (data: OwnAccount) => {
       setAccount(data);
-      updateUser({ username: data.username, email: data.email, role: data.role });
+      updateUser({
+        username: data.username,
+        email: data.email,
+        role: data.role,
+      });
     },
     [updateUser],
   );
 
   const verify = useCallback(() => {
     setStatus("checking");
-    api.get<OwnAccount>("/users/me")
+    api
+      .get<OwnAccount>("/users/me")
       .then((data) => {
         applyAccount(data);
         setStatus(isAdministrator(data.role) ? "allowed" : "denied");
@@ -1892,29 +2965,38 @@ function useSettings() {
   // Load the saved settings once when the page opens.
   useEffect(() => {
     let cancelled = false;
-    api.get<Record<string, unknown>>("/settings")
+    api
+      .get<Record<string, unknown>>("/settings")
       .then((data) => {
         if (cancelled) return;
         setValues(normalizeSettings(data));
         syncGeneralSettings(data);
       })
       .catch(() => {
-        if (!cancelled) setError("Failed to load saved settings. Showing the current form values.");
+        if (!cancelled)
+          setError(
+            "Failed to load saved settings. Showing the current form values.",
+          );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const setField: SetField = (key, value) => setValues((prev) => ({ ...prev, [key]: value }));
+  const setField: SetField = (key, value) =>
+    setValues((prev) => ({ ...prev, [key]: value }));
 
   const save = async () => {
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const saved = await saveGeneralSettings(values as unknown as Record<string, unknown>);
+      const saved = await saveGeneralSettings(
+        values as unknown as Record<string, unknown>,
+      );
       setValues(normalizeSettings(saved as unknown as Record<string, unknown>));
       setNotice("Settings saved.");
     } catch (err) {
@@ -1925,6 +3007,90 @@ function useSettings() {
   };
 
   return { values, loading, saving, error, notice, setField, save };
+}
+
+// Feedback is read-only. Load it only after administrator access has been verified:
+// SettingsPanel mounts exclusively for authorized administrators.
+function normalizeFeedbackResponse(payload: unknown): FeedbackEntry[] {
+  const object =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  const rows = Array.isArray(payload)
+    ? payload
+    : (object?.feedback ?? object?.reviews ?? object?.data);
+
+  if (!Array.isArray(rows)) {
+    throw new Error("Unexpected customer feedback response from the server.");
+  }
+
+  return rows.map((value, index) => {
+    const item =
+      value && typeof value === "object"
+        ? (value as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
+    const id = item.id ?? item.feedback_id ?? index;
+    const customerId = item.customer_user_id ?? item.customerUserId;
+    const productId = item.product_id ?? item.productId;
+    const reviewerName = String(
+      item.reviewerName ??
+        item.reviewer_name ??
+        item.customer_name ??
+        item.customerName ??
+        item.username ??
+        item.customer_username ??
+        item.user_name ??
+        (customerId != null ? `Customer #${customerId}` : "Customer"),
+    );
+    const productName = String(
+      item.productName ??
+        item.product_name ??
+        item.menu_name ??
+        item.Menu_Name ??
+        (productId != null ? `Product #${productId}` : "Unknown product"),
+    );
+    const valueRating = Number(item.rating ?? 0);
+
+    return {
+      id: String(id),
+      reviewerName,
+      productName,
+      rating: Number.isFinite(valueRating)
+        ? Math.max(0, Math.min(5, valueRating))
+        : 0,
+      message: String(item.message ?? item.comment ?? ""),
+      createdAt: String(item.createdAt ?? item.created_at ?? ""),
+    };
+  });
+}
+
+function useFeedback() {
+  const [entries, setEntries] = useState<FeedbackEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = await api.get<unknown>("/feedback");
+      setEntries(normalizeFeedbackResponse(payload));
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load customer feedback.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  return { entries, loading, error, reload };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1943,8 +3109,13 @@ function PageFrame({ children }: { children: ReactNode }) {
       <main className="tablet-shell flex-1" style={{ minWidth: 0 }}>
         <div
           style={{
-            display: "flex", height: "100%", background: "#f0eeec", padding,
-            boxSizing: "border-box", minHeight: "100vh", alignItems: "flex-start",
+            display: "flex",
+            height: "100%",
+            background: "#f0eeec",
+            padding,
+            boxSizing: "border-box",
+            minHeight: "100vh",
+            alignItems: "flex-start",
           }}
         >
           {children}
@@ -1955,7 +3126,13 @@ function PageFrame({ children }: { children: ReactNode }) {
 }
 
 // What non-administrators (and the checking / error states) see instead of the settings.
-function AccessMessage({ status, onRetry }: { status: AccessStatus; onRetry: () => void }) {
+function AccessMessage({
+  status,
+  onRetry,
+}: {
+  status: AccessStatus;
+  onRetry: () => void;
+}) {
   if (status === "denied") return <LockedSection label="Settings" />;
 
   if (status === "error") {
@@ -1964,18 +3141,25 @@ function AccessMessage({ status, onRetry }: { status: AccessStatus; onRetry: () 
         <p style={{ ...typo("0.8rem", ERROR, 400), marginBottom: 10 }}>
           We could not verify your access. Please try again.
         </p>
-        <button onClick={onRetry} style={accentButton()}>Try again</button>
+        <button onClick={onRetry} style={accentButton()}>
+          Try again
+        </button>
       </div>
     );
   }
 
-  return <p style={{ ...typo("0.8rem", MUTED, 400), textAlign: "center" }}>Verifying your access...</p>;
+  return (
+    <p style={{ ...typo("0.8rem", MUTED, 400), textAlign: "center" }}>
+      Verifying your access...
+    </p>
+  );
 }
 
 // The settings menu and the selected tab. Only mounted for administrators.
 function SettingsPanel() {
   const [activeTab, setActiveTab] = useState<TabKey>("profile");
   const settings = useSettings();
+  const feedback = useFeedback();
   const viewport = useViewport();
   const isMobile = viewport === "mobile";
   const isTablet = viewport === "tablet";
@@ -1989,23 +3173,46 @@ function SettingsPanel() {
   // One status line: error first, then loading, then the save confirmation.
   const status = [
     { text: settings.error, color: ERROR },
-    { text: settings.loading ? "Loading saved settings..." : null, color: MUTED },
+    {
+      text: settings.loading ? "Loading saved settings..." : null,
+      color: MUTED,
+    },
     { text: settings.notice, color: SUCCESS },
   ].find((line) => line.text);
 
   const renderTab = () => {
     switch (activeTab) {
-      case "profile":       return <ProfileTab />;
-      case "master_data":   return <CategoriesUnitsTab />;
-      case "business":      return <BusinessTab {...tabProps} />;
-      case "payment_methods": return <PaymentMethodsTab />;
-      case "inventory":     return <InventoryTab {...tabProps} />;
-      case "roles":         return <RolesTab />;
-      default:               return <ProfileTab />;
+      case "profile":
+        return <ProfileTab />;
+      case "master_data":
+        return <CategoriesUnitsTab />;
+      case "business":
+        return <BusinessTab {...tabProps} />;
+      case "payment_methods":
+        return <PaymentMethodsTab />;
+      case "inventory":
+        return <InventoryTab {...tabProps} />;
+      case "roles":
+        return <RolesTab />;
+      case "feedback":
+        return (
+          <FeedbackTab
+            feedback={feedback.entries}
+            loading={feedback.loading}
+            error={feedback.error}
+            onRetry={() => void feedback.reload()}
+          />
+        );
+      default:
+        return <ProfileTab />;
     }
   };
 
-  const contentPadding = isMobile ? "20px 16px 28px" : isTablet ? "28px 24px" : "32px 36px";
+  const contentPadding = isMobile
+    ? "20px 16px 28px"
+    : isTablet
+      ? "28px 24px"
+      : "32px 36px";
 
   return (
     <div
@@ -2017,21 +3224,36 @@ function SettingsPanel() {
     >
       {/* Settings menu */}
       {isMobile ? (
-        <MobileTabs active={activeTab} feedbackCount={0} onSelect={setActiveTab} />
+        <MobileTabs
+          active={activeTab}
+          feedbackCount={feedback.entries.length}
+          onSelect={setActiveTab}
+        />
       ) : (
         <div
           style={{
-            width: isTablet ? 200 : 230, flexShrink: 0, background: "#fff", overflowY: "auto",
+            width: isTablet ? 200 : 230,
+            flexShrink: 0,
+            background: "#fff",
+            overflowY: "auto",
             padding: isTablet ? "20px 10px" : "24px 14px",
           }}
         >
-          <h2 style={{ ...typo("1.1rem", INK, 700), letterSpacing: "-0.01em", padding: "0 10px 18px" }}>Settings</h2>
+          <h2
+            style={{
+              ...typo("1.1rem", INK, 700),
+              letterSpacing: "-0.01em",
+              padding: "0 10px 18px",
+            }}
+          >
+            Settings
+          </h2>
           {NAV_GROUPS.map((group) => (
             <SidebarGroup
               key={group.label}
               group={group}
               active={activeTab}
-              feedbackCount={0}
+              feedbackCount={feedback.entries.length}
               onSelect={setActiveTab}
             />
           ))}
@@ -2041,18 +3263,33 @@ function SettingsPanel() {
       {/* Tab content */}
       <div
         style={{
-          flex: 1, minWidth: 0, padding: contentPadding,
+          flex: 1,
+          minWidth: 0,
+          padding: contentPadding,
           overflowY: isMobile ? "visible" : "auto",
           borderLeft: isMobile ? "none" : "1px solid #f0eeec",
         }}
       >
         <div
           style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            gap: 12, flexWrap: "wrap", marginBottom: status || showSave ? 14 : 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            marginBottom: status || showSave ? 14 : 0,
           }}
         >
-          {status && <p style={{ ...typo("0.76rem", status.color, 400), flex: isMobile ? "1 1 100%" : "0 1 auto" }}>{status.text}</p>}
+          {status && (
+            <p
+              style={{
+                ...typo("0.76rem", status.color, 400),
+                flex: isMobile ? "1 1 100%" : "0 1 auto",
+              }}
+            >
+              {status.text}
+            </p>
+          )}
           {showSave && (
             <button
               onClick={settings.save}
@@ -2068,8 +3305,25 @@ function SettingsPanel() {
             </button>
           )}
         </div>
-        <h1 style={{ ...typo(isMobile ? "1.2rem" : "1.4rem", INK, 700), letterSpacing: "-0.015em", marginBottom: 4, overflowWrap: "anywhere" }}>{meta.title}</h1>
-        <p style={{ ...typo(isMobile ? "0.78rem" : "0.82rem", MUTED, 400), marginBottom: 16, lineHeight: 1.6 }}>{meta.desc}</p>
+        <h1
+          style={{
+            ...typo(isMobile ? "1.2rem" : "1.4rem", INK, 700),
+            letterSpacing: "-0.015em",
+            marginBottom: 4,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {meta.title}
+        </h1>
+        <p
+          style={{
+            ...typo(isMobile ? "0.78rem" : "0.82rem", MUTED, 400),
+            marginBottom: 16,
+            lineHeight: 1.6,
+          }}
+        >
+          {meta.desc}
+        </p>
         {renderTab()}
       </div>
     </div>
@@ -2086,7 +3340,13 @@ function SettingsView() {
       {status === "allowed" && account ? (
         <SettingsPanel />
       ) : (
-        <div style={{ ...S.card, alignItems: "center", padding: isMobile ? 20 : 32 }}>
+        <div
+          style={{
+            ...S.card,
+            alignItems: "center",
+            padding: isMobile ? 20 : 32,
+          }}
+        >
           <div style={{ flex: 1, minWidth: 0 }}>
             <AccessMessage status={status} onRetry={verify} />
           </div>

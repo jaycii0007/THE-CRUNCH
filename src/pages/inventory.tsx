@@ -649,26 +649,19 @@ function MenuFormModal({ item, categories, chickenFlavorCategoryName, ingredient
         <Field label="Category *">
           <select {...inputProps} value={values.category} onChange={(e) => set({ category: e.target.value })}>
             <option value="">Select category</option>
-            {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+            {categoryOptions.map((category) => (
+              <option key={category} value={category}>
+                {category === chickenFlavorCategoryName ? "Sauces" : category}
+              </option>
+            ))}
           </select>
         </Field>
         {!isChickenFlavor && <NumberInput label={"Price (\u20B1) *"} placeholder="0.00" value={values.price} onChange={(price) => set({ price })} maxDecimals={2} />}
       </div>
-      {!isChickenFlavor && isEdit && (
-        item.hasRecipe ? (
-          <Field label="Available servings (from ingredients)">
-            <div className={inputClass} style={inputStyle} aria-readonly="true">{Number(item.availableServings ?? 0)}</div>
-          </Field>
-        ) : (
-          <Field label="Current stock (read-only)">
-            <div className={inputClass} style={inputStyle} aria-readonly="true">
-              {item.stock} {item.unit || DEFAULT_UNIT}
-            </div>
-            <p className="mt-1 text-[11px]" style={{ color: T.muted }}>
-              Stock changes only through authorized receiving and stock-movement workflows.
-            </p>
-          </Field>
-        )
+      {!isChickenFlavor && isEdit && item.hasRecipe && (
+        <Field label="Available servings (from ingredients)">
+          <div className={inputClass} style={inputStyle} aria-readonly="true">{Number(item.availableServings ?? 0)}</div>
+        </Field>
       )}
       {!isChickenFlavor && <Field label="Description (optional)">
         <textarea
@@ -758,12 +751,11 @@ function MenuFormModal({ item, categories, chickenFlavorCategoryName, ingredient
    Menu list
    ──────────────────────────────────────────────────────────────────────── */
 
-type StatusFilter = "all" | "available" | "unavailable" | "archived";
+type StatusFilter = "all" | "available" | "unavailable";
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "All active" },
+  { value: "all", label: "All" },
   { value: "available", label: "Available" },
   { value: "unavailable", label: "Unavailable" },
-  { value: "archived", label: "Archived" },
 ];
 
 const TABLE_COLUMNS = ["Item", "Category", "Price", "Availability", ""];
@@ -794,8 +786,8 @@ function MenuAdminTab() {
   const term = search.trim().toLowerCase();
   const visible = items.filter((item) =>
     (categoryFilter === "all" || item.category === categoryFilter) &&
-    (statusFilter === "archived" ? isArchived(item) : !isArchived(item)) &&
-    (statusFilter === "all" || statusFilter === "archived" ||
+    !isArchived(item) &&
+    (statusFilter === "all" ||
       (isChickenFlavor(item)
         ? statusFilter === "available"
         : (statusFilter === "unavailable") === isUnavailable(item))) &&
@@ -898,7 +890,11 @@ function MenuAdminTab() {
               className="rounded-xl px-3 py-2.5 text-[12.5px] outline-none" style={controlStyle}
             >
               <option value="all">All categories</option>
-              {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category === chickenFlavorCategoryName ? "Sauces" : category}
+                </option>
+              ))}
             </select>
             <div className="flex rounded-xl p-1" style={controlStyle}>
               {STATUS_FILTERS.map(({ value, label }) => {
@@ -974,7 +970,7 @@ function MenuAdminTab() {
                           className="inline-block rounded-full px-2.5 py-1 text-[11.5px] font-medium"
                           style={{ background: T.deepSoft, color: T.deep, boxShadow: `inset 0 0 0 1px ${T.deep}14` }}
                         >
-                          {item.category}
+                          {isChickenFlavor(item) ? "Sauces" : item.category}
                         </span>
                       </td>
                       <td className="px-4 py-3.5">

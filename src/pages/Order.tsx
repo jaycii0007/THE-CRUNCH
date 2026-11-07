@@ -361,7 +361,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
                 {item.name}
                 {item.selectedFlavorName && (
                   <span className="block text-sm font-semibold text-amber-700">
-                    Flavor: {item.selectedFlavorName}
+                    Sauce: {item.selectedFlavorName}
                   </span>
                 )}
               </span>

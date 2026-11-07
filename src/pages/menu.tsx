@@ -703,16 +703,16 @@ function ChickenFlavorModal({
     <Modal show={!!item} onClose={onCancel}>
       <ModalHead
         eyebrow="Required selection"
-        title="Choose Chicken Flavor"
+        title="Choose Sauce"
         onClose={onCancel}
       />
       <div className="space-y-3 p-5 sm:p-6">
         <p className="text-sm text-neutral-600">
-          Select exactly one flavor for <strong>{item?.name}</strong>. The meal price will not change.
+          Select exactly one sauce for <strong>{item?.name}</strong>. The meal price will not change.
         </p>
         {flavors.length === 0 ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            No active chicken flavors with available ingredients are configured. Ask an Administrator to add or restore a flavor in Menu Management.
+            No active sauces are configured. Ask an Administrator to add or restore a sauce in Menu Management.
           </div>
         ) : (
           <div className="max-h-72 space-y-2 overflow-y-auto">
@@ -740,7 +740,7 @@ function ChickenFlavorModal({
             disabled={!selectedFlavorId || flavors.length === 0}
             onClick={onConfirm}
           >
-            Confirm flavor
+            Confirm sauce
           </button>
         </div>
       </div>
@@ -791,7 +791,7 @@ const CartRow = memo(
             <p className="text-xs text-neutral-400">{money(item.price)} each</p>
             {item.selectedFlavorName && (
               <p className="mt-0.5 text-xs font-semibold text-amber-700">
-                Flavor: {item.selectedFlavorName}
+                Sauce: {item.selectedFlavorName}
               </p>
             )}
           </div>
@@ -830,11 +830,11 @@ const CartRow = memo(
             {item.selectedFlavorProductId && (
               <button
                 type="button"
-                title="Change chicken flavor"
+                title="Change sauce"
                 onClick={() => onEditFlavor(item)}
                 className="rounded-lg px-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
               >
-                Change flavor
+                Change sauce
               </button>
             )}
             <button
@@ -1001,7 +1001,7 @@ function ProceedModal({
                 {i.name}
                 {i.selectedFlavorName && (
                   <span className="block pl-7 text-xs font-semibold text-amber-700">
-                    Flavor: {i.selectedFlavorName}
+                    Sauce: {i.selectedFlavorName}
                   </span>
                 )}
               </p>
@@ -1589,7 +1589,7 @@ function SuccessModal({
                   {i.productName}{" "}
                   {i.selectedFlavorName && (
                     <span className="block text-xs font-semibold text-amber-700">
-                      Flavor: {i.selectedFlavorName}
+                      Sauce: {i.selectedFlavorName}
                     </span>
                   )}
                   <span className="text-neutral-400">×{i.quantity}</span>
@@ -1860,7 +1860,7 @@ function HistoryModal({
                         {i.name} ×{i.quantity}
                         {i.selectedFlavorName && (
                           <span className="block text-xs font-semibold text-amber-700">
-                            Flavor: {i.selectedFlavorName}
+                            Sauce: {i.selectedFlavorName}
                           </span>
                         )}
                       </span>
@@ -3075,7 +3075,7 @@ export default function CashierView() {
                       <p className="truncate text-sm font-semibold text-neutral-800">{item.name}</p>
                       {item.selectedFlavorName && (
                         <p className="text-xs font-semibold text-amber-700">
-                          Flavor: {item.selectedFlavorName}
+                          Sauce: {item.selectedFlavorName}
                         </p>
                       )}
                       <p className="text-xs text-neutral-400">
