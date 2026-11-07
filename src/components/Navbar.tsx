@@ -3,12 +3,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, User, LogOut, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/context/authcontext";
+import { api } from "@/lib/api";
 
 const NAV_H = 72;
-const GOLD = '#C9A84C';
-const GOLD_DARK = '#B8953A';
-const CREAM = '#F5F0E8';
-const CHARCOAL = '#282823';
+const GOLD = "#C9A84C";
+const GOLD_DARK = "#B8953A";
+const CREAM = "#F5F0E8";
+const CHARCOAL = "#282823";
 
 interface NavLinkItem {
   label: string;
@@ -17,10 +18,89 @@ interface NavLinkItem {
 }
 
 export const CUSTOMER_NAV_LINKS: NavLinkItem[] = [
-  { label: 'Home', path: '/products', exact: true },
-  { label: 'About', path: '/aboutthecrunch', exact: true },
-  { label: 'Menu', path: '/usersmenu', exact: true },
+  { label: "Home", path: "/products", exact: true },
+  { label: "About", path: "/aboutthecrunch", exact: true },
+  { label: "Menu", path: "/usersmenu", exact: true },
 ];
+
+// Keep the public navbar's store status in sync with usersmenu.tsx and Admin Settings.
+interface StoreStatusSettings {
+  weekdayOpenTime: string;
+  weekdayCloseTime: string;
+  weekendOpenTime: string;
+  weekendCloseTime: string;
+  storeStatusMode: "auto" | "manual_open" | "manual_closed";
+  timezone: string;
+}
+
+const DEFAULT_STORE: StoreStatusSettings = {
+  weekdayOpenTime: "10:00",
+  weekdayCloseTime: "22:00",
+  weekendOpenTime: "11:00",
+  weekendCloseTime: "20:30",
+  storeStatusMode: "auto",
+  timezone: "Asia/Manila",
+};
+
+function parseTimeMins(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value || "").trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours <= 23 && minutes <= 59 ? hours * 60 + minutes : null;
+}
+
+function isStoreOpen(settings: StoreStatusSettings, now = new Date()): boolean {
+  if (settings.storeStatusMode === "manual_open") return true;
+  if (settings.storeStatusMode === "manual_closed") return false;
+
+  const timezone = settings.timezone || "Asia/Manila";
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short",
+  }).format(now);
+  const weekend = weekday === "Sat" || weekday === "Sun";
+  const openTime = weekend
+    ? settings.weekendOpenTime
+    : settings.weekdayOpenTime;
+  const closeTime = weekend
+    ? settings.weekendCloseTime
+    : settings.weekdayCloseTime;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const hour =
+    Number(parts.find((part) => part.type === "hour")?.value || 0) % 24;
+  const minute = Number(
+    parts.find((part) => part.type === "minute")?.value || 0,
+  );
+  const current = hour * 60 + minute;
+  const opening = parseTimeMins(openTime);
+  const closing = parseTimeMins(closeTime);
+  if (opening === null || closing === null) return false;
+  // A closing time before the opening time indicates an overnight schedule.
+  return closing <= opening
+    ? current >= opening || current < closing
+    : current >= opening && current < closing;
+}
+
+function readStoreSettings(data: Record<string, unknown>): StoreStatusSettings {
+  const text = (key: keyof StoreStatusSettings) =>
+    String(data?.[key] || DEFAULT_STORE[key]);
+  const mode = data?.storeStatusMode;
+  return {
+    weekdayOpenTime: text("weekdayOpenTime"),
+    weekdayCloseTime: text("weekdayCloseTime"),
+    weekendOpenTime: text("weekendOpenTime"),
+    weekendCloseTime: text("weekendCloseTime"),
+    storeStatusMode:
+      mode === "manual_open" || mode === "manual_closed" ? mode : "auto",
+    timezone: text("timezone"),
+  };
+}
 
 const NAVBAR_CSS = `
 .navbar-root {
@@ -194,48 +274,75 @@ const NAVBAR_CSS = `
 }
 `;
 
-export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: boolean; onOpenChange?: (open: boolean) => void } = {}) {
+export function Navbar({
+  isOpen: controlledOpen,
+  onOpenChange,
+}: { isOpen?: boolean; onOpenChange?: (open: boolean) => void } = {}) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isOpenStatus, setIsOpenStatus] = useState(false);
+  const [isOpenStatus, setIsOpenStatus] = useState<boolean | null>(null);
 
-  const isControlled = controlledOpen !== undefined && onOpenChange !== undefined;
+  const isControlled =
+    controlledOpen !== undefined && onOpenChange !== undefined;
   const open = isControlled ? controlledOpen : menuOpen;
   const setOpen = isControlled
-    ? ((val: boolean | ((prev: boolean) => boolean)) => onOpenChange!(typeof val === 'function' ? val(open) : val))
+    ? (val: boolean | ((prev: boolean) => boolean)) =>
+        onOpenChange!(typeof val === "function" ? val(open) : val)
     : setMenuOpen;
 
   // Inject CSS
   useEffect(() => {
-    const el = document.createElement('style');
-    el.id = 'navbar-css';
+    const el = document.createElement("style");
+    el.id = "navbar-css";
     el.innerHTML = NAVBAR_CSS;
     document.head.appendChild(el);
     return () => el.remove();
   }, []);
 
-  // Detect business hours
+  // Use the same saved operating hours and manual overrides as the customer menu.
+  // Refresh periodically, when the tab becomes visible, and on window focus so
+  // updates in Administrator Settings also reach already-open public pages.
   useEffect(() => {
-    const check = () => {
-      const n = new Date();
-      const d = n.getDay();
-      const t = n.getHours() + n.getMinutes() / 60;
-      setIsOpenStatus((d >= 1 && d <= 5 && t >= 10 && t < 22) || ((d === 0 || d === 6) && t >= 11 && t < 20.5));
+    let cancelled = false;
+    let requestInFlight = false;
+    const refreshStatus = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const data = await api.get<Record<string, unknown>>("/settings");
+        if (!cancelled) setIsOpenStatus(isStoreOpen(readStoreSettings(data)));
+      } catch {
+        // A failed settings request is unknown status, not proof the store is closed.
+        if (!cancelled) setIsOpenStatus(null);
+      } finally {
+        requestInFlight = false;
+      }
     };
-    check();
-    const id = setInterval(check, 60000);
-    return () => clearInterval(id);
+    void refreshStatus();
+    const intervalId = window.setInterval(() => void refreshStatus(), 60_000);
+    const onFocus = () => void refreshStatus();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshStatus();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // Scroll handler
   useEffect(() => {
     const onScroll = () => setIsScrolled(window.scrollY > 8);
     onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   // Close mobile menu on route change
@@ -251,10 +358,10 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
 
   const handleNav = (path: string) => {
     setOpen(false);
-    if (path === '/usersmenu') {
-      navigate('/usersmenu?showOrderModal=true');
-    } else if (path === '/login?tab=signup') {
-      navigate('/login?tab=signup');
+    if (path === "/usersmenu") {
+      navigate("/usersmenu?showOrderModal=true");
+    } else if (path === "/login?tab=signup") {
+      navigate("/login?tab=signup");
     } else {
       navigate(path);
     }
@@ -263,7 +370,7 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
   const handleLogout = () => {
     logout();
     setOpen(false);
-    navigate('/');
+    navigate("/");
   };
 
   const isAuthenticated = !!user;
@@ -271,7 +378,7 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
   return (
     <>
       <motion.header
-        className={`navbar-root ${isScrolled || open ? 'scrolled' : ''}`}
+        className={`navbar-root ${isScrolled || open ? "scrolled" : ""}`}
         initial={{ y: -100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
@@ -279,23 +386,48 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
         <div className="navbar-inner">
           <button
             className="nav-brand"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             aria-label="Back to top"
           >
-            <img src="/img/logo24.webp" alt="" width={32} height={32} style={{ objectFit: 'contain' }} />
-            <span>The <span style={{ color: GOLD }}>Crunch</span></span>
+            <img
+              src="/img/logo24.webp"
+              alt=""
+              width={32}
+              height={32}
+              style={{ objectFit: "contain" }}
+            />
+            <span>
+              The <span style={{ color: GOLD }}>Crunch</span>
+            </span>
           </button>
 
           <nav className="nav-center" aria-label="Main navigation">
-            <span className="nav-status" title="Store hours: Mon–Fri 10 AM–10 PM, Sat–Sun 11 AM–8:30 PM">
-              <span className="nav-dot" style={{ background: isOpenStatus ? '#22c55e' : '#ef4444' }} />
-              {isOpenStatus ? 'Open now' : 'Closed'}
+            <span
+              className="nav-status"
+              title="Store status follows Administrator Settings"
+            >
+              <span
+                className="nav-dot"
+                style={{
+                  background:
+                    isOpenStatus === null
+                      ? "#a8a29e"
+                      : isOpenStatus
+                        ? "#22c55e"
+                        : "#ef4444",
+                }}
+              />
+              {isOpenStatus === null
+                ? "Status unavailable"
+                : isOpenStatus
+                  ? "Open now"
+                  : "Closed"}
             </span>
             <div className="nav-links">
               {CUSTOMER_NAV_LINKS.map(({ label, path, exact }) => (
                 <motion.button
                   key={label}
-                  className={`nav-link ${isActive(path, exact) ? 'active' : ''}`}
+                  className={`nav-link ${isActive(path, exact) ? "active" : ""}`}
                   onClick={() => handleNav(path)}
                   whileTap={{ scale: 0.97 }}
                   whileHover={isActive(path, exact) ? {} : { scale: 1.02 }}
@@ -312,10 +444,14 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
                 {user?.username && (
                   <button
                     className="nav-status"
-                    onClick={() => { navigate('/my-account'); setOpen(false); }}
+                    onClick={() => {
+                      navigate("/my-account");
+                      setOpen(false);
+                    }}
                     title="Open My Account"
                   >
-                    <User size={14} />{user.username}
+                    <User size={14} />
+                    {user.username}
                   </button>
                 )}
                 <motion.button
@@ -324,7 +460,10 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
                   whileTap={{ scale: 0.97 }}
                   whileHover={{ scale: 1.02 }}
                 >
-                  <LogOut size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                  <LogOut
+                    size={14}
+                    style={{ display: "inline-block", marginRight: 4 }}
+                  />
                   Log Out
                 </motion.button>
               </>
@@ -332,27 +471,37 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
               <>
                 <motion.button
                   className="nav-btn nav-btn-ghost"
-                  onClick={() => { handleNav('/login'); }}
+                  onClick={() => {
+                    handleNav("/login");
+                  }}
                   whileTap={{ scale: 0.97 }}
                   whileHover={{ scale: 1.02 }}
                 >
-                  <LogIn size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                  <LogIn
+                    size={14}
+                    style={{ display: "inline-block", marginRight: 4 }}
+                  />
                   Log In
                 </motion.button>
                 <motion.button
                   className="nav-btn nav-btn-gold"
-                  onClick={() => { handleNav('/login?tab=signup'); }}
+                  onClick={() => {
+                    handleNav("/login?tab=signup");
+                  }}
                   whileTap={{ scale: 0.97 }}
                   whileHover={{ scale: 1.02 }}
                 >
-                  <UserPlus size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                  <UserPlus
+                    size={14}
+                    style={{ display: "inline-block", marginRight: 4 }}
+                  />
                   Sign Up
                 </motion.button>
               </>
             )}
             <button
               className="nav-burger"
-              onClick={() => setOpen(prev => !prev)}
+              onClick={() => setOpen((prev) => !prev)}
               aria-label="Toggle menu"
               aria-expanded={open}
             >
@@ -373,7 +522,7 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
               {CUSTOMER_NAV_LINKS.map(({ label, path, exact }) => (
                 <motion.button
                   key={label}
-                  className={`nav-link mobile-link ${isActive(path, exact) ? 'active' : ''}`}
+                  className={`nav-link mobile-link ${isActive(path, exact) ? "active" : ""}`}
                   onClick={() => handleNav(path)}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -385,10 +534,16 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
                   <>
                     <motion.button
                       className="nav-btn nav-btn-ghost"
-                      onClick={() => { navigate('/my-account'); setOpen(false); }}
+                      onClick={() => {
+                        navigate("/my-account");
+                        setOpen(false);
+                      }}
                       whileTap={{ scale: 0.97 }}
                     >
-                      <User size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                      <User
+                        size={14}
+                        style={{ display: "inline-block", marginRight: 4 }}
+                      />
                       My Account
                     </motion.button>
                     <motion.button
@@ -396,7 +551,10 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
                       onClick={handleLogout}
                       whileTap={{ scale: 0.97 }}
                     >
-                      <LogOut size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                      <LogOut
+                        size={14}
+                        style={{ display: "inline-block", marginRight: 4 }}
+                      />
                       Log Out
                     </motion.button>
                   </>
@@ -404,18 +562,28 @@ export function Navbar({ isOpen: controlledOpen, onOpenChange }: { isOpen?: bool
                   <>
                     <motion.button
                       className="nav-btn nav-btn-ghost"
-                      onClick={() => { handleNav('/login'); }}
+                      onClick={() => {
+                        handleNav("/login");
+                      }}
                       whileTap={{ scale: 0.97 }}
                     >
-                      <LogIn size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                      <LogIn
+                        size={14}
+                        style={{ display: "inline-block", marginRight: 4 }}
+                      />
                       Log In
                     </motion.button>
                     <motion.button
                       className="nav-btn nav-btn-gold"
-                      onClick={() => { handleNav('/login?tab=signup'); }}
+                      onClick={() => {
+                        handleNav("/login?tab=signup");
+                      }}
                       whileTap={{ scale: 0.97 }}
                     >
-                      <UserPlus size={14} style={{ display: 'inline-block', marginRight: 4 }} />
+                      <UserPlus
+                        size={14}
+                        style={{ display: "inline-block", marginRight: 4 }}
+                      />
                       Sign Up
                     </motion.button>
                   </>
