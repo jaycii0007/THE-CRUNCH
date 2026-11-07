@@ -61,11 +61,35 @@ interface MenuCategoryRecord {
   name: string;
   display_order?: number;
   is_active?: boolean | number;
+  system_key?: string | null;
 }
 
 const fmt = (v: number) => formatCurrencyAmount(v);
 
 const normCat = (v: unknown): Category => String(v ?? "").trim();
+
+// The built-in Chicken Flavors category contains selection-only sauce labels,
+// not purchasable menu products. Match its stable system key, not the visible
+// “Sauces” label: a separate sellable Sauces category must remain visible.
+const isSelectionOnlySauceCategory = (
+  value: unknown,
+  categories: MenuCategoryRecord[],
+): boolean => {
+  const normalized = normCat(value).toLowerCase();
+  if (
+    normalized === "chicken flavors" ||
+    normalized === "chicken flavor" ||
+    normalized === "chicken_flavors"
+  )
+    return true;
+  return categories.some(
+    (c) =>
+      String(c.system_key ?? "")
+        .trim()
+        .toLowerCase() === "chicken_flavors" &&
+      normCat(c.name).toLowerCase() === normalized,
+  );
+};
 
 const mapProducts = (data: unknown[]): Product[] =>
   data
@@ -3143,11 +3167,23 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
     };
   }, []);
 
+  // Use one filtered source for the menu grid, category tabs, feedback choices,
+  // and gallery product matching so non-sellable flavor labels never appear as products.
+  const visibleProducts = useMemo(
+    () =>
+      products.filter(
+        (p) =>
+          !p.archived &&
+          !isSelectionOnlySauceCategory(p.category, menuCategories),
+      ),
+    [products, menuCategories],
+  );
+
   const categoryOptions = useMemo(() => {
     const actual = new Map<string, string>();
-    products
-      .filter((p) => !p.archived)
-      .forEach((p) => actual.set(p.category.toLowerCase(), p.category));
+    visibleProducts.forEach((p) =>
+      actual.set(p.category.toLowerCase(), p.category),
+    );
     const ordered: string[] = [];
     const seen = new Set<string>();
     const addIfUsed = (value: string) => {
@@ -3168,25 +3204,20 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
     const remaining = [...actual.values()].sort((a, b) => a.localeCompare(b));
     remaining.forEach(addIfUsed);
     return ["All", ...ordered];
-  }, [menuCategories, products]);
+  }, [menuCategories, visibleProducts]);
   const selectedCategory = categoryOptions.includes(category)
     ? category
     : "All";
   const filtered = useMemo(
     () =>
-      products.filter(
-        (p) =>
-          !p.archived &&
-          (selectedCategory === "All" || p.category === selectedCategory),
+      visibleProducts.filter(
+        (p) => selectedCategory === "All" || p.category === selectedCategory,
       ),
-    [products, selectedCategory],
+    [visibleProducts, selectedCategory],
   );
   const feedbackOptions = useMemo(
-    () =>
-      products
-        .filter((p) => !p.archived)
-        .map((p) => ({ id: p.id, name: p.name })),
-    [products],
+    () => visibleProducts.map((p) => ({ id: p.id, name: p.name })),
+    [visibleProducts],
   );
   const featured = promos.filter((p) => p.highlight);
   const regular = promos.filter((p) => !p.highlight);
@@ -3207,7 +3238,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
       </section>
 
       {/* FOOD PREVIEW GALLERY - Moved up to appear after Hero */}
-      <FoodPreviewGallery products={products} />
+      <FoodPreviewGallery products={visibleProducts} />
 
       {/* FEATURED STRIP */}
       <motion.section

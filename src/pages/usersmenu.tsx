@@ -104,6 +104,7 @@ interface MenuCategoryRecord {
   name: string;
   display_order?: number;
   is_active?: boolean | number;
+  system_key?: string | null;
 }
 interface CartItem {
   recipe: Recipe;
@@ -171,19 +172,24 @@ function cartPaymentFingerprint(cart: CartItem[]) {
     .join("|");
 }
 
-function readPendingPayMongoCheckout(customerUserId: number): PendingPayMongoCheckout | null {
+function readPendingPayMongoCheckout(
+  customerUserId: number,
+): PendingPayMongoCheckout | null {
   if (typeof window === "undefined" || customerUserId <= 0) return null;
   try {
     const raw = window.localStorage.getItem(pendingPayMongoKey(customerUserId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PendingPayMongoCheckout>;
-    const validCart = Array.isArray(parsed.cart) && parsed.cart.every((item) =>
-      Number.isSafeInteger(Number(item?.recipe?.id)) &&
-      Number(item.recipe.id) > 0 &&
-      Number.isFinite(Number(item?.recipe?.price)) &&
-      Number.isSafeInteger(Number(item?.quantity)) &&
-      Number(item.quantity) > 0,
-    );
+    const validCart =
+      Array.isArray(parsed.cart) &&
+      parsed.cart.every(
+        (item) =>
+          Number.isSafeInteger(Number(item?.recipe?.id)) &&
+          Number(item.recipe.id) > 0 &&
+          Number.isFinite(Number(item?.recipe?.price)) &&
+          Number.isSafeInteger(Number(item?.quantity)) &&
+          Number(item.quantity) > 0,
+      );
     if (
       Number(parsed.customerUserId) !== customerUserId ||
       !validCart ||
@@ -223,8 +229,11 @@ function removePendingPayMongoCheckout(customerUserId: number) {
 function newCheckoutRequestId() {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (digit) =>
-    (Number(digit) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(digit) / 4))))
-      .toString(16),
+    (
+      Number(digit) ^
+      (crypto.getRandomValues(new Uint8Array(1))[0] &
+        (15 >> (Number(digit) / 4)))
+    ).toString(16),
   );
 }
 
@@ -301,6 +310,25 @@ const normalizeCategory = (v: unknown): string => {
   return String(v ?? "").trim();
 };
 
+// Sauce options in the protected Chicken Flavors category are selection-only
+// labels, not products customers can purchase as independent menu items.
+// Match the stable system key (plus exact legacy names), NOT the generic
+// "Sauces" label: separately sellable extra sauces must remain visible.
+const isSelectionOnlySauceCategory = (
+  value: unknown,
+  categories: MenuCategoryRecord[],
+): boolean => {
+  const name = normalizeName(value);
+  if (["chicken flavors", "chicken flavor", "chicken_flavors"].includes(name)) {
+    return true;
+  }
+  return categories.some(
+    (category) =>
+      normalizeName(category.system_key) === "chicken_flavors" &&
+      normalizeName(category.name) === name,
+  );
+};
+
 function getVisibleCategories(
   recipes: Recipe[],
   configuredCategories: MenuCategoryRecord[],
@@ -322,7 +350,9 @@ function getVisibleCategories(
   };
 
   configuredCategories
-    .filter((category) => category.is_active === true || category.is_active === 1)
+    .filter(
+      (category) => category.is_active === true || category.is_active === 1,
+    )
     .sort(
       (a, b) =>
         Number(a.display_order ?? 0) - Number(b.display_order ?? 0) ||
@@ -1204,7 +1234,12 @@ function PaymentMethodSelector({
   disabled?: boolean;
 }) {
   const methods = [
-    { id: "gcash" as const, label: "Pay Online", sub: "Secure PayMongo checkout", d: D.phone },
+    {
+      id: "gcash" as const,
+      label: "Pay Online",
+      sub: "Secure PayMongo checkout",
+      d: D.phone,
+    },
     { id: "cash" as const, label: "Cash", sub: "Pay at the store", d: D.cash },
   ];
   return (
@@ -2217,8 +2252,8 @@ export default function Delicacy() {
   const [loadError, setLoadError] = useState(false);
 
   // Only an active hosted-checkout handoff is persisted; ordinary carts stay in memory.
-  const [cart, setCart] = useState<CartItem[]>(() =>
-    readPendingPayMongoCheckout(customerUserId)?.cart ?? [],
+  const [cart, setCart] = useState<CartItem[]>(
+    () => readPendingPayMongoCheckout(customerUserId)?.cart ?? [],
   );
   const [paymentSession, setPaymentSession] =
     useState<PaymentSessionState | null>(null);
@@ -2348,8 +2383,18 @@ export default function Delicacy() {
           .get<MenuCategoryRecord[]>("/settings/menu-categories?activeOnly=1")
           .catch(() => []),
       ]);
-      const recipes = mapMenuRows(productRows);
-      const visibleCategories = getVisibleCategories(recipes, configuredCategories);
+      // Exclude selection-only sauce labels from the purchasable catalog,
+      // category tabs and cart refresh; keep normal sellable sauces visible.
+      const recipes = mapMenuRows(
+        productRows.filter(
+          (row) =>
+            !isSelectionOnlySauceCategory(row.category, configuredCategories),
+        ),
+      );
+      const visibleCategories = getVisibleCategories(
+        recipes,
+        configuredCategories,
+      );
       setMenuItems(recipes);
       setCategories(visibleCategories);
       setActiveCategory((current) =>
@@ -2405,7 +2450,9 @@ export default function Delicacy() {
           paid: false,
           paymentReference: null,
         });
-        setPaymentMessage("You have an unfinished PayMongo checkout. Continue it or check its status.");
+        setPaymentMessage(
+          "You have an unfinished PayMongo checkout. Continue it or check its status.",
+        );
       }
       return;
     }
@@ -2694,7 +2741,9 @@ export default function Delicacy() {
 
   const handlePlaceOrder = () => {
     if (isSubmitting || !paymentSession?.paid) {
-      setPaymentMessage("Please complete and verify your PayMongo payment first.");
+      setPaymentMessage(
+        "Please complete and verify your PayMongo payment first.",
+      );
       return;
     }
     return submitOrder(
@@ -2736,9 +2785,10 @@ export default function Delicacy() {
         checkoutSessionId: null,
         checkoutUrl: null,
         cart,
-        createdAt: existingPending?.checkoutRequestId === checkoutRequestId
-          ? existingPending.createdAt
-          : Date.now(),
+        createdAt:
+          existingPending?.checkoutRequestId === checkoutRequestId
+            ? existingPending.createdAt
+            : Date.now(),
       };
       if (!writePendingPayMongoCheckout(pendingCheckout)) {
         throw new Error(
@@ -2755,12 +2805,16 @@ export default function Delicacy() {
         items: buildItems(),
         checkoutRequestId,
       });
-      if (!writePendingPayMongoCheckout({
-        ...pendingCheckout,
-        checkoutSessionId: d.checkoutSessionId,
-        checkoutUrl: d.checkoutUrl,
-      })) {
-        throw new Error("Could not preserve the PayMongo checkout for the return redirect.");
+      if (
+        !writePendingPayMongoCheckout({
+          ...pendingCheckout,
+          checkoutSessionId: d.checkoutSessionId,
+          checkoutUrl: d.checkoutUrl,
+        })
+      ) {
+        throw new Error(
+          "Could not preserve the PayMongo checkout for the return redirect.",
+        );
       }
       setPaymentSession({
         checkoutSessionId: d.checkoutSessionId,
@@ -2813,7 +2867,8 @@ export default function Delicacy() {
   const autoFinalizedSessionRef = useRef<string | null>(null);
   useEffect(() => {
     if (!paymentSession?.paid || isSubmitting) return;
-    if (autoFinalizedSessionRef.current === paymentSession.checkoutSessionId) return;
+    if (autoFinalizedSessionRef.current === paymentSession.checkoutSessionId)
+      return;
     autoFinalizedSessionRef.current = paymentSession.checkoutSessionId;
     void handlePlaceOrder();
   }, [paymentSession?.paid, paymentSession?.checkoutSessionId, isSubmitting]);
@@ -3281,8 +3336,17 @@ export default function Delicacy() {
 
           {/* ── Product grid ── */}
           {loading ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "18px", width: "100%" }}>
-              {[...Array(6)].map((_, i) => <SkeletonProductCard key={i} theme="customer" />)}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gap: "18px",
+                width: "100%",
+              }}
+            >
+              {[...Array(6)].map((_, i) => (
+                <SkeletonProductCard key={i} theme="customer" />
+              ))}
             </div>
           ) : loadError ? (
             <div style={{ textAlign: "center", padding: "72px 0" }}>
