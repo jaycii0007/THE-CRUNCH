@@ -2450,6 +2450,7 @@ export function RolesTab() {
         </button>
       </Section>
       <DiscountPasswordSection />
+      <RefundPasswordSection />
     </>
   );
 }
@@ -2555,6 +2556,149 @@ function DiscountPasswordSection() {
         }}
       >
         {saving ? "Updating..." : "Update Discount Password"}
+      </button>
+    </Section>
+  );
+}
+
+/**
+ * Administrator-only refund authorization password management.
+ * Uses the same protected Settings pattern as discount authorization while
+ * keeping refund and discount credentials completely separate.
+ */
+function RefundPasswordSection() {
+  const [currentAdminPassword, setCurrentAdminPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{
+    text: string;
+    error: boolean;
+  } | null>(null);
+
+  const passwordBytes = new TextEncoder().encode(newPassword).length;
+  const passwordLengthValid = passwordBytes >= 8 && passwordBytes <= 72;
+  const canSave =
+    !saving &&
+    !!currentAdminPassword &&
+    passwordLengthValid &&
+    !!confirmPassword;
+
+  const save = async () => {
+    if (saving) return;
+    setMessage(null);
+    if (!currentAdminPassword) {
+      setMessage({
+        text: "Enter your current administrator password.",
+        error: true,
+      });
+      return;
+    }
+    if (!passwordLengthValid) {
+      setMessage({
+        text: "Refund password must be 8 to 72 bytes long.",
+        error: true,
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage({
+        text: "New refund password confirmation does not match.",
+        error: true,
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await api.put<{ message: string }>(
+        "/settings/refund-password",
+        {
+          currentAdminPassword,
+          newPassword,
+          confirmPassword,
+        },
+      );
+      setCurrentAdminPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage({
+        text: response.message || "Refund authorization password updated.",
+        error: false,
+      });
+    } catch (error) {
+      setMessage({
+        text:
+          error instanceof Error
+            ? error.message
+            : "Failed to update refund authorization password.",
+        error: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Section>
+      <div style={{ borderTop: "1px solid #ececec", margin: "24px 0 20px" }} />
+      <h3 style={{ ...typo("0.92rem", INK, 650), marginBottom: 4 }}>
+        Refund Authorization Password
+      </h3>
+      <Hint>
+        Cashiers and Administrators must enter this shared password before
+        refunding an eligible paid order. It is separate from the discount
+        password and is stored securely as a hash.
+      </Hint>
+      <FR label="Current admin password">
+        <SI
+          value={currentAdminPassword}
+          onChange={setCurrentAdminPassword}
+          type="password"
+          placeholder="Your login password"
+        />
+      </FR>
+      <FR label="New refund password">
+        <SI
+          value={newPassword}
+          onChange={setNewPassword}
+          type="password"
+          placeholder="8 to 72 bytes"
+        />
+      </FR>
+      <FR label="Confirm new password" last>
+        <SI
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          type="password"
+        />
+      </FR>
+      {newPassword && !passwordLengthValid && (
+        <p
+          role="status"
+          style={{ ...typo("0.74rem", ERROR, 500), marginTop: 8 }}
+        >
+          Refund password must be 8 to 72 bytes long.
+        </p>
+      )}
+      {message && (
+        <p
+          role={message.error ? "alert" : "status"}
+          style={{
+            ...typo("0.76rem", message.error ? ERROR : SUCCESS, 500),
+            marginTop: 8,
+          }}
+        >
+          {message.text}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={!canSave}
+        style={{ ...accentButton(!canSave), marginTop: 14 }}
+      >
+        {saving ? "Updating..." : "Update Refund Password"}
       </button>
     </Section>
   );
