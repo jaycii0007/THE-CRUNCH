@@ -269,11 +269,11 @@ function buildIngredientPayload(inputs: IngredientInput[]) {
   }));
 }
 
-// Keeps only menu items, and only the newest row when a name appears twice
-function latestPerName(rows: ApiRow[]) {
-  const rowId = (row: ApiRow) =>
-    Number(row.product_id ?? row.id ?? row.inventory_id ?? 0);
-  const newest = new Map<string, ApiRow>();
+// A join can repeat one product when legacy mirror rows are duplicated. Deduplicate
+// only by the stable product id; distinct products are never collapsed by name.
+function uniqueMenuRowsByProductId(rows: ApiRow[]) {
+  const seenProductIds = new Set<number>();
+  const uniqueRows: ApiRow[] = [];
   for (const row of rows) {
     if (
       String(row.item_type ?? "menu_item")
@@ -281,13 +281,14 @@ function latestPerName(rows: ApiRow[]) {
         .toLowerCase() !== "menu_item"
     )
       continue;
-    const key = String(row.product_name ?? row.name ?? "")
-      .trim()
-      .toLowerCase();
-    const saved = newest.get(key);
-    if (!saved || rowId(row) > rowId(saved)) newest.set(key, row);
+    const productId = Number(row.product_id ?? row.id ?? 0);
+    if (Number.isSafeInteger(productId) && productId > 0) {
+      if (seenProductIds.has(productId)) continue;
+      seenProductIds.add(productId);
+    }
+    uniqueRows.push(row);
   }
-  return [...newest.values()];
+  return uniqueRows;
 }
 
 function toMenuItem(item: ApiRow): MenuItem {
@@ -365,7 +366,7 @@ function useMenuAdmin(onError: (message: string) => void) {
         ? (categoryData as MenuCategoryRecord[])
         : [];
 
-      setItems(latestPerName(menuRows).map(toMenuItem));
+      setItems(uniqueMenuRowsByProductId(menuRows).map(toMenuItem));
 
       setApiCategories(
         categoryRows
@@ -1500,22 +1501,16 @@ function MenuAdminTab() {
 
   async function deleteItem(item: MenuItem) {
     const productId = item.rawProductId ?? item.id;
-    const inventoryId = item.rawInventoryId;
-    const endpoints = [`/products/${productId}`];
-    if (inventoryId && inventoryId !== productId)
-      endpoints.push(`/products/${inventoryId}`);
-    endpoints.push(`/inventory/${productId}`);
-    if (inventoryId && inventoryId !== productId)
-      endpoints.push(`/inventory/${inventoryId}`);
 
     try {
       setDeleting(true);
-      await tryEndpoints(endpoints, "DELETE");
+      await api.delete(`/products/${productId}`);
       await reload();
       setDeleteTarget(null);
       toast("Product deleted successfully.", "success");
     } catch (error) {
       if (isArchivableDeleteConflict(error)) {
+        toast(`Delete blocked: ${errorText(error)}`, "warning");
         setDeleteTarget(null);
         setArchiveTarget({ item, action: "archive" });
       } else {

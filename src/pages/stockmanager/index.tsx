@@ -603,23 +603,18 @@ export default function StockManager() {
               .toLowerCase() === "stock_item",
         );
 
-      const groupedByName = new Map<string, Product[]>();
+      const productsById = new Map<number, Product>();
       for (const item of candidateProducts) {
-        const key = String(item.product_name ?? "")
-          .trim()
-          .toLowerCase();
-        groupedByName.set(key, [...(groupedByName.get(key) ?? []), item]);
+        const productId = toNumber(item.product_id);
+        const current = productsById.get(productId);
+        if (
+          !current ||
+          toNumber(item.inventory_id) > toNumber(current.inventory_id)
+        ) {
+          productsById.set(productId, item);
+        }
       }
-      const normalizedProducts: Product[] = Array.from(
-        groupedByName.values(),
-      ).map((group) => {
-        const pool = group.filter((i) => !i.isRawMaterial);
-        return (pool.length > 0 ? pool : group).reduce((latest, current) =>
-          toNumber(current.product_id) > toNumber(latest.product_id)
-            ? current
-            : latest,
-        );
-      });
+      const normalizedProducts = Array.from(productsById.values());
 
       setProducts(normalizedProducts);
     } catch (err) {
