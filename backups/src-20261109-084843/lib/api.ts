@@ -1,0 +1,438 @@
+// API configuration and utility functions
+const CLIENT_ENV = (import.meta as {
+  env?: { VITE_API_URL?: string; PROD?: boolean };
+}).env;
+const RAW_API_URL = CLIENT_ENV?.VITE_API_URL;
+
+const DEFAULT_LOCAL_API_ORIGIN = "http://localhost:5000";
+const LEGACY_PRODUCT_IMAGE_CACHE_VERSION = "20261102";
+
+function resolveApiOrigin(): string {
+  const trimmed = String(RAW_API_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+  if (!trimmed) {
+    if (CLIENT_ENV?.PROD) {
+      throw new Error("VITE_API_URL is required for a production build.");
+    }
+    return DEFAULT_LOCAL_API_ORIGIN;
+  }
+
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  const parsed = new URL(candidate.replace(/\/api$/i, ""));
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error("VITE_API_URL must use HTTP or HTTPS.");
+  }
+  if (
+    CLIENT_ENV?.PROD &&
+    ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname)
+  ) {
+    throw new Error("VITE_API_URL cannot use localhost in production.");
+  }
+  return parsed.toString().replace(/\/+$/, "");
+}
+
+function normalizeEndpoint(endpoint: string): string {
+  const clean = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return /^\/api(?:\/|$)/i.test(clean) ? clean : `/api${clean}`;
+}
+
+const API_ORIGIN = resolveApiOrigin();
+
+export function resolveBackendUrl(value: string): string {
+  const normalized = String(value || "").trim();
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  const path = normalized.startsWith("/") ? normalized : `/${normalized}`;
+  return `${API_ORIGIN}${path}`;
+}
+
+export function isConfiguredBackendUrl(value: string): boolean {
+  try {
+    return new URL(resolveBackendUrl(value)).origin === new URL(API_ORIGIN).origin;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchAuthenticatedAsset(value: string): Promise<Blob> {
+  const resolvedUrl = resolveBackendUrl(value);
+  const headers: Record<string, string> = {};
+  if (isConfiguredBackendUrl(resolvedUrl)) {
+    const token = getStoredAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(resolvedUrl, { method: "GET", headers });
+  if (!response.ok) {
+    const error = new Error(
+      response.status === 404
+        ? "Proof image is no longer available."
+        : `Unable to load proof image (HTTP ${response.status}).`,
+    ) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+
+  const blob = await response.blob();
+  if (!String(blob.type || "").toLowerCase().startsWith("image/")) {
+    throw new Error("The proof response was not a valid image.");
+  }
+  return blob;
+}
+
+export function resolveAssetUrl(value?: string | null): string {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "/img/placeholder.jpg";
+  if (/^data:image\//i.test(normalized)) return normalized;
+  if (/^blob:/i.test(normalized)) return normalized;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  // Handle /api/upload-product-image/files/... - backend serves uploaded product images via this endpoint
+  if (normalized.startsWith("/api/upload-product-image/files/")) {
+    return `${resolveBackendUrl(normalized)}?v=${LEGACY_PRODUCT_IMAGE_CACHE_VERSION}`;
+  }
+  // Handle /uploads/... (with leading slash)
+  if (normalized.startsWith("/uploads")) {
+    return resolveBackendUrl(normalized);
+  }
+  // Handle uploads/... (without leading slash) - common backend format
+  if (normalized.startsWith("uploads/")) {
+    return resolveBackendUrl("/" + normalized);
+  }
+  // Handle ./uploads/... or ../uploads/... (relative paths)
+  if (normalized.startsWith("./uploads/") || normalized.startsWith("../uploads/")) {
+    return resolveBackendUrl("/" + normalized.replace(/^\.\.?\//, ""));
+  }
+  if (normalized.startsWith("/img")) return normalized;
+  // Handle bare filenames (e.g., "chickenhoneygarlic.jpg") - try local /img/ assets
+  if (/\.(jpe?g|png|webp|gif)$/i.test(normalized) && !normalized.includes("/")) {
+    return "/img/" + normalized;
+  }
+  return "/img/placeholder.jpg";
+}
+
+export function getStoredAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const token = localStorage.getItem("authToken");
+  return token && token.trim() ? token : null;
+}
+
+type ApiBody = object | FormData | URLSearchParams | string;
+
+interface FetchOptions extends Omit<RequestInit, "body"> {
+  skipAuth?: boolean;
+  token?: string;
+  body?: ApiBody;
+  suppressErrorStatuses?: number[];
+}
+
+interface ApiErrorData {
+  message?: string;
+  error?: string;
+  [key: string]: unknown;
+}
+
+interface ApiError extends Error {
+  status: number;
+  data: ApiErrorData | string | null;
+}
+
+interface LoginResponse {
+  token: string;
+  userId: number;
+  username: string;
+  email: string;
+  role: "administrator" | "cashier" | "inventory_manager" | "customer";
+  email_verified: boolean;
+}
+
+interface RegisterResponse {
+  message: string;
+  userId?: number;
+  role: "customer";
+  requiresEmailVerification: boolean;
+  emailDeliveryFailed?: boolean;
+}
+
+interface VerifyEmailResponse {
+  message: string;
+  email_verified: boolean;
+}
+
+interface ForgotPasswordResponse {
+  message: string;
+}
+
+interface VerifyPasswordResetOtpResponse {
+  message: string;
+  resetAuthorization: string;
+  expiresInSeconds: number;
+}
+
+// ─── Attendance Record type ───────────────────────────────────────────────────
+export interface AttendanceRecord {
+  id: number;
+  username: string;
+  role: string;
+  timeIn: Date;
+  timeOut: Date | null;
+}
+
+// Raw shape returned from your backend
+interface RawAttendanceRow {
+  id: number;
+  username?: string;
+  user?: string;
+  name?: string;
+  role?: string;
+  time_in?: string;
+  timeIn?: string;
+  time_out?: string | null;
+  timeOut?: string | null;
+}
+
+export const apiCall = async <T = unknown>(
+  endpoint: string,
+  options: FetchOptions = {},
+): Promise<T> => {
+  const {
+    skipAuth = false,
+    token,
+    suppressErrorStatuses = [],
+    ...fetchOptions
+  } = options;
+
+  const isAbsoluteUrl = /^https?:\/\//i.test(endpoint);
+  const url = isAbsoluteUrl
+    ? endpoint
+    : `${API_ORIGIN}${normalizeEndpoint(endpoint)}`;
+
+  const headers: Record<string, string> = {
+    ...((fetchOptions.headers as Record<string, string>) || {}),
+  };
+
+  if (/ngrok-free\.(app|dev)|ngrok\.io/i.test(url)) {
+    headers["ngrok-skip-browser-warning"] = "true";
+  }
+
+  const resolvedToken = token ?? getStoredAuthToken();
+  if (!skipAuth && resolvedToken && !headers["Authorization"]) {
+    headers["Authorization"] = `Bearer ${resolvedToken}`;
+  }
+
+  let bodyToSend: BodyInit | undefined = undefined;
+  if (fetchOptions.body !== undefined && fetchOptions.body !== null) {
+    const b = fetchOptions.body as ApiBody;
+    if (
+      typeof b === "string" ||
+      b instanceof FormData ||
+      b instanceof URLSearchParams
+    ) {
+      bodyToSend = b;
+    } else {
+      bodyToSend = JSON.stringify(b);
+      headers["Content-Type"] = "application/json";
+    }
+  }
+
+  try {
+    const response = await fetch(url, {
+      ...fetchOptions,
+      body: bodyToSend,
+      headers,
+    });
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      let errData: ApiErrorData | string | null = null;
+      try {
+        errData = text ? (JSON.parse(text) as ApiErrorData) : null;
+      } catch {
+        errData = text;
+      }
+      const message =
+        typeof errData === "object" && errData !== null
+          ? ((errData.message === "DB error" || errData.message === "Internal Server Error") &&
+            typeof errData.error === "string" &&
+            errData.error.trim()
+              ? errData.error
+              : (errData.message ?? `HTTP ${response.status}`))
+          : `HTTP ${response.status}`;
+      const err = new Error(message) as ApiError;
+      err.status = response.status;
+      err.data = errData;
+      throw err;
+    }
+
+    if (!text) return {} as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return text as unknown as T;
+    }
+  } catch (error) {
+    const status =
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error &&
+      typeof (error as { status?: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : null;
+
+    if (!status || !suppressErrorStatuses.includes(status)) {
+      console.error(`API Error [${endpoint}]:`, error);
+    }
+    throw error;
+  }
+};
+
+// ─── Base API methods ─────────────────────────────────────────────────────────
+export const api = {
+  get: <T = unknown>(endpoint: string) =>
+    apiCall<T>(endpoint, { method: "GET" }),
+
+  post: <T = unknown>(endpoint: string, body?: ApiBody) =>
+    apiCall<T>(endpoint, { method: "POST", body: body as BodyInit }),
+
+  put: <T = unknown>(endpoint: string, body?: ApiBody) =>
+    apiCall<T>(endpoint, { method: "PUT", body: body as BodyInit }),
+
+  delete: <T = unknown>(endpoint: string) =>
+    apiCall<T>(endpoint, { method: "DELETE" }),
+
+  patch: <T = unknown>(endpoint: string, body?: ApiBody) =>
+    apiCall<T>(endpoint, { method: "PATCH", body: body as BodyInit }),
+};
+
+// ─── Auth API ─────────────────────────────────────────────────────────────────
+export const authApi = {
+  login: (usernameOrEmail: string, password: string) =>
+    apiCall<LoginResponse>("/auth/login", {
+      method: "POST",
+      skipAuth: true,
+      body: {
+        username: usernameOrEmail,
+        email: usernameOrEmail,
+        password,
+      },
+    }),
+
+  register: (name: string, email: string, password: string) =>
+    apiCall<RegisterResponse>("/auth/register", {
+      method: "POST",
+      skipAuth: true,
+      body: { name, email, password },
+    }),
+
+  verifyEmail: (email: string, code: string) =>
+    apiCall<VerifyEmailResponse>("/auth/verify-email", {
+      method: "POST",
+      skipAuth: true,
+      body: { email, code },
+    }),
+
+  resendVerification: (email: string) =>
+    apiCall<{ message: string; requiresEmailVerification: boolean }>(
+      "/auth/resend-verification",
+      {
+        method: "POST",
+        skipAuth: true,
+        body: { email },
+      },
+    ),
+
+  forgotPassword: (email: string) =>
+    apiCall<ForgotPasswordResponse>("/auth/forgot-password", {
+      method: "POST",
+      skipAuth: true,
+      body: { email },
+    }),
+
+  verifyPasswordResetOtp: (email: string, code: string) =>
+    apiCall<VerifyPasswordResetOtpResponse>("/auth/verify-password-reset-otp", {
+      method: "POST",
+      skipAuth: true,
+      body: { email, code },
+    }),
+
+  resetPassword: (
+    email: string,
+    resetAuthorization: string,
+    newPassword: string,
+  ) =>
+    apiCall<ForgotPasswordResponse>("/auth/reset-password", {
+      method: "POST",
+      skipAuth: true,
+      body: { email, resetAuthorization, newPassword },
+    }),
+
+  logout: (token: string) =>
+    apiCall<void>("/auth/logout", {
+      method: "POST",
+      token,
+      suppressErrorStatuses: [401],
+    }),
+};
+
+// ─── Staff API ────────────────────────────────────────────────────────────────
+export const staffApi = {
+  getAll: (token: string) =>
+    apiCall<StaffMember[]>("/users/staff", { method: "GET", token }),
+
+  create: (
+    token: string,
+    data: { username: string; email: string; password: string; role: string },
+  ) =>
+    apiCall<{ message: string; userId: number; role: string }>(
+      "/users/staff/create",
+      { method: "POST", token, body: data },
+    ),
+
+  delete: (token: string, id: number) =>
+    apiCall<{ message: string }>(`/users/staff/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+
+  // ── Fetch ALL employees' attendance from backend ──────────────────────────
+  // Adjust "/attendance/all" to match your actual backend route
+  getAllAttendance: async (token: string): Promise<AttendanceRecord[]> => {
+    const rows = await apiCall<RawAttendanceRow[]>("/attendance/all", {
+      method: "GET",
+      token,
+    });
+
+    return rows
+      .map((r) => {
+        const rawTimeIn = r.time_in ?? r.timeIn;
+        if (!rawTimeIn) return null;
+
+        const timeIn = new Date(rawTimeIn);
+        if (isNaN(timeIn.getTime())) return null;
+
+        const rawTimeOut = r.time_out ?? r.timeOut ?? null;
+        const timeOut = rawTimeOut ? new Date(rawTimeOut) : null;
+
+        return {
+          id:       r.id,
+          username: r.username ?? r.user ?? r.name ?? `User ${r.id}`,
+          role:     r.role ?? "unknown",
+          timeIn,
+          timeOut:  timeOut && !isNaN(timeOut.getTime()) ? timeOut : null,
+        } satisfies AttendanceRecord;
+      })
+      .filter((r): r is AttendanceRecord => r !== null);
+  },
+};
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+export interface StaffMember {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
+  is_active?: boolean;
+  created_at: string;
+}

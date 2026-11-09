@@ -1,0 +1,3454 @@
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Ban,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Delete,
+  FileText,
+  History,
+  Info,
+  Minus,
+  Plus,
+  Printer,
+  Receipt,
+  RotateCcw,
+  Search,
+  Trash2,
+  UtensilsCrossed,
+  WifiOff,
+  MessageSquare,
+  Percent,
+  X,
+} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ProductImage } from "@/components/ProductImage";
+import { api, resolveAssetUrl } from "../lib/api";
+import {
+  fetchGeneralSettings,
+  GENERAL_SETTINGS_DEFAULTS,
+  type GeneralRestaurantSettings,
+  getCurrencySymbol,
+  formatCurrencyAmount,
+  formatInSettingsTimezone,
+} from "../lib/restaurantSettings";
+import { Sidebar } from "@/components/Sidebar";
+import { useViewport } from "@/hooks/use-tablet";
+import { useAuth } from "../context/authcontext";
+import {
+  canCancelPersistedOrders,
+  canRefundPersistedOrders,
+  normalizeRole,
+} from "../lib/permissions";
+import {
+  clampOrderItemQuantity,
+  getEffectiveMaxQuantity,
+} from "../lib/orderQuantity";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
+import {
+  getSettlementAction as getRefundSettlementAction,
+  type RefundOrderLike,
+} from "@/lib/refundEligibility";
+import { isFinalizedSale } from "@/lib/financialStatus";
+import {
+  EMPTY_PAYMENT_QR,
+  fetchPaymentQrConfiguration,
+  fetchPaymentQrObjectUrl,
+} from "@/lib/paymentQr";
+import {
+  buildKotHtml,
+  buildReceiptHtml,
+  downloadHtml,
+  printHtml,
+  type ReceiptDto,
+} from "../lib/receipt";
+import { Skeleton, SkeletonProductCard, SkeletonSectionCard, SkeletonKPICard, SkeletonListItem } from "@/components/ui/skeleton";
+
+/* ───────────────────────── setup ───────────────────────── */
+
+if (
+  typeof document !== "undefined" &&
+  !document.getElementById("poppins-font")
+) {
+  document.head.appendChild(
+    Object.assign(document.createElement("link"), {
+      id: "poppins-font",
+      rel: "stylesheet",
+      href: "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap",
+    }),
+  );
+}
+
+const SP = { type: "spring" as const, stiffness: 400, damping: 28 };
+const TIME: Intl.DateTimeFormatOptions = {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: true,
+};
+const DATETIME: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  ...TIME,
+};
+
+type PaymentMethod = "cash" | "gcash_onsite" | "grabfood" | "foodpanda";
+const MAX_CASH_TENDERED = 100_000;
+type OrderTypeVal = "dine-in" | "take-out" | "delivery";
+type ToastType = "success" | "error" | "info" | "warning";
+type Settle = "refund" | "cancel";
+
+interface Billing {
+  taxRate: number;
+  serviceCharge: number;
+}
+interface DiscountType {
+  discount_id: number;
+  name: string;
+  percentage: number;
+}
+interface DiscountApproval {
+  token: string;
+  discountId: number;
+}
+interface MenuItem {
+  id: number;
+  name: string;
+  price: number;
+  category: string;
+  categorySystemKey?: string | null;
+  remainingStock: number;
+  availabilityStatus: string;
+  image?: string | null;
+}
+interface CartItem extends MenuItem {
+  cartKey: string;
+  quantity: number;
+  note?: string;
+  selectedFlavorProductId?: number;
+  selectedFlavorName?: string;
+  selectedFlavorRemainingStock?: number;
+}
+interface OnlineOrder {
+  id: number;
+  orderNumber: string;
+  total: number;
+  createdAt: string;
+  orderType: string;
+  trackingStatus: string;
+  handoverTimestamp?: string | null;
+  riderName?: string | null;
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
+  paymentStatus?: string | null;
+  prepStartedAt?: string | number | null;
+  startedAt?: string | number | null;
+  readyAt?: string | number | null;
+  items: { name: string; quantity: number; selectedFlavorName?: string | null }[];
+}
+interface ShiftOrder {
+  id: number;
+  orderNumber: string;
+  total: number;
+  createdAt: string;
+  orderType: string;
+  paymentMethod: string;
+  status: string;
+  paymentStatus?: string | null;
+  prepStartedAt?: string | number | null;
+  startedAt?: string | number | null;
+  readyAt?: string | number | null;
+  refundRequestId?: number | null;
+  refundRequestStatus?: "Pending" | "Ignored" | "Actioned" | null;
+  items: { name: string; quantity: number; price: number; selectedFlavorName?: string | null }[];
+}
+
+/* ───────────────────────── helpers ───────────────────────── */
+
+const norm = (v: unknown) =>
+  String(v ?? "")
+    .trim()
+    .toLowerCase();
+const isPaid = (v?: string | null) => norm(v) === "paid";
+const isUnavailable = (v: unknown) =>
+  ["unavailable", "out of stock", "hidden", "not configured"].includes(norm(v));
+const pct = (n: number) => String(Number(n.toFixed(2)));
+
+const getSettlementAction = (
+  status?: string | null,
+  payment?: string | null,
+  preparation: RefundOrderLike = {},
+): Settle | null => {
+  return getRefundSettlementAction({
+    ...preparation,
+    status,
+    paymentStatus: payment,
+  });
+};
+
+const paymentLabel = (m?: string | null) => {
+  const n = norm(m);
+  if (!n) return "—";
+  if (n === "cash") return "Cash";
+  if (n === "gcash") return "GCash";
+  if (["cash on pickup", "cash_on_pickup"].includes(n)) return "Cash on Pickup";
+  if (["gcash_onsite", "e-payment", "onsite e-payment"].includes(n))
+    return "E-Payment";
+  if (n === "grabfood") return "GrabFood";
+  if (n === "foodpanda") return "foodpanda";
+  if (n === "other") return "Other platform";
+  return m ?? "—";
+};
+
+const MAX_PLATFORM_REFERENCE_LENGTH = 255;
+const PLATFORM_REFERENCE_PATTERN = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
+
+function getPlatformReferenceError(
+  provider: PaymentMethod,
+  value: string,
+): string | null {
+  const reference = value.trim();
+  if (!reference) {
+    return provider === "foodpanda"
+      ? "Enter the complete Foodpanda order reference."
+      : "Enter the complete platform order reference.";
+  }
+  if (provider === "grabfood" && /^GF-$/i.test(reference)) {
+    return "Complete the GrabFood reference after GF-.";
+  }
+  if (
+    reference.length > MAX_PLATFORM_REFERENCE_LENGTH ||
+    !PLATFORM_REFERENCE_PATTERN.test(reference)
+  ) {
+    return "Enter the complete reference using letters, numbers, and hyphens only.";
+  }
+  return null;
+}
+
+const computePricing = (subtotal: number, b: Billing, discountRate: number) => {
+  const discountAmount = subtotal * (Math.max(0, discountRate) / 100);
+  const taxAmount = subtotal * (b.taxRate / 100);
+  const serviceChargeAmount = subtotal * (b.serviceCharge / 100);
+  return {
+    subtotal,
+    discountAmount,
+    taxAmount,
+    serviceChargeAmount,
+    amountDue: subtotal - discountAmount + taxAmount + serviceChargeAmount,
+  };
+};
+
+const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
+  const latest = new Map<string, Record<string, any>>();
+  for (const p of data) {
+    if (norm(p.item_type ?? "menu_item") !== "menu_item") continue;
+    if (norm(p.availability_status) === "hidden") continue;
+    const key = norm(p.product_name ?? p.name);
+    const prev = latest.get(key);
+    if (
+      !prev ||
+      Number(p.product_id ?? p.id) > Number(prev.product_id ?? prev.id)
+    )
+      latest.set(key, p);
+  }
+  return [...latest.values()].map((p) => {
+    const rawImage = String(p.image ?? '').trim();
+    const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : null;
+    // Debug: log actual API image values for duplicate investigation
+    if (import.meta.env.DEV && rawImage) {
+      console.log('[menu:mapProducts]', {
+        id: p.product_id ?? p.id,
+        name: p.product_name ?? p.name,
+        rawImage,
+        resolvedImg,
+      });
+    }
+    return {
+      id: Number(p.product_id ?? p.id),
+      name: String(p.product_name ?? p.name ?? `Product #${p.id}`),
+      price: Number(p.price ?? 0),
+      category: String(p.category ?? "UNCATEGORIZED").toUpperCase(),
+      categorySystemKey: p.category_system_key
+        ? String(p.category_system_key).trim().toLowerCase()
+        : null,
+      remainingStock: Math.max(
+        0,
+        Math.floor(
+          Number(
+            p.available_servings ??
+              p.remainingStock ??
+              p.stock ??
+              p.quantity ??
+              0,
+          ),
+        ) || 0,
+      ),
+      availabilityStatus: String(p.availability_status ?? "Available"),
+      image: resolvedImg,
+    };
+  });
+};
+
+/* ───────────────────────── shared UI ───────────────────────── */
+
+const Ctx = createContext<{
+  s: GeneralRestaurantSettings;
+  money: (n: number) => string;
+  time: (v: string) => string;
+  dateTime: (v: string) => string;
+}>(null!);
+const useFmt = () => useContext(Ctx);
+
+const btn =
+  "w-full rounded-xl py-3.5 text-sm font-semibold transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-40";
+const B = {
+  dark: `${btn} bg-neutral-900 text-white hover:bg-neutral-800`,
+  green: `${btn} bg-green-600 text-white hover:bg-green-700`,
+  blue: `${btn} bg-sky-600 text-white hover:bg-sky-700`,
+  red: `${btn} bg-red-600 text-white hover:bg-red-700`,
+  ghost: `${btn} bg-neutral-100 text-neutral-600 hover:bg-neutral-200`,
+  slate: `${btn} bg-slate-700 text-white hover:bg-slate-800`,
+};
+const act =
+  "flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-50";
+const ACT = {
+  green: `${act} border-green-600 bg-green-600 text-white`,
+  dark: `${act} border-neutral-900 bg-neutral-900 text-white`,
+  red: `${act} border-red-200 bg-red-50 text-red-600`,
+};
+const eyebrow =
+  "text-xs font-semibold uppercase tracking-wider text-neutral-400";
+
+function Modal({
+  show,
+  onClose,
+  max = "max-w-md",
+  children,
+}: {
+  show: boolean;
+  onClose?: () => void;
+  max?: string;
+  children: ReactNode;
+}) {
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 z-[99998] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-4"
+        >
+          <motion.div
+            onClick={(e) => e.stopPropagation()}
+            initial={{ opacity: 0, scale: 0.97, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: 12 }}
+            transition={SP}
+            className={`max-h-[92vh] w-full ${max} overflow-y-auto rounded-2xl border border-neutral-200 bg-white shadow-2xl`}
+          >
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+const ModalHead = ({
+  eyebrow: e,
+  title,
+  tone = "text-green-600",
+  onClose,
+}: {
+  eyebrow: string;
+  title: string;
+  tone?: string;
+  onClose?: () => void;
+}) => (
+  <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-5 sm:px-6">
+    <div>
+      <p className={`text-xs font-semibold uppercase tracking-wider ${tone}`}>
+        {e}
+      </p>
+      <p className="text-xl font-bold text-neutral-900">{title}</p>
+    </div>
+    {onClose && (
+      <button
+        onClick={onClose}
+        className="rounded-lg p-2 hover:bg-neutral-100"
+      >
+        <X className="h-5 w-5 text-neutral-400" />
+      </button>
+    )}
+  </div>
+);
+
+const TOAST = {
+  success: {
+    c: "border-green-200 bg-green-50 text-green-600",
+    I: CheckCircle2,
+  },
+  error: { c: "border-red-200 bg-red-50 text-red-600", I: AlertCircle },
+  info: { c: "border-blue-200 bg-blue-50 text-blue-600", I: Info },
+  warning: {
+    c: "border-amber-200 bg-amber-50 text-amber-600",
+    I: AlertTriangle,
+  },
+};
+
+function useToast() {
+  const [toasts, setToasts] = useState<
+    { id: string; type: ToastType; message: string }[]
+  >([]);
+  const dismiss = useCallback(
+    (id: string) => setToasts((p) => p.filter((t) => t.id !== id)),
+    [],
+  );
+  const toast = useCallback(
+    (type: ToastType, message: string) => {
+      const id = `${Date.now()}-${Math.random()}`;
+      setToasts((p) => [...p, { id, type, message }]);
+      setTimeout(() => dismiss(id), 4000);
+    },
+    [dismiss],
+  );
+  return { toasts, toast, dismiss };
+}
+
+const TONE = {
+  idle: "border-neutral-200 bg-neutral-50 text-neutral-500",
+  green: "border-green-600 bg-green-50 text-green-700",
+  dark: "border-neutral-900 bg-neutral-50 text-neutral-900",
+  amber: "border-amber-400 bg-amber-50 text-amber-700",
+  red: "border-red-200 bg-red-50 text-red-600",
+};
+const BADGE = {
+  idle: "bg-neutral-400",
+  green: "bg-green-600",
+  dark: "bg-neutral-900",
+  amber: "bg-amber-500",
+  red: "bg-red-600",
+};
+
+function Pill({
+  tone = "idle",
+  count = 0,
+  pulse,
+  open,
+  onClick,
+  children,
+}: {
+  tone?: keyof typeof TONE;
+  count?: number;
+  pulse?: boolean;
+  open?: boolean;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold transition sm:px-4 ${TONE[tone]}`}
+    >
+      {pulse && (
+        <span className="h-2 w-2 animate-pulse rounded-full bg-current" />
+      )}
+      {children}
+      {count > 0 && (
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-bold text-white ${BADGE[tone]}`}
+        >
+          {count}
+        </span>
+      )}
+      {open !== undefined && (
+        <ChevronDown
+          className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`}
+        />
+      )}
+    </button>
+  );
+}
+
+const Chip = ({
+  children,
+  className = "bg-neutral-100 text-neutral-600",
+}: {
+  children: ReactNode;
+  className?: string;
+}) => (
+  <span
+    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${className}`}
+  >
+    {children}
+  </span>
+);
+
+const PayBadge = ({ status }: { status?: string | null }) =>
+  isPaid(status) ? (
+    <Chip className="border border-green-200 bg-green-100 text-green-700">
+      Paid
+    </Chip>
+  ) : (
+    <Chip className="border border-amber-200 bg-amber-100 text-amber-700">
+      {!status || norm(status) === "pending payment" ? "Unpaid" : status}
+    </Chip>
+  );
+
+const Select = ({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) => (
+  <div className="relative">
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full appearance-none rounded-xl border border-neutral-200 bg-neutral-50 py-2.5 pl-3.5 pr-9 text-sm text-neutral-700 outline-none focus:border-neutral-900"
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+  </div>
+);
+
+const Collapse = ({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: ReactNode;
+}) => (
+  <AnimatePresence initial={false}>
+    {open && (
+      <motion.div
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: "auto" }}
+        exit={{ opacity: 0, height: 0 }}
+        className="mb-4 overflow-hidden"
+      >
+        {children}
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
+
+const Empty = ({
+  icon,
+  children,
+}: {
+  icon?: ReactNode;
+  children: ReactNode;
+}) => (
+  <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center text-sm text-neutral-400">
+    {icon}
+    {children}
+  </div>
+);
+
+/** One order card, shared by review / pickup / delivery panels. */
+function OrderRow({
+  o,
+  showPay,
+  actions,
+}: {
+  o: OnlineOrder;
+  showPay?: boolean;
+  actions?: ReactNode;
+}) {
+  const { money, time } = useFmt();
+  return (
+    <div className="grid gap-2 border-t border-neutral-200/70 p-4 first:border-t-0">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-bold text-neutral-900">
+              {o.orderNumber}
+            </span>
+            <Chip className="bg-green-100 text-green-800">
+              {o.trackingStatus}
+            </Chip>
+          </div>
+          <p className="flex flex-wrap items-center gap-x-3 text-sm text-neutral-500">
+            <span className="capitalize">{o.orderType}</span>
+            <span>{time(o.createdAt)}</span>
+            <b className="text-neutral-900">{money(o.total)}</b>
+          </p>
+          {showPay && (
+            <p className="flex flex-wrap items-center gap-2 text-sm text-neutral-700">
+              Payment: {paymentLabel(o.paymentMethod)}{" "}
+              <PayBadge status={o.paymentStatus} />
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
+      </div>
+      <p className="text-sm text-neutral-600">
+        {o.items
+          .map((i) => `${i.quantity}× ${i.name}${i.selectedFlavorName ? ` (${i.selectedFlavorName})` : ""}`)
+          .join("  ·  ")}
+      </p>
+    </div>
+  );
+}
+
+const PanelTitle = ({ children }: { children: ReactNode }) => (
+  <p className="border-t border-neutral-200/70 px-4 pb-1 pt-3 text-xs font-bold uppercase tracking-wider text-neutral-700 first:border-t-0">
+    {children}
+  </p>
+);
+
+/* ───────────────────────── menu + cart ───────────────────────── */
+
+const ProductCard = memo(
+  ({
+    item,
+    onAdd,
+    quantity,
+  }: {
+    item: MenuItem;
+    onAdd: (i: MenuItem) => void;
+    quantity: number;
+  }) => {
+    const { money } = useFmt();
+    const out =
+      isUnavailable(item.availabilityStatus) ||
+      getEffectiveMaxQuantity(item.remainingStock) === 0;
+    const inCart = quantity > 0;
+    const sageBorder = "border-[#789486]";
+    const sageShadow = "shadow-[0_4px_14px_-2px_rgba(120,148,134,0.15)]";
+    return (
+      <motion.button
+        layout
+        disabled={out}
+        onClick={() => onAdd(item)}
+        whileHover={out ? {} : { y: -2 }}
+        whileTap={out ? {} : { scale: 0.98 }}
+        transition={{ type: "spring", stiffness: 400, damping: 28 }}
+        className={`relative overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-all duration-200 ease-out ${inCart ? `${sageBorder} ${sageShadow}` : "border-neutral-200 hover:shadow-md"} ${out ? "cursor-not-allowed opacity-50" : ""}`}
+      >
+        <div className="flex aspect-square w-full items-center justify-center overflow-hidden bg-neutral-100">
+          {item.image ? (
+            <ProductImage
+              src={item.image}
+              alt={item.name}
+              className="h-full w-full object-cover"
+            />
+          ) : null}
+          {!item.image && <UtensilsCrossed className="h-8 w-8 text-neutral-300" />}
+        </div>
+        {out && (
+          <span className="absolute left-2.5 top-2.5 rounded-full bg-red-800 px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-white">
+            OUT OF STOCK
+          </span>
+        )}
+        {inCart && (
+          <span className="absolute right-3 bottom-3 flex h-6 min-w-[26px] items-center justify-center gap-1 rounded-full bg-[#789486] px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+            <span aria-hidden="true">×</span>
+            <span>{quantity}</span>
+          </span>
+        )}
+        <div className="p-3 sm:p-4 pb-8 sm:pb-10">
+          <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-snug text-neutral-800">
+            {item.name}
+          </p>
+          <p className="mt-2 text-base font-semibold text-neutral-900">
+            {money(item.price)}
+          </p>
+        </div>
+      </motion.button>
+    );
+  },
+);
+
+function ChickenFlavorModal({
+  item,
+  flavors,
+  selectedFlavorId,
+  onSelect,
+  onConfirm,
+  onCancel,
+}: {
+  item: MenuItem | null;
+  flavors: MenuItem[];
+  selectedFlavorId: number | null;
+  onSelect: (id: number) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal show={!!item} onClose={onCancel}>
+      <ModalHead
+        eyebrow="Required selection"
+        title="Choose Chicken Flavor"
+        onClose={onCancel}
+      />
+      <div className="space-y-3 p-5 sm:p-6">
+        <p className="text-sm text-neutral-600">
+          Select exactly one flavor for <strong>{item?.name}</strong>. The meal price will not change.
+        </p>
+        {flavors.length === 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            No active chicken flavors with available ingredients are configured. Ask an Administrator to add or restore a flavor in Menu Management.
+          </div>
+        ) : (
+          <div className="max-h-72 space-y-2 overflow-y-auto">
+            {flavors.map((flavor) => {
+              const selected = selectedFlavorId === flavor.id;
+              return (
+                <button
+                  type="button"
+                  key={flavor.id}
+                  onClick={() => onSelect(flavor.id)}
+                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition ${selected ? "border-amber-500 bg-amber-50" : "border-neutral-200 hover:border-neutral-400"}`}
+                >
+                  <span className="font-semibold text-neutral-800">{flavor.name}</span>
+                  {selected && <Check className="h-5 w-5 text-amber-600" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2 pt-2">
+          <button type="button" className={B.ghost} onClick={onCancel}>Cancel</button>
+          <button
+            type="button"
+            className={B.green}
+            disabled={!selectedFlavorId || flavors.length === 0}
+            onClick={onConfirm}
+          >
+            Confirm flavor
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+const CartRow = memo(
+  ({
+    item,
+    onRemove,
+    onQty,
+    onEditFlavor,
+  }: {
+    item: CartItem;
+    onRemove: (cartKey: string) => void;
+    onQty: (cartKey: string, d: number) => void;
+    onEditFlavor: (item: CartItem) => void;
+  }) => {
+    const { money } = useFmt();
+    const max = Math.min(
+      getEffectiveMaxQuantity(item.remainingStock),
+      item.selectedFlavorRemainingStock == null
+        ? Number.POSITIVE_INFINITY
+        : getEffectiveMaxQuantity(item.selectedFlavorRemainingStock),
+    );
+    const step =
+      "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
+    return (
+      <motion.div
+        layout
+        initial={{ opacity: 0, x: 12 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: 12 }}
+        transition={SP}
+        className="border-b border-neutral-100 py-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100">
+            {item.image ? (
+              <ProductImage
+                src={item.image}
+                alt={item.name}
+                className="h-full w-full object-cover"
+              />
+            ) : null}
+            {!item.image && <UtensilsCrossed className="h-5 w-5 text-neutral-300" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-neutral-800">
+              {item.name}
+            </p>
+            <p className="text-xs text-neutral-400">{money(item.price)} each</p>
+            {item.selectedFlavorName && (
+              <p className="mt-0.5 text-xs font-semibold text-amber-700">
+                Flavor: {item.selectedFlavorName}
+              </p>
+            )}
+          </div>
+          <span className="text-sm font-semibold text-neutral-900">
+            {money(item.price * item.quantity)}
+          </span>
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <button className={step} onClick={() => onQty(item.cartKey, -1)}>
+              <Minus className="h-3.5 w-3.5 text-neutral-600" />
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={max}
+              value={item.quantity}
+              onChange={(e) => {
+                const v = clampOrderItemQuantity(
+                  e.target.value,
+                  item.remainingStock,
+                );
+                if (v > 0) onQty(item.cartKey, v - item.quantity);
+              }}
+              className="h-9 w-12 rounded-lg border border-neutral-200 text-center text-sm font-semibold outline-none focus:border-neutral-900"
+            />
+            <button
+              className={step}
+              disabled={item.quantity >= max}
+              onClick={() => onQty(item.cartKey, 1)}
+            >
+              <Plus className="h-3.5 w-3.5 text-neutral-600" />
+            </button>
+          </div>
+          <div className="flex gap-1">
+            {item.selectedFlavorProductId && (
+              <button
+                type="button"
+                title="Change chicken flavor"
+                onClick={() => onEditFlavor(item)}
+                className="rounded-lg px-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+              >
+                Change flavor
+              </button>
+            )}
+            <button
+              title="Remove"
+              onClick={() => onRemove(item.cartKey)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4 text-neutral-300 hover:text-red-500" />
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    );
+  },
+);
+
+/* ───────────────────────── modals ───────────────────────── */
+
+function ConfirmModal({
+  show,
+  title,
+  message,
+  confirmLabel,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  show: boolean;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal show={show} max="max-w-sm" onClose={busy ? undefined : onCancel}>
+      <div className="p-6">
+        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-red-50">
+          <Ban className="h-5 w-5 text-red-600" />
+        </div>
+        <p className="mb-1.5 text-lg font-semibold">{title}</p>
+        <p className="text-sm leading-relaxed text-neutral-500">{message}</p>
+      </div>
+      <div className="space-y-2 px-6 pb-6">
+        <button
+          className={`${B.red} flex items-center justify-center gap-2`}
+          disabled={busy}
+          onClick={onConfirm}
+        >
+          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />}
+          {confirmLabel}
+        </button>
+        <button className={B.ghost} disabled={busy} onClick={onCancel}>
+          Keep Order
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function RefundRequestModal({
+  order,
+  reason,
+  setReason,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  order: ShiftOrder | null;
+  reason: string;
+  setReason: (value: string) => void;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const trimmedReason = reason.trim();
+  return (
+    <Modal show={!!order} max="max-w-md" onClose={busy ? undefined : onCancel}>
+      <div className="p-6">
+        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-amber-200 bg-amber-50">
+          <RotateCcw className="h-5 w-5 text-amber-700" />
+        </div>
+        <p className="mb-1.5 text-lg font-semibold">Request refund</p>
+        <p className="text-sm leading-relaxed text-neutral-500">
+          Send {order?.orderNumber} to the Administrator for review. The kitchen will pause this order until the request is ignored or actioned.
+        </p>
+        <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-neutral-500" htmlFor="refund-request-reason">
+          Reason
+        </label>
+        <textarea
+          id="refund-request-reason"
+          value={reason}
+          maxLength={500}
+          rows={4}
+          disabled={busy}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Explain why the customer is requesting a refund."
+          className="mt-2 w-full resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-sm outline-none focus:border-neutral-900 disabled:opacity-60"
+        />
+        <p className="mt-1 text-right text-xs text-neutral-400">{reason.length}/500</p>
+      </div>
+      <div className="space-y-2 px-6 pb-6">
+        <button
+          className={`${B.red} flex items-center justify-center gap-2`}
+          disabled={busy || !trimmedReason}
+          onClick={onConfirm}
+        >
+          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />}
+          Send refund request
+        </button>
+        <button className={B.ghost} disabled={busy} onClick={onCancel}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
+function ProceedModal({
+  order,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  order: OnlineOrder | null;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const { money, time } = useFmt();
+  const paid = order ? isPaid(order.paymentStatus) : false;
+  return (
+    <Modal show={!!order} onClose={busy ? undefined : onCancel}>
+      {order && (
+        <>
+          <ModalHead
+            eyebrow="Confirm order"
+            title={order.orderNumber}
+            onClose={busy ? undefined : onCancel}
+          />
+          <div className="grid grid-cols-2 gap-2.5 border-b border-neutral-100 p-5 sm:p-6">
+            {[
+              [
+                "Order type",
+                <span className="capitalize">{order.orderType}</span>,
+              ],
+              ["Placed at", time(order.createdAt)],
+              ["Payment", paymentLabel(order.paymentMethod)],
+              ["Pay status", <PayBadge status={order.paymentStatus} />],
+            ].map(([l, v], i) => (
+              <div
+                key={i}
+                className="rounded-xl border border-neutral-100 bg-neutral-50 p-3"
+              >
+                <p className={`${eyebrow} mb-1`}>{l}</p>
+                <div className="text-sm font-semibold">{v}</div>
+              </div>
+            ))}
+          </div>
+          <div className="max-h-44 space-y-2 overflow-y-auto border-b border-neutral-100 p-5 sm:p-6">
+            <p className={eyebrow}>Order items</p>
+            {order.items.map((i, k) => (
+              <p key={k} className="text-sm text-neutral-700">
+                <b className="mr-2">{i.quantity}×</b>
+                {i.name}
+                {i.selectedFlavorName && (
+                  <span className="block pl-7 text-xs font-semibold text-amber-700">
+                    Flavor: {i.selectedFlavorName}
+                  </span>
+                )}
+              </p>
+            ))}
+          </div>
+          <div className="space-y-3 p-5 sm:p-6">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-neutral-500">Order total</span>
+              <span className="text-2xl font-bold">{money(order.total)}</span>
+            </div>
+            <p
+              className={`rounded-xl border p-3 text-sm ${paid ? "border-green-200 bg-green-50 text-green-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}
+            >
+              {paid
+                ? "Payment confirmed. Proceeding will queue this order for kitchen preparation."
+                : "Payment is still unpaid. Proceeding will mark it as paid and queue it. Verify with the customer first."}
+            </p>
+            <button
+              className={`${B.green} flex items-center justify-center gap-2`}
+              disabled={busy}
+              onClick={onConfirm}
+            >
+              {busy ? (
+                <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />
+              ) : (
+                "Confirm & proceed to queue"
+              )}
+            </button>
+            <button className={B.ghost} disabled={busy} onClick={onCancel}>
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function HandoverModal({
+  order,
+  rider,
+  staffName,
+  setRider,
+  saving,
+  onConfirm,
+  onCancel,
+}: {
+  order: OnlineOrder | null;
+  rider: string;
+  staffName: string;
+  setRider: (v: string) => void;
+  saving: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const { money } = useFmt();
+  return (
+    <Modal
+      show={!!order}
+      max="max-w-sm"
+      onClose={saving ? undefined : onCancel}
+    >
+      {order && (
+        <>
+          <ModalHead
+            eyebrow="Delivery handover"
+            title={order.orderNumber}
+            onClose={saving ? undefined : onCancel}
+          />
+          <div className="space-y-4 p-5 sm:p-6">
+            <div>
+              <p className={`${eyebrow} mb-1.5`}>Rider name</p>
+              <input
+                autoFocus
+                value={rider}
+                onChange={(e) => setRider(e.target.value)}
+                disabled={saving}
+                placeholder="Enter rider name"
+                className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-3 text-sm outline-none focus:border-neutral-900"
+              />
+            </div>
+            <div className="space-y-1.5 rounded-xl border border-neutral-100 bg-neutral-50 p-3.5 text-sm">
+              <p className="flex justify-between gap-4">
+                <span className="text-neutral-500">Platform</span>
+                <b>{paymentLabel(order.paymentMethod)}</b>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span className="text-neutral-500">Booking reference</span>
+                <b className="break-all text-right">{order.paymentReference || "—"}</b>
+              </p>
+              <p className="flex justify-between">
+                <span className="text-neutral-500">Handover time</span>
+                <b>Recorded automatically</b>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span className="text-neutral-500">Confirmed by</span>
+                <b className="text-right">{staffName}</b>
+              </p>
+              <p className="flex justify-between">
+                <span className="text-neutral-500">Amount</span>
+                <b>{money(order.total)}</b>
+              </p>
+            </div>
+            <button
+              className={B.dark}
+              disabled={saving || !rider.trim()}
+              onClick={onConfirm}
+            >
+              {saving ? "Saving…" : "Confirm handover"}
+            </button>
+            <button className={B.ghost} disabled={saving} onClick={onCancel}>
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function AmountModal({
+  show,
+  amountDue,
+  method,
+  qrImageUrl,
+  onConfirm,
+  onCancel,
+}: {
+  show: boolean;
+  amountDue: number;
+  method: PaymentMethod;
+  qrImageUrl: string;
+  onConfirm: (p: { tendered: number; file?: File }) => void;
+  onCancel: () => void;
+}) {
+  const { money, s } = useFmt();
+  const [input, setInput] = useState("");
+  const [inputError, setInputError] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [proofError, setProofError] = useState("");
+  const proofInputRef = useRef<HTMLInputElement>(null);
+  const proofPreview = useMemo(
+    () => (file ? URL.createObjectURL(file) : ""),
+    [file],
+  );
+  useEffect(
+    () => () => {
+      if (proofPreview) URL.revokeObjectURL(proofPreview);
+    },
+    [proofPreview],
+  );
+  useEffect(() => {
+    if (show) {
+      setInput("");
+      setInputError("");
+    }
+  }, [show]);
+
+  const completeCashInput = /^\d+(?:\.\d{0,2})?$/.test(input);
+  const tendered = completeCashInput ? Number(input) : 0;
+  const validTendered =
+    completeCashInput &&
+    Number.isFinite(tendered) &&
+    tendered >= 0 &&
+    tendered <= MAX_CASH_TENDERED;
+  const enough = validTendered && tendered >= amountDue;
+  const quick = [50, 100, 200, 500, 1000].filter((d) => d >= amountDue);
+  const updateCashInput = (rawValue: string) => {
+    if (rawValue === "") {
+      setInput("");
+      setInputError("");
+      return;
+    }
+    const normalizedValue = rawValue.startsWith(".") ? `0${rawValue}` : rawValue;
+    if (!/^\d+(?:\.\d{0,2})?$/.test(normalizedValue)) {
+      setInputError("Enter a valid amount with up to two decimal places.");
+      return;
+    }
+    const numericValue = Number(normalizedValue);
+    if (Number.isFinite(numericValue) && numericValue > MAX_CASH_TENDERED) {
+      setInputError(`Cash tendered cannot exceed ${money(MAX_CASH_TENDERED)}.`);
+      return;
+    }
+    setInput(normalizedValue);
+    setInputError("");
+  };
+  const press = (key: string) => {
+    if (key === "⌫") {
+      updateCashInput(input.slice(0, -1));
+      return;
+    }
+    if (key === "00" && !input) return;
+    updateCashInput(`${input}${key}`);
+  };
+  const selectProof = (nextFile?: File) => {
+    setProofError("");
+    if (!nextFile) {
+      setFile(null);
+      if (proofInputRef.current) proofInputRef.current.value = "";
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(nextFile.type)) {
+      setFile(null);
+      if (proofInputRef.current) proofInputRef.current.value = "";
+      setProofError("Choose a PNG, JPG, or WebP payment proof.");
+      return;
+    }
+    if (nextFile.size > 5 * 1024 * 1024) {
+      setFile(null);
+      if (proofInputRef.current) proofInputRef.current.value = "";
+      setProofError("Payment proof must be 5 MB or smaller.");
+      return;
+    }
+    setFile(nextFile);
+  };
+  return (
+    <Modal show={show} max="max-w-sm" onClose={onCancel}>
+      <div className="border-b border-neutral-100 px-5 py-5 sm:px-6">
+        <p className={eyebrow}>Amount due</p>
+        <p className="text-3xl font-semibold">{money(amountDue)}</p>
+      </div>
+      <div className="p-5 sm:p-6">
+        {method === "cash" ? (
+          <>
+            <p className={`${eyebrow} mb-1.5`}>Cash tendered</p>
+            <label
+              className={`mb-1 flex min-h-[52px] items-center gap-2 rounded-xl border-2 bg-neutral-50 px-4 ${inputError ? "border-red-400" : input ? "border-neutral-900" : "border-neutral-200"}`}
+            >
+              <span className="text-neutral-400">{getCurrencySymbol(s)}</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={input}
+                onChange={(event) => updateCashInput(event.target.value)}
+                placeholder="0.00"
+                aria-label="Cash tendered amount"
+                aria-invalid={Boolean(inputError)}
+                aria-describedby={inputError ? "cash-tendered-error" : undefined}
+                className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
+              />
+            </label>
+            {inputError && (
+              <p id="cash-tendered-error" role="alert" className="mb-3 text-xs font-medium text-red-500">
+                {inputError}
+              </p>
+            )}
+            {quick.length > 0 && (
+              <div className={`${inputError ? "mb-3" : "mt-2 mb-3"} flex flex-wrap gap-1.5`}>
+                {quick.map((a) => (
+                  <button
+                    key={a}
+                    onClick={() => updateCashInput(String(a))}
+                    className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600"
+                  >
+                    {money(a)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-neutral-100 bg-neutral-50 p-3">
+                <p className="text-xs text-neutral-400">Change</p>
+                <p
+                  className={`text-lg font-semibold ${enough && input ? "text-green-600" : "text-neutral-300"}`}
+                >
+                  {enough && input ? money(tendered - amountDue) : "—"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-neutral-100 bg-neutral-50 p-3">
+                <p className="text-xs text-neutral-400">Tendered</p>
+                <p
+                  className={`text-lg font-semibold ${input ? "" : "text-neutral-300"}`}
+                >
+                  {input ? money(tendered) : "—"}
+                </p>
+              </div>
+            </div>
+            {input && validTendered && !enough && (
+              <p className="mb-2 text-sm font-medium text-red-500">
+                {money(amountDue - tendered)} short
+              </p>
+            )}
+            <div className="mb-4 grid grid-cols-3 gap-2">
+              {[
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9",
+                "⌫",
+                "0",
+                "00",
+              ].map((k) => (
+                <button
+                  key={k}
+                  onClick={() => press(k)}
+                  className="flex h-14 items-center justify-center rounded-xl border border-neutral-200 bg-white text-lg font-medium transition active:scale-90"
+                >
+                  {k === "⌫" ? (
+                    <Delete className="h-5 w-5 text-neutral-400" />
+                  ) : (
+                    k
+                  )}
+                </button>
+              ))}
+            </div>
+            <button
+              className={`${B.green} mb-2`}
+              disabled={!input || !enough || Boolean(inputError)}
+              onClick={() => onConfirm({ tendered })}
+            >
+              Confirm payment
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="mb-4 flex flex-col items-center rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="mb-3 text-sm font-semibold text-sky-700">
+                GCash Online Payment
+              </p>
+              {qrImageUrl ? (
+                <img
+                  src={qrImageUrl}
+                  alt="Administrator-configured GCash QR"
+                  className="h-52 w-52 rounded-xl border border-neutral-200 bg-white object-contain"
+                />
+              ) : (
+                <div className="grid h-44 w-44 place-items-center rounded-xl border border-red-200 bg-red-50 px-4 text-center text-xs font-semibold text-red-600">
+                  GCash QR is not configured. Ask an Administrator to upload it in Settings.
+                </div>
+              )}
+              <p className="mt-3 text-center text-xs text-neutral-400">
+                Ask the customer to scan and pay exactly {money(amountDue)}. Verify receipt in the store's GCash account before confirming.
+              </p>
+            </div>
+            <div className="mb-4 rounded-xl border border-neutral-200 p-3">
+              <p className={`${eyebrow} mb-2`}>Payment proof</p>
+              <input
+                ref={proofInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                capture="environment"
+                onChange={(event) => selectProof(event.currentTarget.files?.[0])}
+                className="w-full text-sm"
+                aria-label="Choose GCash payment proof image"
+              />
+              <p className="mt-2 text-xs text-neutral-400">
+                Upload the customer's completed GCash payment screen before confirming.
+              </p>
+              {proofError && (
+                <p className="mt-2 text-sm font-medium text-red-600">{proofError}</p>
+              )}
+              {proofPreview && (
+                <>
+                  <img
+                    src={proofPreview}
+                    alt="Selected GCash payment proof preview"
+                    className="mt-3 max-h-52 w-full rounded-lg border border-neutral-200 object-contain"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-xs text-neutral-500">{file?.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => selectProof()}
+                      className="shrink-0 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600"
+                    >
+                      Clear proof
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <button
+              className={`${B.blue} mb-2`}
+              disabled={!qrImageUrl || !file}
+              onClick={() => onConfirm({ tendered: amountDue, file: file ?? undefined })}
+            >
+              Confirm Payment
+            </button>
+          </>
+        )}
+        <button className={B.ghost} onClick={onCancel}>
+          Back / Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function DiscountModal({
+  show,
+  discounts,
+  selectedName,
+  onSelect,
+  onClose,
+}: {
+  show: boolean;
+  discounts: DiscountType[];
+  selectedName: string;
+  onSelect: (discount: DiscountType) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal show={show} max="max-w-sm" onClose={onClose}>
+      <ModalHead
+        eyebrow="Payment adjustment"
+        title="Discount"
+        tone="text-green-600"
+        onClose={onClose}
+      />
+      <div className="space-y-2 p-5 sm:p-6">
+        {discounts.map((discount) => {
+          const selected = discount.name === selectedName;
+          const rate = Number(discount.percentage || 0);
+          return (
+            <button
+              key={discount.discount_id}
+              type="button"
+              onClick={() => onSelect(discount)}
+              className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition ${selected ? "border-green-500 bg-green-50" : "border-neutral-200 bg-white hover:border-neutral-400"}`}
+            >
+              <span>
+                <span className="block text-sm font-semibold text-neutral-900">
+                  {discount.name}
+                </span>
+                <span className="block text-xs text-neutral-400">
+                  {rate > 0
+                    ? "Authorization required"
+                    : "No authorization required"}
+                </span>
+              </span>
+              <span className="font-semibold text-green-700">{pct(rate)}%</span>
+            </button>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
+function DiscountAuthorizationModal({
+  show,
+  discount,
+  busy,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  show: boolean;
+  discount: DiscountType | null;
+  busy: boolean;
+  error: string;
+  onConfirm: (code: string) => void;
+  onCancel: () => void;
+}) {
+  const [code, setCode] = useState("");
+  useEffect(() => {
+    if (show) setCode("");
+  }, [show, discount?.discount_id]);
+
+  return (
+    <Modal show={show} max="max-w-sm" onClose={busy ? undefined : onCancel}>
+      <ModalHead
+        eyebrow="Manager approval"
+        title="Authorize discount"
+        tone="text-amber-600"
+        onClose={busy ? undefined : onCancel}
+      />
+      <div className="p-5 sm:p-6">
+        <p className="mb-4 text-sm text-neutral-500">
+          Enter the authorization code to apply{" "}
+          <b className="text-neutral-900">{discount?.name}</b> (
+          {pct(Number(discount?.percentage || 0))}%).
+        </p>
+        <label
+          className={`${eyebrow} mb-1.5 block`}
+          htmlFor="discount-authorization-code"
+        >
+          Authorization code
+        </label>
+        <input
+          id="discount-authorization-code"
+          autoFocus
+          type="password"
+          autoComplete="off"
+          value={code}
+          disabled={busy}
+          onChange={(event) => setCode(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && code.trim() && !busy) onConfirm(code);
+          }}
+          className="mb-2 w-full rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm outline-none focus:border-neutral-900"
+        />
+        {error && (
+          <p className="mb-3 text-sm font-medium text-red-600">{error}</p>
+        )}
+        <button
+          className={`${B.green} mb-2 flex items-center justify-center gap-2`}
+          disabled={!code.trim() || busy}
+          onClick={() => onConfirm(code)}
+        >
+          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />} Authorize discount
+        </button>
+        <button className={B.ghost} disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function SuccessModal({
+  receipt: r,
+  cashier,
+  onClose,
+}: {
+  receipt: ReceiptDto | null;
+  cashier: string;
+  onClose: () => void;
+}) {
+  const { money, dateTime } = useFmt();
+  const m = (v: number | null) => (v == null ? "—" : money(v));
+  const rows: [string, number | null][] = r
+    ? [
+        ["Subtotal", r.subtotal],
+        ["Discount", r.discount.amount ? -r.discount.amount : 0],
+        ["Tax", r.tax.amount],
+        ["Service charge", r.serviceCharge.amount],
+      ]
+    : [];
+  const isCash = r?.paymentMethod === "cash" && r.cashTendered != null;
+  return (
+    <Modal show={!!r} max="max-w-sm">
+      {r && (
+        <>
+          <div className="flex flex-col items-center px-6 pb-5 pt-8 text-center">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ ...SP, delay: 0.08 }}
+              className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-green-200 bg-green-50"
+            >
+              <Check className="h-6 w-6 text-green-500" strokeWidth={2.5} />
+            </motion.div>
+            <p className="text-lg font-semibold">Order placed successfully</p>
+            <p className="mb-3 text-sm text-neutral-400">
+              The kitchen can start preparing.
+            </p>
+            <div className="rounded-xl border border-neutral-200 bg-neutral-100 px-5 py-2">
+              <p className={eyebrow}>Order ID</p>
+              <p className="text-lg font-bold">{r.orderNumber}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-px border-y border-neutral-100 bg-neutral-100 text-center">
+            {[
+              ["Cashier", r.cashierName || cashier || "—"],
+              ["Date", dateTime(r.orderDate)],
+              [
+                "Type",
+                [
+                  r.orderType,
+                  r.tableNumber && `Table ${r.tableNumber}`,
+                  paymentLabel(r.paymentMethod),
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              ],
+            ].map(([l, v]) => (
+              <div key={l} className="bg-white px-3 py-3">
+                <p className={eyebrow}>{l}</p>
+                <p className="break-words text-sm font-medium capitalize text-neutral-700">
+                  {v}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="max-h-36 space-y-2 overflow-y-auto px-6 py-4">
+            {r.items.map((i, k) => (
+              <div key={k} className="flex justify-between gap-3 text-sm">
+                <span className="text-neutral-600">
+                  {i.productName}{" "}
+                  {i.selectedFlavorName && (
+                    <span className="block text-xs font-semibold text-amber-700">
+                      Flavor: {i.selectedFlavorName}
+                    </span>
+                  )}
+                  <span className="text-neutral-400">×{i.quantity}</span>
+                  {i.note && (
+                    <em className="block text-xs text-neutral-400">{i.note}</em>
+                  )}
+                </span>
+                <span className="font-medium">{m(i.subtotal)}</span>
+              </div>
+            ))}
+          </div>
+          {r.orderNote && (
+            <p className="mx-6 mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+              <b>Note:</b> {r.orderNote}
+            </p>
+          )}
+          <div className="mx-6 mb-4 overflow-hidden rounded-xl border border-neutral-100 text-sm">
+            {rows
+              .filter(([l, v]) => l === "Subtotal" || v)
+              .map(([l, v]) => (
+                <p
+                  key={l}
+                  className="flex justify-between border-b border-dashed border-neutral-100 px-4 py-2 text-neutral-400"
+                >
+                  <span>{l}</span>
+                  <span>{m(v)}</span>
+                </p>
+              ))}
+            <p className="flex items-center justify-between bg-neutral-50 px-4 py-3">
+              <span className="font-medium text-neutral-600">Total paid</span>
+              <span className="text-xl font-semibold">{m(r.total)}</span>
+            </p>
+            {isCash && (
+              <>
+                <p className="flex justify-between border-t border-dashed border-neutral-100 px-4 py-2 text-neutral-500">
+                  <span>Cash tendered</span>
+                  <span>{m(r.cashTendered)}</span>
+                </p>
+                <p className="flex justify-between bg-green-50 px-4 py-2.5 font-semibold text-green-600">
+                  <span>Change</span>
+                  <span>{m(r.change)}</span>
+                </p>
+              </>
+            )}
+          </div>
+          <div className="space-y-2 border-t border-neutral-100 p-6">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className={`${B.dark} flex items-center justify-center gap-2`}
+                onClick={() => printHtml(buildReceiptHtml(r, { cashier }))}
+              >
+                <Printer className="h-4 w-4" />
+                Receipt
+              </button>
+              <button
+                className={`${B.slate} flex items-center justify-center gap-2`}
+                onClick={() =>
+                  printHtml(buildKotHtml(r, { cashier }), 320, 520)
+                }
+              >
+                <FileText className="h-4 w-4" />
+                KOT
+              </button>
+            </div>
+            <button
+              className={B.ghost}
+              onClick={() =>
+                downloadHtml(
+                  buildReceiptHtml(r, { cashier }),
+                  `receipt-${r.orderNumber.replace(/[^\w-]/g, "") || "order"}.html`,
+                )
+              }
+            >
+              Download receipt
+            </button>
+            <button className={B.green} onClick={onClose}>
+              New order
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function HistoryModal({
+  show,
+  orders,
+  loading,
+  settlingId,
+  requestingId,
+  canCancel,
+  canRefund,
+  canRequestRefund,
+  onClose,
+  onSettle,
+  onRequestRefund,
+  onReprint,
+}: {
+  show: boolean;
+  orders: ShiftOrder[];
+  loading: boolean;
+  settlingId: number | null;
+  requestingId: number | null;
+  canCancel: boolean;
+  canRefund: boolean;
+  canRequestRefund: boolean;
+  onClose: () => void;
+  onSettle: (o: ShiftOrder) => void;
+  onRequestRefund: (o: ShiftOrder) => void;
+  onReprint: (o: ShiftOrder) => void;
+}) {
+  const { money, time } = useFmt();
+  const [open, setOpen] = useState<number | null>(null);
+  const valid = orders.filter((o) => isFinalizedSale(o));
+  const voidedCount = orders.filter(
+    (o) => norm(o.status) === "cancelled",
+  ).length;
+  const stats = [
+    ["Completed", String(valid.length), ""],
+    [
+      "Revenue",
+      money(valid.reduce((s, o) => s + o.total, 0)),
+      "text-green-600",
+    ],
+    ["Voided", String(voidedCount), "text-red-600"],
+  ];
+  const iconBtn =
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 transition active:scale-95";
+
+  return (
+    <Modal show={show} max="max-w-xl" onClose={onClose}>
+      <ModalHead
+        eyebrow="Shift summary"
+        title="Today's orders"
+        tone="text-blue-600"
+        onClose={onClose}
+      />
+      <div className="grid grid-cols-3 gap-2 border-b border-neutral-100 p-4 sm:gap-3 sm:p-5">
+        {stats.map(([l, v, c]) => (
+          <div
+            key={l}
+            className="rounded-xl border border-neutral-100 bg-neutral-50 p-3 text-center"
+          >
+            <p className={eyebrow}>{l}</p>
+            <p className={`break-words text-lg font-bold sm:text-xl ${c}`}>
+              {v}
+            </p>
+          </div>
+        ))}
+      </div>
+      {loading ? (
+        <div className="space-y-3 p-4" role="status" aria-busy="true" aria-label="Loading order history">
+          <SkeletonSectionCard theme="customer" />
+          <SkeletonKPICard theme="customer" />
+          <SkeletonKPICard theme="customer" />
+          <SkeletonKPICard theme="customer" />
+          <SkeletonListItem theme="customer" hasIcon hasAction />
+          <SkeletonListItem theme="customer" hasIcon hasAction />
+          <SkeletonListItem theme="customer" hasIcon hasAction />
+        </div>
+      ) : !orders.length ? (
+        <Empty icon={<Receipt className="h-8 w-8 text-neutral-200" />}>
+          No orders placed yet this shift
+        </Empty>
+      ) : (
+        orders.map((o) => {
+          const cancelled = norm(o.status) === "cancelled";
+          const refunded = norm(o.status) === "refunded";
+          const settled = cancelled || refunded;
+          const action = getSettlementAction(o.status, o.paymentStatus, o);
+          return (
+            <div
+              key={o.id}
+              className="border-b border-neutral-100 last:border-0"
+            >
+              <div className="flex items-center gap-2 px-4 py-4 sm:gap-3 sm:px-6">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`font-bold ${settled ? "text-neutral-400 line-through" : ""}`}
+                    >
+                      {o.orderNumber}
+                    </span>
+                    <Chip
+                      className={
+                        cancelled
+                          ? "bg-red-100 text-red-600"
+                          : refunded
+                            ? "bg-slate-100 text-slate-600"
+                            : "bg-green-100 text-green-700"
+                      }
+                    >
+                      {o.status}
+                    </Chip>
+                    <Chip>{o.orderType}</Chip>
+                  </div>
+                  <p className="text-sm text-neutral-500">
+                    {time(o.createdAt)} ·{" "}
+                    <b className="text-neutral-900">{money(o.total)}</b> ·{" "}
+                    {paymentLabel(o.paymentMethod)}
+                  </p>
+                </div>
+                <button
+                  className={iconBtn}
+                  onClick={() => setOpen(open === o.id ? null : o.id)}
+                >
+                  <ChevronRight
+                    className={`h-4 w-4 text-neutral-500 transition ${open === o.id ? "rotate-90" : ""}`}
+                  />
+                </button>
+                {!cancelled && (
+                  <button
+                    className={iconBtn}
+                    title="Reprint receipt"
+                    onClick={() => onReprint(o)}
+                  >
+                    <Printer className="h-4 w-4 text-neutral-500" />
+                  </button>
+                )}
+                {!cancelled && action && (action === "refund" ? canRefund : canCancel) && (
+                  <button
+                    className={`${iconBtn} !border-red-200 !bg-red-50`}
+                    disabled={settlingId === o.id}
+                    title={action === "refund" ? "Refund order" : "Void order"}
+                    onClick={() => onSettle(o)}
+                  >
+                    {settlingId === o.id ? (
+                      <Skeleton width={16} height={16} variant="shimmer" theme="admin" aria-label="Processing" />
+                    ) : action === "refund" ? (
+                      <RotateCcw className="h-4 w-4 text-red-600" />
+                    ) : (
+                      <Ban className="h-4 w-4 text-red-600" />
+                    )}
+                  </button>
+                )}
+                {!settled && canRequestRefund && action === "refund" && !o.refundRequestStatus && (
+                  <button
+                    className={`${iconBtn} !w-auto gap-1.5 !border-amber-200 !bg-amber-50 px-3 text-xs font-semibold text-amber-800`}
+                    disabled={requestingId === o.id}
+                    title="Request administrator refund review"
+                    onClick={() => onRequestRefund(o)}
+                  >
+                    {requestingId === o.id ? (
+                      <Skeleton width={14} height={14} variant="shimmer" theme="admin" aria-label="Requesting refund" />
+                    ) : (
+                      <span>Request refund</span>
+                    )}
+                  </button>
+                )}
+                {o.refundRequestStatus && (
+                  <Chip className={
+                    o.refundRequestStatus === "Pending"
+                      ? "bg-amber-100 text-amber-800"
+                      : o.refundRequestStatus === "Actioned"
+                        ? "bg-slate-700 text-white"
+                        : "bg-neutral-100 text-neutral-600"
+                  }>
+                    Refund {o.refundRequestStatus.toLowerCase()}
+                  </Chip>
+                )}
+              </div>
+              <Collapse open={open === o.id}>
+                <div className="mx-4 -mt-3 mb-4 space-y-1 rounded-xl border border-neutral-100 bg-neutral-50 p-4 text-sm sm:mx-6">
+                  {o.items.map((i, k) => (
+                    <p key={k} className="flex justify-between gap-3">
+                      <span>
+                        {i.name} ×{i.quantity}
+                        {i.selectedFlavorName && (
+                          <span className="block text-xs font-semibold text-amber-700">
+                            Flavor: {i.selectedFlavorName}
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-medium">
+                        {money(i.price * i.quantity)}
+                      </span>
+                    </p>
+                  ))}
+                  <p className="flex justify-between border-t border-neutral-200 pt-2 font-bold">
+                    <span>Total</span>
+                    <span>{money(o.total)}</span>
+                  </p>
+                </div>
+              </Collapse>
+            </div>
+          );
+        })
+      )}
+    </Modal>
+  );
+}
+
+/* ───────────────────────── page ───────────────────────── */
+
+export default function CashierView() {
+  const { width } = useViewport();
+  const compact = width < 1100;
+  const { user } = useAuth();
+  const { toasts, toast, dismiss } = useToast();
+  const firstPoll = useRef(true);
+  const placingRef = useRef(false);
+  const paymentAttemptRef = useRef<string | null>(null);
+  const paymentQrVersionRef = useRef<string | null>(null);
+  const paymentQrObjectUrlRef = useRef("");
+  const paymentProofUploadRef = useRef<{
+    attemptReference: string;
+    file: File;
+    fileUrl: string;
+  } | null>(null);
+  const prevReviewCount = useRef(0);
+  const prevDeliveryCount = useRef(0);
+
+  const u = user as Record<string, unknown> | null;
+  const cashierId = Number(u?.userId) > 0 ? Number(u?.userId) : null;
+  const canCancelPersisted = canCancelPersistedOrders(u?.role);
+  const canRefundPersisted = canRefundPersistedOrders(u?.role);
+  const canRequestRefund = normalizeRole(u?.role) === "cashier";
+  const canPerformSettlement = (action: Settle) =>
+    action === "refund" ? canRefundPersisted : canCancelPersisted;
+  const cashierName = String(
+    u?.fullName ??
+      u?.full_name ??
+      u?.name ??
+      ([u?.firstName, u?.lastName].filter(Boolean).join(" ") ||
+        (u?.username ?? u?.email ?? "Cashier")),
+  );
+
+  // menu + order
+  const [products, setProducts] = useState<MenuItem[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [productsError, setProductsError] = useState("");
+  const [category, setCategory] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [flavorTarget, setFlavorTarget] = useState<{
+    item: MenuItem;
+    editingCartKey?: string;
+  } | null>(null);
+  const [selectedFlavorId, setSelectedFlavorId] = useState<number | null>(null);
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
+  const [orderType, setOrderType] = useState<OrderTypeVal>("dine-in");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [platformReference, setPlatformReference] = useState("");
+  const [customerType, setCustomerType] = useState("");
+  const [orderNote, setOrderNote] = useState("");
+  const [soldToName, setSoldToName] = useState("");
+  const [showNote, setShowNote] = useState(false);
+  const [billing, setBilling] = useState<Billing>({
+    taxRate: 0,
+    serviceCharge: 0,
+  });
+  const [discountTypes, setDiscountTypes] = useState<DiscountType[]>([]);
+  const [settings, setSettings] = useState<GeneralRestaurantSettings>(
+    GENERAL_SETTINGS_DEFAULTS,
+  );
+  const [paymentQrImageUrl, setPaymentQrImageUrl] = useState("");
+  const [loadingPaymentQr, setLoadingPaymentQr] = useState(false);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator === "undefined" || navigator.onLine,
+  );
+
+  // modals
+  const [showAmount, setShowAmount] = useState(false);
+  const [showDiscounts, setShowDiscounts] = useState(false);
+  const [pendingDiscount, setPendingDiscount] = useState<DiscountType | null>(
+    null,
+  );
+  const [discountApproval, setDiscountApproval] =
+    useState<DiscountApproval | null>(null);
+  const [discountAuthError, setDiscountAuthError] = useState("");
+  const [authorizingDiscount, setAuthorizingDiscount] = useState(false);
+  const [showVoidConfirm, setShowVoidConfirm] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const [done, setDone] = useState<ReceiptDto | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [shiftOrders, setShiftOrders] = useState<ShiftOrder[]>([]);
+  const [shiftLoading, setShiftLoading] = useState(false);
+  const [settlingId, setSettlingId] = useState<number | null>(null);
+  const [refundRequestOrder, setRefundRequestOrder] = useState<ShiftOrder | null>(null);
+  const [refundRequestReason, setRefundRequestReason] = useState("");
+  const [requestingRefundId, setRequestingRefundId] = useState<number | null>(null);
+
+  // online orders
+  const [review, setReview] = useState<OnlineOrder[]>([]);
+  const [ready, setReady] = useState<OnlineOrder[]>([]);
+  const [delivery, setDelivery] = useState<OnlineOrder[]>([]);
+  const [handed, setHanded] = useState<OnlineOrder[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [proceedOrder, setProceedOrder] = useState<OnlineOrder | null>(null);
+  const [proceeding, setProceeding] = useState(false);
+  const [cancelId, setCancelId] = useState<number | null>(null);
+  const [handoverOrder, setHandoverOrder] = useState<OnlineOrder | null>(null);
+  const [rider, setRider] = useState("");
+  const [savingHandover, setSavingHandover] = useState(false);
+
+  const fmt = useMemo(
+    () => ({
+      s: settings,
+      money: (n: number) => formatCurrencyAmount(n, settings),
+      time: (v: string) => formatInSettingsTimezone(v, settings, TIME),
+      dateTime: (v: string) => formatInSettingsTimezone(v, settings, DATETIME),
+    }),
+    [settings],
+  );
+
+  /* ── data loading ── */
+  useEffect(() => {
+    const on = () => {
+      setIsOnline(true);
+      toast("success", "Connection restored.");
+    };
+    const off = () => {
+      setIsOnline(false);
+      toast(
+        "error",
+        "Lost connection. Orders cannot be placed until reconnected.",
+      );
+    };
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, [toast]);
+
+  const loadPaymentQr = useCallback(async () => {
+    setLoadingPaymentQr(true);
+    try {
+      const configuration = await fetchPaymentQrConfiguration();
+      let nextObjectUrl = "";
+      if (configuration.configured && configuration.imageUrl) {
+        nextObjectUrl = await fetchPaymentQrObjectUrl(configuration.imageUrl);
+      }
+      if (paymentQrObjectUrlRef.current) {
+        URL.revokeObjectURL(paymentQrObjectUrlRef.current);
+      }
+      paymentQrObjectUrlRef.current = nextObjectUrl;
+      paymentQrVersionRef.current = configuration.updatedAt;
+      setPaymentQrImageUrl(nextObjectUrl);
+      return { configuration, objectUrl: nextObjectUrl };
+    } catch {
+      if (paymentQrObjectUrlRef.current) {
+        URL.revokeObjectURL(paymentQrObjectUrlRef.current);
+      }
+      paymentQrObjectUrlRef.current = "";
+      paymentQrVersionRef.current = null;
+      setPaymentQrImageUrl("");
+      return { configuration: EMPTY_PAYMENT_QR, objectUrl: "" };
+    } finally {
+      setLoadingPaymentQr(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPaymentQr();
+    return () => {
+      if (paymentQrObjectUrlRef.current) {
+        URL.revokeObjectURL(paymentQrObjectUrlRef.current);
+        paymentQrObjectUrlRef.current = "";
+      }
+    };
+  }, [loadPaymentQr]);
+
+  const loadProducts = useCallback(async () => {
+    setLoadingProducts(true);
+    try {
+      const next = mapProducts(
+        (await api.get<Record<string, any>[]>(
+          "/products?item_type=menu_item",
+        )) ?? [],
+      );
+      setProducts(next);
+      setProductsError("");
+      // keep the cart in sync with live stock
+      setCart((prev) =>
+        prev.flatMap((item) => {
+          const cur = next.find((p) => p.id === item.id);
+          const currentFlavor = item.selectedFlavorProductId
+            ? next.find(
+                (p) =>
+                  p.id === item.selectedFlavorProductId &&
+                  p.categorySystemKey === "chicken_flavors" &&
+                  !isUnavailable(p.availabilityStatus),
+              )
+            : null;
+          const max = cur
+            ? Math.min(
+                getEffectiveMaxQuantity(cur.remainingStock),
+                currentFlavor
+                  ? getEffectiveMaxQuantity(currentFlavor.remainingStock)
+                  : item.selectedFlavorProductId
+                    ? 0
+                    : Number.POSITIVE_INFINITY,
+              )
+            : 0;
+          return cur && max > 0
+            ? [{
+                ...item,
+                ...cur,
+                quantity: Math.min(item.quantity, max),
+                ...(currentFlavor
+                  ? {
+                      selectedFlavorName: currentFlavor.name,
+                      selectedFlavorRemainingStock: currentFlavor.remainingStock,
+                    }
+                  : {}),
+              }]
+            : [];
+        }),
+      );
+    } catch {
+      setProductsError("Failed to load menu items.");
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
+
+  useEffect(() => {
+    let off = false;
+    api
+      .get<Record<string, any>>("/settings")
+      .then(
+        (d) =>
+          !off &&
+          setBilling({
+            taxRate: Math.max(0, Number(d?.taxRate || 0)),
+            serviceCharge: Math.max(0, Number(d?.serviceCharge || 0)),
+          }),
+      )
+      .catch(() => {});
+    api
+      .get<DiscountType[]>("/settings/discount-types")
+      .then((d) => {
+        if (off || !Array.isArray(d) || !d.length) return;
+        setDiscountTypes(d);
+        const defaultDiscount =
+          d.find((item) => Number(item.percentage || 0) <= 0) ?? d[0];
+        setCustomerType((p) =>
+          d.some((x) => x.name === p) ? p : defaultDiscount.name,
+        );
+      })
+      .catch(() => !off && toast("error", "Could not load discount types."));
+    fetchGeneralSettings().then((d) => !off && setSettings(d));
+    return () => {
+      off = true;
+    };
+  }, [toast]);
+
+  useEffect(() => {
+    if (orderType === "delivery") {
+      if (!["grabfood", "foodpanda"].includes(paymentMethod)) {
+        setPaymentMethod("grabfood");
+        setPlatformReference("GF-");
+        return;
+      }
+      setPlatformReference(paymentMethod === "grabfood" ? "GF-" : "");
+      return;
+    }
+    if (["grabfood", "foodpanda"].includes(paymentMethod)) {
+      setPaymentMethod("cash");
+    }
+    setPlatformReference("");
+  }, [orderType, paymentMethod]);
+
+  const refreshOrders = useCallback(async () => {
+    if (document.hidden) return;
+    try {
+      const [r, p, d] = await Promise.all([
+        api.get<OnlineOrder[]>("/orders/new-online"),
+        api.get<OnlineOrder[]>("/orders/ready-pickup"),
+        api.get<OnlineOrder[]>("/orders/delivery-handover"),
+      ]);
+      const first = firstPoll.current;
+      firstPoll.current = false;
+      const nextReview = r ?? [];
+      const nextDelivery = (d ?? []).filter((o) => isPaid(o.paymentStatus));
+
+      // open the panels when new orders arrive (not on the very first load)
+      if (!first && nextReview.length > prevReviewCount.current)
+        setNotifOpen(true);
+      if (!first && nextDelivery.length > prevDeliveryCount.current)
+        setDeliveryOpen(true);
+      prevReviewCount.current = nextReview.length;
+      prevDeliveryCount.current = nextDelivery.length;
+
+      setReview(nextReview);
+      setReady((p ?? []).filter((o) => isPaid(o.paymentStatus)));
+      setDelivery(nextDelivery);
+    } catch (e) {
+      console.warn("Order notification refresh failed:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOrders();
+  }, [refreshOrders]);
+  useEventInvalidation({
+    topics: ["orders.changed", "payments.changed"],
+    onInvalidate: refreshOrders,
+  });
+
+  const loadShift = useCallback(async () => {
+    setShiftLoading(true);
+    try {
+      const d = await api.get<ShiftOrder[]>("/orders/shift");
+      setShiftOrders(Array.isArray(d) ? d : []);
+    } catch {
+      toast("error", "Could not load shift orders.");
+      setShiftOrders([]);
+    } finally {
+      setShiftLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (showHistory) void loadShift();
+  }, [showHistory, loadShift]);
+
+  /* ── online-order actions ── */
+  const patchOrder = (id: number, body: Record<string, unknown>) =>
+    api.patch(`/orders/${id}`, { cashierId, ...body });
+
+  const settle = async (
+    id: number,
+    action: Settle,
+    label: string,
+    onDone: (status: string) => void,
+  ) => {
+    if (!canPerformSettlement(action)) return;
+    const status = action === "refund" ? "Refunded" : "Cancelled";
+    setSettlingId(id);
+    try {
+      await patchOrder(id, { status });
+      onDone(status);
+      toast("info", `${label} ${action === "refund" ? "refunded" : "voided"}.`);
+    } catch (error) {
+      toast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : `Failed to ${action} order. Please try again.`,
+      );
+    } finally {
+      setSettlingId(null);
+    }
+  };
+
+  const cancelOrder = review.find((o) => o.id === cancelId);
+  const cancelAction = cancelOrder
+    ? getSettlementAction(cancelOrder.trackingStatus, cancelOrder.paymentStatus, cancelOrder)
+    : null;
+
+  const confirmCancel = async () => {
+    if (!cancelOrder || !cancelAction) return setCancelId(null);
+    await settle(cancelOrder.id, cancelAction, "Order", () =>
+      setReview((p) => p.filter((o) => o.id !== cancelOrder.id)),
+    );
+    setCancelId(null);
+  };
+
+  const settleShiftOrder = (o: ShiftOrder) => {
+    const action = getSettlementAction(o.status, o.paymentStatus, o);
+    if (!action)
+      return toast(
+        "warning",
+        "Completed, refunded, or cancelled orders cannot be changed.",
+      );
+    if (!canPerformSettlement(action)) return;
+    return settle(o.id, action, `Order ${o.orderNumber}`, (status) =>
+      setShiftOrders((p) =>
+        p.map((e) => (e.id === o.id ? { ...e, status } : e)),
+      ),
+    );
+  };
+
+  const openRefundRequest = (order: ShiftOrder) => {
+    setRefundRequestReason("");
+    setRefundRequestOrder(order);
+  };
+
+  const submitRefundRequest = async () => {
+    const order = refundRequestOrder;
+    const reason = refundRequestReason.trim();
+    if (!order || !reason || requestingRefundId !== null) return;
+    setRequestingRefundId(order.id);
+    try {
+      const result = await api.post<{ request: { id: number; status: "Pending" } }>(
+        "/refund-requests",
+        { orderId: order.id, reason },
+      );
+      setShiftOrders((current) => current.map((entry) =>
+        entry.id === order.id
+          ? {
+              ...entry,
+              refundRequestId: result.request.id,
+              refundRequestStatus: result.request.status,
+            }
+          : entry,
+      ));
+      setRefundRequestOrder(null);
+      setRefundRequestReason("");
+      toast("success", `Refund request for ${order.orderNumber} sent to the Administrator.`);
+    } catch (error) {
+      toast("error", error instanceof Error ? error.message : "Failed to send the refund request.");
+    } finally {
+      setRequestingRefundId(null);
+    }
+  };
+
+  const confirmProceed = async () => {
+    const o = proceedOrder;
+    if (!o) return;
+    setProceeding(true);
+    try {
+      await patchOrder(o.id, { status: "Queued", paymentStatus: "Paid" });
+      setReview((p) => p.filter((x) => x.id !== o.id));
+      setProceedOrder(null);
+      toast(
+        "success",
+        `Order ${o.orderNumber} confirmed and moved to cook queue.`,
+      );
+    } catch (error) {
+      toast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Failed to confirm order. Please try again.",
+      );
+    } finally {
+      setProceeding(false);
+    }
+  };
+
+  const confirmPickup = async (id: number) => {
+    try {
+      await patchOrder(id, { status: "Completed" });
+      setReady((p) => p.filter((o) => o.id !== id));
+      toast("success", "Customer pickup confirmed successfully.");
+    } catch {
+      toast("error", "Failed to confirm customer pickup. Please try again.");
+    }
+  };
+
+  const confirmHandover = async () => {
+    const o = handoverOrder,
+      name = rider.trim();
+    if (!o || !name) return;
+    setSavingHandover(true);
+    try {
+      await patchOrder(o.id, {
+        status: "Completed",
+        riderName: name,
+      });
+      setDelivery((p) => p.filter((x) => x.id !== o.id));
+      setHanded((p) => [
+        {
+          ...o,
+          trackingStatus: "Completed",
+          handoverTimestamp: new Date().toISOString(),
+          riderName: name,
+        },
+        ...p.filter((x) => x.id !== o.id),
+      ]);
+      setHandoverOrder(null);
+      setRider("");
+      toast("success", `Order handed to rider ${name}.`);
+    } catch (e) {
+      toast(
+        "error",
+        e instanceof Error ? e.message : "Failed to record rider handover.",
+      );
+    } finally {
+      setSavingHandover(false);
+    }
+  };
+
+  const reprint = async (o: ShiftOrder) => {
+    try {
+      const dto = await api.get<ReceiptDto>(`/orders/${o.id}/receipt`);
+      printHtml(buildReceiptHtml(dto, { cashier: cashierName }));
+    } catch {
+      toast("error", "Unable to load this receipt. Please try again.");
+    }
+  };
+
+  /* ── cart ── */
+  const chickenFlavors = useMemo(
+    () => products.filter((product) =>
+      product.categorySystemKey === "chicken_flavors" &&
+      !isUnavailable(product.availabilityStatus) &&
+      getEffectiveMaxQuantity(product.remainingStock) > 0),
+    [products],
+  );
+  const cashierProducts = useMemo(
+    () => products.filter((product) => product.categorySystemKey !== "chicken_flavors"),
+    [products],
+  );
+  const categories = useMemo(
+    () => ["ALL", ...[...new Set(cashierProducts.map((p) => p.category))].sort()],
+    [cashierProducts],
+  );
+  const filtered = useMemo(
+    () =>
+      cashierProducts.filter(
+        (p) =>
+          (category === "ALL" || p.category === category) &&
+          p.name.toLowerCase().includes(search.toLowerCase()),
+      ),
+    [cashierProducts, category, search],
+  );
+  const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
+  const gross = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const discount = discountTypes.find((d) => d.name === customerType);
+  const discountRate = Number(discount?.percentage || 0);
+  const pricing = useMemo(
+    () => computePricing(gross, billing, discountRate),
+    [gross, billing, discountRate],
+  );
+
+  // A discount approval is tied to the items and quantities it was issued for.
+  // Editing a note must not cancel it, so only items/quantities are watched.
+  const cartSignature = cart.map((i) => `${i.cartKey}:${i.quantity}`).join(",");
+  useEffect(() => {
+    setDiscountApproval(null);
+    if (!cart.length) setCheckoutStep(1);
+  }, [cartSignature]);
+
+  const addDirectToCart = useCallback((item: MenuItem) => {
+    const max = getEffectiveMaxQuantity(item.remainingStock);
+    if (isUnavailable(item.availabilityStatus) || max === 0) return;
+    setCart((prev) => {
+      const cartKey = `${item.id}:`;
+      const ex = prev.find((c) => c.cartKey === cartKey);
+      if (!ex) return [...prev, { ...item, cartKey, quantity: 1 }];
+      return ex.quantity >= max
+        ? prev
+        : prev.map((c) =>
+            c.cartKey === cartKey ? { ...c, quantity: c.quantity + 1 } : c,
+          );
+    });
+  }, []);
+
+  const requestAddToCart = useCallback((item: MenuItem) => {
+    if (item.categorySystemKey !== "menu_food") return addDirectToCart(item);
+    setSelectedFlavorId(null);
+    setFlavorTarget({ item });
+  }, [addDirectToCart]);
+
+  const editCartFlavor = useCallback((item: CartItem) => {
+    setSelectedFlavorId(item.selectedFlavorProductId ?? null);
+    setFlavorTarget({ item, editingCartKey: item.cartKey });
+  }, []);
+
+  const confirmFlavor = useCallback(() => {
+    if (!flavorTarget || !selectedFlavorId) return;
+    const flavor = chickenFlavors.find((entry) => entry.id === selectedFlavorId);
+    if (!flavor) return;
+    const nextKey = `${flavorTarget.item.id}:${flavor.id}`;
+    setCart((current) => {
+      const max = Math.min(
+        getEffectiveMaxQuantity(flavorTarget.item.remainingStock),
+        getEffectiveMaxQuantity(flavor.remainingStock),
+      );
+      if (flavorTarget.editingCartKey) {
+        const editing = current.find((entry) => entry.cartKey === flavorTarget.editingCartKey);
+        if (!editing) return current;
+        const collision = current.find((entry) => entry.cartKey === nextKey && entry.cartKey !== editing.cartKey);
+        if (collision) {
+          return current
+            .filter((entry) => entry.cartKey !== editing.cartKey)
+            .map((entry) => entry.cartKey === collision.cartKey
+              ? { ...entry, quantity: Math.min(max, entry.quantity + editing.quantity) }
+              : entry);
+        }
+        return current.map((entry) => entry.cartKey === editing.cartKey
+          ? {
+              ...entry,
+              cartKey: nextKey,
+              selectedFlavorProductId: flavor.id,
+              selectedFlavorName: flavor.name,
+              selectedFlavorRemainingStock: flavor.remainingStock,
+              quantity: Math.min(max, entry.quantity),
+            }
+          : entry);
+      }
+      const existing = current.find((entry) => entry.cartKey === nextKey);
+      if (existing) {
+        return existing.quantity >= max ? current : current.map((entry) =>
+          entry.cartKey === nextKey
+            ? { ...entry, quantity: entry.quantity + 1 }
+            : entry);
+      }
+      return [...current, {
+        ...flavorTarget.item,
+        cartKey: nextKey,
+        quantity: 1,
+        selectedFlavorProductId: flavor.id,
+        selectedFlavorName: flavor.name,
+        selectedFlavorRemainingStock: flavor.remainingStock,
+      }];
+    });
+    setFlavorTarget(null);
+    setSelectedFlavorId(null);
+  }, [chickenFlavors, flavorTarget, selectedFlavorId]);
+
+  const removeFromCart = useCallback(
+    (cartKey: string) => setCart((p) => p.filter((c) => c.cartKey !== cartKey)),
+    [],
+  );
+  const updateQty = useCallback(
+    (cartKey: string, delta: number) => {
+      setCart((prev) =>
+        prev.flatMap((item) => {
+          if (item.cartKey !== cartKey) return [item];
+          const max = Math.min(
+            getEffectiveMaxQuantity(products.find((p) => p.id === item.id)?.remainingStock ?? item.remainingStock),
+            item.selectedFlavorProductId
+              ? getEffectiveMaxQuantity(products.find((p) => p.id === item.selectedFlavorProductId)?.remainingStock ?? 0)
+              : Number.POSITIVE_INFINITY,
+          );
+          const quantity = Math.min(Math.max(0, item.quantity + delta), max);
+          return quantity > 0 ? [{ ...item, quantity }] : [];
+        }),
+      );
+    },
+    [products],
+  );
+
+  // Puts the whole order form back to its starting state (used by Void and New order).
+  const clearOrderForm = () => {
+    setCart([]);
+    setFlavorTarget(null);
+    setSelectedFlavorId(null);
+    setCheckoutStep(1);
+    setOrderType("dine-in");
+    setPaymentMethod("cash");
+    setPlatformReference("");
+    setCustomerType(
+      discountTypes.find((item) => Number(item.percentage || 0) <= 0)?.name ??
+        discountTypes[0]?.name ??
+        "",
+    );
+    setOrderNote("");
+    setSoldToName("");
+    setShowNote(false);
+    setShowDiscounts(false);
+    setPendingDiscount(null);
+    setDiscountApproval(null);
+    setDiscountAuthError("");
+    paymentAttemptRef.current = null;
+    paymentQrVersionRef.current = null;
+    paymentProofUploadRef.current = null;
+  };
+
+  const voidCurrentOrder = () => {
+    clearOrderForm();
+    setShowAmount(false);
+    setShowVoidConfirm(false);
+    toast("info", "Current order voided.");
+  };
+
+  const resetOrder = () => {
+    setDone(null);
+    clearOrderForm();
+  };
+
+  const selectDiscount = (nextDiscount: DiscountType) => {
+    setShowDiscounts(false);
+    setDiscountApproval(null);
+    setDiscountAuthError("");
+    if (Number(nextDiscount.percentage || 0) <= 0) {
+      setCustomerType(nextDiscount.name);
+      setPendingDiscount(null);
+      return;
+    }
+
+    const defaultDiscount = discountTypes.find(
+      (item) => Number(item.percentage || 0) <= 0,
+    );
+    setCustomerType(defaultDiscount?.name ?? "");
+    setPendingDiscount(nextDiscount);
+  };
+
+  const authorizeDiscount = async (authorizationCode: string) => {
+    if (!pendingDiscount) return;
+    setAuthorizingDiscount(true);
+    setDiscountAuthError("");
+    try {
+      const response = await api.post<{
+        approvalToken: string;
+        discount: DiscountType;
+      }>("/orders/discount-authorization", {
+        discount_id: pendingDiscount.discount_id,
+        authorization_code: authorizationCode,
+        items: cart.map((item) => ({
+          product_id: item.id,
+          qty: item.quantity,
+          ...(item.selectedFlavorProductId && {
+            selected_flavor_product_id: item.selectedFlavorProductId,
+          }),
+        })),
+      });
+      const approvedDiscount = response.discount;
+      setDiscountTypes((current) =>
+        current.map((item) =>
+          item.discount_id === approvedDiscount.discount_id
+            ? approvedDiscount
+            : item,
+        ),
+      );
+      setCustomerType(approvedDiscount.name);
+      setDiscountApproval({
+        token: response.approvalToken,
+        discountId: approvedDiscount.discount_id,
+      });
+      setPendingDiscount(null);
+      toast("success", `${approvedDiscount.name} discount authorized.`);
+    } catch (error) {
+      setDiscountAuthError(
+        error instanceof Error
+          ? error.message
+          : "Discount authorization failed",
+      );
+    } finally {
+      setAuthorizingDiscount(false);
+    }
+  };
+
+  const openPayment = async () => {
+    if (
+      discount &&
+      discountRate > 0 &&
+      discountApproval?.discountId !== discount.discount_id
+    ) {
+      setPendingDiscount(discount);
+      setDiscountAuthError("");
+      return;
+    }
+    if (orderType === "delivery") {
+      const reference = platformReference.trim();
+      const referenceError = getPlatformReferenceError(paymentMethod, reference);
+      if (referenceError) {
+        toast("error", referenceError);
+        return;
+      }
+      void placeOrder({ tendered: pricing.amountDue });
+      return;
+    }
+    if (paymentMethod === "gcash_onsite") {
+      const currentQr = await loadPaymentQr();
+      if (!currentQr.configuration.configured || !currentQr.objectUrl) {
+        toast(
+          "error",
+          "GCash QR is not configured. Ask an Administrator to upload it in Settings.",
+        );
+        return;
+      }
+      paymentAttemptRef.current ??= `POS-GCASH-${crypto.randomUUID()}`;
+    }
+    setShowAmount(true);
+  };
+
+  /* ── place order ── */
+  const placeOrder = async ({
+    tendered,
+    file,
+  }: {
+    tendered: number;
+    file?: File;
+  }) => {
+    if (placingRef.current) return;
+    if (!isOnline) return toast("error", "No connection. Cannot place order.");
+    if (
+      paymentMethod === "cash" &&
+      (
+        !Number.isFinite(tendered) ||
+        tendered < 0 ||
+        tendered > MAX_CASH_TENDERED ||
+        Math.abs(tendered * 100 - Math.round(tendered * 100)) > 1e-6
+      )
+    ) {
+      toast("error", "Cash tendered must be between ₱0.00 and ₱100,000.00 with up to two decimal places.");
+      return;
+    }
+    placingRef.current = true;
+    setShowAmount(false);
+    setPlacing(true);
+    const { discountAmount, taxAmount, amountDue } = pricing;
+    const change = Math.max(0, tendered - amountDue);
+    const isCash = paymentMethod === "cash";
+    const isThirdPartyDelivery = orderType === "delivery";
+    const isOnsiteGcash = paymentMethod === "gcash_onsite" && !isThirdPartyDelivery;
+
+    try {
+      if (!isCash && !isThirdPartyDelivery && !paymentAttemptRef.current) {
+        throw new Error("GCash payment confirmation expired. Reopen checkout and try again.");
+      }
+      let proofImageUrl: string | undefined;
+      if (isOnsiteGcash) {
+        if (!file) {
+          throw new Error("Choose a payment proof before confirming GCash payment.");
+        }
+        const attemptReference = paymentAttemptRef.current as string;
+        const cachedProof = paymentProofUploadRef.current;
+        if (
+          cachedProof?.attemptReference === attemptReference &&
+          cachedProof.file === file
+        ) {
+          proofImageUrl = cachedProof.fileUrl;
+        } else {
+          const form = new FormData();
+          form.append("proof", file, file.name || `payment-proof-${Date.now()}.jpg`);
+          try {
+            proofImageUrl = (
+              await api.post<{ fileUrl: string }>("/upload-proof", form)
+            ).fileUrl;
+          } catch {
+            throw new Error("Failed to upload the payment proof. Please try again.");
+          }
+          paymentProofUploadRef.current = {
+            attemptReference,
+            file,
+            fileUrl: proofImageUrl,
+          };
+        }
+      }
+
+      const res = await api.post<{
+        orderId?: number;
+        orderNumber?: string;
+        transactionId?: string;
+        receipt: ReceiptDto;
+      }>("/orders", {
+        items: cart.map((i) => ({
+          product_id: i.id,
+          qty: i.quantity,
+          ...(i.selectedFlavorProductId && {
+            selected_flavor_product_id: i.selectedFlavorProductId,
+          }),
+          subtotal: i.price * i.quantity,
+          name: i.name,
+          price: i.price,
+          ...(i.note && { note: i.note }),
+        })),
+        total: amountDue,
+        order_type: orderType,
+        payment_method: paymentMethod,
+        ...(isThirdPartyDelivery && {
+          payment_reference: platformReference.trim(),
+        }),
+        ...(!isCash && !isThirdPartyDelivery && {
+          payment_status: "Paid",
+          payment_reference: paymentAttemptRef.current,
+          payment_qr_version: paymentQrVersionRef.current,
+          proof_image_url: proofImageUrl,
+        }),
+        customer_type: customerType,
+        ...(soldToName.trim() && { customer_name: soldToName.trim() }),
+        discount_name: customerType,
+        discount_rate: discountRate,
+        discount_id: discount?.discount_id ?? null,
+        ...(discountApproval && {
+          discount_authorization: discountApproval.token,
+        }),
+        discount_amount: discountAmount,
+        vat_amount: taxAmount,
+        vat_exempt_amount: 0,
+        ...(isCash && { cash_tendered: tendered, change_amount: change }),
+        ...(orderNote.trim() && { order_note: orderNote.trim() }),
+      });
+
+      setDone(res.receipt);
+      paymentAttemptRef.current = null;
+      paymentQrVersionRef.current = null;
+      paymentProofUploadRef.current = null;
+      void loadProducts();
+    } catch (e) {
+      console.error("Order failed:", e);
+      toast(
+        "error",
+        e instanceof Error
+          ? e.message
+          : "Failed to submit order. Please try again.",
+      );
+    } finally {
+      placingRef.current = false;
+      setPlacing(false);
+    }
+  };
+
+  const onlineCount = review.length + ready.length;
+  const pendingDelivery = delivery.filter(
+    (o) =>
+      !o.handoverTimestamp &&
+      !["handed to rider", "out for delivery"].includes(norm(o.trackingStatus)),
+  );
+  const deliveryCount = pendingDelivery.length + handed.length;
+  const payBtnLabel = placing
+    ? "Processing…"
+    : loadingPaymentQr && paymentMethod === "gcash_onsite"
+      ? "Loading GCash QR…"
+      : !isOnline
+      ? "Offline — cannot place order"
+      : paymentMethod === "gcash_onsite"
+        ? "Proceed to Checkout"
+        : `Pay ${fmt.money(pricing.amountDue)}`;
+
+  return (
+    <Ctx.Provider value={fmt}>
+      <Sidebar />
+      {!isOnline && (
+        <div className="fixed left-1/2 top-3 z-[99999] flex w-max max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-lg">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          No connection — orders cannot be placed
+        </div>
+      )}
+
+      <div
+        className={`flex bg-white text-neutral-900 ${compact ? "min-h-screen flex-col pt-[72px]" : "h-screen overflow-hidden pl-20"}`}
+        style={{ fontFamily: "'Poppins', sans-serif" }}
+      >
+        {/* ── Menu ── */}
+        <section
+          className={`flex min-w-0 flex-1 flex-col ${compact ? "" : "overflow-hidden"}`}
+        >
+          <div className="shrink-0 px-4 pt-6 sm:px-8 sm:pt-7">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <h1 className="text-2xl font-semibold">Menu</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <Pill onClick={() => setShowHistory(true)}>
+                  <History className="h-4 w-4" />
+                  History
+                </Pill>
+                <Pill
+                  tone={onlineCount ? "green" : "idle"}
+                  pulse={!!onlineCount}
+                  count={onlineCount}
+                  open={notifOpen}
+                  onClick={() => setNotifOpen((p) => !p)}
+                >
+                  Online Orders
+                </Pill>
+                <Pill
+                  tone={deliveryCount ? "dark" : "idle"}
+                  pulse={!!deliveryCount}
+                  count={deliveryCount}
+                  open={deliveryOpen}
+                  onClick={() => setDeliveryOpen((p) => !p)}
+                >
+                  Delivery Handover
+                </Pill>
+              </div>
+            </div>
+
+            <Collapse open={notifOpen}>
+              <div className="rounded-2xl border border-green-200 bg-green-50/40">
+                {!onlineCount && (
+                  <Empty>
+                    No online pickup orders waiting for cashier action
+                  </Empty>
+                )}
+                {review.length > 0 && (
+                  <PanelTitle>Awaiting cashier review</PanelTitle>
+                )}
+                {review.map((o) => {
+                  const action = getSettlementAction(
+                    o.trackingStatus,
+                    o.paymentStatus,
+                    o,
+                  );
+                  return (
+                    <OrderRow
+                      key={o.id}
+                      o={o}
+                      showPay
+                      actions={
+                        <>
+                          {action && canPerformSettlement(action) && (
+                            <button
+                              className={ACT.red}
+                              disabled={settlingId === o.id}
+                              onClick={() => setCancelId(o.id)}
+                            >
+                              {settlingId === o.id && <Skeleton width={14} height={14} variant="shimmer" theme="admin" aria-label="Processing" />}
+                              {action === "refund"
+                                ? "Refund order"
+                                : "Void order"}
+                            </button>
+                          )}
+                          <button
+                            className={ACT.green}
+                            onClick={() => setProceedOrder(o)}
+                          >
+                            Proceed to order
+                          </button>
+                        </>
+                      }
+                    />
+                  );
+                })}
+                {ready.length > 0 && <PanelTitle>Ready for pickup</PanelTitle>}
+                {ready.map((o) => (
+                  <OrderRow
+                    key={`r${o.id}`}
+                    o={o}
+                    showPay
+                    actions={
+                      <button
+                        className={ACT.dark}
+                        onClick={() => void confirmPickup(o.id)}
+                      >
+                        Confirm pickup
+                      </button>
+                    }
+                  />
+                ))}
+              </div>
+            </Collapse>
+
+            <Collapse open={deliveryOpen}>
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50/60">
+                {!deliveryCount && (
+                  <Empty>No delivery orders waiting for rider handover</Empty>
+                )}
+                {pendingDelivery.length > 0 && (
+                  <PanelTitle>Ready for rider handover</PanelTitle>
+                )}
+                {pendingDelivery.map((o) => (
+                  <OrderRow
+                    key={`d${o.id}`}
+                    o={o}
+                    actions={
+                      <button
+                        className={ACT.dark}
+                        onClick={() => {
+                          setHandoverOrder(o);
+                          setRider(o.riderName ?? "");
+                        }}
+                      >
+                        Handed to rider
+                      </button>
+                    }
+                  />
+                ))}
+                {handed.length > 0 && <PanelTitle>Handed to rider</PanelTitle>}
+                {handed.map((o) => (
+                  <div
+                    key={`h${o.id}`}
+                    className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200/70 p-4 first:border-t-0"
+                  >
+                    <div>
+                      <p className="font-bold">{o.orderNumber}</p>
+                      {o.riderName && (
+                        <p className="text-sm text-neutral-500">
+                          Rider: {o.riderName}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-sm text-neutral-400">
+                      {o.handoverTimestamp && fmt.dateTime(o.handoverTimestamp)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Collapse>
+
+            <div className="relative mb-4">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search items…"
+                className="w-full rounded-xl border border-neutral-200 bg-neutral-50 py-3 pl-11 pr-4 text-sm outline-none focus:border-neutral-900"
+              />
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-4 [scrollbar-width:none]">
+              {categories.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCategory(c)}
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-5 py-2 text-sm font-medium capitalize transition ${category === c ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:border-neutral-400"}`}
+                >
+                  {c === "ALL" ? "All items" : c.toLowerCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 pb-8 sm:px-8">
+            {loadingProducts && !products.length ? (
+              <div className="space-y-4 p-4" role="status" aria-busy="true" aria-label="Loading menu">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "16px" }}>
+                  {[...Array(6)].map((_, i) => (
+                    <SkeletonProductCard key={i} theme="customer" />
+                  ))}
+                </div>
+              </div>
+            ) : productsError ? (
+              <Empty>
+                <p className="text-red-400">{productsError}</p>
+                <button
+                  onClick={() => void loadProducts()}
+                  className="mt-1 flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-600"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Retry
+                </button>
+              </Empty>
+            ) : !filtered.length ? (
+              <Empty
+                icon={<UtensilsCrossed className="h-8 w-8 text-neutral-300" />}
+              >
+                No items found
+              </Empty>
+            ) : (
+              <motion.div
+                layout
+                className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))] sm:gap-4"
+              >
+                {filtered.map((item) => (
+                  <ProductCard
+                    key={item.id}
+                    item={item}
+                    onAdd={requestAddToCart}
+                    quantity={cart.find((c) => c.id === item.id)?.quantity ?? 0}
+                  />
+                ))}
+              </motion.div>
+            )}
+          </div>
+        </section>
+
+        {/* ── Cart ── */}
+        <aside
+          className={`flex shrink-0 flex-col bg-white ${compact ? "w-full border-t" : "w-[400px] border-l"} border-neutral-100`}
+        >
+          <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-5 sm:px-6 sm:py-6">
+            
+           <div>
+    <h2 className="text-lg font-semibold">Current order</h2>
+              <p className="text-sm text-neutral-400">
+                {totalQty
+                  ? `${totalQty} item${totalQty > 1 ? "s" : ""}`
+                  : "No items yet"}
+              </p>
+            </div>
+            {cart.length > 0 && (
+             <button
+                  onClick={() => setShowVoidConfirm(true)}
+                  title="Void current order"
+                  style={{ marginRight: compact ? 0 : 80 }}
+                  className="flex h-10 items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700"
+>
+                <Ban className="h-4 w-4" />
+                Void
+              </button>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6">
+            {cart.length === 0 ? (
+              <Empty
+                icon={<UtensilsCrossed className="h-8 w-8 text-neutral-300" />}
+              >
+                Add items to start
+              </Empty>
+            ) : checkoutStep === 1 ? (
+              <AnimatePresence>
+                {cart.map((item) => (
+                  <CartRow
+                    key={item.cartKey}
+                    item={item}
+                    onRemove={removeFromCart}
+                    onQty={updateQty}
+                    onEditFlavor={editCartFlavor}
+                  />
+                ))}
+              </AnimatePresence>
+            ) : (
+              <div className="space-y-3 py-5">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-neutral-400">
+                  Confirmed order summary
+                </p>
+                {cart.map((item) => (
+                  <div
+                    key={item.cartKey}
+                    className="flex items-start justify-between gap-3 rounded-xl border border-neutral-100 bg-neutral-50 p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-neutral-800">{item.name}</p>
+                      {item.selectedFlavorName && (
+                        <p className="text-xs font-semibold text-amber-700">
+                          Flavor: {item.selectedFlavorName}
+                        </p>
+                      )}
+                      <p className="text-xs text-neutral-400">
+                        {item.quantity} × {fmt.money(item.price)}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-semibold">
+                      {fmt.money(item.price * item.quantity)}
+                    </p>
+                  </div>
+                ))}
+                <div className="rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-500">
+                  Order type: <strong className="text-neutral-800">{orderType === "dine-in" ? "Dine-in" : orderType === "take-out" ? "Take-out" : "Delivery"}</strong>
+                  {orderType === "delivery" && platformReference.trim() && (
+                    <span className="block pt-1">Reference: {platformReference.trim()}</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {cart.length > 0 && (
+            <div className="shrink-0 border-t border-neutral-100 p-4 sm:p-6">
+              <div className="mb-4 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 text-sm">
+                {(checkoutStep === 1
+                  ? [["Subtotal", fmt.money(gross), "text-neutral-500"]]
+                  : [
+                      ["Subtotal", fmt.money(gross), "text-neutral-500"],
+                      [
+                        `Discount (${pct(discountRate)}%)`,
+                        `-${fmt.money(pricing.discountAmount)}`,
+                        "text-green-600",
+                      ],
+                      [
+                        `Tax (${pct(billing.taxRate)}%)`,
+                        fmt.money(pricing.taxAmount),
+                        "text-neutral-500",
+                      ],
+                      [
+                        `Service charge (${pct(billing.serviceCharge)}%)`,
+                        fmt.money(pricing.serviceChargeAmount),
+                        "text-neutral-500",
+                      ],
+                    ]).map(([l, v, c]) => (
+                  <p
+                    key={l}
+                    className="flex justify-between gap-3 border-b border-dashed border-neutral-200 px-4 py-2.5"
+                  >
+                    <span className="text-neutral-400">{l}</span>
+                    <span className={`font-medium ${c}`}>{v}</span>
+                  </p>
+                ))}
+                {checkoutStep === 2 && <p className="flex items-center justify-between bg-neutral-100 px-4 py-3.5">
+                  <span className="font-medium text-neutral-600">Total</span>
+                  <span className="text-2xl font-semibold">
+                    {fmt.money(pricing.amountDue)}
+                  </span>
+                </p>}
+              </div>
+
+              <div className={`mb-2 grid gap-2 ${checkoutStep === 2 ? "grid-cols-1" : "grid-cols-1"}`}>
+                {checkoutStep === 1 && (
+                <Select
+                  value={orderType}
+                  onChange={(v) => {
+                    const nextOrderType = v as OrderTypeVal;
+                    setOrderType(nextOrderType);
+                    setPaymentMethod(nextOrderType === "delivery" ? "grabfood" : "cash");
+                    if (nextOrderType !== "delivery") setPlatformReference("");
+                  }}
+                  options={[
+                    { value: "dine-in", label: "Dine in" },
+                    { value: "take-out", label: "Take out" },
+                    { value: "delivery", label: "Delivery" },
+                  ]}
+                />
+                )}
+                {checkoutStep === 1 && orderType === "delivery" && (
+                  <Select
+                    value={paymentMethod}
+                    onChange={(v) => setPaymentMethod(v as PaymentMethod)}
+                    options={[
+                      { value: "grabfood", label: "GrabFood" },
+                      { value: "foodpanda", label: "Foodpanda" },
+                    ]}
+                  />
+                )}
+                {checkoutStep === 2 && orderType !== "delivery" && (
+                <Select
+                  value={paymentMethod}
+                  onChange={(v) => setPaymentMethod(v as PaymentMethod)}
+                  options={[
+                        { value: "cash", label: "Cash" },
+                        { value: "gcash_onsite", label: "Online Payment" },
+                      ]}
+                />
+                )}
+                {checkoutStep === 2 && orderType === "delivery" && (
+                  <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm font-semibold text-neutral-700">
+                    {paymentMethod === "foodpanda" ? "Foodpanda" : "GrabFood"} · {platformReference}
+                  </div>
+                )}
+              </div>
+              {checkoutStep === 1 && orderType === "delivery" && (
+                <div className="mb-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                  <label className={`${eyebrow} mb-1.5 block`} htmlFor="platform-reference">
+                    Platform reference
+                  </label>
+                  <input
+                    id="platform-reference"
+                    value={platformReference}
+                    onChange={(event) => setPlatformReference(
+                       event.target.value
+                         .replace(/[^A-Za-z0-9-]/g, "")
+                         .slice(0, MAX_PLATFORM_REFERENCE_LENGTH),
+                    )}
+                     maxLength={MAX_PLATFORM_REFERENCE_LENGTH}
+                     placeholder={paymentMethod === "foodpanda"
+                       ? "Enter complete Foodpanda order reference"
+                       : "GF-123 or complete GrabFood booking ID"}
+                     aria-invalid={Boolean(
+                       platformReference &&
+                       getPlatformReferenceError(paymentMethod, platformReference),
+                     )}
+                     autoCapitalize="characters"
+                    className="w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm uppercase outline-none focus:border-neutral-900"
+                  />
+                  <p className="mt-1 text-xs text-neutral-400">
+                     {paymentMethod === "grabfood"
+                       ? "Complete the actual GrabFood short order ID or enter the full booking ID."
+                       : "Enter the actual reference shown by Foodpanda; no prefix is added."}
+                  </p>
+                </div>
+              )}
+              {checkoutStep === 2 && <button
+                type="button"
+                onClick={() => setShowDiscounts(true)}
+                className="mb-2 flex w-full items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-700 transition hover:border-neutral-400"
+              >
+                <span className="flex items-center gap-2 font-semibold">
+                  <Percent className="h-4 w-4 text-green-600" />
+                  Discount
+                </span>
+                <span className="truncate text-neutral-500">
+                  {discount
+                    ? `${discount.name} (${pct(discountRate)}%)`
+                    : "Select"}
+                </span>
+              </button>}
+              {checkoutStep === 2 && (
+                <div className="mb-3 grid gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                  <p className={eyebrow}>Optional receipt details</p>
+                  <input
+                    value={soldToName}
+                    onChange={(event) => setSoldToName(event.target.value.slice(0, 150))}
+                    placeholder="Sold To"
+                    className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-900"
+                  />
+                </div>
+              )}
+              {checkoutStep === 2 && <button
+                onClick={() => setShowNote((p) => !p)}
+                className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}
+              >
+                <MessageSquare className="h-4 w-4" />
+                {orderNote ? "Edit Other Note" : "Add Other Note"}
+              </button>}
+              {checkoutStep === 2 && <Collapse open={showNote}>
+                <textarea
+                  value={orderNote}
+                  onChange={(e) => setOrderNote(e.target.value)}
+                  maxLength={240}
+                  rows={2}
+                  placeholder="e.g. no spicy, birthday order…"
+                  className="w-full resize-none rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 outline-none"
+                />
+              </Collapse>}
+
+              {checkoutStep === 1 ? (
+                <button
+                  type="button"
+                  className={`${B.dark} flex items-center justify-center gap-2 py-4 text-base`}
+                  onClick={() => setCheckoutStep(2)}
+                >
+                  Continue to Payment
+                </button>
+              ) : (
+                <div className="grid grid-cols-[auto_1fr] gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutStep(1)}
+                    className="rounded-xl border border-neutral-200 px-4 py-3 text-sm font-semibold text-neutral-600"
+                  >
+                    Back
+                  </button>
+                  <button
+                className={`${isOnline ? B.green : B.dark} flex items-center justify-center gap-2 py-4 text-base`}
+                disabled={placing || loadingPaymentQr || !isOnline || !customerType}
+                onClick={openPayment}
+              >
+                {placing && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Placing order" />}
+                {payBtnLabel}
+                  </button>
+                </div>
+              )}
+              <p className="mt-2 text-center text-xs text-neutral-400">
+                Paid orders reserve and deduct stock when the payment is confirmed.
+              </p>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      <ChickenFlavorModal
+        item={flavorTarget?.item ?? null}
+        flavors={chickenFlavors}
+        selectedFlavorId={selectedFlavorId}
+        onSelect={setSelectedFlavorId}
+        onConfirm={confirmFlavor}
+        onCancel={() => {
+          setFlavorTarget(null);
+          setSelectedFlavorId(null);
+        }}
+      />
+      <ConfirmModal
+        show={showVoidConfirm}
+        title="Void current order?"
+        message="This clears the current unsaved transaction. No order will be created and inventory will not be changed."
+        confirmLabel="Yes, void current order"
+        busy={false}
+        onConfirm={voidCurrentOrder}
+        onCancel={() => setShowVoidConfirm(false)}
+      />
+      <ConfirmModal
+        show={!!cancelOrder}
+        title={cancelAction === "refund" ? "Refund order?" : "Void order?"}
+        message={
+          cancelAction === "refund"
+            ? "This will mark the order as refunded and restore deducted inventory once."
+            : "This will permanently void the online order. The customer will need to be notified separately."
+        }
+        confirmLabel={
+          cancelAction === "refund" ? "Yes, refund order" : "Yes, void order"
+        }
+        busy={settlingId !== null}
+        onConfirm={() => void confirmCancel()}
+        onCancel={() => setCancelId(null)}
+      />
+      <ProceedModal
+        order={proceedOrder}
+        busy={proceeding}
+        onConfirm={() => void confirmProceed()}
+        onCancel={() => setProceedOrder(null)}
+      />
+      <DiscountModal
+        show={showDiscounts}
+        discounts={discountTypes}
+        selectedName={customerType}
+        onSelect={selectDiscount}
+        onClose={() => setShowDiscounts(false)}
+      />
+      <DiscountAuthorizationModal
+        show={!!pendingDiscount}
+        discount={pendingDiscount}
+        busy={authorizingDiscount}
+        error={discountAuthError}
+        onConfirm={(code) => void authorizeDiscount(code)}
+        onCancel={() => {
+          setPendingDiscount(null);
+          setDiscountAuthError("");
+        }}
+      />
+      <AmountModal
+        key={paymentAttemptRef.current || `${paymentMethod}-payment`}
+        show={showAmount}
+        amountDue={pricing.amountDue}
+        method={paymentMethod}
+        qrImageUrl={paymentQrImageUrl}
+        onConfirm={(p) => void placeOrder(p)}
+        onCancel={() => {
+          setShowAmount(false);
+          paymentAttemptRef.current = null;
+          paymentQrVersionRef.current = null;
+          paymentProofUploadRef.current = null;
+        }}
+      />
+      <HandoverModal
+        order={handoverOrder}
+        rider={rider}
+        staffName={cashierName}
+        setRider={setRider}
+        saving={savingHandover}
+        onConfirm={() => void confirmHandover()}
+        onCancel={() => {
+          if (!savingHandover) {
+            setHandoverOrder(null);
+            setRider("");
+          }
+        }}
+      />
+      <SuccessModal receipt={done} cashier={cashierName} onClose={resetOrder} />
+      <RefundRequestModal
+        order={refundRequestOrder}
+        reason={refundRequestReason}
+        setReason={setRefundRequestReason}
+        busy={requestingRefundId !== null}
+        onConfirm={() => void submitRefundRequest()}
+        onCancel={() => {
+          if (requestingRefundId === null) {
+            setRefundRequestOrder(null);
+            setRefundRequestReason("");
+          }
+        }}
+      />
+      <HistoryModal
+        show={showHistory}
+        orders={shiftOrders}
+        loading={shiftLoading}
+        settlingId={settlingId}
+        requestingId={requestingRefundId}
+        canCancel={canCancelPersisted}
+        canRefund={canRefundPersisted}
+        canRequestRefund={canRequestRefund}
+        onClose={() => setShowHistory(false)}
+        onSettle={(o) => void settleShiftOrder(o)}
+        onRequestRefund={openRefundRequest}
+        onReprint={(o) => void reprint(o)}
+      />
+
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[999999] flex w-[calc(100vw-32px)] max-w-sm flex-col gap-2 sm:bottom-6 sm:right-6">
+        <AnimatePresence>
+          {toasts.map((t) => {
+            const { c, I } = TOAST[t.type];
+            return (
+              <motion.div
+                key={t.id}
+                layout
+                initial={{ opacity: 0, y: 16, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className={`pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg ${c}`}
+              >
+                <I className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="flex-1 text-sm font-medium text-neutral-900">
+                  {t.message}
+                </p>
+                <button onClick={() => dismiss(t.id)}>
+                  <X className="h-4 w-4 text-neutral-400" />
+                </button>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+    </Ctx.Provider>
+  );
+}

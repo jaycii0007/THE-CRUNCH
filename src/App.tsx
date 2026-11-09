@@ -26,6 +26,7 @@ import Order from "./pages/Order";
 import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
 import Products from "./pages/products";
+import ProductsV2 from "./pages/productv2";
 import Settings from "./pages/settings";
 import MyAccount from "./pages/my-account";
 import { ROLE_HOME_PATHS, resolveRootRoute } from "./lib/rootRoutePolicy";
@@ -285,6 +286,7 @@ export default function App() {
 
       {/* ── Customer landing (public, but passes auth state for nav) ── */}
       <Route path="/products" element={<Products isAuthenticated={isAuth} />} />
+      <Route path="/products-v2" element={<ProductsV2 />} />
 
       {/* ── Customer menu ────────────────────────────────────── */}
       <Route

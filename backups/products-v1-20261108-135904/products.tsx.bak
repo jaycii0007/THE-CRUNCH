@@ -1,0 +1,1081 @@
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Flame, Star, MessageSquare, CheckCircle, ShoppingBag, ArrowRight } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { api, resolveAssetUrl } from '@/lib/api'
+import { formatCurrencyAmount } from '@/lib/restaurantSettings'
+import { Navbar } from '@/components/Navbar';
+import { WorksWheel, type WorksWheelItem } from '@/components/ui/works-wheel';
+
+
+// ── Types & helpers ────────────────────────────────────────────────────────
+const NAV_H = 72
+type Category = string
+
+interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string; archived: boolean }
+
+const fmt = (v: number) => formatCurrencyAmount(v)
+
+const normCat = (v: unknown): Category => String(v ?? '').trim()
+
+const mapProducts = (data: unknown[]): Product[] =>
+  (data as Record<string, unknown>[])
+    .map((r) => {
+      const rawImage = String(r?.image ?? r?.img ?? '').trim();
+      const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : '';
+      // Debug: log actual API image values for duplicate investigation
+      if (import.meta.env.DEV && rawImage) {
+        console.log('[mapProducts]', {
+          id: r?.id ?? r?.product_id,
+          name: r?.name ?? r?.product_name,
+          rawImage,
+          resolvedImg,
+        });
+      }
+      return {
+        id: Number(r?.id ?? r?.product_id ?? 0),
+        name: String(r?.name ?? r?.product_name ?? '').trim(),
+        category: normCat(r?.category),
+        rating: Number(r?.rating ?? 0),
+        badge: String(r?.badge ?? '').trim(),
+        description: String(r?.description ?? '').trim(),
+        price: Number(r?.price ?? 0),
+        spicy: Boolean(r?.spicy),
+        img: resolvedImg,
+        archived: String(r?.availability_status ?? r?.availabilityStatus ?? '').trim().toLowerCase() === 'hidden',
+      };
+    })
+    .filter(p => p.id > 0 && p.name)
+
+// ── Design Tokens ──────────────────────────────────────────────────────────
+// THE CRUNCH Premium Color Palette (Approved) — Signature Glazed Hero uses Black/Gold
+const BLACK = '#1A1A1A'
+const GOLD = '#C9A84C'
+const GOLD_DARK = '#B8953A'
+const GOLD_LIGHT = '#E8D4A0'
+const CREAM = '#F5F0E8'
+const CHARCOAL = '#282823'
+const GREY_FOG = '#595C56'
+const BUTTER = '#E9BE5F'
+const BLOND = '#F5E8B6'
+
+// Legacy aliases for backward compatibility
+const CARD_BG = BLACK
+const BORDER = 'rgba(89,92,86,0.25)'
+const TEXT = CREAM
+const MUTED = 'rgba(245,240,232,0.58)'
+const PAD = 'clamp(20px,5vw,64px)'
+
+// Hero images for Signature Glazed Chicken
+const HERO_IMAGE_1 = '/img/signatureglazed1.webp'
+const HERO_IMAGE_2 = '/img/signatureglazed2.webp'
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@700;800&display=swap');
+
+/* Pencerio Font — Hairline (only available weight) */
+@font-face {
+  font-family: 'Pencerio';
+  src: url('/fonts/ClashDisplay_Complete/Pencerio_Complete/Fonts/WEB/fonts/Pencerio-Hairline.woff2') format('woff2'),
+       url('/fonts/ClashDisplay_Complete/Pencerio_Complete/Fonts/WEB/fonts/Pencerio-Hairline.woff') format('woff'),
+       url('/fonts/ClashDisplay_Complete/Pencerio_Complete/Fonts/WEB/fonts/Pencerio-Hairline.ttf') format('truetype');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+:root{
+  --charcoal:${CHARCOAL};
+  --grey-fog:${GREY_FOG};
+  --butter:${BUTTER};
+  --blond:${BLOND};
+  --black:${BLACK};
+  --gold:${GOLD};
+  --gold-dark:${GOLD_DARK};
+  --gold-light:${GOLD_LIGHT};
+  --cream:${CREAM};
+  --bg:${BLACK};
+  --card:${CARD_BG};
+  --line:${BORDER};
+  --text:${TEXT};
+  --muted:${MUTED};
+  --pad:${PAD};
+}
+body{background:var(--bg)}
+.pc{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.pc button{font-family:inherit}
+.pc :focus-visible{outline:2px solid var(--butter);outline-offset:2px}
+.wrap{max-width:1440px;margin:0 auto;padding:0 var(--pad);width:100%}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;height:${NAV_H}px;display:flex;align-items:center;transition:background .25s,border-color .25s,box-shadow .25s;border-bottom:1px solid transparent}
+.nav.on{background:rgba(26,26,26,.92);backdrop-filter:blur(16px);border-bottom-color:var(--line);box-shadow:0 8px 30px rgba(0,0,0,.35)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:10px;background:none;border:0;cursor:pointer;color:var(--text);font-weight:800;font-size:18px;letter-spacing:-.02em}
+.links{display:flex;align-items:center;gap:4px}
+.link{background:none;border:0;color:var(--muted);font-size:14px;font-weight:500;padding:8px 14px;border-radius:8px;cursor:pointer;transition:color .15s,background .15s}
+.link:hover{color:var(--text);background:rgba(245,232,182,.08)}
+.btn{border:0;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:transform .15s,opacity .15s}
+.btn:active{transform:scale(.97)}
+.btn-gold{background:var(--butter);color:${CHARCOAL}}
+.btn-ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.btn-ghost:hover{background:rgba(245,232,182,.08)}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted);padding:0 4px}
+.dot{width:7px;height:7px;border-radius:50%}
+.burger{display:none;background:none;border:0;color:var(--text);cursor:pointer;padding:8px}
+
+/* Products Grid — Compact, Responsive Catalog */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+  width: 100%;
+}
+@media (min-width: 1280px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 20px;
+  }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+@media (min-width: 360px) and (max-width: 767px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+@media (max-width: 359px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    max-width: 320px;
+    margin: 0 auto;
+  }
+}
+
+/* Featured Menu — Responsive Poster Gallery */
+.featured-menu-section {
+  width: 100%;
+  max-width: 1050px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.featured-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 24px;
+}
+.featured-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  width: 100%;
+  justify-content: center;
+  justify-items: center;
+  align-items: start;
+  box-sizing: border-box;
+}
+.featured-menu-card {
+  width: min(100%, 320px);
+  max-width: 320px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #1A1A1A;
+  border: 1px solid rgba(201, 168, 76, 0.28);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.65), 0 2px 6px -1px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  position: relative;
+  transition: transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 300ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.featured-menu-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  max-height: 460px;
+  object-fit: contain;
+  object-position: center;
+}
+
+/* Tablet: 700px to 1099px — 2 columns, 3rd poster centered on row 2 */
+@media (min-width: 700px) and (max-width: 1099px) {
+  .featured-menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 300px));
+    gap: 24px;
+    justify-content: center;
+    justify-items: center;
+  }
+  .featured-menu-card {
+    width: 100%;
+    max-width: 300px;
+  }
+  .featured-menu-card:nth-child(3) {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+}
+
+/* Desktop: 1100px and above — 3 columns in ONE centered row */
+@media (min-width: 1100px) {
+  .featured-menu-grid {
+    grid-template-columns: repeat(3, minmax(260px, 300px));
+    gap: 24px;
+    justify-content: center;
+    justify-items: center;
+  }
+  .featured-menu-card {
+    width: 100%;
+    max-width: 300px;
+  }
+  .featured-menu-card:nth-child(3) {
+    grid-column: auto;
+    justify-self: stretch;
+  }
+}
+
+/* Desktop Hover */
+@media (hover: hover) and (pointer: fine) {
+  .featured-menu-card:hover {
+    transform: translateY(-4px) scale(1.012);
+    box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.75), 0 0 18px 0 rgba(201, 168, 76, 0.22);
+    border-color: rgba(201, 168, 76, 0.55);
+  }
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .featured-menu-card,
+  .featured-menu-card:hover {
+    transform: none !important;
+    transition: none !important;
+  }
+}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
+.card:hover{border-color:rgba(233,190,95,.45);transform:translateY(-4px)}
+.thumb{position:relative;aspect-ratio:16/10;max-height:200px;background:#1f1d1a;overflow:hidden}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.chip{font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(89,92,86,0.3);color:var(--muted)}
+.chip-gold{background:var(--butter);color:${CHARCOAL}}
+.tabs{position:sticky;top:${NAV_H}px;z-index:50;background:rgba(26,26,26,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+.tabs-in{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding: 6px 0}
+.tabs-in::-webkit-scrollbar{display:none}
+.tab{position:relative;background:none;border:0;padding:10px 18px;font-size:13.5px;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap;border-radius:10px;transition:color 0.2s ease, background 0.2s ease}
+.tab:hover{color:var(--text);background:rgba(245,232,182,.06)}
+.tab.on{color:var(--butter);font-weight:600;background:rgba(233,190,95,.12)}
+.tab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:4px;width:20px;height:3px;background:var(--butter);border-radius:2px;box-shadow:0 0 12px var(--butter)}
+@media (max-width: 600px){.tab{padding:8px 12px;font-size:12px}}
+/* Section header improvements */
+.section-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.section-title{font-size:clamp(22px,3vw,30px);font-weight:800;letter-spacing:-0.025em;line-height:1.1;margin:0;color:var(--blond)}
+.section-subtitle{color:var(--muted);font-size:clamp(12px,1.4vw,13.5px);line-height:1.5;margin:0}
+.h2{font-size:clamp(24px,3.5vw,36px);font-weight:800;letter-spacing:-.025em;line-height:1.1;color:var(--blond)}
+.sub{color:var(--muted);font-size:13px;line-height:1.5}
+.section{margin-top:60px}
+.skel{border-radius:14px;background:linear-gradient(90deg,${CHARCOAL},${GREY_FOG},${CHARCOAL});background-size:200% 100%;animation:sh 1.4s infinite}
+.fixed-btn{position:fixed;bottom:22px;right:22px;z-index:90}
+.input{width:100%;font:inherit;font-size:14px;color:var(--text);background:rgba(89,92,86,0.15);border:1px solid var(--line);border-radius:12px;padding:14px 18px;outline:none;transition:border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease}
+.input:focus{border-color:rgba(233,190,95,0.5);background:rgba(89,92,86,0.2);box-shadow:0 0 0 4px rgba(233,190,95,0.15)}
+.input option{color:#111}
+@keyframes sh{to{background-position:-200% 0}}
+@keyframes steamMorph{
+  0%,100%{border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;transform:translateX(0) scaleY(1)}
+  25%{border-radius:40% 60% 60% 40% / 50% 50% 50% 50%;transform:translateX(-4px) scaleY(1.05)}
+  50%{border-radius:60% 40% 50% 50% / 40% 60% 50% 50%;transform:translateX(4px) scaleY(0.95)}
+  75%{border-radius:50% 50% 40% 60% / 50% 50% 60% 40%;transform:translateX(-2px) scaleY(1.02)}
+}
+@keyframes pulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:0.6;transform:scale(0.9)}
+}
+@media(max-width:768px){.links,.status.hide-m{display:none}.burger{display:flex}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+`
+
+// Normalize product name for lookup (lowercase, remove special chars)
+// Used by FoodPreviewGallery to match local images to products
+function normalizeProductName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// All verified local food images (for gallery)
+const VERIFIED_LOCAL_FOOD_IMAGES = [
+  { filename: 'chickenhoneygarlic.webp', displayName: 'Honey Garlic Chicken', path: '/img/chickenhoneygarlic.webp' },
+  { filename: 'chickenteriyaki.webp', displayName: 'Teriyaki Chicken', path: '/img/chickenteriyaki.webp' },
+  { filename: 'chickentexasbbq.webp', displayName: 'Texas BBQ Chicken', path: '/img/chickentexasbbq.webp' },
+  { filename: 'chickenspicekstyle.webp', displayName: 'Spicy K-Style Chicken', path: '/img/chickenspicekstyle.webp' },
+  { filename: 'chickenspecialcheese.webp', displayName: 'Special Cheese Chicken', path: '/img/chickenspecialcheese.webp' },
+  { filename: 'chickengarlicparmesan.webp', displayName: 'Garlic Parmesan Chicken', path: '/img/chickengarlicparmesan.webp' },
+  { filename: 'chickenskin.webp', displayName: 'Chicken Skin', path: '/img/chickenskin.webp' },
+  { filename: 'chicken poppers 2.webp', displayName: 'Chicken Poppers', path: '/img/chicken poppers 2.webp' },
+  { filename: 'chickchicken.webp', displayName: 'Classic Fried Chicken', path: '/img/chickchicken.webp' },
+  { filename: 'chicken1.webp', displayName: 'Signature Chicken', path: '/img/chicken1.webp' },
+] as const;
+
+function Photo({ src, alt, priority = false, style, className }: { src?: string; alt: string; priority?: boolean; style?: React.CSSProperties; className?: string }) {
+  const [state, setState] = useState<{ bad: boolean; loading: boolean }>({ bad: false, loading: true })
+
+  // Reset error state when src changes so a newly valid image can load
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setState({ bad: false, loading: true })
+  }, [src])
+
+  // For preview gallery: use LOCAL_IMAGE_MAP as verified local fallback
+  // For product cards: rely ONLY on API-provided image (src), no static fallback
+  const effectiveSrc = src;
+
+  if (!effectiveSrc || state.bad) {
+    return (
+      <div
+        className={className}
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'grid',
+          placeItems: 'center',
+          color: 'var(--muted)',
+          fontSize: 12,
+          background: BLACK,
+          ...style
+        }}
+        role="img"
+        aria-label={`${alt} - image not available`}
+      >
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <path d="M21 15l-5-5L5 17" />
+        </svg>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {/* Loading placeholder */}
+      {state.loading && (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            background: 'linear-gradient(90deg, #1A1A1A 25%, #1A1A1A 50%, #1A1A1A 75%)',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 1.4s infinite',
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+          }}
+        />
+      )}
+      <img
+        src={effectiveSrc}
+        alt={alt}
+        loading={priority ? 'eager' : 'lazy'}
+        onError={(e) => {
+          if (import.meta.env.DEV) {
+            console.error('[Photo:error]', { alt, src: effectiveSrc, productId: (e.currentTarget as HTMLImageElement).dataset?.productId });
+          }
+          setState({ bad: true, loading: false });
+        }}
+        onLoad={() => {
+          if (import.meta.env.DEV) {
+            console.log('[Photo:loaded]', { alt, src: effectiveSrc });
+          }
+          setState({ bad: false, loading: false });
+        }}
+        className={className}
+        data-product-id={alt}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          opacity: state.loading ? 0 : 1,
+          transition: 'opacity 0.4s ease-out',
+          ...style
+        }}
+      />
+    </>
+  )
+}
+
+// ── Animated Components ────────────────────────────────────────────────────
+const easeOut = [0.16, 1, 0.3, 1] as const
+const staggerContainer = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } }
+const fadeUp = { hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: easeOut } } }
+
+// ── Cards ──────────────────────────────────────────────────────────────────
+function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
+  return (
+    <motion.article
+      className="card"
+      variants={fadeUp}
+      whileHover={{
+        y: -4,
+        boxShadow: '0 12px 32px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.25)',
+        borderColor: 'rgba(233,190,95,0.45)',
+        transition: { duration: 0.3, ease: easeOut },
+      }}
+      whileTap={{ scale: 0.98 }}
+      layout
+    >
+      {/* Image container with proper aspect ratio to prevent layout shift */}
+      <motion.div
+        className="thumb"
+        whileHover={{ opacity: 1 }}
+      >
+        <Photo src={p.img} alt={p.name} priority={false} />
+
+        {/* Gradient overlay for text readability on hover */}
+        <motion.div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(180deg, transparent 55%, rgba(11,10,8,0.85) 100%)',
+            opacity: 0,
+            transition: 'opacity 0.3s ease',
+          }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+        />
+
+        {/* Badge - top left */}
+        {p.badge && (
+          <span
+            className="chip chip-gold"
+            style={{
+              position: 'absolute',
+              top: 8,
+              left: 8,
+              zIndex: 2,
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '3px 8px',
+              borderRadius: 9999,
+              boxShadow: '0 2px 8px rgba(245,200,66,0.3)',
+            }}
+          >
+            {p.badge}
+          </span>
+        )}
+
+        {/* Spicy indicator - top right */}
+        {p.spicy && (
+          <span
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              zIndex: 2,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '3px 8px',
+              background: 'rgba(239, 68, 68, 0.9)',
+              color: '#fff',
+              fontSize: 10,
+              fontWeight: 700,
+              borderRadius: 9999,
+              boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)',
+            }}
+          >
+            <Flame size={10} />
+            Spicy
+          </span>
+        )}
+      </motion.div>
+
+      {/* Card Content */}
+      <div style={{ padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+        {/* Name & Rating */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, color: 'var(--text)', margin: 0, letterSpacing: '-0.01em' }}>
+            {p.name}
+          </h3>
+          {p.rating > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, color: GOLD }}>
+              <Star size={14} fill={GOLD} />
+              {p.rating.toFixed(1)}
+            </span>
+          )}
+        </div>
+
+        {/* Category */}
+        {p.category && (
+          <span className="chip" style={{ fontSize: 11, marginBottom: 8, display: 'inline-block' }}>
+            {p.category}
+          </span>
+        )}
+
+        {/* Description */}
+        {p.description && (
+          <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)', margin: '0 0 12px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {p.description}
+          </p>
+        )}
+
+        {/* Footer: Price + Order */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8 }}>
+          <span style={{ fontSize: 17, fontWeight: 700, color: GOLD, letterSpacing: '-0.01em' }}>
+            {fmt(p.price)}
+          </span>
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={onOrder}
+            style={{
+              background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
+              color: BLACK,
+              border: 'none',
+              borderRadius: 10,
+              padding: '10px 18px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: `0 4px 16px -4px ${GOLD}60`,
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+            }}
+          >
+            <ShoppingBag size={16} />
+            Add to Order
+          </motion.button>
+        </div>
+      </div>
+    </motion.article>
+  )
+}
+
+// Skeleton card is imported from ui/skeleton
+
+// ── Food Preview Gallery (Sauces) ──────────────────────────────────────────
+function FoodPreviewGallery({ products }: { products: Product[] }) {
+  const [mounted, setMounted] = useState(false)
+  const [productImages, setProductImages] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+    const map: Record<string, string> = {}
+    for (const localImg of VERIFIED_LOCAL_FOOD_IMAGES) {
+      const normLocal = normalizeProductName(localImg.displayName)
+      for (const p of products) {
+        if (!p.archived && normalizeProductName(p.name) === normLocal) {
+          map[p.name] = localImg.path
+          break
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setProductImages(map)
+  }, [products, mounted])
+
+  const galleryItems = useMemo(() => {
+    return products
+      .filter(p => !p.archived && productImages[p.name])
+      .slice(0, 8)
+      .map(p => ({ product: p, img: productImages[p.name]! }))
+  }, [products, productImages])
+
+  if (!mounted || galleryItems.length === 0) {
+    return null
+  }
+
+  return (
+    <section className="section" aria-label="Sauce & Flavor Preview" style={{ maxWidth: 1440, margin: '60px auto 0', padding: `0 ${PAD}`, width: '100%', boxSizing: 'border-box' }}>
+      <div className="section-header">
+        <div>
+          <h2 className="section-title">Our Signature Sauces</h2>
+          <p className="section-subtitle">Hand-crafted glazes that make every bite unforgettable</p>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 20 }}>
+        {galleryItems.map(({ product, img }) => (
+          <motion.article
+            key={product.name}
+            className="card"
+            variants={fadeUp}
+            whileHover={{ y: -6, boxShadow: '0 20px 40px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.3)', borderColor: 'rgba(233,190,95,0.5)', transition: { duration: 0.3, ease: easeOut } }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div style={{ position: 'relative', aspectRatio: '16/10', overflow: 'hidden', background: '#1f1d1a' }}>
+              <Photo src={img} alt={product.name} priority={false} style={{ objectFit: 'cover' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 50%, rgba(11,10,8,0.9) 100%)' }} />
+              <div style={{ position: 'absolute', bottom: 16, left: 16, right: 16, zIndex: 1 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px' }}>{product.name}</h3>
+                <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: 0, lineHeight: 1.4 }}>{product.description || 'Our signature glaze'}</p>
+              </div>
+            </div>
+            <div style={{ padding: '14px 16px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 17, fontWeight: 700, color: GOLD }}>{fmt(product.price)}</span>
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => window.location.href = '/usersmenu?showOrderModal=true'}
+                style={{
+                  background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
+                  color: BLACK,
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: '10px 18px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  boxShadow: `0 4px 16px -4px ${GOLD}60`,
+                }}
+              >
+                <ShoppingBag size={16} />
+                Order
+              </motion.button>
+            </div>
+          </motion.article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ── Featured Menu Section ──────────────────────────────────────────────────
+function FeaturedMenuSection() {
+  return (
+    <section className="featured-menu-section" aria-label="Featured Menu Posters" style={{ marginTop: 80 }}>
+      <div style={{ padding: `0 ${PAD}`, width: '100%', boxSizing: 'border-box', maxWidth: 1440, margin: '0 auto' }}>
+        <div className="featured-menu-header">
+          <h2 className="section-title" style={{ marginRight: 16 }}>Featured Menu</h2>
+          <p className="section-subtitle">Our most popular combinations — ready to order</p>
+        </div>
+
+        <div className="featured-menu-grid">
+          {[
+            { img: '/img/signatureglazed1.webp', alt: 'Signature Glazed Chicken' },
+            { img: '/img/signatureglazed2.webp', alt: 'Signature Glazed Chicken Variant' },
+            { img: '/img/chickchicken.webp', alt: 'Classic Fried Chicken' },
+          ].map((item, idx) => (
+            <motion.div
+              key={item.alt}
+              className="featured-menu-card"
+              variants={fadeUp}
+              style={{ transitionDelay: `${idx * 80}ms` }}
+            >
+              <img src={item.img} alt={item.alt} loading={idx === 0 ? 'eager' : 'lazy'} />
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ── Order Menu Section ─────────────────────────────────────────────────────
+function OrderMenuSection({ products }: { products: Product[] }) {
+  const [activeCategory, setActiveCategory] = useState<string>('All')
+  const categories = useMemo(() => {
+    const cats = new Set<string>()
+    products.filter(p => !p.archived).forEach(p => cats.add(p.category || 'Uncategorized'))
+    return ['All', ...Array.from(cats).sort()]
+  }, [products])
+
+  const filteredProducts = useMemo(() => {
+    if (activeCategory === 'All') return products.filter(p => !p.archived)
+    return products.filter(p => !p.archived && (p.category || 'Uncategorized') === activeCategory)
+  }, [products, activeCategory])
+
+  return (
+    <section className="section" aria-label="Order Menu" style={{ maxWidth: 1440, margin: '80px auto 0', padding: `0 ${PAD} 100px`, width: '100%', boxSizing: 'border-box' }}>
+      <div className="section-header">
+        <div>
+          <h2 className="section-title">Full Menu</h2>
+          <p className="section-subtitle">Browse all our offerings and build your order</p>
+        </div>
+      </div>
+
+      {/* Category Tabs */}
+      <nav className="tabs" aria-label="Menu categories">
+        <div className="tabs-in" role="tablist">
+          {categories.map(cat => (
+            <button
+              key={cat}
+              role="tab"
+              aria-selected={cat === activeCategory}
+              className={`tab ${cat === activeCategory ? 'on' : ''}`}
+              onClick={() => setActiveCategory(cat)}
+              style={{ minWidth: 'fit-content' }}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {/* Product Grid */}
+      <AnimatePresence mode="popLayout">
+        <motion.div
+          key={activeCategory}
+          className="grid"
+          initial="hidden"
+          animate="show"
+          exit="hidden"
+          variants={staggerContainer}
+        >
+          {filteredProducts.length === 0 ? (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 60, color: 'var(--muted)' }}>
+              <MessageSquare size={48} style={{ margin: '0 auto 16px', opacity: 0.4 }} />
+              <p style={{ fontSize: 16, fontWeight: 500, margin: '0 0 8px' }}>No items in this category</p>
+              <p style={{ fontSize: 14, margin: 0 }}>Check back later or try another category</p>
+            </div>
+          ) : (
+            filteredProducts.map(p => (
+              <ProductCard key={p.id} p={p} onOrder={() => window.location.href = '/usersmenu?showOrderModal=true'} />
+            ))
+          )}
+        </motion.div>
+      </AnimatePresence>
+    </section>
+  )
+}
+
+// ── Signature Glazed Hero ──────────────────────────────────────────────────
+function SignatureGlazedHero() {
+  const [imageIndex, setImageIndex] = useState(0)
+  const heroImages = [HERO_IMAGE_1, HERO_IMAGE_2]
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setImageIndex(prev => (prev + 1) % heroImages.length)
+    }, 8000)
+    return () => clearInterval(interval)
+  }, [heroImages.length])
+
+  return (
+    <section aria-label="Signature Glazed Chicken" style={{ position: 'relative', width: '100%', minHeight: '520px', maxHeight: '70vh', overflow: 'hidden' }}>
+      <AnimatePresence mode="wait">
+        <motion.img
+          key={imageIndex}
+          src={heroImages[imageIndex]}
+          alt="Signature Glazed Chicken"
+          initial={{ opacity: 0, scale: 1.05 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 1.2, ease: easeOut }}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center 35%',
+          }}
+        />
+      </AnimatePresence>
+
+      {/* Gradient overlay */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'linear-gradient(180deg, rgba(26,26,26,0.3) 0%, rgba(26,26,26,0.6) 50%, rgba(26,26,26,0.9) 100%)',
+        pointerEvents: 'none',
+      }} />
+
+      {/* Content */}
+      <div className="wrap" style={{ position: 'relative', zIndex: 1, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingTop: NAV_H }}>
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: easeOut, delay: 0.2 }}
+        >
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 18px',
+            background: 'rgba(201,168,76,0.15)',
+            border: `1px solid ${GOLD}40`,
+            borderRadius: 999,
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: GOLD,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            width: 'fit-content',
+            marginBottom: 20,
+            backdropFilter: 'blur(8px)',
+          }}>
+            <Flame size={14} />
+            THE CRUNCH SIGNATURE
+          </span>
+
+          <h1 style={{
+            fontSize: 'clamp(42px, 6.5vw, 72px)',
+            fontWeight: 800,
+            lineHeight: 1.05,
+            letterSpacing: '-0.03em',
+            color: CREAM,
+            margin: '0 0 16px',
+            maxWidth: 900,
+          }}>
+            Signature Glazed<br />Chicken
+          </h1>
+
+          <p style={{
+            fontSize: 'clamp(16px, 2vw, 20px)',
+            lineHeight: 1.6,
+            color: 'rgba(245,240,232,0.75)',
+            margin: '0 0 28px',
+            maxWidth: 600,
+            fontWeight: 400,
+          }}>
+            Seven hand-crafted glazes. Crispy outside, juicy inside.
+            The taste that started it all.
+          </p>
+
+          <motion.button
+            whileHover={{ scale: 1.02, boxShadow: `0 12px 32px -8px ${GOLD}60` }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => window.location.href = '/usersmenu?showOrderModal=true'}
+            style={{
+              background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
+              color: BLACK,
+              border: 'none',
+              borderRadius: 12,
+              padding: '16px 36px',
+              fontSize: 15,
+              fontWeight: 600,
+              letterSpacing: '0.015em',
+              cursor: 'pointer',
+              width: 'fit-content',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 12,
+              boxShadow: `0 8px 24px -4px ${GOLD}40, inset 0 1px 0 rgba(255,255,255,0.2)`,
+            }}
+          >
+            <ShoppingBag size={20} />
+            <span>Explore Menu</span>
+            <ArrowRight size={20} />
+          </motion.button>
+        </motion.div>
+
+        {/* Trust Badges */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: easeOut, delay: 0.5 }}
+          style={{
+            marginTop: 48,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 12,
+            paddingTop: 24,
+            borderTop: `1px solid ${GOLD}18`,
+          }}
+        >
+          {[
+            { icon: CheckCircle, text: '7 Signature Glazes' },
+            { icon: CheckCircle, text: '250+ Branches Nationwide' },
+            { icon: CheckCircle, text: 'Fresh Daily, Never Frozen' },
+          ].map((badge) => (
+            <div
+              key={badge.text}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 14px',
+                background: 'rgba(26,26,26,0.8)',
+                border: `1px solid ${GOLD}22`,
+                borderRadius: 999,
+                fontSize: 12.5,
+                fontWeight: 500,
+                color: 'rgba(245,240,232,0.85)',
+                whiteSpace: 'nowrap',
+                backdropFilter: 'blur(8px)',
+              }}
+            >
+              <badge.icon size={14} color={GOLD} style={{ flexShrink: 0 }} />
+              <span>{badge.text}</span>
+            </div>
+          ))}
+        </motion.div>
+      </div>
+
+      {/* Bottom gold accent line */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 3,
+        background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`,
+        opacity: 0.6,
+      }} />
+    </section>
+  )
+}
+
+// ── WorksWheel Product Showcase ────────────────────────────────────────────
+function ProductWheelShowcase({ products }: { products: Product[] }) {
+  const wheelItems = useMemo((): WorksWheelItem[] => {
+    // Take up to 9 featured products for the wheel
+    const featured = products
+      .filter(p => !p.archived && p.img)
+      .slice(0, 9)
+      .map(p => ({
+        title: p.name,
+        image: p.img,
+        href: '/usersmenu?showOrderModal=true',
+      }))
+    return featured
+  }, [products])
+
+  if (wheelItems.length === 0) return null
+
+  return (
+    <section aria-label="Featured Products Wheel" style={{
+      width: '100%',
+      maxWidth: 1440,
+      margin: '60px auto 0',
+      padding: `0 ${PAD} 80px`,
+      boxSizing: 'border-box'
+    }}>
+      <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <h2 className="section-title" style={{ display: 'inline-block', textAlign: 'left' }}>Featured Selection</h2>
+        <p className="section-subtitle" style={{ marginTop: 8, display: 'block' }}>Turn the wheel to discover our signature offerings</p>
+      </div>
+
+      <div style={{ height: '60vh', minHeight: 480, maxHeight: 700, position: 'relative' }}>
+        <WorksWheel
+          items={wheelItems}
+          label="The Crunch Menu"
+          action="Order"
+          className="h-full w-full"
+        />
+      </div>
+    </section>
+  )
+}
+
+// ── Main Products Page ─────────────────────────────────────────────────────
+export default function Products() {
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
+
+  const fetchProducts = useCallback(async () => {
+    try {
+      setLoading(true)
+      const productsData = await api.get<unknown[]>('/products')
+      setProducts(mapProducts(productsData))
+      setError(null)
+    } catch (err) {
+      console.error('Failed to load products:', err)
+      setError('Failed to load products. Please try again later.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchProducts()
+  }, [fetchProducts])
+
+  // Don't render until mounted (avoid hydration mismatch)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return (
+      <div className="pc" style={{ minHeight: '100vh' }}>
+        <style dangerouslySetInnerHTML={{ __html: CSS }} />
+        <nav className="nav" style={{ background: 'rgba(26,26,26,0.92)', backdropFilter: 'blur(16px)', borderBottomColor: 'var(--line)' }}>
+          <div className="nav-in wrap">
+            <button className="brand" onClick={() => navigate('/')}>
+              <img src="/logo24.webp" alt="The Crunch" style={{ width: 36, height: 36, borderRadius: 8 }} />
+              <span>The Crunch</span>
+            </button>
+          </div>
+        </nav>
+        <main style={{ paddingTop: NAV_H, minHeight: '100vh' }}>
+          <SignatureGlazedHero />
+        </main>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="pc" style={{ minHeight: '100vh' }}>
+        <style dangerouslySetInnerHTML={{ __html: CSS }} />
+        <Navbar />
+        <main style={{ paddingTop: NAV_H, minHeight: '100vh' }}>
+          <SignatureGlazedHero />
+          <div style={{ maxWidth: 1440, margin: '0 auto', padding: `0 ${PAD}`, width: '100%', boxSizing: 'border-box' }}>
+            <div style={{ height: '60vh', minHeight: 480, maxHeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
+              Loading featured products...
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="pc" style={{ minHeight: '100vh' }}>
+        <style dangerouslySetInnerHTML={{ __html: CSS }} />
+        <Navbar />
+        <main style={{ paddingTop: NAV_H, minHeight: '100vh' }}>
+          <SignatureGlazedHero />
+          <div style={{ maxWidth: 1440, margin: '0 auto', padding: `0 ${PAD} 100px`, width: '100%', boxSizing: 'border-box', textAlign: 'center' }}>
+            <p style={{ color: 'var(--muted)', fontSize: 16 }}>{error}</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  return (
+    <div className="pc" style={{ minHeight: '100vh' }}>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+
+      {/* Navigation Bar */}
+      <Navbar />
+
+      <main style={{ paddingTop: NAV_H, minHeight: '100vh' }}>
+        {/* 1. Signature Glazed Hero */}
+        <SignatureGlazedHero />
+
+        {/* 2. WorksWheel Product Showcase */}
+        <ProductWheelShowcase products={products} />
+
+        {/* 3. Food Preview Gallery (Sauces) */}
+        <FoodPreviewGallery products={products} />
+
+        {/* 4. Featured Menu Posters */}
+        <FeaturedMenuSection />
+
+        {/* 5. Full Order Menu with Category Tabs */}
+        <OrderMenuSection products={products} />
+      </main>
+    </div>
+  )
+}
