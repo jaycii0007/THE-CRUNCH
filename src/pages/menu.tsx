@@ -75,7 +75,13 @@ import {
   printHtml,
   type ReceiptDto,
 } from "../lib/receipt";
-import { Skeleton, SkeletonProductCard, SkeletonSectionCard, SkeletonKPICard, SkeletonListItem } from "@/components/ui/skeleton";
+import {
+  Skeleton,
+  SkeletonProductCard,
+  SkeletonSectionCard,
+  SkeletonKPICard,
+  SkeletonListItem,
+} from "@/components/ui/skeleton";
 
 /* ───────────────────────── setup ───────────────────────── */
 
@@ -110,6 +116,12 @@ const MAX_CASH_TENDERED = 100_000;
 type OrderTypeVal = "dine-in" | "take-out" | "delivery";
 type ToastType = "success" | "error" | "info" | "warning";
 type Settle = "refund" | "cancel";
+interface RefundTarget {
+  orderId: number;
+  orderNumber: string;
+  total: number;
+  source: "shift" | "online";
+}
 
 interface Billing {
   taxRate: number;
@@ -157,7 +169,11 @@ interface OnlineOrder {
   prepStartedAt?: string | number | null;
   startedAt?: string | number | null;
   readyAt?: string | number | null;
-  items: { name: string; quantity: number; selectedFlavorName?: string | null }[];
+  items: {
+    name: string;
+    quantity: number;
+    selectedFlavorName?: string | null;
+  }[];
 }
 interface ShiftOrder {
   id: number;
@@ -173,7 +189,12 @@ interface ShiftOrder {
   readyAt?: string | number | null;
   refundRequestId?: number | null;
   refundRequestStatus?: "Pending" | "Ignored" | "Actioned" | null;
-  items: { name: string; quantity: number; price: number; selectedFlavorName?: string | null }[];
+  items: {
+    name: string;
+    quantity: number;
+    price: number;
+    selectedFlavorName?: string | null;
+  }[];
 }
 
 /* ───────────────────────── helpers ───────────────────────── */
@@ -265,11 +286,11 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
       latest.set(key, p);
   }
   return [...latest.values()].map((p) => {
-    const rawImage = String(p.image ?? '').trim();
+    const rawImage = String(p.image ?? "").trim();
     const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : null;
     // Debug: log actual API image values for duplicate investigation
     if (import.meta.env.DEV && rawImage) {
-      console.log('[menu:mapProducts]', {
+      console.log("[menu:mapProducts]", {
         id: p.product_id ?? p.id,
         name: p.product_name ?? p.name,
         rawImage,
@@ -388,10 +409,7 @@ const ModalHead = ({
       <p className="text-xl font-bold text-neutral-900">{title}</p>
     </div>
     {onClose && (
-      <button
-        onClick={onClose}
-        className="rounded-lg p-2 hover:bg-neutral-100"
-      >
+      <button onClick={onClose} className="rounded-lg p-2 hover:bg-neutral-100">
         <X className="h-5 w-5 text-neutral-400" />
       </button>
     )}
@@ -608,7 +626,10 @@ function OrderRow({
       </div>
       <p className="text-sm text-neutral-600">
         {o.items
-          .map((i) => `${i.quantity}× ${i.name}${i.selectedFlavorName ? ` (${i.selectedFlavorName})` : ""}`)
+          .map(
+            (i) =>
+              `${i.quantity}× ${i.name}${i.selectedFlavorName ? ` (${i.selectedFlavorName})` : ""}`,
+          )
           .join("  ·  ")}
       </p>
     </div>
@@ -658,7 +679,9 @@ const ProductCard = memo(
               className="h-full w-full object-cover"
             />
           ) : null}
-          {!item.image && <UtensilsCrossed className="h-8 w-8 text-neutral-300" />}
+          {!item.image && (
+            <UtensilsCrossed className="h-8 w-8 text-neutral-300" />
+          )}
         </div>
         {out && (
           <span className="absolute left-2.5 top-2.5 rounded-full bg-red-800 px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-white">
@@ -703,16 +726,18 @@ function ChickenFlavorModal({
     <Modal show={!!item} onClose={onCancel}>
       <ModalHead
         eyebrow="Required selection"
-        title="Choose Chicken Flavor"
+        title="Choose Sauce"
         onClose={onCancel}
       />
       <div className="space-y-3 p-5 sm:p-6">
         <p className="text-sm text-neutral-600">
-          Select exactly one flavor for <strong>{item?.name}</strong>. The meal price will not change.
+          Select exactly one sauce for <strong>{item?.name}</strong>. The meal
+          price will not change.
         </p>
         {flavors.length === 0 ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            No active chicken flavors with available ingredients are configured. Ask an Administrator to add or restore a flavor in Menu Management.
+            No active sauces are configured. Ask an Administrator to add or
+            restore a sauce in Menu Management.
           </div>
         ) : (
           <div className="max-h-72 space-y-2 overflow-y-auto">
@@ -725,7 +750,9 @@ function ChickenFlavorModal({
                   onClick={() => onSelect(flavor.id)}
                   className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition ${selected ? "border-amber-500 bg-amber-50" : "border-neutral-200 hover:border-neutral-400"}`}
                 >
-                  <span className="font-semibold text-neutral-800">{flavor.name}</span>
+                  <span className="font-semibold text-neutral-800">
+                    {flavor.name}
+                  </span>
                   {selected && <Check className="h-5 w-5 text-amber-600" />}
                 </button>
               );
@@ -733,14 +760,16 @@ function ChickenFlavorModal({
           </div>
         )}
         <div className="grid grid-cols-2 gap-2 pt-2">
-          <button type="button" className={B.ghost} onClick={onCancel}>Cancel</button>
+          <button type="button" className={B.ghost} onClick={onCancel}>
+            Cancel
+          </button>
           <button
             type="button"
             className={B.green}
             disabled={!selectedFlavorId || flavors.length === 0}
             onClick={onConfirm}
           >
-            Confirm flavor
+            Confirm sauce
           </button>
         </div>
       </div>
@@ -761,12 +790,7 @@ const CartRow = memo(
     onEditFlavor: (item: CartItem) => void;
   }) => {
     const { money } = useFmt();
-    const max = Math.min(
-      getEffectiveMaxQuantity(item.remainingStock),
-      item.selectedFlavorRemainingStock == null
-        ? Number.POSITIVE_INFINITY
-        : getEffectiveMaxQuantity(item.selectedFlavorRemainingStock),
-    );
+    const max = getEffectiveMaxQuantity(item.remainingStock);
     const step =
       "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
     return (
@@ -787,7 +811,9 @@ const CartRow = memo(
                 className="h-full w-full object-cover"
               />
             ) : null}
-            {!item.image && <UtensilsCrossed className="h-5 w-5 text-neutral-300" />}
+            {!item.image && (
+              <UtensilsCrossed className="h-5 w-5 text-neutral-300" />
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-neutral-800">
@@ -796,7 +822,7 @@ const CartRow = memo(
             <p className="text-xs text-neutral-400">{money(item.price)} each</p>
             {item.selectedFlavorName && (
               <p className="mt-0.5 text-xs font-semibold text-amber-700">
-                Flavor: {item.selectedFlavorName}
+                Sauce: {item.selectedFlavorName}
               </p>
             )}
           </div>
@@ -835,11 +861,11 @@ const CartRow = memo(
             {item.selectedFlavorProductId && (
               <button
                 type="button"
-                title="Change chicken flavor"
+                title="Change sauce"
                 onClick={() => onEditFlavor(item)}
                 className="rounded-lg px-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
               >
-                Change flavor
+                Change sauce
               </button>
             )}
             <button
@@ -890,7 +916,15 @@ function ConfirmModal({
           disabled={busy}
           onClick={onConfirm}
         >
-          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />}
+          {busy && (
+            <Skeleton
+              width={16}
+              height={16}
+              variant="shimmer"
+              theme="customer"
+              aria-label="Processing"
+            />
+          )}
           {confirmLabel}
         </button>
         <button className={B.ghost} disabled={busy} onClick={onCancel}>
@@ -901,58 +935,107 @@ function ConfirmModal({
   );
 }
 
-function RefundRequestModal({
-  order,
-  reason,
-  setReason,
+function RefundAuthorizationModal({
+  target,
   busy,
+  error,
   onConfirm,
   onCancel,
 }: {
-  order: ShiftOrder | null;
-  reason: string;
-  setReason: (value: string) => void;
+  target: RefundTarget | null;
   busy: boolean;
-  onConfirm: () => void;
+  error: string;
+  onConfirm: (password: string) => void;
   onCancel: () => void;
 }) {
-  const trimmedReason = reason.trim();
+  const { money } = useFmt();
+  const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    // Never retain a previous refund password when selecting another order.
+    setPassword("");
+  }, [target?.orderId]);
+
   return (
-    <Modal show={!!order} max="max-w-md" onClose={busy ? undefined : onCancel}>
-      <div className="p-6">
-        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-amber-200 bg-amber-50">
-          <RotateCcw className="h-5 w-5 text-amber-700" />
-        </div>
-        <p className="mb-1.5 text-lg font-semibold">Request refund</p>
-        <p className="text-sm leading-relaxed text-neutral-500">
-          Send {order?.orderNumber} to the Administrator for review. The kitchen will pause this order until the request is ignored or actioned.
+    <Modal show={!!target} max="max-w-sm" onClose={busy ? undefined : onCancel}>
+      <ModalHead
+        eyebrow="Refund authorization"
+        title="Authorize refund"
+        tone="text-red-600"
+        onClose={busy ? undefined : onCancel}
+      />
+      <form
+        className="space-y-4 p-5 sm:p-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && password.trim()) onConfirm(password);
+        }}
+      >
+        <p className="text-sm leading-relaxed text-neutral-600">
+          Refund{" "}
+          <strong className="text-neutral-900">{target?.orderNumber}</strong>
+          {target ? ` (${money(target.total)})` : ""}. Enter the separate refund
+          authorization password to continue.
         </p>
-        <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-neutral-500" htmlFor="refund-request-reason">
-          Reason
-        </label>
-        <textarea
-          id="refund-request-reason"
-          value={reason}
-          maxLength={500}
-          rows={4}
-          disabled={busy}
-          onChange={(event) => setReason(event.target.value)}
-          placeholder="Explain why the customer is requesting a refund."
-          className="mt-2 w-full resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-sm outline-none focus:border-neutral-900 disabled:opacity-60"
-        />
-        <p className="mt-1 text-right text-xs text-neutral-400">{reason.length}/500</p>
-      </div>
-      <div className="space-y-2 px-6 pb-6">
+        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+          This records the refund in The Crunch. Cash or e-payment reimbursement
+          must be handled separately; this action does not automatically send
+          money back to a customer's payment account.
+        </p>
+        <div>
+          <label
+            htmlFor="refund-authorization-password"
+            className={`${eyebrow} mb-1.5 block`}
+          >
+            Refund authorization password
+          </label>
+          <input
+            id="refund-authorization-password"
+            autoFocus
+            type="password"
+            autoComplete="off"
+            value={password}
+            disabled={busy}
+            onChange={(event) => setPassword(event.target.value)}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "refund-authorization-error" : undefined}
+            className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm outline-none focus:border-red-500"
+          />
+        </div>
+        {error && (
+          <p
+            id="refund-authorization-error"
+            role="alert"
+            className="text-sm font-medium text-red-600"
+          >
+            {error}
+          </p>
+        )}
         <button
+          type="submit"
           className={`${B.red} flex items-center justify-center gap-2`}
-          disabled={busy || !trimmedReason}
-          onClick={onConfirm}
+          disabled={busy || !password.trim()}
         >
-          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />}
-          Send refund request
+          {busy && (
+            <Skeleton
+              width={16}
+              height={16}
+              variant="shimmer"
+              theme="customer"
+              aria-label="Processing"
+            />
+          )}
+          Confirm refund
         </button>
-        <button className={B.ghost} disabled={busy} onClick={onCancel}>Cancel</button>
-      </div>
+        <button
+          type="button"
+          className={B.ghost}
+          disabled={busy}
+          onClick={onCancel}
+        >
+          Keep Order
+        </button>
+      </form>
     </Modal>
   );
 }
@@ -1006,7 +1089,7 @@ function ProceedModal({
                 {i.name}
                 {i.selectedFlavorName && (
                   <span className="block pl-7 text-xs font-semibold text-amber-700">
-                    Flavor: {i.selectedFlavorName}
+                    Sauce: {i.selectedFlavorName}
                   </span>
                 )}
               </p>
@@ -1030,7 +1113,13 @@ function ProceedModal({
               onClick={onConfirm}
             >
               {busy ? (
-                <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />
+                <Skeleton
+                  width={16}
+                  height={16}
+                  variant="shimmer"
+                  theme="customer"
+                  aria-label="Processing"
+                />
               ) : (
                 "Confirm & proceed to queue"
               )}
@@ -1095,7 +1184,9 @@ function HandoverModal({
               </p>
               <p className="flex justify-between gap-4">
                 <span className="text-neutral-500">Booking reference</span>
-                <b className="break-all text-right">{order.paymentReference || "—"}</b>
+                <b className="break-all text-right">
+                  {order.paymentReference || "—"}
+                </b>
               </p>
               <p className="flex justify-between">
                 <span className="text-neutral-500">Handover time</span>
@@ -1180,7 +1271,9 @@ function AmountModal({
       setInputError("");
       return;
     }
-    const normalizedValue = rawValue.startsWith(".") ? `0${rawValue}` : rawValue;
+    const normalizedValue = rawValue.startsWith(".")
+      ? `0${rawValue}`
+      : rawValue;
     if (!/^\d+(?:\.\d{0,2})?$/.test(normalizedValue)) {
       setInputError("Enter a valid amount with up to two decimal places.");
       return;
@@ -1244,17 +1337,25 @@ function AmountModal({
                 placeholder="0.00"
                 aria-label="Cash tendered amount"
                 aria-invalid={Boolean(inputError)}
-                aria-describedby={inputError ? "cash-tendered-error" : undefined}
+                aria-describedby={
+                  inputError ? "cash-tendered-error" : undefined
+                }
                 className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
               />
             </label>
             {inputError && (
-              <p id="cash-tendered-error" role="alert" className="mb-3 text-xs font-medium text-red-500">
+              <p
+                id="cash-tendered-error"
+                role="alert"
+                className="mb-3 text-xs font-medium text-red-500"
+              >
                 {inputError}
               </p>
             )}
             {quick.length > 0 && (
-              <div className={`${inputError ? "mb-3" : "mt-2 mb-3"} flex flex-wrap gap-1.5`}>
+              <div
+                className={`${inputError ? "mb-3" : "mt-2 mb-3"} flex flex-wrap gap-1.5`}
+              >
                 {quick.map((a) => (
                   <button
                     key={a}
@@ -1339,11 +1440,13 @@ function AmountModal({
                 />
               ) : (
                 <div className="grid h-44 w-44 place-items-center rounded-xl border border-red-200 bg-red-50 px-4 text-center text-xs font-semibold text-red-600">
-                  GCash QR is not configured. Ask an Administrator to upload it in Settings.
+                  GCash QR is not configured. Ask an Administrator to upload it
+                  in Settings.
                 </div>
               )}
               <p className="mt-3 text-center text-xs text-neutral-400">
-                Ask the customer to scan and pay exactly {money(amountDue)}. Verify receipt in the store's GCash account before confirming.
+                Ask the customer to scan and pay exactly {money(amountDue)}.
+                Verify receipt in the store's GCash account before confirming.
               </p>
             </div>
             <div className="mb-4 rounded-xl border border-neutral-200 p-3">
@@ -1353,15 +1456,20 @@ function AmountModal({
                 type="file"
                 accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
                 capture="environment"
-                onChange={(event) => selectProof(event.currentTarget.files?.[0])}
+                onChange={(event) =>
+                  selectProof(event.currentTarget.files?.[0])
+                }
                 className="w-full text-sm"
                 aria-label="Choose GCash payment proof image"
               />
               <p className="mt-2 text-xs text-neutral-400">
-                Upload the customer's completed GCash payment screen before confirming.
+                Upload the customer's completed GCash payment screen before
+                confirming.
               </p>
               {proofError && (
-                <p className="mt-2 text-sm font-medium text-red-600">{proofError}</p>
+                <p className="mt-2 text-sm font-medium text-red-600">
+                  {proofError}
+                </p>
               )}
               {proofPreview && (
                 <>
@@ -1371,7 +1479,9 @@ function AmountModal({
                     className="mt-3 max-h-52 w-full rounded-lg border border-neutral-200 object-contain"
                   />
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate text-xs text-neutral-500">{file?.name}</span>
+                    <span className="min-w-0 truncate text-xs text-neutral-500">
+                      {file?.name}
+                    </span>
                     <button
                       type="button"
                       onClick={() => selectProof()}
@@ -1386,7 +1496,9 @@ function AmountModal({
             <button
               className={`${B.blue} mb-2`}
               disabled={!qrImageUrl || !file}
-              onClick={() => onConfirm({ tendered: amountDue, file: file ?? undefined })}
+              onClick={() =>
+                onConfirm({ tendered: amountDue, file: file ?? undefined })
+              }
             >
               Confirm Payment
             </button>
@@ -1512,7 +1624,16 @@ function DiscountAuthorizationModal({
           disabled={!code.trim() || busy}
           onClick={() => onConfirm(code)}
         >
-          {busy && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Processing" />} Authorize discount
+          {busy && (
+            <Skeleton
+              width={16}
+              height={16}
+              variant="shimmer"
+              theme="customer"
+              aria-label="Processing"
+            />
+          )}{" "}
+          Authorize discount
         </button>
         <button className={B.ghost} disabled={busy} onClick={onCancel}>
           Cancel
@@ -1594,7 +1715,7 @@ function SuccessModal({
                   {i.productName}{" "}
                   {i.selectedFlavorName && (
                     <span className="block text-xs font-semibold text-amber-700">
-                      Flavor: {i.selectedFlavorName}
+                      Sauce: {i.selectedFlavorName}
                     </span>
                   )}
                   <span className="text-neutral-400">×{i.quantity}</span>
@@ -1685,26 +1806,20 @@ function HistoryModal({
   orders,
   loading,
   settlingId,
-  requestingId,
   canCancel,
   canRefund,
-  canRequestRefund,
   onClose,
   onSettle,
-  onRequestRefund,
   onReprint,
 }: {
   show: boolean;
   orders: ShiftOrder[];
   loading: boolean;
   settlingId: number | null;
-  requestingId: number | null;
   canCancel: boolean;
   canRefund: boolean;
-  canRequestRefund: boolean;
   onClose: () => void;
   onSettle: (o: ShiftOrder) => void;
-  onRequestRefund: (o: ShiftOrder) => void;
   onReprint: (o: ShiftOrder) => void;
 }) {
   const { money, time } = useFmt();
@@ -1747,7 +1862,12 @@ function HistoryModal({
         ))}
       </div>
       {loading ? (
-        <div className="space-y-3 p-4" role="status" aria-busy="true" aria-label="Loading order history">
+        <div
+          className="space-y-3 p-4"
+          role="status"
+          aria-busy="true"
+          aria-label="Loading order history"
+        >
           <SkeletonSectionCard theme="customer" />
           <SkeletonKPICard theme="customer" />
           <SkeletonKPICard theme="customer" />
@@ -1815,44 +1935,42 @@ function HistoryModal({
                     <Printer className="h-4 w-4 text-neutral-500" />
                   </button>
                 )}
-                {!cancelled && action && (action === "refund" ? canRefund : canCancel) && (
-                  <button
-                    className={`${iconBtn} !border-red-200 !bg-red-50`}
-                    disabled={settlingId === o.id}
-                    title={action === "refund" ? "Refund order" : "Void order"}
-                    onClick={() => onSettle(o)}
-                  >
-                    {settlingId === o.id ? (
-                      <Skeleton width={16} height={16} variant="shimmer" theme="admin" aria-label="Processing" />
-                    ) : action === "refund" ? (
-                      <RotateCcw className="h-4 w-4 text-red-600" />
-                    ) : (
-                      <Ban className="h-4 w-4 text-red-600" />
-                    )}
-                  </button>
-                )}
-                {!settled && canRequestRefund && action === "refund" && !o.refundRequestStatus && (
-                  <button
-                    className={`${iconBtn} !w-auto gap-1.5 !border-amber-200 !bg-amber-50 px-3 text-xs font-semibold text-amber-800`}
-                    disabled={requestingId === o.id}
-                    title="Request administrator refund review"
-                    onClick={() => onRequestRefund(o)}
-                  >
-                    {requestingId === o.id ? (
-                      <Skeleton width={14} height={14} variant="shimmer" theme="admin" aria-label="Requesting refund" />
-                    ) : (
-                      <span>Request refund</span>
-                    )}
-                  </button>
-                )}
+                {!cancelled &&
+                  action &&
+                  (action === "refund" ? canRefund : canCancel) && (
+                    <button
+                      className={`${iconBtn} !border-red-200 !bg-red-50`}
+                      disabled={settlingId === o.id}
+                      title={
+                        action === "refund" ? "Refund order" : "Void order"
+                      }
+                      onClick={() => onSettle(o)}
+                    >
+                      {settlingId === o.id ? (
+                        <Skeleton
+                          width={16}
+                          height={16}
+                          variant="shimmer"
+                          theme="admin"
+                          aria-label="Processing"
+                        />
+                      ) : action === "refund" ? (
+                        <RotateCcw className="h-4 w-4 text-red-600" />
+                      ) : (
+                        <Ban className="h-4 w-4 text-red-600" />
+                      )}
+                    </button>
+                  )}
                 {o.refundRequestStatus && (
-                  <Chip className={
-                    o.refundRequestStatus === "Pending"
-                      ? "bg-amber-100 text-amber-800"
-                      : o.refundRequestStatus === "Actioned"
-                        ? "bg-slate-700 text-white"
-                        : "bg-neutral-100 text-neutral-600"
-                  }>
+                  <Chip
+                    className={
+                      o.refundRequestStatus === "Pending"
+                        ? "bg-amber-100 text-amber-800"
+                        : o.refundRequestStatus === "Actioned"
+                          ? "bg-slate-700 text-white"
+                          : "bg-neutral-100 text-neutral-600"
+                    }
+                  >
                     Refund {o.refundRequestStatus.toLowerCase()}
                   </Chip>
                 )}
@@ -1865,7 +1983,7 @@ function HistoryModal({
                         {i.name} ×{i.quantity}
                         {i.selectedFlavorName && (
                           <span className="block text-xs font-semibold text-amber-700">
-                            Flavor: {i.selectedFlavorName}
+                            Sauce: {i.selectedFlavorName}
                           </span>
                         )}
                       </span>
@@ -1898,6 +2016,7 @@ export default function CashierView() {
   const firstPoll = useRef(true);
   const placingRef = useRef(false);
   const paymentAttemptRef = useRef<string | null>(null);
+  const refundSubmittingRef = useRef(false);
   const paymentQrVersionRef = useRef<string | null>(null);
   const paymentQrObjectUrlRef = useRef("");
   const paymentProofUploadRef = useRef<{
@@ -1911,8 +2030,10 @@ export default function CashierView() {
   const u = user as Record<string, unknown> | null;
   const cashierId = Number(u?.userId) > 0 ? Number(u?.userId) : null;
   const canCancelPersisted = canCancelPersistedOrders(u?.role);
-  const canRefundPersisted = canRefundPersistedOrders(u?.role);
-  const canRequestRefund = normalizeRole(u?.role) === "cashier";
+  // The new backend permits a Cashier or Administrator to refund with a
+  // separate password, even if legacy frontend permissions exclude Cashiers.
+  const canRefundPersisted =
+    canRefundPersistedOrders(u?.role) || normalizeRole(u?.role) === "cashier";
   const canPerformSettlement = (action: Settle) =>
     action === "refund" ? canRefundPersisted : canCancelPersisted;
   const cashierName = String(
@@ -1974,9 +2095,8 @@ export default function CashierView() {
   const [shiftOrders, setShiftOrders] = useState<ShiftOrder[]>([]);
   const [shiftLoading, setShiftLoading] = useState(false);
   const [settlingId, setSettlingId] = useState<number | null>(null);
-  const [refundRequestOrder, setRefundRequestOrder] = useState<ShiftOrder | null>(null);
-  const [refundRequestReason, setRefundRequestReason] = useState("");
-  const [requestingRefundId, setRequestingRefundId] = useState<number | null>(null);
+  const [refundTarget, setRefundTarget] = useState<RefundTarget | null>(null);
+  const [refundAuthError, setRefundAuthError] = useState("");
 
   // online orders
   const [review, setReview] = useState<OnlineOrder[]>([]);
@@ -2080,31 +2200,28 @@ export default function CashierView() {
                 (p) =>
                   p.id === item.selectedFlavorProductId &&
                   p.categorySystemKey === "chicken_flavors" &&
-                  !isUnavailable(p.availabilityStatus),
+                  norm(p.availabilityStatus) !== "hidden",
               )
             : null;
-          const max = cur
-            ? Math.min(
-                getEffectiveMaxQuantity(cur.remainingStock),
-                currentFlavor
-                  ? getEffectiveMaxQuantity(currentFlavor.remainingStock)
-                  : item.selectedFlavorProductId
-                    ? 0
-                    : Number.POSITIVE_INFINITY,
-              )
-            : 0;
+          const max =
+            cur && (!item.selectedFlavorProductId || currentFlavor)
+              ? getEffectiveMaxQuantity(cur.remainingStock)
+              : 0;
           return cur && max > 0
-            ? [{
-                ...item,
-                ...cur,
-                quantity: Math.min(item.quantity, max),
-                ...(currentFlavor
-                  ? {
-                      selectedFlavorName: currentFlavor.name,
-                      selectedFlavorRemainingStock: currentFlavor.remainingStock,
-                    }
-                  : {}),
-              }]
+            ? [
+                {
+                  ...item,
+                  ...cur,
+                  quantity: Math.min(item.quantity, max),
+                  ...(currentFlavor
+                    ? {
+                        selectedFlavorName: currentFlavor.name,
+                        selectedFlavorRemainingStock:
+                          currentFlavor.remainingStock,
+                      }
+                    : {}),
+                },
+              ]
             : [];
         }),
       );
@@ -2224,25 +2341,24 @@ export default function CashierView() {
   const patchOrder = (id: number, body: Record<string, unknown>) =>
     api.patch(`/orders/${id}`, { cashierId, ...body });
 
-  const settle = async (
+  // Void is separate from refund. This action never sends a refund request.
+  const settleVoid = async (
     id: number,
-    action: Settle,
     label: string,
     onDone: (status: string) => void,
   ) => {
-    if (!canPerformSettlement(action)) return;
-    const status = action === "refund" ? "Refunded" : "Cancelled";
+    if (!canCancelPersisted || settlingId !== null) return;
     setSettlingId(id);
     try {
-      await patchOrder(id, { status });
-      onDone(status);
-      toast("info", `${label} ${action === "refund" ? "refunded" : "voided"}.`);
+      await patchOrder(id, { status: "Cancelled" });
+      onDone("Cancelled");
+      toast("info", `${label} voided.`);
     } catch (error) {
       toast(
         "error",
         error instanceof Error
           ? error.message
-          : `Failed to ${action} order. Please try again.`,
+          : "Failed to void order. Please try again.",
       );
     } finally {
       setSettlingId(null);
@@ -2251,64 +2367,123 @@ export default function CashierView() {
 
   const cancelOrder = review.find((o) => o.id === cancelId);
   const cancelAction = cancelOrder
-    ? getSettlementAction(cancelOrder.trackingStatus, cancelOrder.paymentStatus, cancelOrder)
+    ? getSettlementAction(
+        cancelOrder.trackingStatus,
+        cancelOrder.paymentStatus,
+        cancelOrder,
+      )
     : null;
 
   const confirmCancel = async () => {
-    if (!cancelOrder || !cancelAction) return setCancelId(null);
-    await settle(cancelOrder.id, cancelAction, "Order", () =>
+    if (!cancelOrder || cancelAction !== "cancel") return setCancelId(null);
+    await settleVoid(cancelOrder.id, "Order", () =>
       setReview((p) => p.filter((o) => o.id !== cancelOrder.id)),
     );
     setCancelId(null);
   };
 
-  const settleShiftOrder = (o: ShiftOrder) => {
-    const action = getSettlementAction(o.status, o.paymentStatus, o);
-    if (!action)
-      return toast(
+  const openRefundAuthorization = (
+    order: { id: number; orderNumber: string; total: number },
+    source: RefundTarget["source"],
+  ) => {
+    if (!canPerformSettlement("refund")) {
+      toast("error", "You are not authorized to refund orders.");
+      return;
+    }
+    if (settlingId !== null) return;
+    setRefundAuthError("");
+    setRefundTarget({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      total: order.total,
+      source,
+    });
+  };
+
+  const confirmRefund = async (password: string) => {
+    const target = refundTarget;
+    if (
+      !target ||
+      settlingId !== null ||
+      refundSubmittingRef.current ||
+      !canPerformSettlement("refund")
+    )
+      return;
+    if (!password.trim()) {
+      setRefundAuthError("Enter the refund authorization password.");
+      return;
+    }
+
+    refundSubmittingRef.current = true;
+    setRefundAuthError("");
+    setSettlingId(target.orderId);
+    try {
+      // Password validation, eligibility and stock restoration are all
+      // enforced atomically by the backend's existing PATCH /orders/:id route.
+      await patchOrder(target.orderId, {
+        status: "Refunded",
+        refundAuthorizationPassword: password,
+      });
+      if (target.source === "online") {
+        setReview((current) =>
+          current.filter((order) => order.id !== target.orderId),
+        );
+      }
+      setShiftOrders((current) =>
+        current.map((order) =>
+          order.id === target.orderId
+            ? {
+                ...order,
+                status: "Refunded",
+                refundRequestStatus:
+                  order.refundRequestStatus === "Pending"
+                    ? ("Actioned" as const)
+                    : order.refundRequestStatus,
+              }
+            : order,
+        ),
+      );
+      setRefundTarget(null);
+      toast("success", `Order ${target.orderNumber} refunded successfully.`);
+      void refreshOrders();
+      if (target.source === "shift") void loadShift();
+    } catch (error) {
+      setRefundAuthError(
+        error instanceof Error
+          ? error.message
+          : "Refund failed. Please try again.",
+      );
+    } finally {
+      refundSubmittingRef.current = false;
+      setSettlingId(null);
+    }
+  };
+
+  const settleShiftOrder = (order: ShiftOrder) => {
+    const action = getSettlementAction(
+      order.status,
+      order.paymentStatus,
+      order,
+    );
+    if (!action) {
+      toast(
         "warning",
         "Completed, refunded, or cancelled orders cannot be changed.",
       );
+      return;
+    }
     if (!canPerformSettlement(action)) return;
-    return settle(o.id, action, `Order ${o.orderNumber}`, (status) =>
-      setShiftOrders((p) =>
-        p.map((e) => (e.id === o.id ? { ...e, status } : e)),
+    if (action === "refund") {
+      openRefundAuthorization(order, "shift");
+      return;
+    }
+    void settleVoid(order.id, `Order ${order.orderNumber}`, (status) =>
+      setShiftOrders((current) =>
+        current.map((entry) =>
+          entry.id === order.id ? { ...entry, status } : entry,
+        ),
       ),
     );
-  };
-
-  const openRefundRequest = (order: ShiftOrder) => {
-    setRefundRequestReason("");
-    setRefundRequestOrder(order);
-  };
-
-  const submitRefundRequest = async () => {
-    const order = refundRequestOrder;
-    const reason = refundRequestReason.trim();
-    if (!order || !reason || requestingRefundId !== null) return;
-    setRequestingRefundId(order.id);
-    try {
-      const result = await api.post<{ request: { id: number; status: "Pending" } }>(
-        "/refund-requests",
-        { orderId: order.id, reason },
-      );
-      setShiftOrders((current) => current.map((entry) =>
-        entry.id === order.id
-          ? {
-              ...entry,
-              refundRequestId: result.request.id,
-              refundRequestStatus: result.request.status,
-            }
-          : entry,
-      ));
-      setRefundRequestOrder(null);
-      setRefundRequestReason("");
-      toast("success", `Refund request for ${order.orderNumber} sent to the Administrator.`);
-    } catch (error) {
-      toast("error", error instanceof Error ? error.message : "Failed to send the refund request.");
-    } finally {
-      setRequestingRefundId(null);
-    }
   };
 
   const confirmProceed = async () => {
@@ -2389,18 +2564,26 @@ export default function CashierView() {
 
   /* ── cart ── */
   const chickenFlavors = useMemo(
-    () => products.filter((product) =>
-      product.categorySystemKey === "chicken_flavors" &&
-      !isUnavailable(product.availabilityStatus) &&
-      getEffectiveMaxQuantity(product.remainingStock) > 0),
+    () =>
+      products.filter(
+        (product) =>
+          product.categorySystemKey === "chicken_flavors" &&
+          norm(product.availabilityStatus) !== "hidden",
+      ),
     [products],
   );
   const cashierProducts = useMemo(
-    () => products.filter((product) => product.categorySystemKey !== "chicken_flavors"),
+    () =>
+      products.filter(
+        (product) => product.categorySystemKey !== "chicken_flavors",
+      ),
     [products],
   );
   const categories = useMemo(
-    () => ["ALL", ...[...new Set(cashierProducts.map((p) => p.category))].sort()],
+    () => [
+      "ALL",
+      ...[...new Set(cashierProducts.map((p) => p.category))].sort(),
+    ],
     [cashierProducts],
   );
   const filtered = useMemo(
@@ -2444,11 +2627,14 @@ export default function CashierView() {
     });
   }, []);
 
-  const requestAddToCart = useCallback((item: MenuItem) => {
-    if (item.categorySystemKey !== "menu_food") return addDirectToCart(item);
-    setSelectedFlavorId(null);
-    setFlavorTarget({ item });
-  }, [addDirectToCart]);
+  const requestAddToCart = useCallback(
+    (item: MenuItem) => {
+      if (item.categorySystemKey !== "menu_food") return addDirectToCart(item);
+      setSelectedFlavorId(null);
+      setFlavorTarget({ item });
+    },
+    [addDirectToCart],
+  );
 
   const editCartFlavor = useCallback((item: CartItem) => {
     setSelectedFlavorId(item.selectedFlavorProductId ?? null);
@@ -2457,51 +2643,68 @@ export default function CashierView() {
 
   const confirmFlavor = useCallback(() => {
     if (!flavorTarget || !selectedFlavorId) return;
-    const flavor = chickenFlavors.find((entry) => entry.id === selectedFlavorId);
+    const flavor = chickenFlavors.find(
+      (entry) => entry.id === selectedFlavorId,
+    );
     if (!flavor) return;
     const nextKey = `${flavorTarget.item.id}:${flavor.id}`;
     setCart((current) => {
-      const max = Math.min(
-        getEffectiveMaxQuantity(flavorTarget.item.remainingStock),
-        getEffectiveMaxQuantity(flavor.remainingStock),
-      );
+      const max = getEffectiveMaxQuantity(flavorTarget.item.remainingStock);
       if (flavorTarget.editingCartKey) {
-        const editing = current.find((entry) => entry.cartKey === flavorTarget.editingCartKey);
+        const editing = current.find(
+          (entry) => entry.cartKey === flavorTarget.editingCartKey,
+        );
         if (!editing) return current;
-        const collision = current.find((entry) => entry.cartKey === nextKey && entry.cartKey !== editing.cartKey);
+        const collision = current.find(
+          (entry) =>
+            entry.cartKey === nextKey && entry.cartKey !== editing.cartKey,
+        );
         if (collision) {
           return current
             .filter((entry) => entry.cartKey !== editing.cartKey)
-            .map((entry) => entry.cartKey === collision.cartKey
-              ? { ...entry, quantity: Math.min(max, entry.quantity + editing.quantity) }
-              : entry);
+            .map((entry) =>
+              entry.cartKey === collision.cartKey
+                ? {
+                    ...entry,
+                    quantity: Math.min(max, entry.quantity + editing.quantity),
+                  }
+                : entry,
+            );
         }
-        return current.map((entry) => entry.cartKey === editing.cartKey
-          ? {
-              ...entry,
-              cartKey: nextKey,
-              selectedFlavorProductId: flavor.id,
-              selectedFlavorName: flavor.name,
-              selectedFlavorRemainingStock: flavor.remainingStock,
-              quantity: Math.min(max, entry.quantity),
-            }
-          : entry);
+        return current.map((entry) =>
+          entry.cartKey === editing.cartKey
+            ? {
+                ...entry,
+                cartKey: nextKey,
+                selectedFlavorProductId: flavor.id,
+                selectedFlavorName: flavor.name,
+                selectedFlavorRemainingStock: flavor.remainingStock,
+                quantity: Math.min(max, entry.quantity),
+              }
+            : entry,
+        );
       }
       const existing = current.find((entry) => entry.cartKey === nextKey);
       if (existing) {
-        return existing.quantity >= max ? current : current.map((entry) =>
-          entry.cartKey === nextKey
-            ? { ...entry, quantity: entry.quantity + 1 }
-            : entry);
+        return existing.quantity >= max
+          ? current
+          : current.map((entry) =>
+              entry.cartKey === nextKey
+                ? { ...entry, quantity: entry.quantity + 1 }
+                : entry,
+            );
       }
-      return [...current, {
-        ...flavorTarget.item,
-        cartKey: nextKey,
-        quantity: 1,
-        selectedFlavorProductId: flavor.id,
-        selectedFlavorName: flavor.name,
-        selectedFlavorRemainingStock: flavor.remainingStock,
-      }];
+      return [
+        ...current,
+        {
+          ...flavorTarget.item,
+          cartKey: nextKey,
+          quantity: 1,
+          selectedFlavorProductId: flavor.id,
+          selectedFlavorName: flavor.name,
+          selectedFlavorRemainingStock: flavor.remainingStock,
+        },
+      ];
     });
     setFlavorTarget(null);
     setSelectedFlavorId(null);
@@ -2516,11 +2719,9 @@ export default function CashierView() {
       setCart((prev) =>
         prev.flatMap((item) => {
           if (item.cartKey !== cartKey) return [item];
-          const max = Math.min(
-            getEffectiveMaxQuantity(products.find((p) => p.id === item.id)?.remainingStock ?? item.remainingStock),
-            item.selectedFlavorProductId
-              ? getEffectiveMaxQuantity(products.find((p) => p.id === item.selectedFlavorProductId)?.remainingStock ?? 0)
-              : Number.POSITIVE_INFINITY,
+          const max = getEffectiveMaxQuantity(
+            products.find((p) => p.id === item.id)?.remainingStock ??
+              item.remainingStock,
           );
           const quantity = Math.min(Math.max(0, item.quantity + delta), max);
           return quantity > 0 ? [{ ...item, quantity }] : [];
@@ -2642,7 +2843,10 @@ export default function CashierView() {
     }
     if (orderType === "delivery") {
       const reference = platformReference.trim();
-      const referenceError = getPlatformReferenceError(paymentMethod, reference);
+      const referenceError = getPlatformReferenceError(
+        paymentMethod,
+        reference,
+      );
       if (referenceError) {
         toast("error", referenceError);
         return;
@@ -2676,14 +2880,15 @@ export default function CashierView() {
     if (!isOnline) return toast("error", "No connection. Cannot place order.");
     if (
       paymentMethod === "cash" &&
-      (
-        !Number.isFinite(tendered) ||
+      (!Number.isFinite(tendered) ||
         tendered < 0 ||
         tendered > MAX_CASH_TENDERED ||
-        Math.abs(tendered * 100 - Math.round(tendered * 100)) > 1e-6
-      )
+        Math.abs(tendered * 100 - Math.round(tendered * 100)) > 1e-6)
     ) {
-      toast("error", "Cash tendered must be between ₱0.00 and ₱100,000.00 with up to two decimal places.");
+      toast(
+        "error",
+        "Cash tendered must be between ₱0.00 and ₱100,000.00 with up to two decimal places.",
+      );
       return;
     }
     placingRef.current = true;
@@ -2693,16 +2898,21 @@ export default function CashierView() {
     const change = Math.max(0, tendered - amountDue);
     const isCash = paymentMethod === "cash";
     const isThirdPartyDelivery = orderType === "delivery";
-    const isOnsiteGcash = paymentMethod === "gcash_onsite" && !isThirdPartyDelivery;
+    const isOnsiteGcash =
+      paymentMethod === "gcash_onsite" && !isThirdPartyDelivery;
 
     try {
       if (!isCash && !isThirdPartyDelivery && !paymentAttemptRef.current) {
-        throw new Error("GCash payment confirmation expired. Reopen checkout and try again.");
+        throw new Error(
+          "GCash payment confirmation expired. Reopen checkout and try again.",
+        );
       }
       let proofImageUrl: string | undefined;
       if (isOnsiteGcash) {
         if (!file) {
-          throw new Error("Choose a payment proof before confirming GCash payment.");
+          throw new Error(
+            "Choose a payment proof before confirming GCash payment.",
+          );
         }
         const attemptReference = paymentAttemptRef.current as string;
         const cachedProof = paymentProofUploadRef.current;
@@ -2713,13 +2923,19 @@ export default function CashierView() {
           proofImageUrl = cachedProof.fileUrl;
         } else {
           const form = new FormData();
-          form.append("proof", file, file.name || `payment-proof-${Date.now()}.jpg`);
+          form.append(
+            "proof",
+            file,
+            file.name || `payment-proof-${Date.now()}.jpg`,
+          );
           try {
             proofImageUrl = (
               await api.post<{ fileUrl: string }>("/upload-proof", form)
             ).fileUrl;
           } catch {
-            throw new Error("Failed to upload the payment proof. Please try again.");
+            throw new Error(
+              "Failed to upload the payment proof. Please try again.",
+            );
           }
           paymentProofUploadRef.current = {
             attemptReference,
@@ -2752,12 +2968,13 @@ export default function CashierView() {
         ...(isThirdPartyDelivery && {
           payment_reference: platformReference.trim(),
         }),
-        ...(!isCash && !isThirdPartyDelivery && {
-          payment_status: "Paid",
-          payment_reference: paymentAttemptRef.current,
-          payment_qr_version: paymentQrVersionRef.current,
-          proof_image_url: proofImageUrl,
-        }),
+        ...(!isCash &&
+          !isThirdPartyDelivery && {
+            payment_status: "Paid",
+            payment_reference: paymentAttemptRef.current,
+            payment_qr_version: paymentQrVersionRef.current,
+            proof_image_url: proofImageUrl,
+          }),
         customer_type: customerType,
         ...(soldToName.trim() && { customer_name: soldToName.trim() }),
         discount_name: customerType,
@@ -2804,10 +3021,10 @@ export default function CashierView() {
     : loadingPaymentQr && paymentMethod === "gcash_onsite"
       ? "Loading GCash QR…"
       : !isOnline
-      ? "Offline — cannot place order"
-      : paymentMethod === "gcash_onsite"
-        ? "Proceed to Checkout"
-        : `Pay ${fmt.money(pricing.amountDue)}`;
+        ? "Offline — cannot place order"
+        : paymentMethod === "gcash_onsite"
+          ? "Proceed to Checkout"
+          : `Pay ${fmt.money(pricing.amountDue)}`;
 
   return (
     <Ctx.Provider value={fmt}>
@@ -2883,9 +3100,21 @@ export default function CashierView() {
                             <button
                               className={ACT.red}
                               disabled={settlingId === o.id}
-                              onClick={() => setCancelId(o.id)}
+                              onClick={() => {
+                                if (action === "refund")
+                                  openRefundAuthorization(o, "online");
+                                else setCancelId(o.id);
+                              }}
                             >
-                              {settlingId === o.id && <Skeleton width={14} height={14} variant="shimmer" theme="admin" aria-label="Processing" />}
+                              {settlingId === o.id && (
+                                <Skeleton
+                                  width={14}
+                                  height={14}
+                                  variant="shimmer"
+                                  theme="admin"
+                                  aria-label="Processing"
+                                />
+                              )}
                               {action === "refund"
                                 ? "Refund order"
                                 : "Void order"}
@@ -2992,8 +3221,20 @@ export default function CashierView() {
 
           <div className="flex-1 overflow-y-auto px-4 pb-8 sm:px-8">
             {loadingProducts && !products.length ? (
-              <div className="space-y-4 p-4" role="status" aria-busy="true" aria-label="Loading menu">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "16px" }}>
+              <div
+                className="space-y-4 p-4"
+                role="status"
+                aria-busy="true"
+                aria-label="Loading menu"
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fill, minmax(190px, 1fr))",
+                    gap: "16px",
+                  }}
+                >
                   {[...Array(6)].map((_, i) => (
                     <SkeletonProductCard key={i} theme="customer" />
                   ))}
@@ -3039,9 +3280,8 @@ export default function CashierView() {
           className={`flex shrink-0 flex-col bg-white ${compact ? "w-full border-t" : "w-[400px] border-l"} border-neutral-100`}
         >
           <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-5 sm:px-6 sm:py-6">
-            
-           <div>
-    <h2 className="text-lg font-semibold">Current order</h2>
+            <div>
+              <h2 className="text-lg font-semibold">Current order</h2>
               <p className="text-sm text-neutral-400">
                 {totalQty
                   ? `${totalQty} item${totalQty > 1 ? "s" : ""}`
@@ -3049,12 +3289,12 @@ export default function CashierView() {
               </p>
             </div>
             {cart.length > 0 && (
-             <button
-                  onClick={() => setShowVoidConfirm(true)}
-                  title="Void current order"
-                  style={{ marginRight: compact ? 0 : 80 }}
-                  className="flex h-10 items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700"
->
+              <button
+                onClick={() => setShowVoidConfirm(true)}
+                title="Void current order"
+                style={{ marginRight: compact ? 0 : 80 }}
+                className="flex h-10 items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700"
+              >
                 <Ban className="h-4 w-4" />
                 Void
               </button>
@@ -3091,10 +3331,12 @@ export default function CashierView() {
                     className="flex items-start justify-between gap-3 rounded-xl border border-neutral-100 bg-neutral-50 p-3"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-neutral-800">{item.name}</p>
+                      <p className="truncate text-sm font-semibold text-neutral-800">
+                        {item.name}
+                      </p>
                       {item.selectedFlavorName && (
                         <p className="text-xs font-semibold text-amber-700">
-                          Flavor: {item.selectedFlavorName}
+                          Sauce: {item.selectedFlavorName}
                         </p>
                       )}
                       <p className="text-xs text-neutral-400">
@@ -3107,9 +3349,18 @@ export default function CashierView() {
                   </div>
                 ))}
                 <div className="rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-500">
-                  Order type: <strong className="text-neutral-800">{orderType === "dine-in" ? "Dine-in" : orderType === "take-out" ? "Take-out" : "Delivery"}</strong>
+                  Order type:{" "}
+                  <strong className="text-neutral-800">
+                    {orderType === "dine-in"
+                      ? "Dine-in"
+                      : orderType === "take-out"
+                        ? "Take-out"
+                        : "Delivery"}
+                  </strong>
                   {orderType === "delivery" && platformReference.trim() && (
-                    <span className="block pt-1">Reference: {platformReference.trim()}</span>
+                    <span className="block pt-1">
+                      Reference: {platformReference.trim()}
+                    </span>
                   )}
                 </div>
               </div>
@@ -3138,7 +3389,8 @@ export default function CashierView() {
                         fmt.money(pricing.serviceChargeAmount),
                         "text-neutral-500",
                       ],
-                    ]).map(([l, v, c]) => (
+                    ]
+                ).map(([l, v, c]) => (
                   <p
                     key={l}
                     className="flex justify-between gap-3 border-b border-dashed border-neutral-200 px-4 py-2.5"
@@ -3147,30 +3399,37 @@ export default function CashierView() {
                     <span className={`font-medium ${c}`}>{v}</span>
                   </p>
                 ))}
-                {checkoutStep === 2 && <p className="flex items-center justify-between bg-neutral-100 px-4 py-3.5">
-                  <span className="font-medium text-neutral-600">Total</span>
-                  <span className="text-2xl font-semibold">
-                    {fmt.money(pricing.amountDue)}
-                  </span>
-                </p>}
+                {checkoutStep === 2 && (
+                  <p className="flex items-center justify-between bg-neutral-100 px-4 py-3.5">
+                    <span className="font-medium text-neutral-600">Total</span>
+                    <span className="text-2xl font-semibold">
+                      {fmt.money(pricing.amountDue)}
+                    </span>
+                  </p>
+                )}
               </div>
 
-              <div className={`mb-2 grid gap-2 ${checkoutStep === 2 ? "grid-cols-1" : "grid-cols-1"}`}>
+              <div
+                className={`mb-2 grid gap-2 ${checkoutStep === 2 ? "grid-cols-1" : "grid-cols-1"}`}
+              >
                 {checkoutStep === 1 && (
-                <Select
-                  value={orderType}
-                  onChange={(v) => {
-                    const nextOrderType = v as OrderTypeVal;
-                    setOrderType(nextOrderType);
-                    setPaymentMethod(nextOrderType === "delivery" ? "grabfood" : "cash");
-                    if (nextOrderType !== "delivery") setPlatformReference("");
-                  }}
-                  options={[
-                    { value: "dine-in", label: "Dine in" },
-                    { value: "take-out", label: "Take out" },
-                    { value: "delivery", label: "Delivery" },
-                  ]}
-                />
+                  <Select
+                    value={orderType}
+                    onChange={(v) => {
+                      const nextOrderType = v as OrderTypeVal;
+                      setOrderType(nextOrderType);
+                      setPaymentMethod(
+                        nextOrderType === "delivery" ? "grabfood" : "cash",
+                      );
+                      if (nextOrderType !== "delivery")
+                        setPlatformReference("");
+                    }}
+                    options={[
+                      { value: "dine-in", label: "Dine in" },
+                      { value: "take-out", label: "Take out" },
+                      { value: "delivery", label: "Delivery" },
+                    ]}
+                  />
                 )}
                 {checkoutStep === 1 && orderType === "delivery" && (
                   <Select
@@ -3183,95 +3442,114 @@ export default function CashierView() {
                   />
                 )}
                 {checkoutStep === 2 && orderType !== "delivery" && (
-                <Select
-                  value={paymentMethod}
-                  onChange={(v) => setPaymentMethod(v as PaymentMethod)}
-                  options={[
-                        { value: "cash", label: "Cash" },
-                        { value: "gcash_onsite", label: "Online Payment" },
-                      ]}
-                />
+                  <Select
+                    value={paymentMethod}
+                    onChange={(v) => setPaymentMethod(v as PaymentMethod)}
+                    options={[
+                      { value: "cash", label: "Cash" },
+                      { value: "gcash_onsite", label: "Online Payment" },
+                    ]}
+                  />
                 )}
                 {checkoutStep === 2 && orderType === "delivery" && (
                   <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm font-semibold text-neutral-700">
-                    {paymentMethod === "foodpanda" ? "Foodpanda" : "GrabFood"} · {platformReference}
+                    {paymentMethod === "foodpanda" ? "Foodpanda" : "GrabFood"} ·{" "}
+                    {platformReference}
                   </div>
                 )}
               </div>
               {checkoutStep === 1 && orderType === "delivery" && (
                 <div className="mb-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-                  <label className={`${eyebrow} mb-1.5 block`} htmlFor="platform-reference">
+                  <label
+                    className={`${eyebrow} mb-1.5 block`}
+                    htmlFor="platform-reference"
+                  >
                     Platform reference
                   </label>
                   <input
                     id="platform-reference"
                     value={platformReference}
-                    onChange={(event) => setPlatformReference(
-                       event.target.value
-                         .replace(/[^A-Za-z0-9-]/g, "")
-                         .slice(0, MAX_PLATFORM_REFERENCE_LENGTH),
+                    onChange={(event) =>
+                      setPlatformReference(
+                        event.target.value
+                          .replace(/[^A-Za-z0-9-]/g, "")
+                          .slice(0, MAX_PLATFORM_REFERENCE_LENGTH),
+                      )
+                    }
+                    maxLength={MAX_PLATFORM_REFERENCE_LENGTH}
+                    placeholder={
+                      paymentMethod === "foodpanda"
+                        ? "Enter complete Foodpanda order reference"
+                        : "GF-123 or complete GrabFood booking ID"
+                    }
+                    aria-invalid={Boolean(
+                      platformReference &&
+                      getPlatformReferenceError(
+                        paymentMethod,
+                        platformReference,
+                      ),
                     )}
-                     maxLength={MAX_PLATFORM_REFERENCE_LENGTH}
-                     placeholder={paymentMethod === "foodpanda"
-                       ? "Enter complete Foodpanda order reference"
-                       : "GF-123 or complete GrabFood booking ID"}
-                     aria-invalid={Boolean(
-                       platformReference &&
-                       getPlatformReferenceError(paymentMethod, platformReference),
-                     )}
-                     autoCapitalize="characters"
+                    autoCapitalize="characters"
                     className="w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm uppercase outline-none focus:border-neutral-900"
                   />
                   <p className="mt-1 text-xs text-neutral-400">
-                     {paymentMethod === "grabfood"
-                       ? "Complete the actual GrabFood short order ID or enter the full booking ID."
-                       : "Enter the actual reference shown by Foodpanda; no prefix is added."}
+                    {paymentMethod === "grabfood"
+                      ? "Complete the actual GrabFood short order ID or enter the full booking ID."
+                      : "Enter the actual reference shown by Foodpanda; no prefix is added."}
                   </p>
                 </div>
               )}
-              {checkoutStep === 2 && <button
-                type="button"
-                onClick={() => setShowDiscounts(true)}
-                className="mb-2 flex w-full items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-700 transition hover:border-neutral-400"
-              >
-                <span className="flex items-center gap-2 font-semibold">
-                  <Percent className="h-4 w-4 text-green-600" />
-                  Discount
-                </span>
-                <span className="truncate text-neutral-500">
-                  {discount
-                    ? `${discount.name} (${pct(discountRate)}%)`
-                    : "Select"}
-                </span>
-              </button>}
+              {checkoutStep === 2 && (
+                <button
+                  type="button"
+                  onClick={() => setShowDiscounts(true)}
+                  className="mb-2 flex w-full items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-700 transition hover:border-neutral-400"
+                >
+                  <span className="flex items-center gap-2 font-semibold">
+                    <Percent className="h-4 w-4 text-green-600" />
+                    Discount
+                  </span>
+                  <span className="truncate text-neutral-500">
+                    {discount
+                      ? `${discount.name} (${pct(discountRate)}%)`
+                      : "Select"}
+                  </span>
+                </button>
+              )}
               {checkoutStep === 2 && (
                 <div className="mb-3 grid gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                   <p className={eyebrow}>Optional receipt details</p>
                   <input
                     value={soldToName}
-                    onChange={(event) => setSoldToName(event.target.value.slice(0, 150))}
+                    onChange={(event) =>
+                      setSoldToName(event.target.value.slice(0, 150))
+                    }
                     placeholder="Sold To"
                     className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-900"
                   />
                 </div>
               )}
-              {checkoutStep === 2 && <button
-                onClick={() => setShowNote((p) => !p)}
-                className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}
-              >
-                <MessageSquare className="h-4 w-4" />
-                {orderNote ? "Edit Other Note" : "Add Other Note"}
-              </button>}
-              {checkoutStep === 2 && <Collapse open={showNote}>
-                <textarea
-                  value={orderNote}
-                  onChange={(e) => setOrderNote(e.target.value)}
-                  maxLength={240}
-                  rows={2}
-                  placeholder="e.g. no spicy, birthday order…"
-                  className="w-full resize-none rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 outline-none"
-                />
-              </Collapse>}
+              {checkoutStep === 2 && (
+                <button
+                  onClick={() => setShowNote((p) => !p)}
+                  className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${showNote || orderNote ? "border-blue-200 bg-blue-50 text-blue-600" : "border-neutral-200 bg-neutral-50 text-neutral-400"}`}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  {orderNote ? "Edit Other Note" : "Add Other Note"}
+                </button>
+              )}
+              {checkoutStep === 2 && (
+                <Collapse open={showNote}>
+                  <textarea
+                    value={orderNote}
+                    onChange={(e) => setOrderNote(e.target.value)}
+                    maxLength={240}
+                    rows={2}
+                    placeholder="e.g. no spicy, birthday order…"
+                    className="w-full resize-none rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 outline-none"
+                  />
+                </Collapse>
+              )}
 
               {checkoutStep === 1 ? (
                 <button
@@ -3291,17 +3569,28 @@ export default function CashierView() {
                     Back
                   </button>
                   <button
-                className={`${isOnline ? B.green : B.dark} flex items-center justify-center gap-2 py-4 text-base`}
-                disabled={placing || loadingPaymentQr || !isOnline || !customerType}
-                onClick={openPayment}
-              >
-                {placing && <Skeleton width={16} height={16} variant="shimmer" theme="customer" aria-label="Placing order" />}
-                {payBtnLabel}
+                    className={`${isOnline ? B.green : B.dark} flex items-center justify-center gap-2 py-4 text-base`}
+                    disabled={
+                      placing || loadingPaymentQr || !isOnline || !customerType
+                    }
+                    onClick={openPayment}
+                  >
+                    {placing && (
+                      <Skeleton
+                        width={16}
+                        height={16}
+                        variant="shimmer"
+                        theme="customer"
+                        aria-label="Placing order"
+                      />
+                    )}
+                    {payBtnLabel}
                   </button>
                 </div>
               )}
               <p className="mt-2 text-center text-xs text-neutral-400">
-                Paid orders reserve and deduct stock when the payment is confirmed.
+                Paid orders reserve and deduct stock when the payment is
+                confirmed.
               </p>
             </div>
           )}
@@ -3330,15 +3619,9 @@ export default function CashierView() {
       />
       <ConfirmModal
         show={!!cancelOrder}
-        title={cancelAction === "refund" ? "Refund order?" : "Void order?"}
-        message={
-          cancelAction === "refund"
-            ? "This will mark the order as refunded and restore deducted inventory once."
-            : "This will permanently void the online order. The customer will need to be notified separately."
-        }
-        confirmLabel={
-          cancelAction === "refund" ? "Yes, refund order" : "Yes, void order"
-        }
+        title="Void order?"
+        message="This will permanently void the unpaid online order. The customer will need to be notified separately."
+        confirmLabel="Yes, void order"
         busy={settlingId !== null}
         onConfirm={() => void confirmCancel()}
         onCancel={() => setCancelId(null)}
@@ -3396,34 +3679,29 @@ export default function CashierView() {
         }}
       />
       <SuccessModal receipt={done} cashier={cashierName} onClose={resetOrder} />
-      <RefundRequestModal
-        order={refundRequestOrder}
-        reason={refundRequestReason}
-        setReason={setRefundRequestReason}
-        busy={requestingRefundId !== null}
-        onConfirm={() => void submitRefundRequest()}
-        onCancel={() => {
-          if (requestingRefundId === null) {
-            setRefundRequestOrder(null);
-            setRefundRequestReason("");
-          }
-        }}
-      />
       <HistoryModal
         show={showHistory}
         orders={shiftOrders}
         loading={shiftLoading}
         settlingId={settlingId}
-        requestingId={requestingRefundId}
         canCancel={canCancelPersisted}
         canRefund={canRefundPersisted}
-        canRequestRefund={canRequestRefund}
         onClose={() => setShowHistory(false)}
-        onSettle={(o) => void settleShiftOrder(o)}
-        onRequestRefund={openRefundRequest}
+        onSettle={settleShiftOrder}
         onReprint={(o) => void reprint(o)}
       />
 
+      <RefundAuthorizationModal
+        target={refundTarget}
+        busy={settlingId !== null}
+        error={refundAuthError}
+        onConfirm={(password) => void confirmRefund(password)}
+        onCancel={() => {
+          if (settlingId !== null) return;
+          setRefundTarget(null);
+          setRefundAuthError("");
+        }}
+      />
       <div className="pointer-events-none fixed bottom-4 right-4 z-[999999] flex w-[calc(100vw-32px)] max-w-sm flex-col gap-2 sm:bottom-6 sm:right-6">
         <AnimatePresence>
           {toasts.map((t) => {

@@ -370,21 +370,33 @@ export function isCountedInTotalProducts(value?: string | null): boolean {
   return normalized !== "good";
 }
 
-export function getPOItemDateTrackingType(
+export function getPOItemCategoryTrackingType(
   item: POItem,
   inventoryCategoryNameLookup: Map<string, string>,
   inventoryCategoryDateTrackingLookup: Map<
     string,
     "none" | "expiry" | "shelf_life"
   >,
-): "none" | "expiry" | "shelf_life" {
+): "none" | "expiry" | "shelf_life" | null {
   const itemCategory = String(item.category ?? "");
-  const { dateTrackingType } = resolveInventoryCategoryMatch(
+  const { dateTrackingType, matchedCategory } = resolveInventoryCategoryMatch(
     itemCategory,
     inventoryCategoryNameLookup,
     inventoryCategoryDateTrackingLookup,
   );
-  return dateTrackingType;
+  const configured = matchedCategory != null && inventoryCategoryDateTrackingLookup.has(
+    normalizeInventoryCategoryName(matchedCategory),
+  );
+  return configured ? dateTrackingType : null;
+}
+
+export function getPOItemDateTrackingType(
+  item: POItem,
+  inventoryCategoryNameLookup: Map<string, string>,
+  inventoryCategoryDateTrackingLookup: Map<string, "none" | "expiry" | "shelf_life">,
+): "none" | "expiry" | "shelf_life" {
+  return getPOItemCategoryTrackingType(item, inventoryCategoryNameLookup, inventoryCategoryDateTrackingLookup)
+    ?? item.trackingMethod ?? "none";
 }
 
 export function getPOItemUsableUntil(

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { SkeletonTable } from "@/components/ui/skeleton";
+import { SkeletonTableRow } from "@/components/ui/skeleton";
 import { Sidebar } from "@/components/Sidebar";
 import { staffApi } from "../lib/api";
 import type { StaffMember } from "../lib/api";
@@ -782,7 +782,9 @@ export default function StaffAccounts() {
             </thead>
             <tbody>
               {isLoading ? (
-                <SkeletonTable rowCount={5} columnCount={7} theme="admin" showHeader={false} />
+                Array.from({ length: 5 }, (_, index) => (
+                  <SkeletonTableRow key={index} columnCount={7} theme="admin" />
+                ))
               ) : filteredEmployees.length === 0 ? (
                 <tr>
                   <td

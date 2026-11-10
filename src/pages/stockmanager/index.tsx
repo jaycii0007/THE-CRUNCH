@@ -16,6 +16,7 @@ import {
 } from "@/lib/restaurantSettings";
 import { api } from "./services/api";
 import type {
+  Batch,
   InventoryAlertsPayload,
   InventoryCategoryMaster,
   InventoryUnitMaster,
@@ -45,7 +46,12 @@ import { DashboardTab } from "./components/tabs/DashboardTab";
 import { useDashboard } from "./hooks/useDashboard";
 import { usePurchaseOrders } from "./hooks/usePurchaseOrders";
 import { useSuppliers } from "./hooks/useSuppliers";
-import { SkeletonSectionCard, SkeletonTable, SkeletonKPICard, SkeletonListItem } from "@/components/ui/skeleton";
+import {
+  SkeletonSectionCard,
+  SkeletonTable,
+  SkeletonKPICard,
+  SkeletonListItem,
+} from "@/components/ui/skeleton";
 import { toNumber } from "./utils/formatters";
 import {
   STOCK_MANAGER_ACTIVE_TAB_STORAGE_KEY,
@@ -80,12 +86,16 @@ const REMOVED_STOCK_MANAGER_TABS = new Set([
 const FALLBACK_TAB: Tab = "dashboard";
 
 function isValidStockManagerTab(value: unknown): value is Tab {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
   return TABS.some((tab) => tab.id === normalized);
 }
 
 function sanitizeStockManagerTab(value: unknown): Tab {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (REMOVED_STOCK_MANAGER_TABS.has(normalized)) {
     return FALLBACK_TAB;
   }
@@ -203,7 +213,9 @@ const EditIcon = () => (
 
 function validateMaterialThresholds(form: RawMaterialForm) {
   const lowStockThreshold =
-    form.lowStockThreshold.trim() === "" ? null : Number(form.lowStockThreshold);
+    form.lowStockThreshold.trim() === ""
+      ? null
+      : Number(form.lowStockThreshold);
   const criticalStockThreshold =
     form.criticalStockThreshold.trim() === ""
       ? null
@@ -249,7 +261,8 @@ function validateMaterialThresholds(form: RawMaterialForm) {
       ok: false,
       lowStockThreshold,
       criticalStockThreshold,
-      message: "Critical stock level cannot be greater than warning stock level.",
+      message:
+        "Critical stock level cannot be greater than warning stock level.",
     } as const;
   }
 
@@ -259,6 +272,81 @@ function validateMaterialThresholds(form: RawMaterialForm) {
     criticalStockThreshold,
     message: "",
   } as const;
+}
+
+// Optional lot-level fields supported by the PO receiving / batches schema.
+// Keep them optional so older records can still be displayed without invented values.
+type MaterialBatch = Batch & {
+  shelf_life_months?: number | string | null;
+  shelf_life_days?: number | string | null;
+  shelf_life_hours?: number | string | null;
+  usable_until?: string | null;
+  delivery_batch_id?: string | null;
+};
+
+function batchDateText(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "Not recorded";
+  const date =
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(raw);
+  if (!date) return raw;
+  const datePart = `${date[2]}/${date[3]}/${date[1]}`;
+  // The backend may return a DATE column only. Never fabricate a time.
+  if (date[4] === undefined) return `${datePart} (date only)`;
+  const hour = Number(date[4]);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  return `${datePart}, ${hour % 12 || 12}:${date[5]} ${suffix} (recorded)`;
+}
+
+function batchExpiryTime(batch: MaterialBatch): number | null {
+  const raw = String(batch.usable_until || batch.expiry_date || "").trim();
+  if (!raw) return null;
+  // Expiry DATE values are valid through the end of that date in PH time.
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? `${raw}T23:59:59+08:00`
+    : /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)$/.test(raw)
+      ? `${raw.replace(" ", "T")}+08:00`
+      : raw;
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function batchShelfLifeText(batch: MaterialBatch): string {
+  const values: Array<[unknown, string]> = [
+    [batch.shelf_life_months, "month"],
+    [batch.shelf_life_days, "day"],
+    [batch.shelf_life_hours, "hour"],
+  ];
+  const parts = values.flatMap(([raw, unit]) => {
+    if (raw == null || raw === "") return [];
+    const amount = Number(raw);
+    return Number.isFinite(amount) && amount > 0
+      ? [`${amount} ${unit}${amount === 1 ? "" : "s"}`]
+      : [];
+  });
+  return parts.length ? parts.join(", ") : "Not specified";
+}
+
+function batchStatus(batch: MaterialBatch): {
+  label: string;
+  tone: "neutral" | "warning" | "danger";
+} {
+  const remaining = Number(batch.remaining_qty ?? 0);
+  const recordedStatus = String(batch.status ?? "").toLowerCase();
+  if (recordedStatus === "expired") return { label: "Expired", tone: "danger" };
+  if (remaining <= 0)
+    return { label: "No recorded remainder", tone: "neutral" };
+  const expiry = batchExpiryTime(batch);
+  if (expiry !== null) {
+    const remainingMs = expiry - Date.now();
+    if (remainingMs < 0) return { label: "Expired", tone: "danger" };
+    if (remainingMs <= 3 * 24 * 60 * 60 * 1000)
+      return { label: "Near expiry (3 days)", tone: "warning" };
+  }
+  return {
+    label: expiry === null ? "No expiry recorded" : "Within date",
+    tone: "neutral",
+  };
 }
 
 export default function StockManager() {
@@ -296,6 +384,69 @@ export default function StockManager() {
     useState<InventoryAlertsPayload | null>(null);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
+  // Batch viewer is strictly read-only; sales and PO processing are unchanged.
+  const [batchMaterial, setBatchMaterial] = useState<Product | null>(null);
+  const [batchRows, setBatchRows] = useState<MaterialBatch[]>([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const batchRequestRef = useRef(0);
+
+  const openBatchDetails = useCallback(async (material: Product) => {
+    const requestId = ++batchRequestRef.current;
+    setBatchMaterial(material);
+    setBatchRows([]);
+    setBatchError(null);
+    setBatchLoading(true);
+    try {
+      // This GET endpoint is already present in stockmanager/services/api.ts.
+      const result = await api.getProductBatches(material.product_id);
+      if (batchRequestRef.current !== requestId) return;
+      if (!Array.isArray(result))
+        throw new Error("Unexpected batch data from the server.");
+      const rows: MaterialBatch[] = result.filter(
+        (row) => Number(row.product_id) === Number(material.product_id),
+      );
+      rows.sort((a, b) => {
+        const aExpiry = batchExpiryTime(a) ?? Number.POSITIVE_INFINITY;
+        const bExpiry = batchExpiryTime(b) ?? Number.POSITIVE_INFINITY;
+        if (aExpiry !== bExpiry) return aExpiry - bExpiry;
+        return String(a.received_date ?? "").localeCompare(
+          String(b.received_date ?? ""),
+        );
+      });
+      setBatchRows(rows);
+    } catch (err) {
+      if (batchRequestRef.current !== requestId) return;
+      setBatchError(
+        err instanceof Error ? err.message : "Unable to load batch records.",
+      );
+    } finally {
+      if (batchRequestRef.current === requestId) setBatchLoading(false);
+    }
+  }, []);
+
+  const closeBatchDetails = useCallback(() => {
+    ++batchRequestRef.current; // Prevent late responses from re-opening a closed modal.
+    setBatchMaterial(null);
+    setBatchRows([]);
+    setBatchError(null);
+    setBatchLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!batchMaterial) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeBatchDetails();
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [batchMaterial, closeBatchDetails]);
+
   const [showDashboardBackToTop, setShowDashboardBackToTop] = useState(false);
   const dashboardTopRef = useRef<HTMLDivElement | null>(null);
   const refreshInventoryRef = useRef<() => Promise<void>>(async () => {});
@@ -370,10 +521,12 @@ export default function StockManager() {
           normalizeInventoryCategoryName(category.name),
           category.name,
         );
-        inventoryCategoryDateTrackingLookup.set(
-          normalizeInventoryCategoryName(category.name),
-          category.date_tracking_type ?? "none",
-        );
+        if (category.date_tracking_type != null) {
+          inventoryCategoryDateTrackingLookup.set(
+            normalizeInventoryCategoryName(category.name),
+            category.date_tracking_type,
+          );
+        }
       }
       setInventoryCategories(categoryList);
       setStockAlertSettings(nextStockAlertSettings);
@@ -452,23 +605,18 @@ export default function StockManager() {
               .toLowerCase() === "stock_item",
         );
 
-      const groupedByName = new Map<string, Product[]>();
+      const productsById = new Map<number, Product>();
       for (const item of candidateProducts) {
-        const key = String(item.product_name ?? "")
-          .trim()
-          .toLowerCase();
-        groupedByName.set(key, [...(groupedByName.get(key) ?? []), item]);
+        const productId = toNumber(item.product_id);
+        const current = productsById.get(productId);
+        if (
+          !current ||
+          toNumber(item.inventory_id) > toNumber(current.inventory_id)
+        ) {
+          productsById.set(productId, item);
+        }
       }
-      const normalizedProducts: Product[] = Array.from(
-        groupedByName.values(),
-      ).map((group) => {
-        const pool = group.filter((i) => !i.isRawMaterial);
-        return (pool.length > 0 ? pool : group).reduce((latest, current) =>
-          toNumber(current.product_id) > toNumber(latest.product_id)
-            ? current
-            : latest,
-        );
-      });
+      const normalizedProducts = Array.from(productsById.values());
 
       setProducts(normalizedProducts);
     } catch (err) {
@@ -587,12 +735,16 @@ export default function StockManager() {
 
   useEffect(() => {
     const handleTabRequest = (event: Event) => {
-      const requestedTab = (event as CustomEvent<{ tab?: unknown }>).detail?.tab;
+      const requestedTab = (event as CustomEvent<{ tab?: unknown }>).detail
+        ?.tab;
       if (isValidStockManagerTab(requestedTab)) setTab(requestedTab);
     };
     window.addEventListener(STOCK_MANAGER_TAB_REQUEST_EVENT, handleTabRequest);
     return () =>
-      window.removeEventListener(STOCK_MANAGER_TAB_REQUEST_EVENT, handleTabRequest);
+      window.removeEventListener(
+        STOCK_MANAGER_TAB_REQUEST_EVENT,
+        handleTabRequest,
+      );
   }, []);
 
   useEffect(() => {
@@ -627,7 +779,9 @@ export default function StockManager() {
     const currentCategory = rawMaterialForm.category.trim();
     if (
       currentCategory &&
-      !names.some((name) => name.toLowerCase() === currentCategory.toLowerCase())
+      !names.some(
+        (name) => name.toLowerCase() === currentCategory.toLowerCase(),
+      )
     ) {
       return [currentCategory, ...names];
     }
@@ -858,12 +1012,18 @@ export default function StockManager() {
                   className="sm-attention-btn"
                 >
                   <span className="sm-status-dot sm-status-dot--syncing" />
-                  {dashboard.attentionItems.length} item{dashboard.attentionItems.length > 1 ? "s" : ""} need attention
+                  {dashboard.attentionItems.length} item
+                  {dashboard.attentionItems.length > 1 ? "s" : ""} need
+                  attention
                 </button>
               )}
               <div className="sm-status-badge">
-                <span className={`sm-status-dot ${isLoading || isRefreshing ? "sm-status-dot--syncing" : "sm-status-dot--synced"}`} />
-                <span>{isLoading || isRefreshing ? "Syncing" : "Up to date"}</span>
+                <span
+                  className={`sm-status-dot ${isLoading || isRefreshing ? "sm-status-dot--syncing" : "sm-status-dot--synced"}`}
+                />
+                <span>
+                  {isLoading || isRefreshing ? "Syncing" : "Up to date"}
+                </span>
               </div>
             </div>
           </div>
@@ -888,7 +1048,9 @@ export default function StockManager() {
                 >
                   {t.label}
                   {badge > 0 && (
-                    <span className={`sm-tab-badge ${active ? "sm-tab-badge--active" : t.id === "purchases" ? "sm-tab-badge--purchases" : t.id === "purchase-history" ? "sm-tab-badge--history" : "sm-tab-badge--alerts"}`}>
+                    <span
+                      className={`sm-tab-badge ${active ? "sm-tab-badge--active" : t.id === "purchases" ? "sm-tab-badge--purchases" : t.id === "purchase-history" ? "sm-tab-badge--history" : "sm-tab-badge--alerts"}`}
+                    >
                       {badge}
                     </span>
                   )}
@@ -898,10 +1060,17 @@ export default function StockManager() {
           </nav>
 
           {activeTab === "dashboard" && !isLoading && (
-            <div className="sm-subtabs" role="tablist" aria-label="Dashboard views">
+            <div
+              className="sm-subtabs"
+              role="tablist"
+              aria-label="Dashboard views"
+            >
               {[
                 { id: "main-stock" as const, label: "Main Stock Levels" },
-                { id: "last-updates" as const, label: "Last Inventory Updates" },
+                {
+                  id: "last-updates" as const,
+                  label: "Last Inventory Updates",
+                },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -927,7 +1096,12 @@ export default function StockManager() {
           )}
           {isLoading ? (
             <div style={{ padding: "48px 24px" }}>
-              <div className="space-y-6" role="status" aria-busy="true" aria-label="Loading stock manager">
+              <div
+                className="space-y-6"
+                role="status"
+                aria-busy="true"
+                aria-label="Loading stock manager"
+              >
                 <div className="sm-kpi-grid" style={{ padding: "24px" }}>
                   <SkeletonKPICard theme="admin" />
                   <SkeletonKPICard theme="admin" />
@@ -969,14 +1143,23 @@ export default function StockManager() {
                           <div className="sm-toolbar">
                             <div className="sm-toolbar-left">
                               <div className="sm-search">
-                                <svg className="sm-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                <svg
+                                  className="sm-search-icon"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  aria-hidden="true"
+                                >
                                   <circle cx="11" cy="11" r="8" />
                                   <path d="m21 21-4.35-4.35" />
                                 </svg>
                                 <input
                                   type="text"
                                   value={dashboard.dashboardSearch}
-                                  onChange={(e) => dashboard.setDashboardSearch(e.target.value)}
+                                  onChange={(e) =>
+                                    dashboard.setDashboardSearch(e.target.value)
+                                  }
                                   placeholder="Search by item name or category..."
                                   className="sm-search-input"
                                 />
@@ -991,7 +1174,14 @@ export default function StockManager() {
                                 }}
                                 className="sm-btn sm-btn--primary"
                               >
-                                <svg className="sm-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                <svg
+                                  className="sm-btn-icon"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  aria-hidden="true"
+                                >
                                   <path d="M12 5v14M5 12h14" />
                                 </svg>
                                 Add Material
@@ -1013,7 +1203,13 @@ export default function StockManager() {
                                   ].map((h) => (
                                     <th
                                       key={h}
-                                      className={["Item", "Category"].includes(h) ? "" : ["Status", "Action"].includes(h) ? "th--center" : "th--right"}
+                                      className={
+                                        ["Item", "Category"].includes(h)
+                                          ? ""
+                                          : ["Status", "Action"].includes(h)
+                                            ? "th--center"
+                                            : "th--right"
+                                      }
                                     >
                                       {h}
                                     </th>
@@ -1063,16 +1259,41 @@ export default function StockManager() {
                                         animation: `fadeInRow 0.28s ease forwards`,
                                         animationDelay: `${i * 0.04}s`,
                                       }}
-                                      className={hasPastShelfLife ? "tr--expired" : ""}
+                                      className={
+                                        hasPastShelfLife ? "tr--expired" : ""
+                                      }
                                     >
                                       <td>
                                         <div className="sm-item-cell">
-                                          <span className={`sm-item-dot ${statusDotClass}`} />
-                                          <span className="sm-item-name">{p.product_name}</span>
+                                          <span
+                                            className={`sm-item-dot ${statusDotClass}`}
+                                          />
+                                          <button
+                                            type="button"
+                                            className="sm-item-name"
+                                            onClick={() =>
+                                              void openBatchDetails(p)
+                                            }
+                                            title={`View received batches for ${p.product_name}`}
+                                            aria-label={`View batch details for ${p.product_name}`}
+                                            style={{
+                                              background: "transparent",
+                                              border: 0,
+                                              borderBottom:
+                                                "1px dashed currentColor",
+                                              padding: 0,
+                                              cursor: "pointer",
+                                              textAlign: "left",
+                                            }}
+                                          >
+                                            {p.product_name}
+                                          </button>
                                         </div>
                                       </td>
                                       <td>
-                                        <span className={`sm-category-badge ${getCategoryStyle(p.category).replace("bg-", "sm-category-badge--").replace("text-", "").replace("border-", "")}`}>
+                                        <span
+                                          className={`sm-category-badge ${getCategoryStyle(p.category).replace("bg-", "sm-category-badge--").replace("text-", "").replace("border-", "")}`}
+                                        >
                                           {p.category}
                                         </span>
                                       </td>
@@ -1080,15 +1301,21 @@ export default function StockManager() {
                                         <div className="sm-stock-qty">
                                           <span className="sm-stock-main">
                                             {p.mainStock}
-                                            <span className="sm-stock-unit">{p.unit}</span>
+                                            <span className="sm-stock-unit">
+                                              {p.unit}
+                                            </span>
                                           </span>
                                           {hasPastShelfLife && (
-                                            <span className="sm-stock-expired">Expired</span>
+                                            <span className="sm-stock-expired">
+                                              Expired
+                                            </span>
                                           )}
                                         </div>
                                       </td>
                                       <td className="td--right">
-                                        <span className="sm-qty-purchased">{p.item_purchased}</span>
+                                        <span className="sm-qty-purchased">
+                                          {p.item_purchased}
+                                        </span>
                                       </td>
                                       <td className="td--right">
                                         {p.isRawMaterial ? (
@@ -1098,14 +1325,41 @@ export default function StockManager() {
                                         )}
                                       </td>
                                       <td className="td--center">
-                                        <span className={`sm-status-badge-table ${(() => {
-                                          if (statusBadgeClass.includes("bg-emerald")) return "sm-status-badge-table--normal";
-                                          if (statusBadgeClass.includes("bg-yellow")) return "sm-status-badge-table--low";
-                                          if (statusBadgeClass.includes("bg-orange")) return "sm-status-badge-table--critical";
-                                          if (statusBadgeClass.includes("bg-slate")) return "sm-status-badge-table--out";
-                                          if (statusBadgeClass.includes("bg-red")) return "sm-status-badge-table--expired";
-                                          return "sm-status-badge-table--normal";
-                                        })()}`}>
+                                        <span
+                                          className={`sm-status-badge-table ${(() => {
+                                            if (
+                                              statusBadgeClass.includes(
+                                                "bg-emerald",
+                                              )
+                                            )
+                                              return "sm-status-badge-table--normal";
+                                            if (
+                                              statusBadgeClass.includes(
+                                                "bg-yellow",
+                                              )
+                                            )
+                                              return "sm-status-badge-table--low";
+                                            if (
+                                              statusBadgeClass.includes(
+                                                "bg-orange",
+                                              )
+                                            )
+                                              return "sm-status-badge-table--critical";
+                                            if (
+                                              statusBadgeClass.includes(
+                                                "bg-slate",
+                                              )
+                                            )
+                                              return "sm-status-badge-table--out";
+                                            if (
+                                              statusBadgeClass.includes(
+                                                "bg-red",
+                                              )
+                                            )
+                                              return "sm-status-badge-table--expired";
+                                            return "sm-status-badge-table--normal";
+                                          })()}`}
+                                        >
                                           {statusLabel}
                                         </span>
                                       </td>
@@ -1129,7 +1383,9 @@ export default function StockManager() {
                                             onClick={(e) => {
                                               e.preventDefault();
                                               e.stopPropagation();
-                                              void handleDashboardDeleteProduct(p);
+                                              void handleDashboardDeleteProduct(
+                                                p,
+                                              );
                                             }}
                                             className="sm-action-btn sm-action-btn--delete"
                                             title={`Delete ${p.product_name}`}
@@ -1146,11 +1402,22 @@ export default function StockManager() {
                                   0) === 0 && (
                                   <tr>
                                     <td colSpan={7} className="sm-empty">
-                                      <svg className="sm-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                                      <svg
+                                        className="sm-empty-icon"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="1.5"
+                                        aria-hidden="true"
+                                      >
                                         <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                       </svg>
-                                      <p className="sm-empty-title">No items found</p>
-                                      <p className="sm-empty-message">No items match your search.</p>
+                                      <p className="sm-empty-title">
+                                        No items found
+                                      </p>
+                                      <p className="sm-empty-message">
+                                        No items match your search.
+                                      </p>
                                     </td>
                                   </tr>
                                 )}
@@ -1162,7 +1429,14 @@ export default function StockManager() {
                     </div>
                   }
                   lastUpdatesContent={
-                    <motion.div variants={itemVariants} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(0, 1fr))", gap: "24px" }}>
+                    <motion.div
+                      variants={itemVariants}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(0, 1fr))",
+                        gap: "24px",
+                      }}
+                    >
                       <div
                         id="dashboard-last-updates"
                         style={{ scrollMarginTop: "180px" }}
@@ -1194,14 +1468,35 @@ export default function StockManager() {
                                   }}
                                 >
                                   <div>
-                                    <p style={{ fontSize: "var(--sm-text-sm)", fontWeight: 500, color: "var(--sm-text)" }}>
+                                    <p
+                                      style={{
+                                        fontSize: "var(--sm-text-sm)",
+                                        fontWeight: 500,
+                                        color: "var(--sm-text)",
+                                      }}
+                                    >
                                       {p.product_name}
                                     </p>
-                                    <p style={{ fontSize: "var(--sm-text-xs)", color: "var(--sm-text-subtle)", marginTop: "4px" }}>
+                                    <p
+                                      style={{
+                                        fontSize: "var(--sm-text-xs)",
+                                        color: "var(--sm-text-subtle)",
+                                        marginTop: "4px",
+                                      }}
+                                    >
                                       {p.supplier_name}
                                     </p>
                                   </div>
-                                  <span style={{ fontSize: "var(--sm-text-xs)", color: "var(--sm-text-muted)", background: "var(--sm-surface-alt)", border: "1px solid var(--sm-border)", padding: "6px 12px", borderRadius: "var(--sm-radius-sm)" }}>
+                                  <span
+                                    style={{
+                                      fontSize: "var(--sm-text-xs)",
+                                      color: "var(--sm-text-muted)",
+                                      background: "var(--sm-surface-alt)",
+                                      border: "1px solid var(--sm-border)",
+                                      padding: "6px 12px",
+                                      borderRadius: "var(--sm-radius-sm)",
+                                    }}
+                                  >
                                     {formatInSettingsTimezone(
                                       p.last_update,
                                       restaurantSettings,
@@ -1222,13 +1517,20 @@ export default function StockManager() {
                 <div style={{ padding: "24px" }}>
                   <ErrorBanner
                     message={`Inventory alerts request failed: ${alertsError}`}
-                    onRetry={() => { void fetchAlerts(); }}
+                    onRetry={() => {
+                      void fetchAlerts();
+                    }}
                   />
                 </div>
               )}
               {activeTab === "alerts" && alertsLoading && !backendAlerts && (
                 <div style={{ padding: "48px 24px" }}>
-                  <div className="space-y-4" role="status" aria-busy="true" aria-label="Loading inventory alerts">
+                  <div
+                    className="space-y-4"
+                    role="status"
+                    aria-busy="true"
+                    aria-label="Loading inventory alerts"
+                  >
                     <SkeletonSectionCard theme="admin" />
                     <SkeletonKPICard theme="admin" />
                     <SkeletonKPICard theme="admin" />
@@ -1268,7 +1570,9 @@ export default function StockManager() {
                 <div style={{ padding: "24px" }}>
                   <ErrorBanner
                     message={`Suppliers request failed: ${supplier.supplierError}`}
-                    onRetry={() => { void supplier.fetchSuppliers(); }}
+                    onRetry={() => {
+                      void supplier.fetchSuppliers();
+                    }}
                   />
                 </div>
               )}
@@ -1276,9 +1580,18 @@ export default function StockManager() {
                 supplier.supplierLoading &&
                 !supplier.suppliersLoaded && (
                   <div style={{ padding: "48px 24px" }}>
-                    <div className="space-y-6" role="status" aria-busy="true" aria-label="Loading suppliers">
+                    <div
+                      className="space-y-6"
+                      role="status"
+                      aria-busy="true"
+                      aria-label="Loading suppliers"
+                    >
                       <SkeletonSectionCard theme="admin" />
-                      <SkeletonTable rowCount={5} columnCount={4} theme="admin" />
+                      <SkeletonTable
+                        rowCount={5}
+                        columnCount={4}
+                        theme="admin"
+                      />
                     </div>
                   </div>
                 )}
@@ -1292,7 +1605,9 @@ export default function StockManager() {
                     showSupplierForm={supplier.showSupplierForm}
                     supplierForm={supplier.supplierForm}
                     supplierProductInput={supplier.supplierProductInput}
-                    supplierProductSuggestions={supplier.supplierProductSuggestions}
+                    supplierProductSuggestions={
+                      supplier.supplierProductSuggestions
+                    }
                     filteredSuppliers={supplier.filteredSuppliers}
                     supplierSearch={supplier.supplierSearch}
                     historySearch={supplier.historySearch}
@@ -1313,7 +1628,9 @@ export default function StockManager() {
                     addProductToSupplierForm={supplier.addProductToSupplierForm}
                     addSupplier={supplier.addSupplier}
                     removeSupplier={supplier.removeSupplier}
-                    handleRemoveSupplierProduct={supplier.handleRemoveSupplierProduct}
+                    handleRemoveSupplierProduct={
+                      supplier.handleRemoveSupplierProduct
+                    }
                     fetchSupplierHistory={supplier.fetchSupplierHistory}
                   />
                 )}
@@ -1322,7 +1639,9 @@ export default function StockManager() {
                 <div style={{ padding: "24px" }}>
                   <ErrorBanner
                     message={`Purchase orders request failed: ${po.poError}`}
-                    onRetry={() => { void po.fetchPurchaseOrders(); }}
+                    onRetry={() => {
+                      void po.fetchPurchaseOrders();
+                    }}
                   />
                 </div>
               )}
@@ -1355,7 +1674,9 @@ export default function StockManager() {
                 <div style={{ padding: "24px" }}>
                   <ErrorBanner
                     message={`Purchase order history request failed: ${po.poError}`}
-                    onRetry={() => { void po.fetchPurchaseOrders(); }}
+                    onRetry={() => {
+                      void po.fetchPurchaseOrders();
+                    }}
                   />
                 </div>
               )}
@@ -1387,10 +1708,24 @@ export default function StockManager() {
             </AnimatePresence>
           )}
 
-          {activeTab === "dashboard" && !isLoading && !error && (
-            (dashboard.wholeChickenProducts.length > 0 || dashboard.choppedChickenProducts.length > 0) && (
-              <div className="sm-chicken-banner" role="region" aria-label="Chicken inventory">
-                <svg className="sm-chicken-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          {activeTab === "dashboard" &&
+            !isLoading &&
+            !error &&
+            (dashboard.wholeChickenProducts.length > 0 ||
+              dashboard.choppedChickenProducts.length > 0) && (
+              <div
+                className="sm-chicken-banner"
+                role="region"
+                aria-label="Chicken inventory"
+              >
+                <svg
+                  className="sm-chicken-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
                   <path d="M8 14s1.5 2 4 2 4-2 4-2" />
                   <line x1="9" y1="9" x2="9.01" y2="9" />
@@ -1403,27 +1738,37 @@ export default function StockManager() {
                       <span className="sm-chicken-dot sm-chicken-dot--whole" />
                       <div className="sm-chicken-info">
                         <span className="sm-chicken-type">Whole Chicken</span>
-                        <span className="sm-chicken-qty">{p.mainStock}<span className="sm-chicken-unit"> {p.unit}</span></span>
+                        <span className="sm-chicken-qty">
+                          {p.mainStock}
+                          <span className="sm-chicken-unit"> {p.unit}</span>
+                        </span>
                       </div>
                     </div>
                   ))}
-                  {dashboard.wholeChickenProducts.length > 0 && dashboard.choppedChickenProducts.length > 0 && (
-                    <span className="sm-chicken-separator" aria-hidden="true">→</span>
-                  )}
+                  {dashboard.wholeChickenProducts.length > 0 &&
+                    dashboard.choppedChickenProducts.length > 0 && (
+                      <span className="sm-chicken-separator" aria-hidden="true">
+                        →
+                      </span>
+                    )}
                   {dashboard.choppedChickenProducts.map((p) => (
                     <div key={p.product_id} className="sm-chicken-item">
                       <span className="sm-chicken-dot sm-chicken-dot--chopped" />
                       <div className="sm-chicken-info">
                         <span className="sm-chicken-type">Chopped Chicken</span>
-                        <span className="sm-chicken-qty">{p.mainStock}<span className="sm-chicken-unit"> {p.unit}</span></span>
+                        <span className="sm-chicken-qty">
+                          {p.mainStock}
+                          <span className="sm-chicken-unit"> {p.unit}</span>
+                        </span>
                       </div>
                     </div>
                   ))}
-                  <p className="sm-chicken-note">Delivered whole → chopped separately in inventory</p>
+                  <p className="sm-chicken-note">
+                    Delivered whole → chopped separately in inventory
+                  </p>
                 </div>
               </div>
-            )
-          )}
+            )}
         </main>
 
         <AnimatePresence>
@@ -1445,6 +1790,364 @@ export default function StockManager() {
         </AnimatePresence>
 
         <AnimatePresence>
+          {batchMaterial && (
+            <motion.div
+              key="material-batches"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) closeBatchDetails();
+              }}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 110,
+                background: "rgba(15,23,42,0.66)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 16,
+              }}
+            >
+              <motion.section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="sm-batch-dialog-title"
+                initial={{ opacity: 0, y: 16, scale: 0.99 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10 }}
+                transition={{ duration: 0.2 }}
+                style={{
+                  width: "min(1020px, 100%)",
+                  maxHeight: "min(88vh, 900px)",
+                  overflowY: "auto",
+                  background: "#fff",
+                  color: "#1f2937",
+                  borderRadius: 16,
+                  boxShadow: "0 24px 80px rgba(0,0,0,.28)",
+                  padding: "clamp(16px, 3vw, 28px)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 16,
+                    marginBottom: 14,
+                  }}
+                >
+                  <div>
+                    <p
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#8b721e",
+                        textTransform: "uppercase",
+                        letterSpacing: ".08em",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Stock Manager / Read-only batch records
+                    </p>
+                    <h2
+                      id="sm-batch-dialog-title"
+                      style={{ fontSize: 22, fontWeight: 700, margin: 0 }}
+                    >
+                      {batchMaterial.product_name} — Batch Details
+                    </h2>
+                    <p style={{ fontSize: 13, marginTop: 6, color: "#64748b" }}>
+                      Main Inventory.Stock:{" "}
+                      <strong>
+                        {batchMaterial.mainStock} {batchMaterial.unit}
+                      </strong>{" "}
+                      · {batchRows.length} recorded batch
+                      {batchRows.length === 1 ? "" : "es"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeBatchDetails}
+                    aria-label="Close batch details"
+                    style={{
+                      flexShrink: 0,
+                      padding: "6px 12px",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 8,
+                      background: "#fff",
+                      cursor: "pointer",
+                      fontSize: 20,
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {batchLoading ? (
+                  <p
+                    role="status"
+                    style={{ padding: "28px 4px", color: "#64748b" }}
+                  >
+                    Loading recorded batches...
+                  </p>
+                ) : batchError ? (
+                  <div
+                    role="alert"
+                    style={{
+                      padding: 16,
+                      background: "#fff1f2",
+                      border: "1px solid #fecdd3",
+                      borderRadius: 10,
+                      color: "#9f1239",
+                    }}
+                  >
+                    Could not load batch details: {batchError}
+                    <div style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => void openBatchDetails(batchMaterial)}
+                        style={{
+                          padding: "6px 12px",
+                          background: "#fff",
+                          border: "1px solid #fda4af",
+                          borderRadius: 7,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                ) : batchRows.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "24px 12px",
+                      background: "#f8fafc",
+                      borderRadius: 10,
+                      color: "#64748b",
+                    }}
+                  >
+                    No batch records returned for this material. Stock might
+                    have been initialized or adjusted outside Purchase Order
+                    receiving.
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        overflowX: "auto",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 10,
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: "100%",
+                          minWidth: 850,
+                          borderCollapse: "collapse",
+                          fontSize: 13,
+                        }}
+                      >
+                        <thead
+                          style={{ background: "#f8fafc", color: "#475569" }}
+                        >
+                          <tr>
+                            {(
+                              [
+                                "Batch",
+                                "Received date/time",
+                                "Original qty",
+                                "Recorded remaining",
+                                "Shelf life",
+                                "Expiry / usable until",
+                                "Status",
+                              ] as const
+                            ).map((heading) => (
+                              <th
+                                key={heading}
+                                style={{
+                                  textAlign: "left",
+                                  padding: "13px 11px",
+                                  fontWeight: 700,
+                                  borderBottom: "1px solid #e2e8f0",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {heading}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {batchRows.map((batch) => {
+                            const status = batchStatus(batch);
+                            return (
+                              <tr
+                                key={batch.batch_id}
+                                style={{ borderBottom: "1px solid #f1f5f9" }}
+                              >
+                                <td
+                                  style={{
+                                    padding: "12px 11px",
+                                    fontWeight: 650,
+                                  }}
+                                >
+                                  #{batch.batch_id}
+                                  {batch.delivery_batch_id ? (
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        fontWeight: 400,
+                                        color: "#64748b",
+                                      }}
+                                    >
+                                      {batch.delivery_batch_id}
+                                    </div>
+                                  ) : null}
+                                </td>
+                                <td style={{ padding: "12px 11px" }}>
+                                  {batchDateText(batch.received_date)}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "12px 11px",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {Number(batch.quantity ?? 0)}{" "}
+                                  {batch.unit || batchMaterial.unit}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "12px 11px",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {Number(batch.remaining_qty ?? 0)}{" "}
+                                  {batch.unit || batchMaterial.unit}
+                                </td>
+                                <td style={{ padding: "12px 11px" }}>
+                                  {batchShelfLifeText(batch)}
+                                </td>
+                                <td style={{ padding: "12px 11px" }}>
+                                  {batchDateText(
+                                    batch.usable_until || batch.expiry_date,
+                                  )}
+                                  {batch.usable_until ? (
+                                    <div
+                                      style={{ color: "#64748b", fontSize: 11 }}
+                                    >
+                                      Calculated usable-until
+                                    </div>
+                                  ) : null}
+                                </td>
+                                <td style={{ padding: "12px 11px" }}>
+                                  <span
+                                    style={{
+                                      display: "inline-flex",
+                                      borderRadius: 99,
+                                      padding: "4px 9px",
+                                      whiteSpace: "nowrap",
+                                      fontWeight: 600,
+                                      fontSize: 11,
+                                      background:
+                                        status.tone === "danger"
+                                          ? "#fee2e2"
+                                          : status.tone === "warning"
+                                            ? "#fef3c7"
+                                            : "#f1f5f9",
+                                      color:
+                                        status.tone === "danger"
+                                          ? "#991b1b"
+                                          : status.tone === "warning"
+                                            ? "#92400e"
+                                            : "#475569",
+                                    }}
+                                  >
+                                    {status.label}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p
+                      style={{ fontSize: 12, marginTop: 14, color: "#475569" }}
+                    >
+                      Sum of recorded batch remainders:{" "}
+                      <strong>
+                        {Number(
+                          batchRows
+                            .reduce(
+                              (total, b) =>
+                                total + (Number(b.remaining_qty) || 0),
+                              0,
+                            )
+                            .toFixed(4),
+                        )}{" "}
+                        {batchMaterial.unit}
+                      </strong>
+                      . Main Stock:{" "}
+                      <strong>
+                        {batchMaterial.mainStock} {batchMaterial.unit}
+                      </strong>
+                      .
+                    </p>
+                    {Math.abs(
+                      batchRows.reduce(
+                        (total, b) => total + (Number(b.remaining_qty) || 0),
+                        0,
+                      ) - Number(batchMaterial.mainStock),
+                    ) > 0.0001 && (
+                      <p
+                        role="note"
+                        style={{
+                          background: "#fff7ed",
+                          color: "#9a3412",
+                          border: "1px solid #fed7aa",
+                          padding: 12,
+                          borderRadius: 8,
+                          fontSize: 12,
+                          marginTop: 8,
+                        }}
+                      >
+                        Batch records do not match the aggregate stock.
+                        Completed orders can reduce Inventory.Stock without
+                        reducing individual batch remainders. Do not use these
+                        batch balances as proof of physically available stock
+                        until reconciled.
+                      </p>
+                    )}
+                  </>
+                )}
+                <div
+                  style={{
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    marginTop: 16,
+                    padding: 12,
+                    borderRadius: 8,
+                    background: "#f8fafc",
+                    color: "#475569",
+                  }}
+                >
+                  <strong>Important:</strong> These are recorded batch values
+                  for reference. A received date without time is shown as
+                  date-only; no receipt time is invented. Expiry statuses are
+                  display estimates (near expiry = within 3 days). Batch records
+                  are not automatically reconciled with every sale by this
+                  viewer.
+                </div>
+              </motion.section>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
           {po.selectedOrder && (
             <>
               <motion.div
@@ -1452,15 +2155,25 @@ export default function StockManager() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => po.setSelectedOrder(null)}
-                style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.1)", zIndex: 40 }}
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(0,0,0,0.1)",
+                  zIndex: 40,
+                }}
               />
               <PODetailDrawer
                 order={po.selectedOrder}
                 inventoryCategoryNameLookup={inventoryCategoryNameLookup}
-                inventoryCategoryDateTrackingLookup={inventoryCategoryDateTrackingLookup}
+                inventoryCategoryDateTrackingLookup={
+                  inventoryCategoryDateTrackingLookup
+                }
                 onClose={() => po.setSelectedOrder(null)}
                 onStatusChange={po.handlePOStatusChange}
-                onEdit={(order) => { po.setEditingOrder(order); po.setSelectedOrder(null); }}
+                onEdit={(order) => {
+                  po.setEditingOrder(order);
+                  po.setSelectedOrder(null);
+                }}
                 onDelete={po.handlePODelete}
                 onPrint={po.setPrintOrder}
               />
@@ -1482,7 +2195,9 @@ export default function StockManager() {
               loading={po.poLoading}
               currentStaffName={currentStaffDisplayName}
               inventoryCategoryNameLookup={inventoryCategoryNameLookup}
-              inventoryCategoryDateTrackingLookup={inventoryCategoryDateTrackingLookup}
+              inventoryCategoryDateTrackingLookup={
+                inventoryCategoryDateTrackingLookup
+              }
               onClose={() => po.setReceivingOrder(null)}
               onConfirm={po.handleConfirmReceivePO}
               onShowToast={showToast}
@@ -1492,7 +2207,10 @@ export default function StockManager() {
         <AnimatePresence>
           {(po.prefillPOProduct !== undefined || po.editingOrder) && (
             <CreatePOModal
-              onClose={() => { po.setEditingOrder(null); po.handleClosePOModal(); }}
+              onClose={() => {
+                po.setEditingOrder(null);
+                po.handleClosePOModal();
+              }}
               onCreate={po.editingOrder ? po.handlePOUpdate : po.handlePOCreate}
               quickOrderProducts={po.poQuickOrderProducts}
               allProducts={products}
@@ -1503,8 +2221,17 @@ export default function StockManager() {
               onRefreshInventory={fetchAll}
               onShowToast={showToast}
               isMenuFoodProduct={isMenuFoodProduct}
-              onAddSupplier={() => { po.setEditingOrder(null); po.handleClosePOModal(); setTab("suppliers"); supplier.setShowSupplierForm(true); }}
-              onAddMaterial={() => { po.setEditingOrder(null); po.handleClosePOModal(); setShowRawMaterialForm(true); }}
+              onAddSupplier={() => {
+                po.setEditingOrder(null);
+                po.handleClosePOModal();
+                setTab("suppliers");
+                supplier.setShowSupplierForm(true);
+              }}
+              onAddMaterial={() => {
+                po.setEditingOrder(null);
+                po.handleClosePOModal();
+                setShowRawMaterialForm(true);
+              }}
             />
           )}
         </AnimatePresence>
@@ -1530,11 +2257,19 @@ export default function StockManager() {
               activeInventoryUnitOptions={activeInventoryUnitOptions}
               materialNameMaxLength={MATERIAL_NAME_MAX_LENGTH}
               materialDescriptionMaxLength={MATERIAL_DESCRIPTION_MAX_LENGTH}
-              defaultLowStockThreshold={stockAlertSettings.defaultLowStockThreshold}
-              defaultCriticalStockThreshold={stockAlertSettings.defaultCriticalStockThreshold}
+              defaultLowStockThreshold={
+                stockAlertSettings.defaultLowStockThreshold
+              }
+              defaultCriticalStockThreshold={
+                stockAlertSettings.defaultCriticalStockThreshold
+              }
               submitting={submitting}
               mode={editingMaterial ? "edit" : "add"}
-              onClose={() => { setShowRawMaterialForm(false); setEditingMaterial(null); setRawMaterialForm(BLANK_RAW_MATERIAL); }}
+              onClose={() => {
+                setShowRawMaterialForm(false);
+                setEditingMaterial(null);
+                setRawMaterialForm(BLANK_RAW_MATERIAL);
+              }}
               onSave={editingMaterial ? saveEditedMaterial : addRawMaterial}
             />
           )}

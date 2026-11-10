@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import * as Dialog from "@radix-ui/react-dialog";
 import { api } from "../lib/api";
 import { Sidebar } from "@/components/Sidebar";
 import { useNotifications } from "@/lib/NotificationContext";
@@ -361,7 +362,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
                 {item.name}
                 {item.selectedFlavorName && (
                   <span className="block text-sm font-semibold text-amber-700">
-                    Flavor: {item.selectedFlavorName}
+                    Sauce: {item.selectedFlavorName}
                   </span>
                 )}
               </span>
@@ -485,6 +486,10 @@ export default function Order() {
   const [orders, setOrders] = useState<OrderCard[]>([]);
   const [counts, setCounts] = useState<OrderStatusCounts>(EMPTY_COUNTS);
   const [settlingId, setSettlingId] = useState<string | null>(null);
+  const [refundTarget, setRefundTarget] = useState<OrderCard | null>(null);
+  const [refundPassword, setRefundPassword] = useState("");
+  const [refundAuthError, setRefundAuthError] = useState("");
+  const settlementSubmitting = useRef(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
 
   const inFlight = useRef<Promise<void> | null>(null);
@@ -611,20 +616,37 @@ export default function Order() {
     }
   };
 
-  const handleSettle = async (order: OrderCard) => {
+  const handleSettle = async (order: OrderCard, password?: string) => {
     const action = getSettlementAction(order);
     if (!action) return;
     if (action === "refund" ? !canRefundPersisted : !canCancelPersisted) return;
+    if (settlementSubmitting.current) return;
+    if (action === "refund" && password === undefined) {
+      setRefundPassword("");
+      setRefundAuthError("");
+      setRefundTarget(order);
+      return;
+    }
+    if (action === "refund" && !password?.trim()) return;
+    settlementSubmitting.current = true;
     setSettlingId(order.id);
     try {
       const update = await api.patch<OrderUpdateResponse>(`/orders/${order.id}`, {
         status: action === "refund" ? "Refunded" : "Cancelled",
+        ...(action === "refund" && { refundAuthorizationPassword: password }),
       });
       applyUpdate(update);
+      setRefundTarget(null);
+      setRefundPassword("");
+      setRefundAuthError("");
       void fetchAll();
     } catch (error) {
+      if (action === "refund") {
+        setRefundAuthError(error instanceof Error ? error.message : "Refund failed. Please try again.");
+      }
       notifyError(error, "Failed to settle order.");
     } finally {
+      settlementSubmitting.current = false;
       setSettlingId(null);
     }
   };
@@ -657,6 +679,39 @@ export default function Order() {
   return (
     <div className="min-h-screen bg-slate-50 font-['DM_Sans',sans-serif]">
       <Sidebar />
+
+      <Dialog.Root open={!!refundTarget} onOpenChange={(open) => {
+        if (!open && !settlementSubmitting.current) {
+          setRefundTarget(null);
+          setRefundPassword("");
+          setRefundAuthError("");
+        }
+      }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[300] bg-black/35 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[301] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl">
+            <Dialog.Title className="text-lg font-semibold text-red-600">Authorize refund</Dialog.Title>
+            <Dialog.Description className="my-4 text-sm text-slate-600">
+              Refund {refundTarget?.orderNumber}. Enter the separate refund authorization password to continue.
+              Cash or e-payment reimbursement must be handled separately.
+            </Dialog.Description>
+            <form className="space-y-4" onSubmit={(event) => {
+              event.preventDefault();
+              if (refundTarget) void handleSettle(refundTarget, refundPassword);
+            }}>
+              <label htmlFor="refund-authorization-password" className="block text-sm font-medium">Refund authorization password</label>
+              <input id="refund-authorization-password" type="password" autoComplete="off" autoFocus
+                value={refundPassword} disabled={settlingId !== null}
+                onChange={(event) => setRefundPassword(event.target.value)}
+                aria-invalid={!!refundAuthError} aria-describedby={refundAuthError ? "refund-authorization-error" : undefined}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" />
+              {refundAuthError && <p id="refund-authorization-error" role="alert" className="text-sm text-red-600">{refundAuthError}</p>}
+              <button type="submit" disabled={settlingId !== null || !refundPassword.trim()} className="w-full rounded-xl bg-red-600 p-3 text-sm font-semibold text-white disabled:opacity-50">{settlingId ? "Processing…" : "Confirm refund"}</button>
+              <Dialog.Close disabled={settlingId !== null} className="w-full p-3 text-sm">Keep Order</Dialog.Close>
+            </form>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <div className={shellPadding}>
         <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
