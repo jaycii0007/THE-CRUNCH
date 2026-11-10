@@ -1921,9 +1921,10 @@ interface RefundModalProps {
   log: SaleLog | null;
   order: Order | null;
   action: SettlementAction;
-  onConfirm: () => void;
+  onConfirm: (password: string) => void;
   onClose: () => void;
   loading: boolean;
+  error: string;
 }
 
 function RefundModal({
@@ -1934,7 +1935,10 @@ function RefundModal({
   onConfirm,
   onClose,
   loading,
+  error,
 }: RefundModalProps) {
+  const [password, setPassword] = useState("");
+  useEffect(() => { setPassword(""); }, [open, log?.orderId, order?.id, action]);
   const isRefund = action === "refund";
   const actionLabel = isRefund ? "Refund" : "Void";
   const txnId = log?.transactionId ?? order?.transactionId ?? "";
@@ -2155,6 +2159,21 @@ function RefundModal({
                 .
               </p>
 
+              {isRefund && (
+                <div className="mb-4 space-y-2">
+                  <label htmlFor="refund-authorization-password" className="block text-sm font-medium">Refund authorization password</label>
+                  <input id="refund-authorization-password" type="password" autoComplete="off" autoFocus
+                    value={password} disabled={loading}
+                    onChange={(event) => setPassword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !loading && password.trim()) onConfirm(password);
+                    }}
+                    aria-invalid={!!error} aria-describedby={error ? "refund-authorization-error" : undefined}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" />
+                  <p className="text-xs text-slate-500">Cash or e-payment reimbursement must be handled separately.</p>
+                  {error && <p id="refund-authorization-error" role="alert" className="text-sm text-red-600">{error}</p>}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 10 }}>
                 <button
                   onClick={onClose}
@@ -2175,8 +2194,8 @@ function RefundModal({
                   Cancel
                 </button>
                 <button
-                  onClick={onConfirm}
-                  disabled={loading}
+                  onClick={() => onConfirm(password)}
+                  disabled={loading || (isRefund && !password.trim())}
                   style={{
                     flex: 2,
                     padding: "11px 0",
@@ -3768,6 +3787,9 @@ export default function SalesReports() {
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [settlementAction, setSettlementAction] = useState<SettlementAction>("refund");
   const [refundLoading, setRefundLoading] = useState(false);
+  const [refundAuthError, setRefundAuthError] = useState("");
+  const refundSubmitting = useRef(false);
+  useEffect(() => { setRefundAuthError(""); }, [refundLog?.orderId, refundOrder?.id, settlementAction]);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [receiptError, setReceiptError] = useState("");
@@ -3895,23 +3917,35 @@ export default function SalesReports() {
   }
 
   // Persisted order settlement handler
-  async function handleRefundConfirm() {
+  async function handleRefundConfirm(password: string) {
     const orderId = refundLog?.orderId ?? refundOrder?.id;
-    if (orderId == null) return;
+    if (orderId == null || refundSubmitting.current) return;
+    if (settlementAction === "refund" && !password.trim()) return;
     if (
       settlementAction === "refund"
         ? !canRefundPersisted
         : !canCancelPersisted
     ) return;
 
+    refundSubmitting.current = true;
     setRefundLoading(true);
+    setRefundAuthError("");
     try {
       await api.patch(`/orders/${orderId}`, {
         status: settlementAction === "refund" ? "Refunded" : "Cancelled",
+        ...(settlementAction === "refund" && { refundAuthorizationPassword: password }),
       });
+      setRefundLog(null);
+      setRefundOrder(null);
       await fetchSalesData();
     } catch (err) {
       console.error("Order settlement failed:", err);
+      if (settlementAction === "refund") {
+        setRefundAuthError(err instanceof Error ? err.message : "Refund failed. Please try again.");
+      } else {
+        setRefundLog(null);
+        setRefundOrder(null);
+      }
       setProofNotice(
         err instanceof Error
           ? err.message
@@ -3919,9 +3953,8 @@ export default function SalesReports() {
       );
       await fetchSalesData();
     } finally {
+      refundSubmitting.current = false;
       setRefundLoading(false);
-      setRefundLog(null);
-      setRefundOrder(null);
     }
   }
 
@@ -4095,6 +4128,7 @@ export default function SalesReports() {
           }
         }}
         loading={refundLoading}
+        error={refundAuthError}
       />
 
       <ReceiptViewerModal
