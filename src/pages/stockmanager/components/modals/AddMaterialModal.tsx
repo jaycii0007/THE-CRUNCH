@@ -6,6 +6,7 @@ import { StyledSelect } from "../StyledSelect";
 import type {
   RawMaterialForm,
   RawMaterialModalMode,
+  Supplier,
 } from "../../types/inventory";
 import {
   sanitizeMaterialNameInput,
@@ -23,6 +24,9 @@ type AddMaterialModalProps = {
   defaultCriticalStockThreshold: number;
   submitting: boolean;
   mode?: RawMaterialModalMode;
+  suppliers: Supplier[];
+  supplierIds: number[];
+  onSupplierIdsChange: (ids: number[]) => void;
   onClose: () => void;
   onSave: () => void | Promise<void>;
 };
@@ -38,6 +42,9 @@ export function AddMaterialModal({
   defaultCriticalStockThreshold,
   submitting,
   mode = "add",
+  suppliers,
+  supplierIds,
+  onSupplierIdsChange,
   onClose,
   onSave,
 }: AddMaterialModalProps) {
@@ -140,6 +147,16 @@ export function AddMaterialModal({
             </FormField>
           </div>
           <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            {isEditMode && (
+              <FormField label="Suppliers">
+                <select multiple value={supplierIds.map(String)} disabled={submitting}
+                  onChange={(event) => onSupplierIdsChange(Array.from(event.target.selectedOptions, (option) => Number(option.value)))}
+                  className="mb-4 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm">
+                  {suppliers.map((entry) => <option key={entry.supplier_id} value={entry.supplier_id}>{entry.supplier_name}</option>)}
+                </select>
+                <p className="mb-4 text-xs text-slate-500">Select multiple suppliers with Ctrl/Cmd or Shift. Changes apply to future purchase orders.</p>
+              </FormField>
+            )}
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-slate-700">

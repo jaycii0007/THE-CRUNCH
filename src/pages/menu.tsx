@@ -137,6 +137,7 @@ interface DiscountApproval {
   discountId: number;
 }
 interface MenuItem {
+  requiresSauce: boolean;
   id: number;
   name: string;
   price: number;
@@ -305,6 +306,7 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
       categorySystemKey: p.category_system_key
         ? String(p.category_system_key).trim().toLowerCase()
         : null,
+      requiresSauce: p.requires_sauce === true || p.requires_sauce === 1,
       remainingStock: Math.max(
         0,
         Math.floor(
@@ -858,7 +860,7 @@ const CartRow = memo(
             </button>
           </div>
           <div className="flex gap-1">
-            {item.selectedFlavorProductId && (
+            {item.requiresSauce && item.selectedFlavorProductId && (
               <button
                 type="button"
                 title="Change sauce"
@@ -2629,7 +2631,7 @@ export default function CashierView() {
 
   const requestAddToCart = useCallback(
     (item: MenuItem) => {
-      if (item.categorySystemKey !== "menu_food") return addDirectToCart(item);
+      if (!item.requiresSauce) return addDirectToCart(item);
       setSelectedFlavorId(null);
       setFlavorTarget({ item });
     },
@@ -2832,6 +2834,12 @@ export default function CashierView() {
   };
 
   const openPayment = async () => {
+    const missingSauce = cart.find((item) => item.requiresSauce && !item.selectedFlavorProductId);
+    if (missingSauce) {
+      editCartFlavor(missingSauce);
+      toast("warning", "Choose one included sauce before checkout.");
+      return;
+    }
     if (
       discount &&
       discountRate > 0 &&
@@ -2877,6 +2885,12 @@ export default function CashierView() {
     file?: File;
   }) => {
     if (placingRef.current) return;
+    const missingSauce = cart.find((item) => item.requiresSauce && !item.selectedFlavorProductId);
+    if (missingSauce) {
+      editCartFlavor(missingSauce);
+      toast("warning", "Choose one included sauce before checkout.");
+      return;
+    }
     if (!isOnline) return toast("error", "No connection. Cannot place order.");
     if (
       paymentMethod === "cash" &&

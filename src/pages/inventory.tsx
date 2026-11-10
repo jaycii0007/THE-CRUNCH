@@ -17,6 +17,7 @@ import { api, apiCall } from "@/lib/api";
 import { motion } from "framer-motion";
 import { SkeletonTableRow } from "@/components/ui/skeleton";
 import { useNotifications } from "@/lib/NotificationContext";
+import { useAuth } from "@/context/authcontext";
 import {
   fetchGeneralSettings,
   GENERAL_SETTINGS_DEFAULTS,
@@ -255,12 +256,14 @@ function buildIngredientPayload(inputs: IngredientInput[]) {
     }))
     .filter((entry) => entry.productId || entry.quantityRequired);
 
+  if (!filled.length) throw new Error("Add at least one existing inventory ingredient.");
+
   for (const entry of filled) {
     if (!entry.productId || !entry.quantityRequired)
       throw new Error(
         "Each ingredient row needs both an ingredient and a required quantity.",
       );
-    if (Number(entry.quantityRequired) <= 0)
+    if (!Number.isFinite(Number(entry.quantityRequired)) || Number(entry.quantityRequired) <= 0)
       throw new Error("Ingredient quantities must be greater than zero.");
   }
   return filled.map((entry) => ({
@@ -1064,6 +1067,9 @@ function MenuFormModal({
       const ingredients = isChickenFlavor
         ? null
         : buildIngredientPayload(values.ingredients);
+      if (ingredients?.some((ingredient) => !ingredientOptions.some((option) => Number(option.id) === ingredient.product_id))) {
+        throw new Error("Select existing inventory ingredients.");
+      }
 
       let image: string | undefined;
       if (imageFile) image = await uploadProductImage(imageFile);
@@ -1244,7 +1250,7 @@ function MenuFormModal({
       {!isChickenFlavor && (
         <>
           <p className={sectionTitle} style={{ color: T.ink }}>
-            Ingredients
+            Ingredients (required)
           </p>
           <div className="space-y-2">
             {values.ingredients.length === 0 && (
@@ -1256,7 +1262,7 @@ function MenuFormModal({
                   border: `1px dashed ${T.faint}`,
                 }}
               >
-                No ingredients assigned. In Auto mode, this item is unavailable
+                Add at least one existing inventory ingredient before saving. This item is unavailable
                 until at least one ingredient is configured.
               </p>
             )}
@@ -1424,6 +1430,20 @@ const rowHover = {
 };
 
 function MenuAdminTab() {
+  const { user } = useAuth();
+  const isAdministrator = user?.role?.trim().toLowerCase() === "administrator";
+  const [sauceTriggerIds, setSauceTriggerIds] = useState<number[]>([]);
+  const [sauceTriggersLoaded, setSauceTriggersLoaded] = useState(false);
+  const [savingSauceTriggers, setSavingSauceTriggers] = useState(false);
+  const [sauceTriggerError, setSauceTriggerError] = useState("");
+  useEffect(() => {
+    if (!isAdministrator) return;
+    let active = true;
+    void api.get<{ ingredientIds: number[] }>("/settings/sauce-triggers").then((settings) => {
+      if (active) { setSauceTriggerIds(settings.ingredientIds); setSauceTriggersLoaded(true); }
+    }).catch(() => { if (active) setSauceTriggerError("Failed to load sauce triggers. Refresh before editing."); });
+    return () => { active = false; };
+  }, [isAdministrator]);
   const { addNotification } = useNotifications();
   const toast: Toast = (label, type = "info") =>
     addNotification({ id: `${Date.now()}-${Math.random()}`, label, type });
@@ -1546,6 +1566,35 @@ function MenuAdminTab() {
 
   return (
     <div style={{ fontFamily: FONT }}>
+      {isAdministrator && (
+        <section className="mb-6 rounded-2xl border border-stone-200 bg-white p-5">
+          <h3 className="font-semibold">Sauces — ingredient triggers</h3>
+          <p className="my-2 text-sm text-stone-500">Select inventory ingredients that require one included sauce. Any matching recipe ingredient triggers the selector once. With none selected, no item requires a sauce.</p>
+          <fieldset disabled={!sauceTriggersLoaded || savingSauceTriggers} className="my-4 grid max-h-56 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+            <legend className="sr-only">Sauce trigger ingredients</legend>
+            {ingredientOptions.map((ingredient) => (
+              <label key={ingredient.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={sauceTriggerIds.includes(ingredient.id)}
+                  onChange={(event) => setSauceTriggerIds((current) => event.target.checked ? [...current, ingredient.id] : current.filter((id) => id !== ingredient.id))} />
+                {ingredient.name}
+              </label>
+            ))}
+          </fieldset>
+          {sauceTriggerError && <p role="alert" className="mb-2 text-sm text-red-600">{sauceTriggerError}</p>}
+          <button type="button" disabled={!sauceTriggersLoaded || savingSauceTriggers} onClick={() => setSauceTriggerIds([])} className="mr-3 text-sm underline disabled:opacity-50">Clear selection</button>
+          <button type="button" disabled={!sauceTriggersLoaded || savingSauceTriggers} className="rounded-xl bg-stone-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+            onClick={async () => {
+              setSavingSauceTriggers(true); setSauceTriggerError("");
+              try {
+                const saved = await api.put<{ ingredientIds: number[] }>("/settings/sauce-triggers", { ingredientIds: sauceTriggerIds });
+                setSauceTriggerIds(saved.ingredientIds);
+                toast("Sauce triggers saved.", "success");
+                void reload();
+              } catch (error) { setSauceTriggerError(errorText(error)); }
+              finally { setSavingSauceTriggers(false); }
+            }}>{savingSauceTriggers ? "Saving…" : "Save sauce triggers"}</button>
+        </section>
+      )}
       {/* Summary */}
       <div className="mb-6 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
         <StatCard

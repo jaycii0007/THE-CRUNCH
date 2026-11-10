@@ -153,14 +153,6 @@ export function CreatePOModal({
     });
     return result;
   }, [allProducts]);
-  const orderableProducts = useMemo(
-    () =>
-      allProducts
-        .filter((product) => !isMenuFoodProduct(product))
-        .sort((left, right) => left.product_name.localeCompare(right.product_name)),
-    [allProducts, isMenuFoodProduct],
-  );
-
   const initialSupplierId = useMemo(() => {
     const name = initialOrder?.supplier || prefillProduct?.supplier;
     if (!name) return "";
@@ -231,6 +223,13 @@ export function CreatePOModal({
     () => new Set(supplierProducts.map(normalize)),
     [supplierProducts],
   );
+  const orderableProducts = useMemo(
+    () => allProducts.filter((product) => !isMenuFoodProduct(product) && (
+      selectedSupplier?.product_ids?.includes(product.product_id) ||
+      (initialOrder?.supplier === supplierName && initialOrder.items.some((item) => item.productId === product.product_id))
+    )).sort((left, right) => left.product_name.localeCompare(right.product_name)),
+    [allProducts, isMenuFoodProduct, selectedSupplier, initialOrder, supplierName],
+  );
   const usedProductNames = useMemo(
     () => new Set(items.map((item) => normalize(item.name)).filter(Boolean)),
     [items],
@@ -255,6 +254,7 @@ export function CreatePOModal({
         productByName.get(key);
       if (!key) errors.name = "Select an inventory material.";
       else if (!product) errors.name = "Pick a material from inventory.";
+      else if (!orderableProducts.some((entry) => entry.product_id === product.product_id)) errors.name = "Select a material assigned to this supplier.";
       else if (!String(product.unit ?? "").trim()) errors.name = "This material has no inventory unit.";
       else if (firstRowByName.has(key)) {
         errors.name = `Already added as Material ${(firstRowByName.get(key) ?? 0) + 1}.`;
@@ -272,7 +272,7 @@ export function CreatePOModal({
       }
       return errors;
     });
-  }, [items, productById, productByName]);
+  }, [items, productById, productByName, orderableProducts]);
 
   const supplierError = selectedSupplierId === "" ? "Select a supplier to continue." : "";
   const itemsAreValid = itemErrors.every(
@@ -292,7 +292,7 @@ export function CreatePOModal({
 
   const restockSuggestions = useMemo(() => {
     const severityRank = { out: 0, critical: 0, low: 1, normal: 2 } as const;
-    return [...quickOrderProducts].sort((left, right) => {
+    return quickOrderProducts.filter((product) => orderableProducts.some((entry) => entry.product_id === product.product_id)).sort((left, right) => {
       const severityDifference =
         severityRank[getAlertSeverity(left, stockAlertSettings)] -
         severityRank[getAlertSeverity(right, stockAlertSettings)];
@@ -300,7 +300,7 @@ export function CreatePOModal({
         severityDifference || left.product_name.localeCompare(right.product_name)
       );
     });
-  }, [quickOrderProducts, stockAlertSettings]);
+  }, [quickOrderProducts, stockAlertSettings, orderableProducts]);
   const availableRestockProducts = useMemo(
     () =>
       restockSuggestions.filter(
@@ -369,6 +369,10 @@ export function CreatePOModal({
     });
 
   const addProduct = (product: Product) => {
+    if (!orderableProducts.some((entry) => entry.product_id === product.product_id)) {
+      onShowToast("Select a material assigned to this supplier.", "error");
+      return;
+    }
     if (usedProductNames.has(normalize(product.product_name))) {
       onShowToast(`${product.product_name} is already in this order.`, "error");
       return;
@@ -641,7 +645,7 @@ export function CreatePOModal({
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                Materials marked <span className="font-semibold text-amber-700">New to supplier</span> will be added to this supplier automatically after the PO is successfully created.
+                Select materials assigned to this supplier. Supplier assignments can be updated in Edit Material.
               </div>
 
               {supplierProducts.length > 0 && (

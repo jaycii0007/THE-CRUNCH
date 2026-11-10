@@ -136,6 +136,7 @@ export const api = {
   updateProduct: (
     id: number,
     body: {
+      supplier_ids?: number[];
       name?: string;
       unit?: string;
       category?: string;
