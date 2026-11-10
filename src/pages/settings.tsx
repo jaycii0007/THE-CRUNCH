@@ -1398,6 +1398,25 @@ interface InventoryUnitSetting {
 }
 
 function CategoriesUnitsTab() {
+  const [sauceTriggerIds, setSauceTriggerIds] = useState<number[]>([]);
+  const [sauceTriggersLoaded, setSauceTriggersLoaded] = useState(false);
+  const [savingSauceTriggers, setSavingSauceTriggers] = useState(false);
+  const [sauceTriggerError, setSauceTriggerError] = useState("");
+  const [sauceIngredientOptions, setSauceIngredientOptions] = useState<{ id: number; name: string }[]>([]);
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      api.get<{ ingredientIds: number[] }>("/settings/sauce-triggers"),
+      api.get<{ product_id: number; product_name: string; item_type?: string }[]>("/inventory"),
+    ]).then(([settings, materials]) => {
+      if (active) {
+        setSauceTriggerIds(settings.ingredientIds);
+        setSauceIngredientOptions(materials.filter((material) => material.item_type === "stock_item").map((material) => ({ id: Number(material.product_id), name: material.product_name })).sort((a, b) => a.name.localeCompare(b.name)));
+        setSauceTriggersLoaded(true);
+      }
+    }).catch(() => { if (active) setSauceTriggerError("Failed to load sauce triggers. Refresh before editing."); });
+    return () => { active = false; };
+  }, []);
   const [menuCategories, setMenuCategories] = useState<MenuCategorySetting[]>(
     [],
   );
@@ -1933,6 +1952,33 @@ function CategoriesUnitsTab() {
                 </>
               )}
             </div>
+            {category.system_key === "chicken_flavors" && (
+              <div className="w-full rounded-xl border border-stone-200 bg-white p-4">
+                <h3 className="font-semibold">Sauces — ingredient triggers</h3>
+                <p className="my-2 text-sm text-stone-500">Select inventory ingredients that require one included sauce. Any matching recipe ingredient triggers the selector once. With none selected, no item requires a sauce.</p>
+                <fieldset disabled={!sauceTriggersLoaded || savingSauceTriggers} className="my-4 grid max-h-56 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                  <legend className="sr-only">Sauce trigger ingredients</legend>
+                  {sauceIngredientOptions.map((ingredient) => (
+                    <label key={ingredient.id} className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={sauceTriggerIds.includes(ingredient.id)}
+                        onChange={(event) => setSauceTriggerIds((current) => event.target.checked ? [...current, ingredient.id] : current.filter((id) => id !== ingredient.id))} />
+                      {ingredient.name}
+                    </label>
+                  ))}
+                </fieldset>
+                {sauceTriggerError && <p role="alert" className="mb-2 text-sm text-red-600">{sauceTriggerError}</p>}
+                <button type="button" disabled={!sauceTriggersLoaded || savingSauceTriggers} onClick={() => setSauceTriggerIds([])} className="mr-3 text-sm underline disabled:opacity-50">Clear selection</button>
+                <button type="button" disabled={!sauceTriggersLoaded || savingSauceTriggers} className="rounded-xl bg-stone-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                  onClick={async () => {
+                    setSavingSauceTriggers(true); setSauceTriggerError("");
+                    try {
+                      const saved = await api.put<{ ingredientIds: number[] }>("/settings/sauce-triggers", { ingredientIds: sauceTriggerIds });
+                      setSauceTriggerIds(saved.ingredientIds);
+                    } catch (error) { setSauceTriggerError(error instanceof Error ? error.message : "Failed to save sauce triggers."); }
+                    finally { setSavingSauceTriggers(false); }
+                  }}>{savingSauceTriggers ? "Saving…" : "Save sauce triggers"}</button>
+              </div>
+            )}
           </div>
         ))}
       </Section>

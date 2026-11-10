@@ -17,7 +17,6 @@ import { api, apiCall } from "@/lib/api";
 import { motion } from "framer-motion";
 import { SkeletonTableRow } from "@/components/ui/skeleton";
 import { useNotifications } from "@/lib/NotificationContext";
-import { useAuth } from "@/context/authcontext";
 import {
   fetchGeneralSettings,
   GENERAL_SETTINGS_DEFAULTS,
@@ -1430,20 +1429,6 @@ const rowHover = {
 };
 
 function MenuAdminTab() {
-  const { user } = useAuth();
-  const isAdministrator = user?.role?.trim().toLowerCase() === "administrator";
-  const [sauceTriggerIds, setSauceTriggerIds] = useState<number[]>([]);
-  const [sauceTriggersLoaded, setSauceTriggersLoaded] = useState(false);
-  const [savingSauceTriggers, setSavingSauceTriggers] = useState(false);
-  const [sauceTriggerError, setSauceTriggerError] = useState("");
-  useEffect(() => {
-    if (!isAdministrator) return;
-    let active = true;
-    void api.get<{ ingredientIds: number[] }>("/settings/sauce-triggers").then((settings) => {
-      if (active) { setSauceTriggerIds(settings.ingredientIds); setSauceTriggersLoaded(true); }
-    }).catch(() => { if (active) setSauceTriggerError("Failed to load sauce triggers. Refresh before editing."); });
-    return () => { active = false; };
-  }, [isAdministrator]);
   const { addNotification } = useNotifications();
   const toast: Toast = (label, type = "info") =>
     addNotification({ id: `${Date.now()}-${Math.random()}`, label, type });
@@ -1566,35 +1551,6 @@ function MenuAdminTab() {
 
   return (
     <div style={{ fontFamily: FONT }}>
-      {isAdministrator && (
-        <section className="mb-6 rounded-2xl border border-stone-200 bg-white p-5">
-          <h3 className="font-semibold">Sauces — ingredient triggers</h3>
-          <p className="my-2 text-sm text-stone-500">Select inventory ingredients that require one included sauce. Any matching recipe ingredient triggers the selector once. With none selected, no item requires a sauce.</p>
-          <fieldset disabled={!sauceTriggersLoaded || savingSauceTriggers} className="my-4 grid max-h-56 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
-            <legend className="sr-only">Sauce trigger ingredients</legend>
-            {ingredientOptions.map((ingredient) => (
-              <label key={ingredient.id} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={sauceTriggerIds.includes(ingredient.id)}
-                  onChange={(event) => setSauceTriggerIds((current) => event.target.checked ? [...current, ingredient.id] : current.filter((id) => id !== ingredient.id))} />
-                {ingredient.name}
-              </label>
-            ))}
-          </fieldset>
-          {sauceTriggerError && <p role="alert" className="mb-2 text-sm text-red-600">{sauceTriggerError}</p>}
-          <button type="button" disabled={!sauceTriggersLoaded || savingSauceTriggers} onClick={() => setSauceTriggerIds([])} className="mr-3 text-sm underline disabled:opacity-50">Clear selection</button>
-          <button type="button" disabled={!sauceTriggersLoaded || savingSauceTriggers} className="rounded-xl bg-stone-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-            onClick={async () => {
-              setSavingSauceTriggers(true); setSauceTriggerError("");
-              try {
-                const saved = await api.put<{ ingredientIds: number[] }>("/settings/sauce-triggers", { ingredientIds: sauceTriggerIds });
-                setSauceTriggerIds(saved.ingredientIds);
-                toast("Sauce triggers saved.", "success");
-                void reload();
-              } catch (error) { setSauceTriggerError(errorText(error)); }
-              finally { setSavingSauceTriggers(false); }
-            }}>{savingSauceTriggers ? "Saving…" : "Save sauce triggers"}</button>
-        </section>
-      )}
       {/* Summary */}
       <div className="mb-6 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
         <StatCard
