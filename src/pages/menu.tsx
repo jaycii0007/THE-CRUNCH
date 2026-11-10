@@ -137,6 +137,7 @@ interface DiscountApproval {
   discountId: number;
 }
 interface MenuItem {
+  ingredients: { product_id: number; quantity_required: number; stock: number }[];
   requiresSauce: boolean;
   id: number;
   name: string;
@@ -307,6 +308,11 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
         ? String(p.category_system_key).trim().toLowerCase()
         : null,
       requiresSauce: p.requires_sauce === true || p.requires_sauce === 1,
+      ingredients: (p.ingredients ?? []).map((ingredient: Record<string, unknown>) => ({
+        product_id: Number(ingredient.product_id),
+        quantity_required: Number(ingredient.quantity_required),
+        stock: Number(ingredient.stock),
+      })),
       remainingStock: Math.max(
         0,
         Math.floor(
@@ -785,11 +791,13 @@ const CartRow = memo(
     onRemove,
     onQty,
     onEditFlavor,
+    canIncrease,
   }: {
     item: CartItem;
     onRemove: (cartKey: string) => void;
     onQty: (cartKey: string, d: number) => void;
     onEditFlavor: (item: CartItem) => void;
+    canIncrease: boolean;
   }) => {
     const { money } = useFmt();
     const max = getEffectiveMaxQuantity(item.remainingStock);
@@ -853,7 +861,7 @@ const CartRow = memo(
             />
             <button
               className={step}
-              disabled={item.quantity >= max}
+              disabled={item.quantity >= max || !canIncrease}
               onClick={() => onQty(item.cartKey, 1)}
             >
               <Plus className="h-3.5 w-3.5 text-neutral-600" />
@@ -2193,40 +2201,11 @@ export default function CashierView() {
       );
       setProducts(next);
       setProductsError("");
-      // keep the cart in sync with live stock
-      setCart((prev) =>
-        prev.flatMap((item) => {
-          const cur = next.find((p) => p.id === item.id);
-          const currentFlavor = item.selectedFlavorProductId
-            ? next.find(
-                (p) =>
-                  p.id === item.selectedFlavorProductId &&
-                  p.categorySystemKey === "chicken_flavors" &&
-                  norm(p.availabilityStatus) !== "hidden",
-              )
-            : null;
-          const max =
-            cur && (!item.selectedFlavorProductId || currentFlavor)
-              ? getEffectiveMaxQuantity(cur.remainingStock)
-              : 0;
-          return cur && max > 0
-            ? [
-                {
-                  ...item,
-                  ...cur,
-                  quantity: Math.min(item.quantity, max),
-                  ...(currentFlavor
-                    ? {
-                        selectedFlavorName: currentFlavor.name,
-                        selectedFlavorRemainingStock:
-                          currentFlavor.remainingStock,
-                      }
-                    : {}),
-                },
-              ]
-            : [];
-        }),
-      );
+      // Refresh availability without changing existing cart quantities or entries.
+      setCart((prev) => prev.map((item) => {
+        const cur = next.find((product) => product.id === item.id);
+        return cur ? { ...item, ...cur } : item;
+      }));
     } catch {
       setProductsError("Failed to load menu items.");
     } finally {
@@ -2614,20 +2593,31 @@ export default function CashierView() {
     if (!cart.length) setCheckoutStep(1);
   }, [cartSignature]);
 
+  const updateQty = useCallback(
+    (cartKey: string, delta: number, addedItem?: CartItem) => {
+      setCart((prev) => {
+        const item = prev.find((entry) => entry.cartKey === cartKey) ?? addedItem;
+        if (!item) return prev;
+        const product = products.find((entry) => entry.id === item.id) ?? item;
+        const quantity = Math.max(0, (prev.find((entry) => entry.cartKey === cartKey)?.quantity ?? 0) + delta);
+        if (delta > 0 && (quantity > getEffectiveMaxQuantity(product.remainingStock) ||
+          !product.ingredients.every((ingredient) => {
+            const used = prev.reduce((total, entry) => total + entry.quantity *
+              ((products.find((p) => p.id === entry.id) ?? entry).ingredients.find((row) => row.product_id === ingredient.product_id)?.quantity_required ?? 0), 0);
+            return used + delta * ingredient.quantity_required <= ingredient.stock + 0.0000001;
+          }))) return prev;
+        if (!prev.some((entry) => entry.cartKey === cartKey)) return [...prev, { ...item, quantity }];
+        return prev.flatMap((entry) => entry.cartKey !== cartKey ? [entry] : quantity > 0 ? [{ ...entry, quantity }] : []);
+      });
+    },
+    [products],
+  );
+
   const addDirectToCart = useCallback((item: MenuItem) => {
     const max = getEffectiveMaxQuantity(item.remainingStock);
     if (isUnavailable(item.availabilityStatus) || max === 0) return;
-    setCart((prev) => {
-      const cartKey = `${item.id}:`;
-      const ex = prev.find((c) => c.cartKey === cartKey);
-      if (!ex) return [...prev, { ...item, cartKey, quantity: 1 }];
-      return ex.quantity >= max
-        ? prev
-        : prev.map((c) =>
-            c.cartKey === cartKey ? { ...c, quantity: c.quantity + 1 } : c,
-          );
-    });
-  }, []);
+    updateQty(`${item.id}:`, 1, { ...item, cartKey: `${item.id}:`, quantity: 1 });
+  }, [updateQty]);
 
   const requestAddToCart = useCallback(
     (item: MenuItem) => {
@@ -2650,8 +2640,11 @@ export default function CashierView() {
     );
     if (!flavor) return;
     const nextKey = `${flavorTarget.item.id}:${flavor.id}`;
-    setCart((current) => {
-      const max = getEffectiveMaxQuantity(flavorTarget.item.remainingStock);
+    if (!flavorTarget.editingCartKey) {
+      updateQty(nextKey, 1, { ...flavorTarget.item, cartKey: nextKey, quantity: 1,
+        selectedFlavorProductId: flavor.id, selectedFlavorName: flavor.name,
+        selectedFlavorRemainingStock: flavor.remainingStock });
+    } else setCart((current) => {
       if (flavorTarget.editingCartKey) {
         const editing = current.find(
           (entry) => entry.cartKey === flavorTarget.editingCartKey,
@@ -2668,7 +2661,7 @@ export default function CashierView() {
               entry.cartKey === collision.cartKey
                 ? {
                     ...entry,
-                    quantity: Math.min(max, entry.quantity + editing.quantity),
+                    quantity: entry.quantity + editing.quantity,
                   }
                 : entry,
             );
@@ -2681,58 +2674,21 @@ export default function CashierView() {
                 selectedFlavorProductId: flavor.id,
                 selectedFlavorName: flavor.name,
                 selectedFlavorRemainingStock: flavor.remainingStock,
-                quantity: Math.min(max, entry.quantity),
+                quantity: entry.quantity,
               }
             : entry,
         );
       }
-      const existing = current.find((entry) => entry.cartKey === nextKey);
-      if (existing) {
-        return existing.quantity >= max
-          ? current
-          : current.map((entry) =>
-              entry.cartKey === nextKey
-                ? { ...entry, quantity: entry.quantity + 1 }
-                : entry,
-            );
-      }
-      return [
-        ...current,
-        {
-          ...flavorTarget.item,
-          cartKey: nextKey,
-          quantity: 1,
-          selectedFlavorProductId: flavor.id,
-          selectedFlavorName: flavor.name,
-          selectedFlavorRemainingStock: flavor.remainingStock,
-        },
-      ];
+      return current;
     });
     setFlavorTarget(null);
     setSelectedFlavorId(null);
-  }, [chickenFlavors, flavorTarget, selectedFlavorId]);
+  }, [chickenFlavors, flavorTarget, selectedFlavorId, updateQty]);
 
   const removeFromCart = useCallback(
     (cartKey: string) => setCart((p) => p.filter((c) => c.cartKey !== cartKey)),
     [],
   );
-  const updateQty = useCallback(
-    (cartKey: string, delta: number) => {
-      setCart((prev) =>
-        prev.flatMap((item) => {
-          if (item.cartKey !== cartKey) return [item];
-          const max = getEffectiveMaxQuantity(
-            products.find((p) => p.id === item.id)?.remainingStock ??
-              item.remainingStock,
-          );
-          const quantity = Math.min(Math.max(0, item.quantity + delta), max);
-          return quantity > 0 ? [{ ...item, quantity }] : [];
-        }),
-      );
-    },
-    [products],
-  );
-
   // Puts the whole order form back to its starting state (used by Void and New order).
   const clearOrderForm = () => {
     setCart([]);
@@ -3330,6 +3286,10 @@ export default function CashierView() {
                     item={item}
                     onRemove={removeFromCart}
                     onQty={updateQty}
+                    canIncrease={(products.find((p) => p.id === item.id) ?? item).ingredients.every((ingredient) =>
+                      cart.reduce((total, entry) => total + entry.quantity *
+                        ((products.find((p) => p.id === entry.id) ?? entry).ingredients.find((row) => row.product_id === ingredient.product_id)?.quantity_required ?? 0), 0)
+                      + ingredient.quantity_required <= ingredient.stock + 0.0000001)}
                     onEditFlavor={editCartFlavor}
                   />
                 ))}
