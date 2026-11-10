@@ -837,6 +837,7 @@ export default function StockManager() {
     setSubmitting(true);
     try {
       await api.createProduct({
+        supplier_ids: materialSupplierIds,
         name,
         price: 0,
         quantity: 0,
@@ -859,6 +860,7 @@ export default function StockManager() {
       await fetchAll();
       setRawMaterialForm(BLANK_RAW_MATERIAL);
       setShowRawMaterialForm(false);
+      void supplier.fetchSuppliers().catch(() => {});
       showToast("Raw material added.", "success");
     } catch (err) {
       showToast(
@@ -1180,6 +1182,8 @@ export default function StockManager() {
                               <button
                                 onClick={() => {
                                   setEditingMaterial(null);
+                                  setMaterialSupplierIds([]);
+                                  void supplier.fetchSuppliers().catch((error) => showToast(error instanceof Error ? error.message : "Failed to load suppliers.", "error"));
                                   setRawMaterialForm(BLANK_RAW_MATERIAL);
                                   setShowRawMaterialForm(true);
                                 }}
@@ -2239,6 +2243,10 @@ export default function StockManager() {
                 supplier.setShowSupplierForm(true);
               }}
               onAddMaterial={() => {
+                setEditingMaterial(null);
+                setMaterialSupplierIds([]);
+                setRawMaterialForm(BLANK_RAW_MATERIAL);
+                void supplier.fetchSuppliers().catch((error) => showToast(error instanceof Error ? error.message : "Failed to load suppliers.", "error"));
                 po.setEditingOrder(null);
                 po.handleClosePOModal();
                 setShowRawMaterialForm(true);

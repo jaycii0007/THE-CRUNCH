@@ -148,7 +148,6 @@ export function AddMaterialModal({
             </FormField>
           </div>
           <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            {isEditMode && (
               <FormField label="Suppliers">
                 <details className="relative mb-4">
                   <summary aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }}
@@ -169,7 +168,6 @@ export function AddMaterialModal({
                   </div>
                 </details>
               </FormField>
-            )}
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-slate-700">
