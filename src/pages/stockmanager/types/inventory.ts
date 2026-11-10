@@ -33,6 +33,7 @@ export type DashboardSummaryKey =
 export type POStatus = "Draft" | "Ordered" | "Received" | "Cancelled";
 
 export interface POItem {
+  trackingMethod?: "none" | "expiry" | "shelf_life";
   id: number;
   productId?: number | null;
   name: string;
@@ -243,7 +244,7 @@ export interface InventoryCategoryMaster {
   category_id: number;
   name: string;
   type?: "raw_material" | "ingredient" | "finished";
-  date_tracking_type: "none" | "expiry" | "shelf_life";
+  date_tracking_type: "none" | "expiry" | "shelf_life" | null;
   is_active: boolean | number;
 }
 

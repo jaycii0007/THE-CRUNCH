@@ -521,10 +521,12 @@ export default function StockManager() {
           normalizeInventoryCategoryName(category.name),
           category.name,
         );
-        inventoryCategoryDateTrackingLookup.set(
-          normalizeInventoryCategoryName(category.name),
-          category.date_tracking_type ?? "none",
-        );
+        if (category.date_tracking_type != null) {
+          inventoryCategoryDateTrackingLookup.set(
+            normalizeInventoryCategoryName(category.name),
+            category.date_tracking_type,
+          );
+        }
       }
       setInventoryCategories(categoryList);
       setStockAlertSettings(nextStockAlertSettings);

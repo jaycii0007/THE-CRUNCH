@@ -15,7 +15,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { ProductImage } from "@/components/ProductImage";
 import { api, apiCall } from "@/lib/api";
 import { motion } from "framer-motion";
-import { SkeletonTable } from "@/components/ui/skeleton";
+import { SkeletonTableRow } from "@/components/ui/skeleton";
 import { useNotifications } from "@/lib/NotificationContext";
 import {
   fetchGeneralSettings,
@@ -1681,12 +1681,9 @@ function MenuAdminTab() {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <SkeletonTable
-                      rowCount={5}
-                      columnCount={5}
-                      theme="admin"
-                      showHeader={false}
-                    />
+                    Array.from({ length: 5 }, (_, index) => (
+                      <SkeletonTableRow key={index} columnCount={5} theme="admin" />
+                    ))
                   ) : visible.length === 0 ? (
                     <tr>
                       <td

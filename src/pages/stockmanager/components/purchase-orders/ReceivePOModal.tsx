@@ -9,7 +9,7 @@ import {
   blockInvalidNumberKeys,
   sanitizeNumberInput,
 } from "../../utils/inputUtils";
-import { getPOItemDateTrackingType } from "../../utils/purchaseOrderUtils";
+import { getPOItemDateTrackingType, getPOItemCategoryTrackingType } from "../../utils/purchaseOrderUtils";
 
 const RECEIPT_NUMBER_MAX_LENGTH = 25;
 const RECEIPT_NUMBER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 /-]*$/;
@@ -96,7 +96,8 @@ export function ReceivePOModal({
     Object.fromEntries(
       order.items.map((item) => [
         item.id,
-        { shelfLifeMonths: "", shelfLifeDays: "", shelfLifeHours: "" },
+        { shelfLifeMonths: "", shelfLifeDays: getPOItemCategoryTrackingType(item, inventoryCategoryNameLookup, inventoryCategoryDateTrackingLookup) === null && item.trackingMethod === "shelf_life"
+          ? String(item.shelfLifeDays ?? "") : "", shelfLifeHours: "" },
       ]),
     ),
   );
@@ -356,6 +357,7 @@ export function ReceivePOModal({
               inventoryCategoryDateTrackingLookup,
             );
             const usesShelfLife = trackingType === "shelf_life";
+            const materialShelfLife = getPOItemCategoryTrackingType(item, inventoryCategoryNameLookup, inventoryCategoryDateTrackingLookup) === null && item.trackingMethod === "shelf_life";
             const usesExpiry = trackingType === "expiry";
             const currentExpiryDate = itemExpiryDates[item.id] || "";
             const currentShelfLife = itemShelfLife[item.id] || {
@@ -435,6 +437,9 @@ export function ReceivePOModal({
                     <p className="text-xs font-semibold text-emerald-700 mb-3">
                       Shelf Life
                     </p>
+                    {materialShelfLife && (
+                      <p className="text-xs text-slate-500 mb-3">Uses this material's configured shelf-life duration.</p>
+                    )}
                     <div className="grid gap-3 md:grid-cols-3">
                       <div>
                         <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">
@@ -445,6 +450,7 @@ export function ReceivePOModal({
                           min="0"
                           step="1"
                           value={currentShelfLife.shelfLifeMonths}
+                          readOnly={materialShelfLife}
                           inputMode="numeric"
                           onKeyDown={(e) => blockInvalidNumberKeys(e, { allowDecimal: false })}
                           onChange={(e) => setItemShelfLife((prev) => ({
@@ -467,6 +473,7 @@ export function ReceivePOModal({
                           min="0"
                           step="1"
                           value={currentShelfLife.shelfLifeDays}
+                          readOnly={materialShelfLife}
                           inputMode="numeric"
                           onKeyDown={(e) =>
                             blockInvalidNumberKeys(e, { allowDecimal: false })
@@ -500,6 +507,7 @@ export function ReceivePOModal({
                           min="0"
                           step="1"
                           value={currentShelfLife.shelfLifeHours}
+                          readOnly={materialShelfLife}
                           inputMode="numeric"
                           onKeyDown={(e) =>
                             blockInvalidNumberKeys(e, { allowDecimal: false })

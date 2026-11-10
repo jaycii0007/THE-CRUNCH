@@ -1361,11 +1361,11 @@ function ProfileTab() {
 interface InventoryCategorySetting {
   category_id: number;
   name: string;
-  date_tracking_type: "none" | "expiry" | "shelf_life";
+  date_tracking_type: "none" | "expiry" | "shelf_life" | null;
   is_active: boolean | number;
 }
 
-type InventoryTrackingType = InventoryCategorySetting["date_tracking_type"];
+type InventoryTrackingType = NonNullable<InventoryCategorySetting["date_tracking_type"]>;
 const INVENTORY_TRACKING_OPTIONS: {
   value: InventoryTrackingType;
   label: string;
@@ -1375,10 +1375,10 @@ const INVENTORY_TRACKING_OPTIONS: {
   { value: "none", label: "No Tracking" },
 ];
 
-function inventoryTrackingLabel(value: InventoryTrackingType): string {
+function inventoryTrackingLabel(value: InventoryCategorySetting["date_tracking_type"]): string {
   return (
     INVENTORY_TRACKING_OPTIONS.find((option) => option.value === value)
-      ?.label ?? value
+      ?.label ?? value ?? "Choose date tracking"
   );
 }
 
@@ -1402,7 +1402,6 @@ function CategoriesUnitsTab() {
     [],
   );
   const [categories, setCategories] = useState<InventoryCategorySetting[]>([]);
-  const [materialDateTracking, setMaterialDateTracking] = useState(false);
   const [units, setUnits] = useState<InventoryUnitSetting[]>([]);
   const [menuCategoryName, setMenuCategoryName] = useState("");
   const [categoryName, setCategoryName] = useState("");
@@ -1410,7 +1409,7 @@ function CategoriesUnitsTab() {
     InventoryTrackingType | ""
   >("");
   const [categoryTrackingDrafts, setCategoryTrackingDrafts] = useState<
-    Record<number, InventoryTrackingType>
+    Record<number, InventoryTrackingType | "">
   >({});
   const [unitName, setUnitName] = useState("");
   const [unitAbbreviation, setUnitAbbreviation] = useState("");
@@ -1433,16 +1432,12 @@ function CategoriesUnitsTab() {
           api.get<MenuCategorySetting[]>(
             "/settings/menu-categories?activeOnly=0",
           ),
-          api.get<{
-            categories: InventoryCategorySetting[];
-            dateTrackingScope: "material" | "category";
-          }>("/settings/inventory-categories?includeTrackingScope=1"),
+          api.get<InventoryCategorySetting[]>("/settings/inventory-categories"),
           api.get<InventoryUnitSetting[]>("/settings/inventory-units"),
         ],
       );
       setMenuCategories(nextMenuCategories);
-      setCategories(nextCategories.categories);
-      setMaterialDateTracking(nextCategories.dateTrackingScope === "material");
+      setCategories(nextCategories);
       setUnits(nextUnits);
       setMenuCategoryDrafts(
         Object.fromEntries(
@@ -1454,7 +1449,7 @@ function CategoriesUnitsTab() {
       );
       setCategoryDrafts(
         Object.fromEntries(
-          nextCategories.categories.map((category) => [
+          nextCategories.map((category) => [
             category.category_id,
             category.name,
           ]),
@@ -1462,9 +1457,9 @@ function CategoriesUnitsTab() {
       );
       setCategoryTrackingDrafts(
         Object.fromEntries(
-          nextCategories.categories.map((category) => [
+          nextCategories.map((category) => [
             category.category_id,
-            category.date_tracking_type,
+            category.date_tracking_type ?? "",
           ]),
         ),
       );
@@ -1520,7 +1515,7 @@ function CategoriesUnitsTab() {
 
   const createCategory = async () => {
     const name = categoryName.trim();
-    if (!name || (!materialDateTracking && !categoryTracking) || busy) return;
+    if (!name || !categoryTracking || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -1528,7 +1523,7 @@ function CategoriesUnitsTab() {
         "/settings/inventory-categories",
         {
           name,
-          ...(!materialDateTracking && { date_tracking_type: categoryTracking }),
+          date_tracking_type: categoryTracking,
         },
       );
       setCategories((current) =>
@@ -1540,14 +1535,11 @@ function CategoriesUnitsTab() {
       }));
       setCategoryTrackingDrafts((current) => ({
         ...current,
-        [created.category_id]: created.date_tracking_type,
+        [created.category_id]: created.date_tracking_type ?? "",
       }));
       setCategoryName("");
       setCategoryTracking("");
-      if (
-        !materialDateTracking &&
-        created.date_tracking_type !== categoryTracking
-      ) {
+      if (created.date_tracking_type !== categoryTracking) {
         setError(
           "Category was created, but the server did not save the selected date tracking method. Verify the backend category API before using it.",
         );
@@ -1567,7 +1559,7 @@ function CategoriesUnitsTab() {
     const selected =
       categoryTrackingDrafts[category.category_id] ??
       category.date_tracking_type;
-    if (busy || selected === category.date_tracking_type) return;
+    if (busy || !selected || selected === category.date_tracking_type) return;
     if (
       !window.confirm(
         `Change date tracking for "${category.name}" from ${inventoryTrackingLabel(category.date_tracking_type)} to ${inventoryTrackingLabel(selected)}? ` +
@@ -1595,7 +1587,7 @@ function CategoriesUnitsTab() {
         setCategoryTrackingDrafts((current) => ({
           ...current,
           [category.category_id]:
-            saved?.date_tracking_type ?? category.date_tracking_type,
+            saved?.date_tracking_type ?? category.date_tracking_type ?? "",
         }));
         throw new Error(
           "The server did not save the tracking change. The backend PATCH route may need support for date_tracking_type.",
@@ -1603,7 +1595,7 @@ function CategoriesUnitsTab() {
       }
       setCategoryTrackingDrafts((current) => ({
         ...current,
-        [category.category_id]: saved.date_tracking_type,
+        [category.category_id]: saved.date_tracking_type ?? "",
       }));
     } catch (updateError) {
       setError(
@@ -1949,9 +1941,8 @@ function CategoriesUnitsTab() {
           Inventory Categories
         </h3>
         <Hint>
-          {materialDateTracking
-            ? "Expiry and shelf-life tracking are configured per inventory material. Categories only group materials; creating or renaming a category does not change their tracking."
-            : "Choose whether each category tracks an Expiry Date, Shelf Life, or no date. This applies to all materials in that category."}
+          Choose whether each category tracks an Expiry Date, Shelf Life, or no
+          date. This applies to all materials in that category.
         </Hint>
         <div
           style={{
@@ -1969,26 +1960,20 @@ function CategoriesUnitsTab() {
               placeholder="Category name"
             />
           </div>
-          {!materialDateTracking && (
-            <SS
-              value={categoryTracking}
-              onChange={setCategoryTracking}
-              options={[
-                { value: "", label: "Choose date tracking" },
-                ...INVENTORY_TRACKING_OPTIONS,
-              ]}
-            />
-          )}
+          <SS
+            value={categoryTracking}
+            onChange={setCategoryTracking}
+            options={[
+              { value: "", label: "Choose date tracking" },
+              ...INVENTORY_TRACKING_OPTIONS,
+            ]}
+          />
           <button
             type="button"
             onClick={() => void createCategory()}
-            disabled={
-              busy || loading || !categoryName.trim() ||
-              (!materialDateTracking && !categoryTracking)
-            }
+            disabled={busy || !categoryName.trim() || !categoryTracking}
             style={accentButton(
-              busy || loading || !categoryName.trim() ||
-                (!materialDateTracking && !categoryTracking),
+              busy || !categoryName.trim() || !categoryTracking,
             )}
           >
             Add
@@ -2016,12 +2001,10 @@ function CategoriesUnitsTab() {
                 flexWrap: "wrap",
               }}
             >
-              {!materialDateTracking && (
-                <>
               <SS
                 value={
                   categoryTrackingDrafts[category.category_id] ??
-                  category.date_tracking_type
+                  category.date_tracking_type ?? ""
                 }
                 onChange={(value) =>
                   setCategoryTrackingDrafts((current) => ({
@@ -2029,12 +2012,15 @@ function CategoriesUnitsTab() {
                     [category.category_id]: value,
                   }))
                 }
-                options={INVENTORY_TRACKING_OPTIONS}
+                options={category.date_tracking_type == null
+                  ? [{ value: "", label: "Choose date tracking" }, ...INVENTORY_TRACKING_OPTIONS]
+                  : INVENTORY_TRACKING_OPTIONS}
               />
               <button
                 type="button"
                 disabled={
                   busy ||
+                  !(categoryTrackingDrafts[category.category_id] ?? category.date_tracking_type) ||
                   (categoryTrackingDrafts[category.category_id] ??
                     category.date_tracking_type) === category.date_tracking_type
                 }
@@ -2043,8 +2029,6 @@ function CategoriesUnitsTab() {
               >
                 Save Tracking
               </button>
-                </>
-              )}
               <button
                 type="button"
                 disabled={
