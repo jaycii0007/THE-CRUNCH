@@ -2247,185 +2247,55 @@ function RefundModal({
 
 function SummaryBar({
   logs,
-  filterDescription,
   leadingCard,
 }: {
   logs: SaleLog[];
   filterDescription: string;
   leadingCard?: React.ReactNode;
 }) {
-  const [showTotalSales, setShowTotalSales] = useState(false);
   const paidCompleted = logs.filter(isFinalizedSale);
-  const refunded = logs.filter((log) => log.status === "Refunded");
-  const byMethod = (method: NormalizedPaymentMethod) =>
-    paidCompleted.filter(
-      (log) => normalizePaymentMethod(log.paymentMethod) === method,
-    );
-  const gcashSales = byMethod("Online Payment");
-  const cashSales = byMethod("Cash");
-  const cashOnPickupSales = byMethod("Cash on Pickup");
-  const grabFoodSales = byMethod("GrabFood");
-  const foodpandaSales = byMethod("Foodpanda");
   const totalSales = paidCompleted.reduce((sum, log) => sum + log.total, 0);
-  const methodGroups = [
-    { label: "GCash Sales", logs: gcashSales },
-    { label: "Cash Sales", logs: cashSales },
-    { label: "Cash on Pickup", logs: cashOnPickupSales },
-    { label: "GrabFood", logs: grabFoodSales },
-    { label: "Foodpanda", logs: foodpandaSales },
-  ];
-  const categorizedIds = new Set(methodGroups.flatMap((group) => group.logs.map((log) => log.id)));
-  const legacySales = paidCompleted.filter((log) => !categorizedIds.has(log.id));
-  const stats = [
-    {
-      label: "Total Sales",
-      value: formatReportCurrency(totalSales),
-      sub: `${paidCompleted.length} completed paid orders · View summary`,
-      dark: true,
-      clickable: true,
-    },
-    {
-      label: "Completed Orders",
-      value: `${paidCompleted.length}`,
-      sub: "Paid transactions",
-      dark: false,
-      clickable: false,
-    },
-    ...methodGroups.map((group) => ({
-      label: group.label,
-      value: formatReportCurrency(
-        group.logs.reduce((sum, log) => sum + log.total, 0),
-      ),
-      sub: `${group.logs.length} order${group.logs.length === 1 ? "" : "s"}`,
-      dark: false,
-      clickable: false,
-    })),
-  ];
 
   return (
-    <>
-      <div
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+        gap: 16,
+        marginBottom: 24,
+        alignItems: "stretch",
+      }}
+      role="region"
+      aria-label="Financial summary"
+    >
+      {leadingCard}
+      <motion.div
+        whileHover={{ y: -2, boxShadow: "0 8px 24px rgba(0,0,0,0.10)" }}
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-          gap: 14,
-          marginBottom: 24,
-          alignItems: "stretch",
+          minHeight: 132,
+          background: DEEP,
+          border: `1px solid ${DEEP}`,
+          borderRadius: 20,
+          padding: "22px 24px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          textAlign: "left",
+          color: "#fff",
         }}
       >
-        {leadingCard}
-        {stats.map((stat) => {
-          const Component = stat.clickable ? motion.button : motion.div;
-          return (
-            <Component
-              key={stat.label}
-              {...(stat.clickable
-                ? {
-                    type: "button" as const,
-                    onClick: () => setShowTotalSales(true),
-                    "aria-label": "Open Total Sales summary",
-                  }
-                : {})}
-              whileHover={{ y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
-              style={{
-                minHeight: 122,
-                background: stat.dark ? DEEP : "#fff",
-                border: `1px solid ${stat.dark ? DEEP : "#e2e8f0"}`,
-                borderRadius: 18,
-                padding: "18px 20px",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                textAlign: "left",
-                cursor: stat.clickable ? "pointer" : "default",
-                fontFamily: "inherit",
-              }}
-            >
-              <p style={{ color: stat.dark ? DEEP_LINE : "#94a3b8", fontSize: 10, fontWeight: 700, margin: "0 0 10px", letterSpacing: 1.2, textTransform: "uppercase" }}>
-                {stat.label}
-              </p>
-              <p style={{ color: stat.dark ? "#fff" : "#0f172a", fontSize: 24, fontWeight: 700, margin: "0 0 8px", lineHeight: 1.1 }}>
-                {stat.value}
-              </p>
-              <p style={{ color: stat.dark ? DEEP_LINE : "#64748b", fontSize: 11, margin: 0, lineHeight: 1.5 }}>
-                {stat.sub}
-              </p>
-            </Component>
-          );
-        })}
-      </div>
-
-      <AnimatePresence>
-        {showTotalSales && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowTotalSales(false)}
-              className="fixed inset-0 z-[120] bg-slate-950/45"
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 18, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="total-sales-summary-title"
-              className="fixed left-1/2 top-1/2 z-[121] max-h-[85vh] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Sales breakdown</p>
-                  <h2 id="total-sales-summary-title" className="mt-1 text-xl font-bold text-slate-900">Total Sales Summary</h2>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">{filterDescription}</p>
-                </div>
-                <button type="button" onClick={() => setShowTotalSales(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100" aria-label="Close Total Sales summary">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl bg-emerald-950 p-4 text-white">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-200">Completed paid sales</p>
-                  <p className="mt-2 text-2xl font-bold">{formatReportCurrency(totalSales)}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Transactions</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">{paidCompleted.length}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average sale</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">{formatReportCurrency(paidCompleted.length ? totalSales / paidCompleted.length : 0)}</p>
-                </div>
-              </div>
-
-              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-                {[
-                  ...methodGroups,
-                  ...(legacySales.length ? [{ label: "Historical payment methods", logs: legacySales }] : []),
-                ].map((group) => (
-                  <div key={group.label} className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 last:border-0">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">{group.label}</p>
-                      <p className="text-xs text-slate-400">{group.logs.length} order{group.logs.length === 1 ? "" : "s"}</p>
-                    </div>
-                    <p className="text-sm font-bold text-slate-900">{formatReportCurrency(group.logs.reduce((sum, log) => sum + log.total, 0))}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                <p><strong className="text-slate-800">Refunded orders:</strong> {refunded.length}</p>
-                <p className="mt-1"><strong className="text-slate-800">Refunded order value:</strong> {formatReportCurrency(refunded.reduce((sum, log) => sum + log.total, 0))} (excluded from Total Sales)</p>
-                <p className="mt-2 text-xs leading-5 text-slate-400">Gross sales and discount totals are not shown because the current report feed does not expose those values separately.</p>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </>
+        <p style={{ color: DEEP_LINE, fontSize: 10, fontWeight: 700, margin: "0 0 12px", letterSpacing: 1.5, textTransform: "uppercase" }}>
+          Total Sales
+        </p>
+        <p style={{ fontSize: 30, fontWeight: 700, margin: "0 0 10px", lineHeight: 1.1, letterSpacing: -0.5 }}>
+          {formatReportCurrency(totalSales)}
+        </p>
+        <p style={{ color: DEEP_LINE, fontSize: 12, margin: 0, lineHeight: 1.5 }}>
+          {paidCompleted.length} completed paid orders
+        </p>
+      </motion.div>
+    </div>
   );
 }
 
@@ -3758,6 +3628,324 @@ function OrdersTab({
   );
 }
 
+// --- Print Report Component ---
+
+interface PrintReportProps {
+  activeTab: TabKey;
+  period: Period;
+  logs: SaleLog[];
+  orders: Order[];
+  scopedLogs: SaleLog[];
+  filteredLogs: SaleLog[];
+  filterDescription: string;
+  restaurantSettings: GeneralRestaurantSettings;
+  generatedBy: string;
+  logFromDate: Date | null;
+  logToDate: Date | null;
+  logPaymentFilter: PaymentMethodFilter;
+  logOrderTypeFilter: OrderTypeFilter;
+  logDeliveryPlatformFilter: DeliveryPlatformFilter;
+  hasLogRange: boolean;
+}
+
+function PrintReport({
+  activeTab,
+  period,
+  logs: _logs,
+  orders,
+  scopedLogs: _scopedLogs,
+  filteredLogs,
+  filterDescription: _filterDescription,
+  restaurantSettings,
+  generatedBy,
+  logFromDate,
+  logToDate,
+  logPaymentFilter,
+  logOrderTypeFilter,
+  logDeliveryPlatformFilter,
+  hasLogRange,
+}: PrintReportProps) {
+  const now = new Date();
+  const isSalesLogs = activeTab === "logs";
+  const reportTitle = isSalesLogs ? "Sales Logs" : "Order History";
+
+  // Build filter descriptions
+  const filterParts: string[] = [];
+  if (hasLogRange) {
+    filterParts.push(`Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`);
+  } else {
+    filterParts.push("All dates");
+  }
+  if (logPaymentFilter !== "All") filterParts.push(logPaymentFilter);
+  if (logOrderTypeFilter !== "All") filterParts.push(logOrderTypeFilter);
+  if (logDeliveryPlatformFilter !== "All Platforms") filterParts.push(logDeliveryPlatformFilter);
+  const activeFilters = filterParts.join(" · ");
+
+  const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timeLabel = formatInSettingsTimezone(now, restaurantSettings, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  if (isSalesLogs) {
+    const reportLogs = filteredLogs;
+    const completedLogs = reportLogs.filter(isFinalizedSale);
+    const totalRevenue = completedLogs.reduce((sum, log) => sum + log.total, 0);
+    const completedCount = completedLogs.length;
+
+    // Build log rows for Sales Logs tab
+    const logRows = completedLogs
+      .map((l, i) => {
+        const paymentMethodLabel = normalizePaymentMethod(l.paymentMethod);
+        return `
+          <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
+            <td class="txn">${escapePrintHtml(l.transactionId)}</td>
+            <td class="date-time">${escapePrintHtml(`${l.date} ${l.time}`)}</td>
+            <td class="items">
+              <div>${escapePrintHtml(l.product)} <strong>×${escapePrintHtml(l.quantity)}</strong></div>
+            </td>
+            <td class="payment">
+              <div class="payment-method">${escapePrintHtml(paymentMethodLabel)}</div>
+              ${l.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(l.paymentReference)}</div>` : ""}
+            </td>
+            <td>${escapePrintHtml(l.cashierName)}</td>
+            <td class="amount">${escapePrintHtml(formatPrintCurrency(Math.abs(l.total), restaurantSettings))}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    return (
+      <div className="print-report">
+        <div className="print-report-header">
+          <div>
+            <p className="print-report-brand">{restaurantSettings.restaurantName}</p>
+            <p className="print-report-title">Sales Report</p>
+            <p className="print-report-subtitle">{reportTitle} — {period}</p>
+            {restaurantSettings.tagline && (
+              <p className="print-report-subtitle">{restaurantSettings.tagline}</p>
+            )}
+            <p className="print-report-subtitle">Period: {activeFilters}</p>
+            {[
+              restaurantSettings.address,
+              restaurantSettings.phone,
+              restaurantSettings.email,
+            ]
+              .filter(Boolean)
+              .map((line) => <p className="print-report-subtitle" key={line}>{line}</p>)}
+          </div>
+          <div className="print-report-meta">
+            <p>Generated</p>
+            <strong>{dateLabel}</strong>
+            <p>{timeLabel}</p>
+            <p style={{ marginTop: "8px" }}>Prepared by</p>
+            <strong>{generatedBy || "Staff"}</strong>
+          </div>
+        </div>
+
+        <div className="print-summary-grid">
+          <div className="print-summary-card">
+            <p className="print-summary-label">Total Revenue</p>
+            <p className="print-summary-value revenue">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
+            <p className="print-summary-sub">Scope: {period} · {completedCount} completed</p>
+          </div>
+          <div className="print-summary-card">
+            <p className="print-summary-label">Total Sales</p>
+            <p className="print-summary-value">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
+            <p className="print-summary-sub">{completedCount} completed orders</p>
+          </div>
+        </div>
+
+        <p className="print-section-title">Sales Logs ({completedCount})</p>
+
+        <table className="print-table">
+          <colgroup>
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Transaction ID</th>
+              <th>Date & Time</th>
+              <th>Items</th>
+              <th>Payment / Reference</th>
+              <th>Cashier</th>
+              <th style={{ textAlign: "right" }}>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logRows}
+            <tr className="revenue-summary">
+              <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
+                Total Revenue
+              </td>
+              <td style={{ textAlign: "right", color: "#1a3a2a", fontSize: "13px" }}>
+                {formatPrintCurrency(totalRevenue, restaurantSettings)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p className="print-footer">
+          Auto-generated by {restaurantSettings.restaurantName} POS System · Confidential
+        </p>
+      </div>
+    );
+  }
+
+  // Order History tab
+  const completedOrders = orders.filter(isFinalizedSale);
+  const totalRevenue = completedOrders.reduce((sum, log) => sum + log.total, 0);
+  const completedCount = completedOrders.length;
+
+  // Build order rows for Order History tab
+  const orderRows = completedOrders
+    .map((o, i) => {
+      const fmtDateTime = parseDateSafe(o.date)
+        ? formatInSettingsTimezone(o.date, restaurantSettings, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+          })
+        : "—";
+      const fmtHandover = parseDateSafe(o.handoverTimestamp)
+        ? formatInSettingsTimezone(
+            o.handoverTimestamp ?? "",
+            restaurantSettings,
+            {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            },
+          )
+        : "—";
+      return `
+        <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
+          <td class="txn">${escapePrintHtml(o.transactionId)}</td>
+          <td class="date-time">${escapePrintHtml(fmtDateTime)}</td>
+          <td class="items">${o.items
+            .map(
+              (item) =>
+                `<div><span>${escapePrintHtml(item.name)}</span> <strong>×${escapePrintHtml(item.quantity)}</strong></div>`,
+            )
+            .join("")}</td>
+          <td class="payment">
+            <div class="payment-method">${escapePrintHtml(normalizePaymentMethod(o.paymentCategory))}</div>
+            ${o.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(o.paymentReference)}</div>` : ""}
+            ${
+              o.orderType === "delivery"
+                ? `<div class="delivery-details">
+                    <div><strong>Rider:</strong> ${escapePrintHtml(o.riderName ?? "—")}</div>
+                    <div><strong>Handover:</strong> ${escapePrintHtml(fmtHandover)}</div>
+                    <div><strong>Confirmed by:</strong> ${escapePrintHtml(o.handoverStaffName ?? "—")}</div>
+                  </div>`
+                : ""
+            }
+          </td>
+          <td>${escapePrintHtml(o.cashierName ?? "—")}</td>
+          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return (
+    <div className="print-report">
+      <div className="print-report-header">
+        <div>
+          <p className="print-report-brand">{restaurantSettings.restaurantName}</p>
+          <p className="print-report-title">Sales Report</p>
+          <p className="print-report-subtitle">{reportTitle} — {period}</p>
+          {restaurantSettings.tagline && (
+            <p className="print-report-subtitle">{restaurantSettings.tagline}</p>
+          )}
+          <p className="print-report-subtitle">Period: {activeFilters}</p>
+          {[
+            restaurantSettings.address,
+            restaurantSettings.phone,
+            restaurantSettings.email,
+          ]
+            .filter(Boolean)
+            .map((line) => <p className="print-report-subtitle" key={line}>{line}</p>)}
+        </div>
+        <div className="print-report-meta">
+          <p>Generated</p>
+          <strong>{dateLabel}</strong>
+          <p>{timeLabel}</p>
+          <p style={{ marginTop: "8px" }}>Prepared by</p>
+          <strong>{generatedBy || "Staff"}</strong>
+        </div>
+      </div>
+
+      <div className="print-summary-grid">
+        <div className="print-summary-card">
+          <p className="print-summary-label">Total Revenue</p>
+          <p className="print-summary-value revenue">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
+          <p className="print-summary-sub">Scope: {period} · {completedCount} completed</p>
+        </div>
+        <div className="print-summary-card">
+          <p className="print-summary-label">Total Sales</p>
+          <p className="print-summary-value">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
+          <p className="print-summary-sub">{completedCount} completed orders</p>
+        </div>
+      </div>
+
+      <p className="print-section-title">Completed Orders ({completedCount})</p>
+
+      <table className="print-table">
+        <colgroup>
+          <col />
+          <col />
+          <col />
+          <col />
+          <col />
+          <col />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Transaction ID</th>
+            <th>Date & Time</th>
+            <th>Items</th>
+            <th>Payment / Reference</th>
+            <th>Cashier</th>
+            <th style={{ textAlign: "right" }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orderRows}
+          <tr className="revenue-summary">
+            <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
+              Total Revenue
+            </td>
+            <td style={{ textAlign: "right", color: "#1a3a2a", fontSize: "13px" }}>
+              {formatPrintCurrency(totalRevenue, restaurantSettings)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p className="print-footer">
+        Auto-generated by {restaurantSettings.restaurantName} POS System · Confidential
+      </p>
+    </div>
+  );
+}
+
 // --- Main Page ---
 
 export default function SalesReports() {
@@ -4204,6 +4392,36 @@ export default function SalesReports() {
           </div>
         </motion.div>
 
+        {/* Print Button */}
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.3 }}
+          onClick={() => window.print()}
+          className="screen-only"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 16px",
+            borderRadius: 12,
+            border: `1px solid ${DEEP_LINE}`,
+            background: DEEP,
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            boxShadow: "0 2px 8px rgba(26,58,42,0.25)",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#142d21"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(26,58,42,0.35)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = DEEP; e.currentTarget.style.boxShadow = "0 2px 8px rgba(26,58,42,0.25)"; }}
+          aria-label="Print Sales Report"
+        >
+          <Printer size={16} />
+          <span>Print Report</span>
+        </motion.button>
+
         {/* Summary Bar */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -4618,6 +4836,27 @@ export default function SalesReports() {
             />
           </motion.div>
         )}
+      </div>
+
+      {/* Print-Only Report Component - Only visible when printing */}
+      <div className="print-only print-report" data-print-root="true" aria-hidden="true">
+        <PrintReport
+          activeTab={activeTab}
+          period={period}
+          logs={logs}
+          orders={orders}
+          scopedLogs={scopedLogs}
+          filteredLogs={filteredLogs}
+          filterDescription={summaryFilterDescription}
+          restaurantSettings={restaurantSettings}
+          generatedBy={String(user?.username || user?.email || "Staff")}
+          logFromDate={logFromDate}
+          logToDate={logToDate}
+          logPaymentFilter={logPaymentFilter}
+          logOrderTypeFilter={logOrderTypeFilter}
+          logDeliveryPlatformFilter={logDeliveryPlatformFilter}
+          hasLogRange={hasLogRange}
+        />
       </div>
     </div>
   );

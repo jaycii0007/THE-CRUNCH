@@ -1583,6 +1583,70 @@ function OrderTypeModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Login Required Modal (guests only, shown when clicking Payout) ───────────────
+function LoginRequiredModal({
+  onLogin,
+  onSignUp,
+  onContinueShopping,
+}: {
+  onLogin: () => void;
+  onSignUp: () => void;
+  onContinueShopping: () => void;
+}) {
+  return (
+    <Modal onClose={onContinueShopping} width={420}>
+      <div style={{ padding: 28, textAlign: "center" }}>
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            border: `1px solid ${C.borderStrong}`,
+            color: C.warning,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 16px",
+          }}
+        >
+          <Icon d={D.shield} size={24} />
+        </div>
+        <h3
+          style={{
+            fontSize: 18,
+            fontWeight: 600,
+            color: C.text,
+            margin: "0 0 8px",
+          }}
+        >
+          Sign in to place your order
+        </h3>
+        <p
+          style={{
+            fontSize: 13.5,
+            color: C.muted,
+            lineHeight: 1.7,
+            margin: "0 0 24px",
+          }}
+        >
+          Your cart is saved. Please log in or sign up to complete checkout.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <Button full variant="primary" onClick={onLogin}>
+            Log In
+          </Button>
+          <Button full variant="secondary" onClick={onSignUp}>
+            Sign Up
+          </Button>
+          <Button full variant="ghost" onClick={onContinueShopping}>
+            Continue Shopping
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function OrderPlacedModal({
   orderNumber,
   cash,
@@ -2275,6 +2339,7 @@ export default function Delicacy() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [orderTypeOpen, setOrderTypeOpen] = useState(false);
   const [showCashTerms, setShowCashTerms] = useState(false);
+  const [showLoginRequired, setShowLoginRequired] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
 
@@ -2730,7 +2795,13 @@ export default function Delicacy() {
   };
 
   const handleRequestCashTerms = () => {
-    if (!isSubmitting && cart.length && canOrder()) setShowCashTerms(true);
+    if (!isSubmitting && cart.length) {
+      if (canOrder()) {
+        setShowCashTerms(true);
+      } else if (!user) {
+        setShowLoginRequired(true);
+      }
+    }
   };
   const handlePlaceCashOrder = () =>
     submitOrder(
@@ -2760,7 +2831,11 @@ export default function Delicacy() {
   };
 
   const handleSendPayment = async () => {
-    if (isSubmitting || !cart.length || !canOrder()) return;
+    if (isSubmitting || !cart.length) return;
+    if (!canOrder()) {
+      if (!user) setShowLoginRequired(true);
+      return;
+    }
     setIsSubmitting(true);
     setPaymentMessage(null);
     try {
@@ -3440,6 +3515,21 @@ export default function Delicacy() {
                 void handlePlaceCashOrder();
               }}
               onDecline={() => setShowCashTerms(false)}
+            />
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {showLoginRequired && (
+            <LoginRequiredModal
+              onLogin={() => {
+                setShowLoginRequired(false);
+                navigate(`/login?returnTo=${encodeURIComponent("/usersmenu")}`);
+              }}
+              onSignUp={() => {
+                setShowLoginRequired(false);
+                navigate(`/login?tab=signup&returnTo=${encodeURIComponent("/usersmenu")}`);
+              }}
+              onContinueShopping={() => setShowLoginRequired(false)}
             />
           )}
         </AnimatePresence>
