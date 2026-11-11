@@ -291,6 +291,7 @@ export default function App() {
 
       {/* ── Customer landing (public, but passes auth state for nav) ── */}
       <Route path="/products" element={<Products isAuthenticated={isAuth} />} />
+      <Route path="/products-v2" element={<ProductsV2 />} />
 
 
       {/* ── Customer menu ────────────────────────────────────── */}

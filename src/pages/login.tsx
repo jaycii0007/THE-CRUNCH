@@ -191,9 +191,9 @@ export default function Login() {
           setVerificationSuccess("Account created! A 6-digit verification code was sent to your email.");
           setIsVerifyModalOpen(true);
         } else {
-          const returnTo = getReturnDestination(location);
-          const targetRedirectPath = returnTo || ROLE_REDIRECT_PATHS.customer || HOME_PAGE_PATH;
-          navigate(targetRedirectPath, { replace: true });
+          switchAuthenticationMode("signin");
+          setEmailAddress(cleanedEmail);
+          setFormSuccessMessage("Account created successfully. You can now sign in.");
         }
       }
     } catch (networkError: any) {
@@ -224,10 +224,10 @@ export default function Login() {
 
     try {
       await authApi.verifyEmail(verificationEmail, cleanedCode);
-      const returnTo = getReturnDestination(location);
-      const targetRedirectPath = returnTo || ROLE_REDIRECT_PATHS.customer || HOME_PAGE_PATH;
       setIsVerifyModalOpen(false);
-      navigate(targetRedirectPath, { replace: true });
+      switchAuthenticationMode("signin");
+      setEmailAddress(verificationEmail);
+      setFormSuccessMessage("Email verified successfully. Please sign in to continue.");
     } catch (networkError: any) {
       setVerificationError(networkError?.message || "Could not verify code. Please try again.");
     } finally {
@@ -321,10 +321,10 @@ export default function Login() {
 
     try {
       await authApi.resetPassword(cleanedEmail, forgotResetAuthorization, newPasswordValue);
-      const returnTo = getReturnDestination(location);
-      const targetRedirectPath = returnTo || ROLE_REDIRECT_PATHS.customer || HOME_PAGE_PATH;
       setIsForgotModalOpen(false);
-      navigate(targetRedirectPath, { replace: true });
+      switchAuthenticationMode("signin");
+      setEmailAddress(cleanedEmail);
+      setFormSuccessMessage("Password reset successfully. You can now sign in.");
     } catch (networkError: any) {
       setForgotModalError(networkError?.message || "Could not reset password. Please check your code.");
     } finally {

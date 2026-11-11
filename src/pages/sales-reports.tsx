@@ -3782,8 +3782,8 @@ function PrintReport({
               <th style={{ textAlign: "right" }}>Amount</th>
             </tr>
           </thead>
-          <tbody>
-            {logRows}
+          <tbody dangerouslySetInnerHTML={{ __html: logRows }} />
+          <tfoot>
             <tr className="revenue-summary">
               <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
                 Total Revenue
@@ -3792,7 +3792,7 @@ function PrintReport({
                 {formatPrintCurrency(totalRevenue, restaurantSettings)}
               </td>
             </tr>
-          </tbody>
+          </tfoot>
         </table>
 
         <p className="print-footer">
@@ -3926,8 +3926,8 @@ function PrintReport({
             <th style={{ textAlign: "right" }}>Amount</th>
           </tr>
         </thead>
-        <tbody>
-          {orderRows}
+        <tbody dangerouslySetInnerHTML={{ __html: orderRows }} />
+        <tfoot>
           <tr className="revenue-summary">
             <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
               Total Revenue
@@ -3936,7 +3936,7 @@ function PrintReport({
               {formatPrintCurrency(totalRevenue, restaurantSettings)}
             </td>
           </tr>
-        </tbody>
+        </tfoot>
       </table>
 
       <p className="print-footer">
