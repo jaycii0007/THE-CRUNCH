@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../../services/api";
 import { CloseBtn } from "../CloseBtn";
 import { ExpiryChip } from "../ExpiryChip";
 import type { PurchaseOrder } from "../../types/inventory";
@@ -14,7 +15,7 @@ import { getPOItemDateTrackingType, getPOItemCategoryTrackingType } from "../../
 const RECEIPT_NUMBER_MAX_LENGTH = 25;
 const RECEIPT_NUMBER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 /-]*$/;
 const RECEIVED_QUANTITY_MAX = 100_000;
-const RECEIVED_QUANTITY_PATTERN = /^\d+(?:\.\d{0,2})?(?:\s*[a-z]+)?\s*$/i;
+const RECEIVED_QUANTITY_PATTERN = /^\d+(?:\.\d{0,2})?$/;
 
 function getUsableUntilPreview(
   receivedDate: string,
@@ -105,6 +106,23 @@ export function ReceivePOModal({
     () => Object.fromEntries(order.items.map((item) => [item.id, String(item.quantity)])),
   );
   const [itemReceivedQuantityErrors, setItemReceivedQuantityErrors] = useState<Record<number, string>>({});
+  const [units, setUnits] = useState<{ unit_id: number; name: string; abbreviation?: string | null; base_unit_id?: number | null; conversion_to_base?: number | string | null; is_active: boolean | number }[]>([]);
+  const [itemUnitIds, setItemUnitIds] = useState<Record<number, string>>({});
+  useEffect(() => {
+    api.getInventoryUnits().then(setUnits).catch(() => onShowToast("Could not load compatible units. Inventory units remain available.", "error"));
+  }, []);
+  const receivingQuantities = Object.fromEntries(order.items.map((item) => {
+    const inventoryUnit = units.find((unit) => [unit.name, unit.abbreviation].some((name) => String(name ?? "").trim().toLowerCase() === item.unit.trim().toLowerCase()));
+    const compatibleUnits = units.filter((unit) => Number(unit.is_active) && inventoryUnit && unit.unit_id !== inventoryUnit.unit_id &&
+      ((unit.base_unit_id === inventoryUnit.unit_id && Number(unit.conversion_to_base) > 0) ||
+       (inventoryUnit.base_unit_id === unit.unit_id && Number(inventoryUnit.conversion_to_base) > 0)));
+    const selectedUnit = compatibleUnits.find((unit) => String(unit.unit_id) === itemUnitIds[item.id]);
+    const factor = !itemUnitIds[item.id] ? 1 :
+      selectedUnit?.base_unit_id === inventoryUnit?.unit_id ? Number(selectedUnit?.conversion_to_base) :
+      inventoryUnit?.base_unit_id === selectedUnit?.unit_id ? 1 / Number(inventoryUnit?.conversion_to_base) : NaN;
+    return [item.id, { inventoryUnit, compatibleUnits, quantity: Number(itemReceivedQuantities[item.id]) * factor }];
+  }));
+
 
   const updateReceiptNo = (value: string) => {
     if (value.length > RECEIPT_NUMBER_MAX_LENGTH) {
@@ -166,16 +184,19 @@ export function ReceivePOModal({
     }
     const invalidQuantity = order.items.find((item) => {
       const raw = itemReceivedQuantities[item.id] ?? "";
-      const quantity = Number.parseFloat(raw);
+      const quantity = receivingQuantities[item.id].quantity;
       return (
         !RECEIVED_QUANTITY_PATTERN.test(raw) ||
         !Number.isFinite(quantity) ||
         quantity < 0 ||
-        (!/[a-z]/i.test(raw) && quantity > RECEIVED_QUANTITY_MAX)
+        quantity > RECEIVED_QUANTITY_MAX ||
+        Math.abs(quantity * 100 - Math.round(quantity * 100)) > 0.000001 ||
+        Math.round(quantity * 100) > Math.round(item.quantity * 100) ||
+        Math.round(quantity * 100) < Math.round(Number(item.receivedQuantity ?? 0) * 100)
       );
     });
     if (invalidQuantity) {
-      const message = `Actual received quantity for ${invalidQuantity.name} must be a quantity with up to two decimals, optionally followed by a unit abbreviation (e.g. 2 kg). The converted quantity must be within the receiving limit.`;
+      const message = `Actual received quantity for ${invalidQuantity.name} must convert to a quantity with up to two decimals in ${invalidQuantity.unit}, between the previously received and ordered quantities (maximum 100,000).`;
       setItemReceivedQuantityErrors((current) => ({
         ...current,
         [invalidQuantity.id]: message,
@@ -183,12 +204,12 @@ export function ReceivePOModal({
       onShowToast(message, "error");
       return;
     }
-    if (!order.items.some((item) => Number.parseFloat(itemReceivedQuantities[item.id] ?? "") > 0)) {
+    if (!order.items.some((item) => receivingQuantities[item.id].quantity > Number(item.receivedQuantity ?? 0))) {
       onShowToast("At least one item must have an actual received quantity greater than zero.", "error");
       return;
     }
     const missing = order.items.filter((item) => {
-      if (Number.parseFloat(itemReceivedQuantities[item.id] ?? "") === 0) return false;
+      if (receivingQuantities[item.id].quantity === 0) return false;
       const trackingType = getPOItemDateTrackingType(
         item,
         inventoryCategoryNameLookup,
@@ -231,7 +252,7 @@ export function ReceivePOModal({
       receivedDate,
       itemExpiryDates,
       itemReceivedQuantities: Object.fromEntries(
-        Object.entries(itemReceivedQuantities).map(([itemId, value]) => [Number(itemId), /[a-z]/i.test(value) ? value.trim() : Number(value)]),
+        order.items.map((item) => [item.id, Number(receivingQuantities[item.id].quantity.toFixed(2))]),
       ),
       itemShelfLife: Object.fromEntries(
         Object.entries(itemShelfLife).map(([itemId, value]) => [
@@ -403,17 +424,30 @@ export function ReceivePOModal({
                 </div>
                 <div className="mb-3 rounded-xl border border-violet-100 bg-violet-50/40 p-3">
                   <label className="block text-xs font-semibold text-violet-700 mb-1.5">
-                    Actual Received Quantity ({item.unit})
+                    Actual Received Quantity
                   </label>
                   <input
                     type="text"
                     value={itemReceivedQuantities[item.id] ?? ""}
-                    placeholder={`e.g. 2 kg, or a number in ${item.unit}`}
+                    inputMode="decimal"
+                    onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: true })}
+                    placeholder="e.g. 5"
                     onChange={(event) => updateReceivedQuantity(item.id, event.target.value)}
                     aria-invalid={Boolean(itemReceivedQuantityErrors[item.id])}
                     aria-describedby={itemReceivedQuantityErrors[item.id] ? `po-received-quantity-error-${item.id}` : undefined}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-200"
                   />
+                  <label className="mt-3 block text-xs font-semibold text-violet-700 mb-1.5" htmlFor={`po-received-unit-${item.id}`}>Unit</label>
+                  <select id={`po-received-unit-${item.id}`} value={itemUnitIds[item.id] ?? ""}
+                    onChange={(event) => {
+                      setItemUnitIds((current) => ({ ...current, [item.id]: event.target.value }));
+                      setItemReceivedQuantityErrors((current) => ({ ...current, [item.id]: "" }));
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-200">
+                    <option value="">{receivingQuantities[item.id].inventoryUnit?.name || item.unit}{receivingQuantities[item.id].inventoryUnit?.abbreviation ? ` (${receivingQuantities[item.id].inventoryUnit?.abbreviation})` : ""}</option>
+                    {receivingQuantities[item.id].compatibleUnits.map((unit) => <option key={unit.unit_id} value={unit.unit_id}>{unit.name}{unit.abbreviation ? ` (${unit.abbreviation})` : ""}</option>)}
+                  </select>
+                  <p className="mt-2 text-xs text-violet-700">Equivalent Inventory Quantity: {itemReceivedQuantities[item.id]?.trim() && Number.isFinite(receivingQuantities[item.id].quantity) ? receivingQuantities[item.id].quantity.toLocaleString("en-PH", { maximumFractionDigits: 6 }) : "--"} {item.unit}</p>
                   {itemReceivedQuantityErrors[item.id] && (
                     <p id={`po-received-quantity-error-${item.id}`} role="alert" className="mt-1 text-[11px] text-red-500">
                       {itemReceivedQuantityErrors[item.id]}

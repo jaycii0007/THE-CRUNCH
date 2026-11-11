@@ -13,6 +13,7 @@ import type {
   StockAlertSettings,
   Supplier,
 } from "../../types/inventory";
+import { api } from "../../services/api";
 import { toNumber } from "../../utils/formatters";
 import { ButtonSpinner } from "@/components/ui/spinner";
 import {
@@ -133,6 +134,11 @@ export function CreatePOModal({
     quantityTouched: false,
     ...overrides,
   });
+
+  const [units, setUnits] = useState<{ unit_id: number; name: string; abbreviation?: string | null; base_unit_id?: number | null; conversion_to_base?: number | string | null; is_active: boolean | number }[]>([]);
+  useEffect(() => {
+    api.getInventoryUnits().then(setUnits).catch(() => onShowToast("Could not load compatible units. Inventory units remain available.", "error"));
+  }, []);
 
   const today = useMemo(() => toLocalISODate(), []);
   const productById = useMemo(
@@ -261,18 +267,24 @@ export function CreatePOModal({
       } else firstRowByName.set(key, index);
 
       const rawQuantity = item.quantity.trim();
-      const quantity = toNumber(rawQuantity, Number.NaN);
+      const inventoryUnit = units.find((unit) => [unit.name, unit.abbreviation].some((name) => normalize(name ?? "") === normalize(product?.unit ?? "")));
+      const selectedUnit = units.find((unit) => unit.name === item.unit);
+      const factor = item.unit === product?.unit ? 1 :
+        selectedUnit?.base_unit_id === inventoryUnit?.unit_id ? Number(selectedUnit?.conversion_to_base) :
+        inventoryUnit?.base_unit_id === selectedUnit?.unit_id ? 1 / Number(inventoryUnit?.conversion_to_base) : NaN;
+      const quantity = toNumber(rawQuantity, Number.NaN) * factor;
       if (
         !QUANTITY_PATTERN.test(rawQuantity) ||
         !Number.isFinite(quantity) ||
         quantity < 1 ||
-        quantity > QUANTITY_MAX
+        quantity > QUANTITY_MAX ||
+        Math.abs(quantity * 100 - Math.round(quantity * 100)) > 0.000001
       ) {
-        errors.quantity = "Enter a quantity from 1 to 100,000 with up to two decimal places.";
+        errors.quantity = "Enter an equivalent inventory quantity from 1 to 100,000 with up to two decimal places.";
       }
       return errors;
     });
-  }, [items, productById, productByName, orderableProducts]);
+  }, [items, productById, productByName, orderableProducts, units]);
 
   const supplierError = selectedSupplierId === "" ? "Select a supplier to continue." : "";
   const itemsAreValid = itemErrors.every(
@@ -470,13 +482,18 @@ export function CreatePOModal({
       const product =
         (item.productId ? productById.get(item.productId) : undefined) ??
         productByName.get(normalize(item.name));
+      const inventoryUnit = units.find((unit) => [unit.name, unit.abbreviation].some((name) => normalize(name ?? "") === normalize(product?.unit ?? "")));
+      const selectedUnit = units.find((unit) => unit.name === item.unit);
+      const factor = item.unit === product?.unit ? 1 :
+        selectedUnit?.base_unit_id === inventoryUnit?.unit_id ? Number(selectedUnit?.conversion_to_base) :
+        inventoryUnit?.base_unit_id === selectedUnit?.unit_id ? 1 / Number(inventoryUnit?.conversion_to_base) : NaN;
       return {
         id: index + 1,
         productId: product?.product_id ?? item.productId,
         name: product?.product_name ?? item.name.trim(),
         category: product?.category ?? item.category,
         unit: product?.unit ?? item.unit,
-        quantity: toNumber(item.quantity),
+        quantity: Number((toNumber(item.quantity) * factor).toFixed(2)),
         ...(item.unitCost == null ? {} : { unitCost: item.unitCost }),
       };
     });
@@ -690,6 +707,13 @@ export function CreatePOModal({
                   const quantityError = item.quantityTouched ? errors.quantity : undefined;
                   const matched = !!((item.productId && productById.get(item.productId)) || productByName.get(normalize(item.name)));
                   const newAssociation = matched && !supplierProductSet.has(normalize(item.name));
+                  const product = productById.get(item.productId ?? 0);
+                  const inventoryUnit = units.find((unit) => [unit.name, unit.abbreviation].some((name) => normalize(name ?? "") === normalize(product?.unit ?? "")));
+                  const selectedUnit = units.find((unit) => unit.name === item.unit);
+                  const factor = item.unit === product?.unit ? 1 :
+                    selectedUnit?.base_unit_id === inventoryUnit?.unit_id ? Number(selectedUnit?.conversion_to_base) :
+                    inventoryUnit?.base_unit_id === selectedUnit?.unit_id ? 1 / Number(inventoryUnit?.conversion_to_base) : NaN;
+
                   return (
                     <div key={item.uid} className="rounded-xl border border-slate-200 p-4">
                       <div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-slate-500">Material {index + 1}</p><button type="button" onClick={() => { if (items.length > 1) { setItems((current) => current.filter((entry) => entry.uid !== item.uid)); setIsDirty(true); } }} disabled={items.length === 1} aria-label={`Remove material ${index + 1}`} className="text-xs font-semibold text-slate-400 hover:text-red-500 disabled:opacity-30">Remove</button></div>
@@ -704,7 +728,15 @@ export function CreatePOModal({
                           {!nameError && newAssociation && <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">New to supplier</span>}
                         </div>
                         <div><label htmlFor={`po-item-qty-${item.uid}`} className="mb-1 block text-[11px] text-slate-500">Quantity</label><input id={`po-item-qty-${item.uid}`} type="text" inputMode="decimal" value={item.quantity} onChange={(event) => { updateItem(item.uid, { quantity: event.target.value, quantityTouched: true }); setIsDirty(true); }} onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: true })} onBlur={() => updateItem(item.uid, { quantityTouched: true })} aria-invalid={!!quantityError} className={fieldClass(!!quantityError)} />{quantityError && <p role="alert" className="mt-1 text-[11px] text-red-500">{quantityError}</p>}</div>
-                        <div><label className="mb-1 block text-[11px] text-slate-500">Unit</label><input value={item.unit} readOnly tabIndex={-1} placeholder="From inventory" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500" /></div>
+                        <div><label className="mb-1 block text-[11px] text-slate-500">Unit</label><select aria-label={`Order unit for ${item.name || "material"}`} value={item.unit} className={fieldClass()} onChange={(event) => { updateItem(item.uid, { unit: event.target.value }); setIsDirty(true); }}>
+                          <option value={productById.get(item.productId ?? 0)?.unit ?? item.unit}>{productById.get(item.productId ?? 0)?.unit ?? item.unit}</option>
+                          {units.filter((unit) => {
+                            const inventoryUnit = units.find((entry) => [entry.name, entry.abbreviation].some((name) => normalize(name ?? "") === normalize(productById.get(item.productId ?? 0)?.unit ?? "")));
+                            return Number(unit.is_active) && inventoryUnit && unit.unit_id !== inventoryUnit.unit_id &&
+                              ((unit.base_unit_id === inventoryUnit.unit_id && Number(unit.conversion_to_base) > 0) ||
+                               (inventoryUnit.base_unit_id === unit.unit_id && Number(inventoryUnit.conversion_to_base) > 0));
+                          }).map((unit) => <option key={unit.unit_id} value={unit.name}>{unit.abbreviation || unit.name}</option>)}
+                        </select>{product && item.unit !== product.unit && Number.isFinite(factor) && <p className="mt-1 text-[11px] text-slate-500">Inventory equivalent: {Number((toNumber(item.quantity) * factor).toFixed(2))} {product.unit}</p>}</div>
                       </div>
                     </div>
                   );

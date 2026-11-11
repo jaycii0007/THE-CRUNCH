@@ -165,19 +165,6 @@ const formatPeso = (value: number | string) =>
   formatCurrencyAmount(Number(value || 0));
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "Unknown error";
-const isArchivableDeleteConflict = (error: unknown) => {
-  if (!error || typeof error !== "object") return false;
-  const failure = error as { status?: unknown; data?: unknown };
-  const data =
-    failure.data && typeof failure.data === "object"
-      ? (failure.data as { code?: unknown; canArchive?: unknown })
-      : null;
-  return (
-    failure.status === 409 &&
-    (data?.code === "PRODUCT_HAS_PROTECTED_HISTORY" ||
-      data?.canArchive === true)
-  );
-};
 
 function useNow() {
   const [now, setNow] = useState(new Date());
@@ -1449,12 +1436,11 @@ function MenuAdminTab() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [formTarget, setFormTarget] = useState<MenuItem | "new" | null>(null); // which item the form is open for
-  const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null);
+  const [showDisabledItems, setShowDisabledItems] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<{
     item: MenuItem;
     action: "archive" | "restore";
   } | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [availabilitySavingId, setAvailabilitySavingId] = useState<
     number | null
@@ -1463,6 +1449,7 @@ function MenuAdminTab() {
   const term = search.trim().toLowerCase();
   const visible = items.filter(
     (item) =>
+      !isArchived(item) &&
       (categoryFilter === "all" || item.category === categoryFilter) &&
       (statusFilter === "all" ||
         (isChickenFlavor(item)
@@ -1504,28 +1491,6 @@ function MenuAdminTab() {
     }
   }
 
-  async function deleteItem(item: MenuItem) {
-    const productId = item.rawProductId ?? item.id;
-
-    try {
-      setDeleting(true);
-      await api.delete(`/products/${productId}`);
-      await reload();
-      setDeleteTarget(null);
-      toast("Product deleted successfully.", "success");
-    } catch (error) {
-      if (isArchivableDeleteConflict(error)) {
-        toast(`Delete blocked: ${errorText(error)}`, "warning");
-        setDeleteTarget(null);
-        setArchiveTarget({ item, action: "archive" });
-      } else {
-        toast(`Failed to delete: ${errorText(error)}`, "error");
-      }
-    } finally {
-      setDeleting(false);
-    }
-  }
-
   async function changeArchiveState(
     item: MenuItem,
     action: "archive" | "restore",
@@ -1534,16 +1499,16 @@ function MenuAdminTab() {
     try {
       setArchiving(true);
       await api.patch(`/products/${productId}/${action}`);
-      await reload();
       setArchiveTarget(null);
+      await reload();
       toast(
         action === "archive"
-          ? `"${item.name}" archived. Historical records were preserved.`
-          : `"${item.name}" restored. Live ingredient and stock availability still applies.`,
+          ? `"${item.name}" disabled. Its settings and history were preserved.`
+          : `"${item.name}" enabled. Ingredient and stock availability still applies.`,
         "success",
       );
     } catch (error) {
-      toast(`Failed to ${action}: ${errorText(error)}`, "error");
+      toast(`Failed to ${action === "archive" ? "disable" : "enable"}: ${errorText(error)}`, "error");
     } finally {
       setArchiving(false);
     }
@@ -1657,6 +1622,7 @@ function MenuAdminTab() {
             <Button onClick={() => void reload()} disabled={loading}>
               {loading ? "Refreshing..." : "Refresh"}
             </Button>
+            <Button onClick={() => setShowDisabledItems(true)}>Disabled Items</Button>
             <Button variant="solid" onClick={() => setFormTarget("new")}>
               + Add menu item
             </Button>
@@ -1844,17 +1810,6 @@ function MenuAdminTab() {
                         </td>
                         <td className="px-4 py-3.5">
                           <div className="flex justify-end gap-1">
-                            {isArchived(item) ? (
-                              <Button
-                                variant="solid"
-                                small
-                                onClick={() =>
-                                  setArchiveTarget({ item, action: "restore" })
-                                }
-                              >
-                                Restore
-                              </Button>
-                            ) : (
                               <>
                                 <Button
                                   variant="ghost"
@@ -1882,12 +1837,11 @@ function MenuAdminTab() {
                                 <Button
                                   variant="danger"
                                   small
-                                  onClick={() => setDeleteTarget(item)}
+                                  onClick={() => setArchiveTarget({ item, action: "archive" })}
                                 >
-                                  Delete
+                                  Disable
                                 </Button>
                               </>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -1919,37 +1873,26 @@ function MenuAdminTab() {
         />
       )}
 
-      {deleteTarget && (
-        <Modal
-          eyebrow="Confirm deletion"
-          title="Delete menu item"
-          onClose={() => setDeleteTarget(null)}
-          footer={
-            <>
-              <Button
-                variant="ghost"
-                onClick={() => setDeleteTarget(null)}
-                disabled={deleting}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="dangerSolid"
-                onClick={() => void deleteItem(deleteTarget)}
-                disabled={deleting}
-              >
-                {deleting ? "Deleting..." : "Yes, delete"}
-              </Button>
-            </>
-          }
-        >
-          <p className="text-[13px] leading-relaxed" style={{ color: T.muted }}>
-            Are you sure you want to delete{" "}
-            <span className="font-semibold" style={{ color: T.ink }}>
-              {deleteTarget.name}
-            </span>
-            ? This action cannot be undone.
-          </p>
+      {showDisabledItems && !archiveTarget && formTarget === null && (
+        <Modal title="Disabled Items" onClose={() => setShowDisabledItems(false)}>
+          {items.filter(isArchived).length === 0 ? (
+            <p className="text-[13px]" style={{ color: T.muted }}>No disabled items.</p>
+          ) : (
+            <div className="divide-y" style={{ borderColor: T.line }}>
+              {items.filter(isArchived).map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 py-3">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: T.ink }}>{item.name}</p>
+                    <p className="text-xs" style={{ color: T.muted }}>{isChickenFlavor(item) ? "Sauces" : item.category}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" small onClick={() => setFormTarget(item)}>Edit</Button>
+                    <Button variant="solid" small disabled={archiving} onClick={() => setArchiveTarget({ item, action: "restore" })}>Enable</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Modal>
       )}
 
@@ -1957,13 +1900,13 @@ function MenuAdminTab() {
         <Modal
           eyebrow={
             archiveTarget.action === "archive"
-              ? "Historical records protected"
-              : "Restore archived item"
+              ? "Confirm disable"
+              : "Enable disabled item"
           }
           title={
             archiveTarget.action === "archive"
-              ? "Archive menu item instead?"
-              : "Restore menu item?"
+              ? "Disable menu item?"
+              : "Enable menu item?"
           }
           onClose={() => setArchiveTarget(null)}
           footer={
@@ -1990,8 +1933,8 @@ function MenuAdminTab() {
                 {archiving
                   ? "Saving..."
                   : archiveTarget.action === "archive"
-                    ? "Archive item"
-                    : "Restore item"}
+                    ? "Disable item"
+                    : "Enable item"}
               </Button>
             </>
           }
@@ -2002,14 +1945,13 @@ function MenuAdminTab() {
                 <span className="font-semibold" style={{ color: T.ink }}>
                   {archiveTarget.item.name}
                 </span>{" "}
-                cannot be permanently deleted because historical or active
-                records reference it. Archiving removes it from Cashier and
-                customer ordering while preserving orders, receipts, inventory
-                deductions, recipes, and product history.
+                will be hidden from the active list, Cashier, and customer ordering.
+                Its price, category, recipe, settings, and historical records will
+                be preserved. You can re-enable it from Disabled Items.
               </>
             ) : (
               <>
-                Restore{" "}
+                Enable{" "}
                 <span className="font-semibold" style={{ color: T.ink }}>
                   {archiveTarget.item.name}
                 </span>{" "}

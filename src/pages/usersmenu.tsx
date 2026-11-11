@@ -70,6 +70,7 @@ interface InventoryMenuRow {
   product_id?: number;
   id?: number;
   item_type?: string;
+  requires_sauce?: boolean;
   product_name?: string;
   name?: string;
   description?: string | null;
@@ -99,6 +100,7 @@ interface Recipe {
   category: string;
   available: boolean;
   nutrition: Nutrition | null;
+  requiresSauce?: boolean;
 }
 interface MenuCategoryRecord {
   name: string;
@@ -109,6 +111,7 @@ interface MenuCategoryRecord {
 interface CartItem {
   recipe: Recipe;
   quantity: number;
+  selectedFlavorProductId?: number;
 }
 interface CustomerOrder {
   id: number;
@@ -167,7 +170,7 @@ const pendingPayMongoKey = (customerUserId: number) =>
 
 function cartPaymentFingerprint(cart: CartItem[]) {
   return cart
-    .map((item) => `${Number(item.recipe.id)}:${Number(item.quantity)}`)
+    .map((item) => `${Number(item.recipe.id)}:${Number(item.quantity)}:${item.selectedFlavorProductId ?? ""}`)
     .sort()
     .join("|");
 }
@@ -502,6 +505,7 @@ function mapMenuRows(rows: InventoryMenuRow[]): Recipe[] {
       image: resolvedImg,
       available: stock > 0 && flagOk,
       nutrition: mapNutrition(row),
+      requiresSauce: row.requires_sauce === true,
     };
   });
 }
@@ -1962,6 +1966,8 @@ function CartDrawer({
   onClose,
   onRemove,
   onChangeQty,
+  sauces,
+  onSelectSauce,
   onClear,
   onSendPayment,
   onVerifyPayment,
@@ -1978,6 +1984,8 @@ function CartDrawer({
   storeOpen: boolean;
   stockWarningId: number | null;
   onClose: () => void;
+  sauces: { id: number; name: string }[];
+  onSelectSauce: (id: number, sauceId: number) => void;
   onRemove: (id: number) => void;
   onChangeQty: (id: number, delta: number) => void;
   onClear: () => void;
@@ -2126,7 +2134,7 @@ function CartDrawer({
           Add items from the menu to get started.
         </p>
       ) : (
-        cart.map(({ recipe, quantity }) => (
+        cart.map(({ recipe, quantity, selectedFlavorProductId }) => (
           <div
             key={recipe.id}
             style={{
@@ -2161,6 +2169,17 @@ function CartDrawer({
                   {formatPHP(recipe.price * quantity)}
                 </span>
               </div>
+              {recipe.requiresSauce && (
+                <label style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+                  Included sauce (required)
+                  <select aria-label={`Included sauce for ${recipe.name}`} value={selectedFlavorProductId ?? ""}
+                    onChange={(event) => onSelectSauce(recipe.id, Number(event.target.value))}
+                    style={{ display: "block", width: "100%", color: C.text, background: C.surfaceAlt, padding: 8 }}>
+                    <option value="">Choose one sauce</option>
+                    {sauces.map((sauce) => <option key={sauce.id} value={sauce.id}>{sauce.name}</option>)}
+                  </select>
+                </label>
+              )}
               {stockWarningId === recipe.id && (
                 <p style={{ fontSize: 12, color: C.danger, margin: "4px 0 0" }}>
                   Only {recipe.stock} in stock. You can't add more.
@@ -2315,10 +2334,30 @@ export default function Delicacy() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  // Only an active hosted-checkout handoff is persisted; ordinary carts stay in memory.
+  const savedCart = useRef<{ productId: number; quantity: number; selectedFlavorProductId?: number }[] | null>(null);
+  const [sauces, setSauces] = useState<{ id: number; name: string }[]>([]);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("the-crunch:customer-cart") || "[]");
+      savedCart.current = Array.isArray(saved) ? saved.filter((item) =>
+        Number.isSafeInteger(item?.productId) && item.productId > 0 &&
+        Number.isSafeInteger(item?.quantity) && item.quantity > 0) : [];
+    } catch { savedCart.current = []; }
+  }, []);
+
+  // Hosted checkout retains precedence over the ordinary browser cart.
   const [cart, setCart] = useState<CartItem[]>(
     () => readPendingPayMongoCheckout(customerUserId)?.cart ?? [],
   );
+  useEffect(() => {
+    if (loading || loadError || savedCart.current !== null) return;
+    try {
+      sessionStorage.setItem("the-crunch:customer-cart", JSON.stringify(cart.map((item) => ({
+        productId: item.recipe.id, quantity: item.quantity,
+        selectedFlavorProductId: item.selectedFlavorProductId,
+      }))));
+    } catch { /* Cart remains usable when browser storage is unavailable. */ }
+  }, [cart, loading, loadError]);
   const [paymentSession, setPaymentSession] =
     useState<PaymentSessionState | null>(null);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
@@ -2448,6 +2487,11 @@ export default function Delicacy() {
           .get<MenuCategoryRecord[]>("/settings/menu-categories?activeOnly=1")
           .catch(() => []),
       ]);
+      setSauces(productRows.filter((row) =>
+        isSelectionOnlySauceCategory(row.category, configuredCategories) &&
+        normalizeName(row.availability_status) !== "hidden" &&
+        !isUnavailable(row.availability_status))
+        .map((row) => ({ id: Number(row.product_id ?? row.id), name: String(row.product_name ?? row.name) })));
       // Exclude selection-only sauce labels from the purchasable catalog,
       // category tabs and cart refresh; keep normal sellable sauces visible.
       const recipes = mapMenuRows(
@@ -2466,12 +2510,17 @@ export default function Delicacy() {
         visibleCategories.includes(current) ? current : "All",
       );
       // Re-sync the cart with fresh stock: drop sold-out items and cap quantities.
+      const restored = savedCart.current;
+      savedCart.current = null;
       setCart((prev) =>
-        prev.flatMap((item) => {
+        (prev.length ? prev : (restored ?? []).flatMap((item) => {
+          const recipe = recipes.find((entry) => entry.id === item.productId);
+          return recipe ? [{ recipe, quantity: item.quantity, selectedFlavorProductId: item.selectedFlavorProductId }] : [];
+        })).flatMap((item) => {
           const current = recipes.find((r) => r.id === item.recipe.id);
           const max = current ? getEffectiveMaxQuantity(current.stock) : 0;
           return current && max > 0
-            ? [{ recipe: current, quantity: Math.min(item.quantity, max) }]
+            ? [{ ...item, recipe: current, quantity: Math.min(item.quantity, max) }]
             : [];
         }),
       );
@@ -2724,6 +2773,7 @@ export default function Delicacy() {
   const buildItems = () =>
     cart.map((i) => ({
       product_id: i.recipe.id,
+      selected_flavor_product_id: i.selectedFlavorProductId,
       qty: i.quantity,
       subtotal: i.recipe.price * i.quantity,
       name: i.recipe.name,
@@ -2745,6 +2795,8 @@ export default function Delicacy() {
       return fail("Please verify your email before placing an order.");
     }
     if (!storeOpen) return fail(STORE_CLOSED_MESSAGE);
+    if (cart.some((item) => item.recipe.requiresSauce && !sauces.some((sauce) => sauce.id === item.selectedFlavorProductId)))
+      return fail("Choose one included sauce for each meal that requires it.");
     if (
       cart.some(
         (i) =>
@@ -3484,6 +3536,11 @@ export default function Delicacy() {
         <AnimatePresence>
           {drawerOpen && (
             <CartDrawer
+              sauces={sauces}
+              onSelectSauce={(id, sauceId) => {
+                clearPayment();
+                setCart((current) => current.map((item) => item.recipe.id === id ? { ...item, selectedFlavorProductId: sauceId || undefined } : item));
+              }}
               cart={cart}
               billing={billing}
               storeOpen={storeOpen}
