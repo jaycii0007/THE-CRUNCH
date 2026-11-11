@@ -300,16 +300,17 @@ function batchDateText(value: unknown): string {
 }
 
 function batchExpiryTime(batch: MaterialBatch): number | null {
-  const raw = String(batch.usable_until || batch.expiry_date || "").trim();
-  if (!raw) return null;
-  // Expiry DATE values are valid through the end of that date in PH time.
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw)
-    ? `${raw}T23:59:59+08:00`
-    : /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)$/.test(raw)
-      ? `${raw.replace(" ", "T")}+08:00`
-      : raw;
-  const timestamp = Date.parse(normalized);
-  return Number.isFinite(timestamp) ? timestamp : null;
+  const cutoffs = [batch.usable_until, batch.expiry_date].flatMap((value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return [];
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+      ? `${raw}T00:00:00+08:00`
+      : /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)$/.test(raw)
+        ? `${raw.replace(" ", "T")}+08:00` : raw;
+    const timestamp = Date.parse(normalized);
+    return Number.isFinite(timestamp) ? [timestamp] : [];
+  });
+  return cutoffs.length ? Math.min(...cutoffs) : null;
 }
 
 function batchShelfLifeText(batch: MaterialBatch): string {
@@ -334,13 +335,12 @@ function batchStatus(batch: MaterialBatch): {
 } {
   const remaining = Number(batch.remaining_qty ?? 0);
   const recordedStatus = String(batch.status ?? "").toLowerCase();
+  if (remaining <= 0) return { label: "Depleted", tone: "neutral" };
   if (recordedStatus === "expired") return { label: "Expired", tone: "danger" };
-  if (remaining <= 0)
-    return { label: "No recorded remainder", tone: "neutral" };
   const expiry = batchExpiryTime(batch);
   if (expiry !== null) {
     const remainingMs = expiry - Date.now();
-    if (remainingMs < 0) return { label: "Expired", tone: "danger" };
+    if (remainingMs <= 0) return { label: "Expired", tone: "danger" };
     if (remainingMs <= 3 * 24 * 60 * 60 * 1000)
       return { label: "Near expiry (3 days)", tone: "warning" };
   }
@@ -386,12 +386,18 @@ export default function StockManager() {
     useState<InventoryAlertsPayload | null>(null);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
-  // Batch viewer is strictly read-only; sales and PO processing are unchanged.
+  // Disposal uses the existing batch-specific spoilage transaction.
   const [batchMaterial, setBatchMaterial] = useState<Product | null>(null);
   const [batchRows, setBatchRows] = useState<MaterialBatch[]>([]);
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const batchRequestRef = useRef(0);
+  const [showDepletedBatches, setShowDepletedBatches] = useState(false);
+  const [disposingBatch, setDisposingBatch] = useState<number | null>(null);
+  const disposalInFlight = useRef(false);
+  const canDispose = ["administrator", "inventory_manager", "inventory manager", "stock_manager", "stockmanager", "inventorymanager"]
+    .includes(String(user?.role ?? "").trim().toLowerCase().replace(/-/g, "_"));
+  const visibleBatchRows = batchRows.filter((batch) => showDepletedBatches || Number(batch.remaining_qty ?? 0) > 0);
 
   const openBatchDetails = useCallback(async (material: Product) => {
     const requestId = ++batchRequestRef.current;
@@ -414,7 +420,7 @@ export default function StockManager() {
         if (aExpiry !== bExpiry) return aExpiry - bExpiry;
         return String(a.received_date ?? "").localeCompare(
           String(b.received_date ?? ""),
-        );
+        ) || Number(a.batch_id) - Number(b.batch_id);
       });
       setBatchRows(rows);
     } catch (err) {
@@ -433,6 +439,7 @@ export default function StockManager() {
     setBatchRows([]);
     setBatchError(null);
     setBatchLoading(false);
+    setShowDepletedBatches(false);
   }, []);
 
   useEffect(() => {
@@ -458,8 +465,9 @@ export default function StockManager() {
     signed_quantity: number | string;
     unit: string;
     occurred_at: string;
-    order_number: number;
-    source_type: "order" | "order_refund";
+    order_number: number | null;
+    batch_id?: number | null;
+    source_type: "order" | "order_refund" | "expired_disposal";
   }[]>([]);
   const [movementsError, setMovementsError] = useState<string | null>(null);
   const alertsLoadStarted = useRef(false);
@@ -1484,7 +1492,7 @@ export default function StockManager() {
                       >
                         <SectionCard
                           title="Recent Inventory Movements"
-                          subtitle="Latest paid-order deductions and refund restorations"
+                          subtitle="Latest paid-order deductions, refunds and expired stock disposals"
                         >
                           <div style={{ borderTop: "none" }}>
                             {movementsError ? (
@@ -1496,7 +1504,7 @@ export default function StockManager() {
                                 <div>
                                   <p style={{ fontSize: "var(--sm-text-sm)", fontWeight: 500, color: "var(--sm-text)" }}>{movement.material_name}</p>
                                   <p style={{ fontSize: "var(--sm-text-xs)", color: "var(--sm-text-subtle)", marginTop: "4px" }}>
-                                    Order #{movement.order_number} | {movement.source_type === "order_refund" ? "Refunded | Restored" : "Paid | Deducted"}
+                                    {movement.source_type === "expired_disposal" ? `Expired Stock Disposal | Batch #${movement.batch_id}` : `Order #${movement.order_number} | ${movement.source_type === "order_refund" ? "Refunded | Restored" : "Paid | Deducted"}`}
                                   </p>
                                   <p style={{ fontSize: "var(--sm-text-xs)", color: "var(--sm-text-muted)", marginTop: "4px" }}>
                                     {formatInSettingsTimezone(movement.occurred_at, restaurantSettings, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
@@ -1887,6 +1895,10 @@ export default function StockManager() {
                   </button>
                 </div>
 
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13 }}>
+                  <input type="checkbox" checked={showDepletedBatches} onChange={(event) => setShowDepletedBatches(event.target.checked)} />
+                  Show depleted batches
+                </label>
                 {batchLoading ? (
                   <p
                     role="status"
@@ -1922,7 +1934,7 @@ export default function StockManager() {
                       </button>
                     </div>
                   </div>
-                ) : batchRows.length === 0 ? (
+                ) : visibleBatchRows.length === 0 ? (
                   <div
                     style={{
                       padding: "24px 12px",
@@ -1931,9 +1943,7 @@ export default function StockManager() {
                       color: "#64748b",
                     }}
                   >
-                    No batch records returned for this material. Stock might
-                    have been initialized or adjusted outside Purchase Order
-                    receiving.
+                    No matching batch records. Enable Show depleted batches to view batches with no remaining stock.
                   </div>
                 ) : (
                   <>
@@ -1983,7 +1993,7 @@ export default function StockManager() {
                           </tr>
                         </thead>
                         <tbody>
-                          {batchRows.map((batch) => {
+                          {visibleBatchRows.map((batch) => {
                             const status = batchStatus(batch);
                             return (
                               <tr
@@ -2034,9 +2044,7 @@ export default function StockManager() {
                                   {batchShelfLifeText(batch)}
                                 </td>
                                 <td style={{ padding: "12px 11px" }}>
-                                  {batchDateText(
-                                    batch.usable_until || batch.expiry_date,
-                                  )}
+                                  {batchExpiryTime(batch) == null ? "Not recorded" : formatInSettingsTimezone(new Date(batchExpiryTime(batch)!).toISOString(), restaurantSettings, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                                   {batch.usable_until ? (
                                     <div
                                       style={{ color: "#64748b", fontSize: 11 }}
@@ -2070,6 +2078,29 @@ export default function StockManager() {
                                   >
                                     {status.label}
                                   </span>
+                                  {canDispose && Number(batch.remaining_qty) > 0 && batchExpiryTime(batch) != null && batchExpiryTime(batch)! <= Date.now() && (
+                                    <button type="button" disabled={disposingBatch !== null}
+                                      style={{ display: "block", marginTop: 8, color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 6, padding: "6px 8px", background: "#fff", cursor: "pointer" }}
+                                      onClick={async () => {
+                                        if (disposalInFlight.current) return;
+                                        const expires = formatInSettingsTimezone(new Date(batchExpiryTime(batch)!).toISOString(), restaurantSettings, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+                                        if (!window.confirm(`${batchMaterial.product_name} - Batch #${batch.batch_id}\nDate received: ${batchDateText(batch.received_date)}\nExpiration date: ${expires}\nRemaining stock: ${batch.remaining_qty} ${batch.unit || batchMaterial.unit}\nReason: Expired Stock Disposal\n\nConfirm physical verification and dispose the current remaining stock?`)) return;
+                                        disposalInFlight.current = true;
+                                        setDisposingBatch(batch.batch_id);
+                                        try {
+                                          const result = await apiFetch<{ on_hand: number }>("/stock-status/spoilage", { method: "POST", body: JSON.stringify({ product_id: batchMaterial.product_id, batch_id: batch.batch_id, dispose_expired_batch: true, idempotency_key: `expired-disposal:${batch.batch_id}:${crypto.randomUUID()}` }) });
+                                          showToast("Expired stock disposed.", "success");
+                                          await Promise.all([fetchAll(true), openBatchDetails({ ...batchMaterial, mainStock: result.on_hand })]);
+                                        } catch (error) {
+                                          showToast(error instanceof Error ? error.message : "Unable to dispose expired stock.", "error");
+                                        } finally {
+                                          disposalInFlight.current = false;
+                                          setDisposingBatch(null);
+                                        }
+                                      }}>
+                                      {disposingBatch === batch.batch_id ? "Disposing..." : "Dispose Expired Stock"}
+                                    </button>
+                                  )}
                                 </td>
                               </tr>
                             );
