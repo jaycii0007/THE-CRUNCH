@@ -1,12 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Flame, MapPin, Star, X, MessageSquare, Send, CheckCircle, ShoppingBag, ArrowRight, Clock } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
-import { useViewport } from '@/hooks/use-tablet'
+import { MapPin, Star, X, MessageSquare, Send, CheckCircle, ShoppingBag, ArrowRight, Clock } from 'lucide-react'
 import { api, resolveAssetUrl } from '@/lib/api'
-import { fetchGeneralSettings, formatCurrencyAmount } from '@/lib/restaurantSettings'
+import { fetchGeneralSettings } from '@/lib/restaurantSettings'
 import { useAuth } from '@/context/authcontext'
-import { SkeletonProductCard } from "@/components/ui/skeleton";
 import { Navbar } from '@/components/Navbar';
 
 // ── Types & helpers ────────────────────────────────────────────────────────
@@ -15,11 +12,6 @@ const MAX_FB = 200
 type Category = string
 
 interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string; archived: boolean }
-interface Flavor { name: string; accent: string; desc: string; img: string }
-interface Promo { id: string; title: string; subtitle?: string; description: string; img: string; badge?: string; validUntil?: string; discount?: string; highlight?: boolean }
-interface MenuCategoryRecord { name: string; display_order?: number; is_active?: boolean | number }
-
-const fmt = (v: number) => formatCurrencyAmount(v)
 
 const normCat = (v: unknown): Category => String(v ?? '').trim()
 
@@ -28,7 +20,6 @@ const mapProducts = (data: unknown[]): Product[] =>
     .map((r: any) => {
       const rawImage = String(r?.image ?? r?.img ?? '').trim();
       const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : '';
-      // Debug: log actual API image values for duplicate investigation
       if (import.meta.env.DEV && rawImage) {
         console.log('[mapProducts]', {
           id: r?.id ?? r?.product_id,
@@ -52,15 +43,6 @@ const mapProducts = (data: unknown[]): Product[] =>
     })
     .filter(p => p.id > 0 && p.name)
 
-const timeLeft = (d?: string) => {
-  if (!d) return null
-  const diff = new Date(d).getTime() - Date.now()
-  if (diff <= 0) return null
-  const days = Math.floor(diff / 86400000)
-  if (days > 30) return null
-  return days > 0 ? `${days}d left` : `${Math.floor(diff / 3600000)}h left`
-}
-
 // ── Design Tokens ──────────────────────────────────────────────────────────
 // THE CRUNCH Premium Color Palette (Approved) — Signature Glazed Hero uses Black/Gold
 const BLACK = '#1A1A1A'
@@ -83,19 +65,6 @@ const PAD = 'clamp(20px,5vw,64px)'
 // Hero images for Signature Glazed Chicken
 const HERO_IMAGE_1 = '/img/signatureglazed1.webp'
 const HERO_IMAGE_2 = '/img/signatureglazed2.webp'
-
-// Promotional images for featured strip (use ChatGPT images that are promotional)
-const PROMO_IMAGES = [
-  '/img/ChatGPT Image Sep 29, 2026, 05_21_28 PM.webp',
-  '/img/ChatGPT Image Sep 29, 2026, 05_33_26 PM.webp',
-  '/img/ChatGPT Image Sep 29, 2026, 05_37_12 PM.webp',
-  '/img/ChatGPT Image Sep 29, 2026, 05_37_39 PM.webp',
-  '/img/ChatGPT Image Sep 29, 2026, 05_45_42 PM.webp',
-  '/img/ChatGPT Image Sep 29, 2026, 05_46_01 PM.webp',
-  '/img/ChatGPT Image Sep 29, 2026, 05_50_11 PM.webp',
-  '/img/ChatGPT Image Sep 29, 2026, 05_51_46 PM.webp',
-  '/img/ChatGPT Image Sep 29, 2026, 05_53_39 PM.webp',
-]
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@700;800&display=swap');
@@ -328,38 +297,15 @@ body{background:var(--bg)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 `
 
-// Normalize product name for lookup (lowercase, remove special chars)
-// Used by FoodPreviewGallery to match local images to products
-function normalizeProductName(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-// All verified local food images (for gallery)
-const VERIFIED_LOCAL_FOOD_IMAGES = [
-  { filename: 'chickenhoneygarlic.webp', displayName: 'Honey Garlic Chicken', path: '/img/chickenhoneygarlic.webp' },
-  { filename: 'chickenteriyaki.webp', displayName: 'Teriyaki Chicken', path: '/img/chickenteriyaki.webp' },
-  { filename: 'chickentexasbbq.webp', displayName: 'Texas BBQ Chicken', path: '/img/chickentexasbbq.webp' },
-  { filename: 'chickenspicekstyle.webp', displayName: 'Spicy K-Style Chicken', path: '/img/chickenspicekstyle.webp' },
-  { filename: 'chickenspecialcheese.webp', displayName: 'Special Cheese Chicken', path: '/img/chickenspecialcheese.webp' },
-  { filename: 'chickengarlicparmesan.webp', displayName: 'Garlic Parmesan Chicken', path: '/img/chickengarlicparmesan.webp' },
-  { filename: 'chickenskin.webp', displayName: 'Chicken Skin', path: '/img/chickenskin.webp' },
-  { filename: 'chicken poppers 2.webp', displayName: 'Chicken Poppers', path: '/img/chicken poppers 2.webp' },
-  { filename: 'chickchicken.webp', displayName: 'Classic Fried Chicken', path: '/img/chickchicken.webp' },
-  { filename: 'chicken1.webp', displayName: 'Signature Chicken', path: '/img/chicken1.webp' },
-] as const;
-
 function Photo({ src, alt, priority = false, style, className }: { src?: string; alt: string; priority?: boolean; style?: React.CSSProperties; className?: string }) {
   const [bad, setBad] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  // Reset error state when src changes so a newly valid image can load
   useEffect(() => {
     setBad(false)
     setLoading(true)
   }, [src])
 
-  // For preview gallery: use LOCAL_IMAGE_MAP as verified local fallback
-  // For product cards: rely ONLY on API-provided image (src), no static fallback
   const effectiveSrc = src;
 
   if (!effectiveSrc || bad) {
@@ -390,7 +336,6 @@ function Photo({ src, alt, priority = false, style, className }: { src?: string;
 
   return (
     <>
-      {/* Loading placeholder */}
       {loading && (
         <div
           style={{
@@ -439,257 +384,7 @@ function Photo({ src, alt, priority = false, style, className }: { src?: string;
 
 // ── Animated Components ────────────────────────────────────────────────────
 const easeOut = [0.16, 1, 0.3, 1] as const
-const staggerContainer = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } }
 const fadeUp = { hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: easeOut } } }
-const fadeIn = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { duration: 0.5 } } }
-
-// ── Cards ──────────────────────────────────────────────────────────────────
-function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
-  return (
-    <motion.article
-      className="card"
-      variants={fadeUp}
-      whileHover={{
-        y: -4,
-        boxShadow: '0 12px 32px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.25)',
-        borderColor: 'rgba(233,190,95,0.45)',
-        transition: { duration: 0.3, ease: easeOut },
-      }}
-      whileTap={{ scale: 0.98 }}
-      layout
-    >
-      {/* Image container with proper aspect ratio to prevent layout shift */}
-      <motion.div
-        className="thumb"
-        whileHover={{ opacity: 1 }}
-      >
-        <Photo src={p.img} alt={p.name} priority={false} />
-
-        {/* Gradient overlay for text readability on hover */}
-        <motion.div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'linear-gradient(180deg, transparent 55%, rgba(11,10,8,0.85) 100%)',
-            opacity: 0,
-            transition: 'opacity 0.3s ease',
-          }}
-          animate={{ opacity: 0 }}
-          transition={{ duration: 0.3 }}
-        />
-
-        {/* Badge - top left */}
-        {p.badge && (
-          <span
-            className="chip chip-gold"
-            style={{
-              position: 'absolute',
-              top: 8,
-              left: 8,
-              zIndex: 2,
-              fontSize: 10,
-              fontWeight: 700,
-              padding: '3px 8px',
-              borderRadius: 9999,
-              boxShadow: '0 2px 8px rgba(245,200,66,0.3)',
-            }}
-          >
-            {p.badge}
-          </span>
-        )}
-
-        {/* Spicy indicator - top right */}
-        {p.spicy && (
-          <span
-            style={{
-              position: 'absolute',
-              top: 8,
-              right: 8,
-              zIndex: 2,
-              background: 'rgba(0,0,0,0.7)',
-              borderRadius: '50%',
-              width: 26,
-              height: 26,
-              display: 'grid',
-              placeItems: 'center',
-              border: '1px solid rgba(255,255,255,0.1)',
-            }}
-            aria-label="Spicy level"
-          >
-            <Flame size={13} color="#f87171" />
-          </span>
-        )}
-
-        {/* Rating badge - bottom left on hover */}
-        {p.rating > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, duration: 0.2 }}
-            style={{
-              position: 'absolute',
-              bottom: 8,
-              left: 8,
-              zIndex: 2,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '3px 7px',
-              background: 'rgba(11,10,8,0.85)',
-              borderRadius: 9999,
-              border: '1px solid rgba(245,200,66,0.25)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-            }}
-          >
-            <Star size={11} fill="var(--gold)" color="var(--gold)" />
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold)' }}>{p.rating.toFixed(1)}</span>
-          </motion.div>
-        )}
-      </motion.div>
-
-      {/* Content area */}
-      <div style={{
-        padding: 'clamp(10px, 1.8vw, 14px)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-        flex: 1,
-        justifyContent: 'space-between',
-      }}>
-        {/* Name & category */}
-        <div>
-          <h3 style={{
-            fontSize: 'clamp(14px, 1.5vw, 16px)',
-            fontWeight: 700,
-            lineHeight: 1.3,
-            color: 'var(--text)',
-            letterSpacing: '-0.01em',
-            margin: 0,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}>
-            {p.name}
-          </h3>
-
-          {/* Description */}
-          {p.description && (
-            <p style={{
-              fontSize: 'clamp(11.5px, 1.3vw, 13px)',
-              lineHeight: 1.4,
-              color: 'var(--muted)',
-              marginTop: 4,
-              marginBottom: 0,
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}>
-              {p.description}
-            </p>
-          )}
-        </div>
-
-        {/* Price & Order button */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 6,
-          marginTop: 6,
-          paddingTop: 8,
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-        }}>
-          <span style={{
-            fontSize: 'clamp(16px, 1.8vw, 19px)',
-            fontWeight: 800,
-            color: 'var(--text)',
-            letterSpacing: '-0.02em',
-            fontFamily: 'Inter, system-ui, sans-serif',
-          }}>
-            {fmt(p.price)}
-          </span>
-          <motion.button
-            className="btn btn-gold"
-            onClick={onOrder}
-            whileTap={{ scale: 0.95 }}
-            whileHover={{ scale: 1.02, boxShadow: '0 4px 16px rgba(245,200,66,0.35)' }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '7px 12px',
-              fontSize: 'clamp(11.5px, 1.3vw, 13px)',
-              fontWeight: 600,
-              borderRadius: 8,
-              background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
-              color: '#15120a',
-              border: 'none',
-              boxShadow: '0 2px 10px rgba(245,200,66,0.25)',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-            aria-label={`Order ${p.name}`}
-          >
-            <ShoppingBag size={13} />
-            <span>Order Now</span>
-          </motion.button>
-        </div>
-      </div>
-    </motion.article>
-  )
-}
-
-function PromoCard({ p }: { p: Promo }) {
-  const left = timeLeft(p.validUntil)
-  return (
-    <motion.article
-      className="card"
-      variants={fadeUp}
-      whileHover={{ y: -8, boxShadow: '0 20px 48px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.35)', borderColor: 'rgba(233,190,95,0.5)', transition: { duration: 0.3, ease: easeOut } }}
-      whileTap={{ scale: 0.99 }}
-      style={{
-        background: BLACK,
-        border: '1px solid rgba(89,92,86,0.25)',
-        borderRadius: 20,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '0 8px 24px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.1)',
-        transition: 'border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease',
-      }}
-    >
-      <div style={{ aspectRatio: '16/9', position: 'relative', overflow: 'hidden', background: BLACK }}>
-        <Photo src={p.img ? resolveAssetUrl(p.img) : ''} alt={p.title} />
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 40%, rgba(11,10,8,0.95) 100%)' }} />
-        {p.badge && <span className="chip chip-gold" style={{ position: 'absolute', top: 16, left: 16, fontSize: 12, padding: '6px 14px', fontWeight: 700, boxShadow: '0 4px 16px rgba(245,200,66,0.3)' }}>{p.badge}</span>}
-        {p.discount && <span className="chip chip-gold" style={{ position: 'absolute', bottom: 16, right: 16, fontSize: 13, fontWeight: 700, padding: '6px 14px', boxShadow: '0 4px 16px rgba(245,200,66,0.3)' }}>{p.discount}</span>}
-      </div>
-      <div style={{ padding: 'clamp(20px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-        <h3 style={{ fontSize: 'clamp(18px,2.2vw,21px)', fontWeight: 700, lineHeight: 1.2, margin: 0, color: 'var(--text)' }}>{p.title}</h3>
-        {p.subtitle && <p style={{ fontSize: 'clamp(13px,1.6vw,14.5px)', fontWeight: 500, color: 'var(--gold)', margin: 0 }}>{p.subtitle}</p>}
-        <p className="sub" style={{ fontSize: 'clamp(13px,1.6vw,14.5px)', lineHeight: 1.55, flex: 1, margin: 0, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.description}</p>
-        {left && <span className="chip" style={{ alignSelf: 'flex-start', marginTop: 4, color: '#f87171', fontSize: 11, fontWeight: 600 }}>{left}</span>}
-        <motion.button className="btn btn-gold" style={{
-          marginTop: 'auto',
-          padding: '14px 24px',
-          fontSize: 'clamp(13px,1.6vw,14.5px)',
-          fontWeight: 600,
-          borderRadius: 12,
-          background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
-          color: '#15120a',
-          border: 'none',
-          boxShadow: '0 4px 16px rgba(245,200,66,0.3)',
-          width: 'fit-content',
-        }} whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }}>
-          Order Now
-        </motion.button>
-      </div>
-    </motion.article>
-  )
-}
 
 // ── Hero Section: Signature Glazed Chicken — Premium Black & Gold ─────────────
 function HeroSection() {
@@ -894,7 +589,6 @@ function HeroSection() {
               background: '#0d0d0d',
             }}
           >
-            {/* Primary Hero Image */}
             <Photo
               src={HERO_IMAGE_1}
               alt="Signature glazed chicken - hero view"
@@ -907,7 +601,6 @@ function HeroSection() {
               }}
             />
 
-            {/* Subtle gradient overlay for depth */}
             <div
               style={{
                 position: 'absolute',
@@ -918,7 +611,6 @@ function HeroSection() {
               }}
             />
 
-            {/* Gold corner brackets */}
             <div
               style={{
                 position: 'absolute',
@@ -972,7 +664,6 @@ function HeroSection() {
               }}
             />
 
-            {/* "Hand-Glazed" Badge */}
             <div
               style={{
                 position: 'absolute',
@@ -1007,7 +698,6 @@ function HeroSection() {
               Hand-Glazed
             </div>
 
-            {/* Supporting View Inset Thumbnail */}
             <div
               style={{
                 position: 'absolute',
@@ -1155,7 +845,6 @@ function HeroSection() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 1, ease: easeOut }}
     >
-      {/* Base: Solid black with subtle gold radial glow */}
       <div
         style={{
           position: 'absolute',
@@ -1166,7 +855,6 @@ function HeroSection() {
         }}
       />
 
-      {/* Ambient gold rim light at top edge */}
       <div
         style={{
           position: 'absolute',
@@ -1181,7 +869,6 @@ function HeroSection() {
         }}
       />
 
-      {/* Layer 1: Oversized background typography (editorial, subtle) */}
       <motion.div
         style={{
           position: 'absolute',
@@ -1222,7 +909,6 @@ function HeroSection() {
         </div>
       </motion.div>
 
-      {/* Layer 2: Diagonal gold accent line */}
       <motion.div
         style={{
           position: 'absolute',
@@ -1241,7 +927,6 @@ function HeroSection() {
         transition={{ delay: 0.5, duration: 1.2, ease: easeOut }}
       />
 
-      {/* Layer 3: Secondary image (supporting) - bottom right */}
       <motion.div
         style={{
           position: 'absolute',
@@ -1277,7 +962,6 @@ function HeroSection() {
             transform: 'scale(1.03)',
           }}
         />
-        {/* Vignette for depth */}
         <div
           style={{
             position: 'absolute',
@@ -1286,12 +970,10 @@ function HeroSection() {
             pointerEvents: 'none',
           }}
         />
-        {/* Gold corner accents */}
         <div style={{ position: 'absolute', top: 12, left: 12, width: 28, height: 28, borderTop: `2px solid ${GOLD}60`, borderLeft: `2px solid ${GOLD}60`, borderRadius: '6px 0 0 0', pointerEvents: 'none', zIndex: 4 }} />
         <div style={{ position: 'absolute', bottom: 12, right: 12, width: 28, height: 28, borderBottom: `2px solid ${GOLD}40`, borderRight: `2px solid ${GOLD}40`, borderRadius: '0 0 0 6px', pointerEvents: 'none', zIndex: 4 }} />
       </motion.div>
 
-      {/* Layer 4: Primary image (hero) - dominant, overlapping */}
       <motion.div
         style={{
           position: 'absolute',
@@ -1327,7 +1009,6 @@ function HeroSection() {
             transform: 'scale(1.015)',
           }}
         />
-        {/* Bottom gradient fade for text legibility */}
         <div
           style={{
             position: 'absolute',
@@ -1339,7 +1020,6 @@ function HeroSection() {
             pointerEvents: 'none',
           }}
         />
-        {/* Top subtle gradient for depth */}
         <div
           style={{
             position: 'absolute',
@@ -1351,12 +1031,10 @@ function HeroSection() {
             pointerEvents: 'none',
           }}
         />
-        {/* Gold corner brackets - premium framing */}
         <div style={{ position: 'absolute', top: 0, left: 0, width: 48, height: 48, borderTop: `2px solid ${GOLD}50`, borderLeft: `2px solid ${GOLD}50`, borderRadius: '22px 0 0 0', pointerEvents: 'none', zIndex: 5 }} />
         <div style={{ position: 'absolute', top: 0, right: 0, width: 48, height: 48, borderTop: `2px solid ${GOLD}50`, borderRight: `2px solid ${GOLD}50`, borderRadius: '0 22px 0 0', pointerEvents: 'none', zIndex: 5 }} />
         <div style={{ position: 'absolute', bottom: 0, left: 0, width: 48, height: 48, borderBottom: `2px solid ${GOLD}30`, borderLeft: `2px solid ${GOLD}30`, borderRadius: '0 0 0 22px', pointerEvents: 'none', zIndex: 5 }} />
         <div style={{ position: 'absolute', bottom: 0, right: 0, width: 48, height: 48, borderBottom: `2px solid ${GOLD}30`, borderRight: `2px solid ${GOLD}30`, borderRadius: '0 0 22px 0', pointerEvents: 'none', zIndex: 5 }} />
-        {/* "Hand-Glazed" badge on image */}
         <motion.div
           style={{
             position: 'absolute',
@@ -1387,16 +1065,6 @@ function HeroSection() {
         </motion.div>
       </motion.div>
 
-      {/* Layer 5: 2D Smoke Effects - smooth looping cinematic smoke */}
-      {!reduceMotion && (
-        <>
-          {SMOKE_LAYERS.map((layer) => (
-            <SmokeLayer key={layer.id} {...layer} reduceMotion={reduceMotion} />
-          ))}
-        </>
-      )}
-
-      {/* Layer 6: Content - Text, CTA, Trust badges */}
       <div
         style={{
           position: 'relative',
@@ -1418,7 +1086,6 @@ function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.7, duration: 1, ease: easeOut }}
         >
-          {/* Premium badge pill */}
           <motion.span
             initial={{ opacity: 0, x: -24 }}
             animate={{ opacity: 1, x: 0 }}
@@ -1446,7 +1113,6 @@ function HeroSection() {
             7 Signature Glazes
           </motion.span>
 
-          {/* Main Headline - editorial split styling */}
           <motion.h2
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1466,7 +1132,6 @@ function HeroSection() {
             <span style={{ display: 'block', color: CREAM, opacity: 0.92, fontWeight: 800, fontSize: 'clamp(30px, 6vw, 62px)', marginTop: '-0.015em', letterSpacing: '-0.03em' }}>CHICKEN</span>
           </motion.h2>
 
-          {/* Supporting description */}
           <motion.p
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1484,7 +1149,6 @@ function HeroSection() {
             Hand-crafted daily with our secret spice rubs. Choose from 7 signature glazes — each bite delivers the perfect crunch.
           </motion.p>
 
-          {/* Explore Menu CTA - Gold button */}
           <motion.button
             style={{
               fontSize: 'clamp(14px, 1.6vw, 15px)',
@@ -1520,7 +1184,6 @@ function HeroSection() {
           </motion.button>
         </motion.div>
 
-        {/* Trust badges / pills - dark surfaces, gold borders */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1579,7 +1242,6 @@ function HeroSection() {
         </motion.div>
       </div>
 
-      {/* Bottom gold accent line */}
       <div
         style={{
           position: 'absolute',
@@ -1597,599 +1259,119 @@ function HeroSection() {
   )
 }
 
-// ── Smoke Component (Realistic 2D Cinematic Smoke/Steam) ────────────────────────
-// Organic, soft white-gray cloud layers that drift seamlessly
-function SmokeLayer({
-  id,
-  startX,
-  startY,
-  driftX,
-  driftY,
-  scale,
-  opacity,
-  duration,
-  delay,
-  reduceMotion,
-}: {
-  id: number;
-  startX: number;
-  startY: number;
-  driftX: number;
-  driftY: number;
-  scale: number;
-  opacity: number;
-  duration: number;
-  delay: number;
-  reduceMotion: boolean;
-}) {
-  if (reduceMotion) return null;
-
-  // Pre-computed organic cloud shapes using CSS border-radius for soft plumes
-  const shapes = [
-    '45% 55% 60% 40% / 50% 60% 55% 45%',
-    '55% 45% 50% 50% / 55% 50% 60% 40%',
-    '40% 60% 55% 45% / 60% 55% 50% 50%',
-    '50% 50% 45% 55% / 45% 55% 60% 40%',
-  ];
-  const shape = shapes[id % shapes.length];
-
-  // Soft white-gray smoke colors
-  const smokeColors = [
-    'rgba(255,255,255,0.18)',  // Soft white
-    'rgba(230,230,235,0.16)',  // Light gray-white
-    'rgba(210,215,220,0.14)',  // Muted gray-white
-    'rgba(200,205,210,0.12)',  // Subtle gray
-  ];
-  const baseColor = smokeColors[id % smokeColors.length];
-
+// ── Our Story Section ──────────────────────────────────────────────────────
+function OurStory() {
   return (
-    <motion.div
+    <motion.section
       style={{
-        position: 'absolute',
-        left: `${startX}%`,
-        top: `${startY}%`,
-        width: `clamp(80px, 14vw, 200px)`,
-        height: `clamp(60px, 10vw, 160px)`,
-        pointerEvents: 'none',
-        zIndex: 3,
-        transformOrigin: 'center center',
-        willChange: 'transform, opacity',
-      }}
-      initial={false}
-      animate={{
-        opacity: [0, opacity, opacity * 0.7, opacity * 0.3, 0],
-        y: [0, driftY * 0.3, driftY * 0.6, driftY * 0.85, driftY],
-        x: [0, driftX * 0.25, driftX * 0.55, driftX * 0.8, driftX],
-        scale: [scale * 0.5, scale * 0.85, scale * 1.1, scale * 1.25, scale * 1.35],
-        rotate: [0, driftX * 0.3, driftX * -0.2, driftX * 0.15, 0],
-        borderRadius: [shape, shape, shape, shape, shape],
-      }}
-      transition={{
-        duration,
-        delay,
-        ease: [0.25, 0.46, 0.45, 0.94], // Custom easing for natural feel
-        repeat: Infinity,
-        repeatDelay: 0,
-      }}
-    >
-      {/* Multi-layered plume for depth - each layer slightly offset */}
-      {[0, 1, 2].map((layerIdx) => (
-        <div
-          key={layerIdx}
-          style={{
-            position: 'absolute',
-            inset: `${layerIdx * 4}%`,
-            background: `radial-gradient(ellipse 55% 50% at 50% 45%, ${baseColor} 0%, ${baseColor} 20%, ${baseColor.replace(/[\d.]+\)$/, '0)')} 70%, transparent 100%)`,
-            borderRadius: shape,
-            filter: `blur(${8 + layerIdx * 4}px)`,
-            opacity: 1 - layerIdx * 0.15,
-          }}
-        />
-      ))}
-    </motion.div>
-  );
-}
-
-// Smoke configuration - 4 layers with varied timing for seamless looping
-const SMOKE_LAYERS = [
-  { id: 0, startX: 18, startY: 85, driftX: -12, driftY: -140, scale: 1.15, opacity: 0.22, duration: 14, delay: 0 },
-  { id: 1, startX: 75, startY: 88, driftX: 10, driftY: -160, scale: 0.95, opacity: 0.18, duration: 18, delay: 2.5 },
-  { id: 2, startX: 45, startY: 90, driftX: -6, driftY: -130, scale: 1.05, opacity: 0.15, duration: 22, delay: 5 },
-  { id: 3, startX: 60, startY: 82, driftX: 8, driftY: -150, scale: 0.85, opacity: 0.12, duration: 26, delay: 7.5 },
-] as const;
-
-// ── Vertical Advertisement Poster Component ──────────────────────────────────
-function VerticalAdPoster({
-  image,
-  title,
-  subtitle,
-  description,
-  badge,
-  price,
-  showPrice = true,
-  accentColor = GOLD,
-  bgWords = '',
-}: {
-  image: string;
-  title: string;
-  subtitle?: string;
-  description: string;
-  badge?: string;
-  price?: string | number;
-  showPrice?: boolean;
-  accentColor?: string;
-  bgWords?: string;
-}) {
-  const [isMobile, setIsMobile] = useState(false);
-
-  // Detect mobile once on mount
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  // Generate background typography from title
-  const bgTypography = bgWords || title.toUpperCase().split(' ').slice(0, 2).join(' ');
-
-  return (
-    <motion.article
-      variants={fadeUp}
-      style={{
+        padding: 'var(--section-py) var(--container-pad)',
+        background: 'transparent',
         position: 'relative',
-        borderRadius: 16,
-        overflow: 'visible',
-        background: BLACK,
-        border: '1px solid rgba(201, 168, 76, 0.25)',
-        boxShadow: '0 8px 24px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.1), inset 0 1px 0 rgba(255,255,255,0.03)',
-        transformStyle: 'preserve-3d',
-        transition: 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.4s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.4s cubic-bezier(0.22, 1, 0.36, 1), z-index 0s',
-        cursor: isMobile ? 'pointer' : 'default',
-        aspectRatio: '3/4',
-        isolation: 'isolate',
+        zIndex: 1,
       }}
-      whileHover={!isMobile ? {
-        y: -8,
-        z: 40,
-        scale: 1.035,
-        rotateX: -2,
-        rotateY: 1.5,
-        boxShadow: '0 24px 64px -16px rgba(0,0,0,0.65), 0 0 0 1px rgba(201,168,76,0.35), 0 0 32px -8px rgba(201,168,76,0.15), inset 0 1px 0 rgba(255,255,255,0.03)',
-        borderColor: 'rgba(201, 168, 76, 0.5)',
-        transition: { duration: 0.4, ease: easeOut },
-        zIndex: 20,
-      } : {}}
-      whileTap={{ scale: 0.985, transition: { duration: 0.1 } }}
-      initial={{ opacity: 0, y: 30, rotateX: -5 }}
-      animate={{ opacity: 1, y: 0, rotateX: 0 }}
-      transition={{ duration: 0.7, ease: easeOut }}
+      initial={{ opacity: 0, y: 40 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.8, ease: easeOut }}
     >
-      {/* Layer 1: Ambient background glow */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: -40,
-          background: `radial-gradient(ellipse at center, ${accentColor}15 0%, transparent 70%)`,
-          pointerEvents: 'none',
-          zIndex: 0,
-          borderRadius: '20px',
-        }}
-      />
-
-      {/* Layer 2: Oversized background typography */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          pointerEvents: 'none',
-          zIndex: 1,
-          overflow: 'hidden',
-        }}
-        aria-hidden="true"
-      >
+      <div style={{ maxWidth: 'var(--container-max)', margin: '0 auto', textAlign: 'center' }}>
         <motion.span
           style={{
-            fontSize: 'clamp(120px, 25vw, 280px)',
-            fontWeight: 900,
-            lineHeight: 0.85,
-            letterSpacing: '-0.04em',
-            color: 'rgba(245,200,66,0.035)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '10px 24px',
+            fontSize: 'clamp(11px, 1.4vw, 13px)',
+            fontWeight: 600,
+            letterSpacing: '0.2em',
             textTransform: 'uppercase',
-            whiteSpace: 'nowrap',
-            transform: 'rotate(-2deg)',
-            textShadow: '0 0 80px rgba(245,200,66,0.08)',
-            userSelect: 'none',
-            fontFamily: 'Inter, system-ui, sans-serif',
+            color: 'var(--gold)',
+            background: 'rgba(245,185,68,0.08)',
+            border: '1px solid rgba(245,185,68,0.4)',
+            borderRadius: '9999px',
+            fontFamily: "'JetBrains Mono', monospace",
+            marginBottom: 'clamp(20px, 3vw, 32px)',
           }}
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3, duration: 0.8, ease: easeOut }}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.6, ease: easeOut }}
         >
-          {bgTypography}
+          OUR STORY
         </motion.span>
-      </div>
 
-      {/* Layer 3: Full-bleed food photography - MAIN VISUAL */}
-      <div
-        style={{
-          position: 'relative',
-          width: '100%',
-          height: '100%',
-          overflow: 'hidden',
-          borderRadius: 16,
-          zIndex: 2,
-        }}
-      >
-        <Photo
-          src={image}
-          alt={title}
-          priority={true}
+        <motion.h2
           style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: 'center top',
-            transition: 'transform 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
+            fontSize: 'clamp(38px, 6vw, 64px)',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
+            lineHeight: 1.1,
+            marginBottom: 'clamp(20px, 3vw, 32px)',
+            fontFamily: 'Poppins, Inter, sans-serif',
+            background: 'var(--gold-gradient)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
+            textShadow: '0 0 40px rgba(245,185,68,0.2)',
           }}
-        />
-
-        {/* Subtle vignette for depth */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(11,10,8,0.35) 100%)',
-            pointerEvents: 'none',
-            zIndex: 3,
-          }}
-        />
-
-        {/* Bottom gradient fade for text legibility - taller to accommodate content */}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: '60%',
-            background: 'linear-gradient(180deg, transparent 0%, rgba(11,10,8,0.4) 30%, rgba(11,10,8,0.85) 60%, rgba(11,10,8,0.98) 100%)',
-            pointerEvents: 'none',
-            zIndex: 4,
-          }}
-        />
-
-        {/* Top subtle gradient for badge legibility */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '25%',
-            background: 'linear-gradient(180deg, rgba(11,10,8,0.4) 0%, transparent 100%)',
-            pointerEvents: 'none',
-            zIndex: 4,
-          }}
-        />
-
-        {/* Badge - floating top left */}
-        {badge && (
-          <motion.span
-            className="chip chip-gold"
-            style={{
-              position: 'absolute',
-              top: 18,
-              left: 18,
-              zIndex: 10,
-              fontSize: 'clamp(10px, 1.2vw, 12px)',
-              fontWeight: 700,
-              padding: '7px 16px',
-              borderRadius: 999,
-              boxShadow: '0 8px 24px rgba(245,200,66,0.4), 0 0 0 1px rgba(245,200,66,0.25)',
-              letterSpacing: '0.03em',
-              textTransform: 'uppercase',
-              backdropFilter: 'blur(8px)',
-              background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)',
-              color: '#15120a',
-              border: '1px solid rgba(255,255,255,0.15)',
-            }}
-            initial={{ opacity: 0, y: -20, scale: 0.8 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: 0.15, duration: 0.5, ease: easeOut }}
-          >
-            {badge}
-          </motion.span>
-        )}
-
-        {/* Accent corner brackets */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: 60,
-            height: 60,
-            borderTop: '2px solid rgba(245,200,66,0.25)',
-            borderLeft: '2px solid rgba(245,200,66,0.25)',
-            borderRadius: '16px 0 0 0',
-            pointerEvents: 'none',
-            zIndex: 5,
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            width: 60,
-            height: 60,
-            borderTop: '2px solid rgba(245,200,66,0.25)',
-            borderRight: '2px solid rgba(245,200,66,0.25)',
-            borderRadius: '0 16px 0 0',
-            pointerEvents: 'none',
-            zIndex: 5,
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            width: 60,
-            height: 60,
-            borderBottom: '2px solid rgba(245,200,66,0.15)',
-            borderLeft: '2px solid rgba(245,200,66,0.15)',
-            borderRadius: '0 0 0 16px',
-            pointerEvents: 'none',
-            zIndex: 5,
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            right: 0,
-            width: 60,
-            height: 60,
-            borderBottom: '2px solid rgba(245,200,66,0.15)',
-            borderRight: '2px solid rgba(245,200,66,0.15)',
-            borderRadius: '0 0 16px 0',
-            pointerEvents: 'none',
-            zIndex: 5,
-          }}
-        />
-
-        {/* Layer 4: Product information integrated into poster - Structured bottom panel */}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            padding: 'clamp(18px, 3.5vw, 28px)',
-            zIndex: 10,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 0,
-            minHeight: '55%',
-            justifyContent: 'flex-end',
-          }}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.7, ease: easeOut }}
         >
-          {/* Title - Large editorial style, clamped to 3 lines */}
-          <h3
-            style={{
-              fontSize: 'clamp(18px, 3.5vw, 28px)',
-              fontWeight: 800,
-              lineHeight: 1.15,
-              margin: 0,
-              color: 'var(--text)',
-              letterSpacing: '-0.02em',
-              textShadow: '0 2px 24px rgba(0,0,0,0.5)',
-              fontFamily: 'Inter, system-ui, sans-serif',
-              display: '-webkit-box',
-              WebkitLineClamp: 3,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}
-          >
-            {title}
-          </h3>
+          Where Flavor Meets Craft
+        </motion.h2>
 
-          {/* Subtitle - Supporting context */}
-          {subtitle && (
-            <motion.p
-              style={{
-                fontSize: 'clamp(11px, 1.2vw, 13px)',
-                fontWeight: 600,
-                color: 'var(--gold)',
-                margin: '8px 0 0 0',
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                textShadow: '0 1px 8px rgba(0,0,0,0.4)',
-                display: '-webkit-box',
-                WebkitLineClamp: 1,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.4, ease: easeOut }}
-            >
-              {subtitle}
-            </motion.p>
-          )}
-
-          {/* Description - When space permits, clamped to 2 lines */}
-          {description && (
-            <motion.p
-              className="sub"
-              style={{
-                fontSize: 'clamp(11.5px, 1.2vw, 13px)',
-                lineHeight: 1.5,
-                margin: '6px 0 0 0',
-                color: 'rgba(244,241,236,0.78)',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                textShadow: '0 1px 4px rgba(0,0,0,0.4)',
-              }}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.4, ease: easeOut }}
-            >
-              {description}
-            </motion.p>
-          )}
-
-          {/* Price - Integrated into composition, always on own line with proper spacing */}
-          {showPrice && price && (
-            <motion.div
-              style={{
-                marginTop: 'auto',
-                paddingTop: 'clamp(12px, 2vw, 16px)',
-                borderTop: '1px solid rgba(245,200,66,0.18)',
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                gap: 16,
-                minHeight: '48px',
-              }}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.4, ease: easeOut }}
-            >
-              <span
-                style={{
-                  fontSize: 'clamp(20px, 3.5vw, 30px)',
-                  fontWeight: 800,
-                  color: 'var(--gold)',
-                  letterSpacing: '-0.015em',
-                  fontFamily: 'Inter, system-ui, sans-serif',
-                  textShadow: '0 2px 16px rgba(245,200,66,0.25)',
-                  flexShrink: 0,
-                }}
-              >
-                {typeof price === 'number' ? `₱${price}` : price}
-              </span>
-              {/* Subtle gold accent line */}
-              <div
-                style={{
-                  flex: 1,
-                  height: 1,
-                  background: 'linear-gradient(90deg, var(--gold) 0%, transparent 100%)',
-                  opacity: 0.25,
-                  minWidth: 40,
-                }}
-              />
-            </motion.div>
-          )}
-
-          {/* Spacer for non-priced cards to maintain visual balance */}
-          {!showPrice && (
-            <div style={{ marginTop: 'auto', minHeight: '48px' }} />
-          )}
-        </div>
+        <motion.p
+          style={{
+            fontSize: 'clamp(16px, 2vw, 20px)',
+            lineHeight: 1.7,
+            maxWidth: '46ch',
+            margin: '0 auto',
+            color: 'var(--muted)',
+            fontWeight: 400,
+          }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4, duration: 0.7, ease: easeOut }}
+        >
+          Every piece of chicken begins with a 24-hour brine, hand-dredged in our signature spice blend, and fried to a golden crunch. Then comes the glaze — seven recipes developed over years, each brushed on by hand so the flavor clings to every ridge. No shortcuts. No central kitchen shortcuts. Just honest work, fresh daily, across 250+ branches.
+        </motion.p>
       </div>
-
-      {/* Layer 5: Subtle golden rim light on hover (handled via whileHover box-shadow) */}
-    </motion.article>
+    </motion.section>
   )
 }
 
-// ── Featured Menu Poster — Clean Image-First Gallery Card ─────────────────────
-function FeaturedMenuPoster({ image, alt, index }: { image: string; alt: string; index: number }) {
-  const [canHover, setCanHover] = useState(false)
-
-  useEffect(() => {
-    const mqHover = window.matchMedia('(hover: hover) and (pointer: fine)')
-    const mqMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const update = () => setCanHover(mqHover.matches && !mqMotion.matches)
-    update()
-    mqHover.addEventListener?.('change', update)
-    mqMotion.addEventListener?.('change', update)
-    return () => {
-      mqHover.removeEventListener?.('change', update)
-      mqMotion.removeEventListener?.('change', update)
-    }
-  }, [])
-
+// ── Footer ─────────────────────────────────────────────────────────────────
+function Footer() {
   return (
-    <motion.article
-      className="featured-menu-card"
-      variants={fadeUp}
-      whileHover={canHover ? {
-        y: -4,
-        scale: 1.012,
-        boxShadow: '0 16px 36px -6px rgba(0, 0, 0, 0.75), 0 0 18px 0 rgba(201, 168, 76, 0.22)',
-        borderColor: 'rgba(201, 168, 76, 0.55)',
-        transition: { duration: 0.3, ease: easeOut },
-      } : undefined}
-      style={{
-        position: 'relative',
-        borderRadius: 14,
-        overflow: 'hidden',
-        background: BLACK,
-        border: '1px solid rgba(201, 168, 76, 0.28)',
-        boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.65), 0 2px 6px -1px rgba(0, 0, 0, 0.4)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxSizing: 'border-box',
-      }}
-    >
-      <Photo
-        src={image}
-        alt={alt}
-        priority={true}
-        style={{
-          width: '100%',
-          height: 'auto',
-          maxWidth: '100%',
-          maxHeight: 460,
-          objectFit: 'contain',
-          objectPosition: 'center',
-          display: 'block',
-          aspectRatio: index === 0 ? '1055 / 1491' : '1040 / 1512',
-        }}
-      />
-    </motion.article>
-  )
-}
-
-// ── Featured Menu — Premium Poster Gallery ───────────────────────────────────
-function FeaturedStrip() {
-  const featuredPosters = [
-    { img: PROMO_IMAGES[0], alt: 'THE CRUNCH OVERLOAD promotional poster' },
-    { img: PROMO_IMAGES[1], alt: 'THE CRUNCH BUCKET promotional poster' },
-    { img: PROMO_IMAGES[2], alt: 'THE CRUNCH Rice Meals and Sauces promotional poster' },
-  ]
-
-  return (
-    <div className="featured-menu-section">
-      <motion.div variants={fadeUp}>
-        <div style={{ padding: '16px 20px', marginBottom: 24, display: 'inline-flex', alignItems: 'center', borderRadius: 12 }}>
-          <h2 className="h2" style={{ fontSize: 'clamp(26px, 4vw, 36px)', margin: 0 }}>Featured Menu</h2>
+    <footer style={{ background: 'transparent', borderTop: '1px solid rgba(245,185,68,0.15)', padding: '48px 0 32px', marginTop: 60, position: 'relative', zIndex: 1 }}>
+      <div style={{ maxWidth: 'var(--container-max)', margin: '0 auto', padding: '0 var(--container-pad)' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 28 }}>
+          <div style={{ flex: '1 1 280px', minWidth: 240 }}>
+            <p style={{ fontWeight: 800, fontSize: 18, color: 'var(--text)' }}>The <span style={{ color: 'var(--gold)' }}>Crunch</span></p>
+            <p style={{ marginTop: 6, fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.6 }}>6 Falcon St., cor Dahlia Fairview,<br />Quezon City, Philippines</p>
+            <a href="https://www.google.com/maps/place/The+Crunch+-+Fairview+Branch/@14.7002687,121.0662915,21z" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 13.5, fontWeight: 600, color: 'var(--gold)', textDecoration: 'none', transition: 'opacity 200ms' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'} onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>
+              <MapPin size={14} />View on Google Maps
+            </a>
+          </div>
+          <div style={{ flex: '1 1 180px', minWidth: 160, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <p style={{ fontSize: 12, color: 'var(--muted)' }}>Follow us</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+              <a href="https://www.instagram.com/thecrunchfairview" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'var(--gold)', transition: 'opacity 200ms', fontSize: 14 }} onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'} onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>Instagram</a>
+              <a href="https://www.facebook.com/thecrunchfairview" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'var(--gold)', transition: 'opacity 200ms', fontSize: 14 }} onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'} onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>Facebook</a>
+            </div>
+          </div>
+          <div style={{ flex: '1 1 200px', minWidth: 180, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <p style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}><Clock size={13} />Hours</p>
+            <p style={{ marginTop: 6, fontSize: 13.5, textAlign: 'right', color: 'var(--text)', lineHeight: 1.6 }}>Mon–Fri: 10 AM – 10 PM<br />Sat–Sun: 11 AM – 8:30 PM</p>
+          </div>
         </div>
-      </motion.div>
-      <motion.div
-        variants={staggerContainer}
-        className="featured-menu-grid"
-      >
-        {featuredPosters.map((poster, index) => (
-          <FeaturedMenuPoster key={poster.alt} image={poster.img} alt={poster.alt} index={index} />
-        ))}
-      </motion.div>
-    </div>
+        <p style={{ marginTop: 36, paddingTop: 18, borderTop: '1px solid rgba(245,185,68,0.15)', fontSize: 12, textAlign: 'center', color: 'var(--muted)' }}>© {new Date().getFullYear()} The Crunch Fairview. All rights reserved.</p>
+      </div>
+    </footer>
   )
 }
 
-// ── Feedback Modal (unchanged functionality) ────────────────────────────────
+// ── Feedback Modal (unchanged logic) ───────────────────────────────────────
 function FeedbackModal({ onClose, options, userId }: { onClose: () => void; options: { id: number; name: string }[]; userId: number | null }) {
   const [rating, setRating] = useState(0)
   const [hover, setHover] = useState(0)
@@ -2214,44 +1396,44 @@ function FeedbackModal({ onClose, options, userId }: { onClose: () => void; opti
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 900 }} />
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 900, pointerEvents: 'auto' }} />
       <motion.div role="dialog" aria-label="Send feedback" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }}
-        style={{ position: 'fixed', zIndex: 901, right: 16, bottom: 80, width: 'min(400px,calc(100vw - 32px))', maxHeight: 'calc(100vh - 110px)', overflowY: 'auto', background: '#15130f', border: '1px solid var(--line)', borderRadius: 16, padding: 22 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div><p style={{ fontSize: 17, fontWeight: 700 }}>Send feedback</p><p className="sub" style={{ fontSize: 12.5 }}>Tell us how we did.</p></div>
-          <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer', height: 28 }}><X size={18} /></button>
+        style={{ position: 'fixed', zIndex: 901, right: 16, bottom: 80, width: 'min(400px,calc(100vw - 32px))', maxHeight: 'calc(100vh - 110px)', overflowY: 'auto', background: 'var(--bg)', border: '1px solid rgba(245,185,68,0.15)', borderRadius: 16, padding: 22, pointerEvents: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, pointerEvents: 'auto' }}>
+          <div style={{ pointerEvents: 'auto' }}><p style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)' }}>Send feedback</p><p style={{ fontSize: 12.5, color: 'var(--muted)' }}>Tell us how we did.</p></div>
+          <button onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close" style={{ background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer', height: 28, pointerEvents: 'auto' }}><X size={18} /></button>
         </div>
         {status === 'done' ? (
           <div style={{ textAlign: 'center', padding: '20px 0', display: 'grid', gap: 10, justifyItems: 'center' }}>
             <CheckCircle size={38} color="#22c55e" />
-            <p style={{ fontWeight: 700 }}>Feedback sent</p>
-            <button className="btn btn-ghost" onClick={onClose}>Close</button>
+            <p style={{ fontWeight: 700, color: 'var(--text)' }}>Feedback sent</p>
+            <button className="btn-secondary" onClick={onClose}>Close</button>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 14 }}>
             <div>
-              <p className="sub" style={{ fontSize: 12, marginBottom: 6 }}>Rating</p>
+              <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Rating</p>
               <div style={{ display: 'flex', gap: 4 }} onMouseLeave={() => setHover(0)}>
                 {[1, 2, 3, 4, 5].map(n => (
                   <button key={n} aria-label={`${n} star${n > 1 ? 's' : ''}`} onMouseEnter={() => setHover(n)} onClick={() => setRating(n)} style={{ background: 'none', border: 0, cursor: 'pointer', lineHeight: 0 }}>
-                    <Star size={26} color={n <= (hover || rating) ? '#f5c842' : 'rgba(255,255,255,.25)'} fill={n <= (hover || rating) ? '#f5c842' : 'none'} />
+                    <Star size={26} color={n <= (hover || rating) ? 'var(--gold)' : 'rgba(255,255,255,.25)'} fill={n <= (hover || rating) ? 'var(--gold)' : 'none'} />
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <p className="sub" style={{ fontSize: 12, marginBottom: 6 }}>Product</p>
-              <select className="input" value={productId ?? ''} onChange={e => setProductId(+e.target.value || null)} disabled={!options.length || status === 'sending'}>
+              <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Product</p>
+              <select style={{ width: '100%', font: 'inherit', fontSize: 14, color: 'var(--text)', background: 'rgba(245,185,68,0.05)', border: '1px solid rgba(245,185,68,0.15)', borderRadius: 12, padding: '14px 18px', outline: 'none' }} value={productId ?? ''} onChange={e => setProductId(+e.target.value || null)} disabled={!options.length || status === 'sending'}>
                 {options.length === 0 ? <option value="">No products available</option> : options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             </div>
             <div>
-              <p className="sub" style={{ fontSize: 12, marginBottom: 6 }}>Comment</p>
-              <textarea className="input" rows={4} maxLength={MAX_FB} value={message} onChange={e => setMessage(e.target.value)} placeholder="What did you like or dislike?" style={{ resize: 'none' }} />
-              <p className="sub" style={{ fontSize: 11, textAlign: 'right', marginTop: 2 }}>{message.length}/{MAX_FB}</p>
+              <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Comment</p>
+              <textarea style={{ width: '100%', font: 'inherit', fontSize: 14, color: 'var(--text)', background: 'rgba(245,185,68,0.05)', border: '1px solid rgba(245,185,68,0.15)', borderRadius: 12, padding: '14px 18px', outline: 'none', resize: 'none', minHeight: 100 }} rows={4} maxLength={MAX_FB} value={message} onChange={e => setMessage(e.target.value)} placeholder="What did you like or dislike?" />
+              <p style={{ fontSize: 11, textAlign: 'right', marginTop: 2, color: 'var(--muted)' }}>{message.length}/{MAX_FB}</p>
             </div>
             {status === 'error' && <p role="alert" style={{ fontSize: 12.5, color: '#f87171' }}>{err}</p>}
-            <motion.button className="btn btn-gold" onClick={submit} disabled={!can || status === 'sending'} whileTap={{ scale: 0.98 }} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 12, opacity: can ? 1 : .45, cursor: can ? 'pointer' : 'not-allowed' }}>
+            <motion.button style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 12, opacity: can ? 1 : .45, cursor: can ? 'pointer' : 'not-allowed', background: 'var(--gold-gradient)', color: '#1A1208', border: 'none', borderRadius: 12, fontWeight: 600, fontSize: 14, boxShadow: '0 4px 16px rgba(245,185,66,0.3)' }} onClick={submit} disabled={!can || status === 'sending'} whileTap={{ scale: 0.98 }}>
               <Send size={14} />{status === 'sending' ? 'Sending…' : 'Send feedback'}
             </motion.button>
           </div>
@@ -2261,165 +1443,45 @@ function FeedbackModal({ onClose, options, userId }: { onClose: () => void; opti
   )
 }
 
-// ── Food Preview Gallery — Vertical Food Advertisement Posters ───────────────
-// Displays verified local food images as premium vertical campaign posters.
-// Images with matching products show price; preview-only items show no price.
-function FoodPreviewGallery({ products }: { products: Product[] }) {
-  const { isMobile, isTablet, isCompactDesktop } = useViewport()
-
-  // Accent color mapping for each food item to give each poster its own character
-  const accentMap: Record<string, string> = {
-    'Honey Garlic Chicken': '#f5c842',
-    'Teriyaki Chicken': '#fbbf24',
-    'Texas BBQ Chicken': '#fb923c',
-    'Spicy K-Style Chicken': '#f87171',
-    'Special Cheese Chicken': '#fde047',
-    'Garlic Parmesan Chicken': '#f5c842',
-    'Chicken Skin': '#d9aa2b',
-    'Chicken Poppers': '#fbbf24',
-    'Classic Fried Chicken': '#f5c842',
-    'Signature Chicken': '#fde047',
-  };
-
-  const galleryItems = VERIFIED_LOCAL_FOOD_IMAGES.flatMap(item => {
-    const normalized = normalizeProductName(item.displayName);
-    const matchedProduct = products.find(p => normalizeProductName(p.name) === normalized);
-    if (matchedProduct?.archived) return [];
-    return [{
-      ...item,
-      hasProduct: !!matchedProduct,
-      product: matchedProduct,
-      accent: accentMap[item.displayName] || '#f5c842',
-    }];
-  });
-
-  // Responsive column count based on viewport
-  // isMobile: < 768px, isTablet: < 1024px, isCompactDesktop: < 1280px
-  const getColumns = () => {
-    if (isMobile) return 1
-    if (isTablet) return 2
-    if (isCompactDesktop) return 4
-    return 5
-  }
-
-  return (
-    <motion.section className="section" variants={staggerContainer} style={{ marginTop: 80, background: BLACK }}>
-      <div className="section-header" style={{ maxWidth: 1280, margin: '0 auto 28px', padding: '16px 24px', display: 'inline-flex', alignItems: 'center', gap: 16, borderRadius: 12 }}>
-        <motion.h2 className="section-title" variants={fadeUp}>Food Preview Gallery</motion.h2>
-        <motion.p className="section-subtitle" variants={fadeUp} style={{ color: 'var(--muted)' }}>
-
-        </motion.p>
-      </div>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px' }}>
-        <motion.div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${getColumns()}, 1fr)`,
-            gap: 'clamp(18px, 2vw, 24px)',
-            perspective: '1200px',
-          }}
-          variants={staggerContainer}
-          role="list"
-        >
-          {galleryItems.map((item) => (
-            <VerticalAdPoster
-              key={item.filename}
-              image={item.path}
-              title={item.displayName}
-              subtitle={item.hasProduct ? 'Available to order' : 'Preview only'}
-              description={item.hasProduct && item.product
-                ? item.product.description || 'Hand-crafted with our signature spices.'
-                : 'This item is not currently on the menu. Ask our staff about availability.'}
-              badge={item.hasProduct ? 'On Menu' : 'Preview'}
-              price={item.hasProduct && item.product ? fmt(item.product.price) : undefined}
-              showPrice={item.hasProduct}
-              accentColor={item.accent}
-              bgWords={item.displayName.toUpperCase().split(' ').slice(0, 2).join(' ')}
-            />
-          ))}
-        </motion.div>
-      </div>
-    </motion.section>
-  );
-}
-
-// ── Page ───────────────────────────────────────────────────────────────────
+// ── Page Component ─────────────────────────────────────────────────────────
 interface ProductsProps { isAuthenticated?: boolean }
 
 export default function Products({ isAuthenticated = false }: ProductsProps) {
-  const navigate = useNavigate()
   const { user } = useAuth()
 
   const [products, setProducts] = useState<Product[]>([])
-  const [menuCategories, setMenuCategories] = useState<MenuCategoryRecord[]>([])
-  const [_flavors, setFlavors] = useState<Flavor[]>([])
-  const [promos, setPromos] = useState<Promo[]>([])
-  const [loading, setLoading] = useState({ p: true, f: true, r: true })
-  const [category, setCategory] = useState<Category>('All')
-  const [search, setSearch] = useState('')
   const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   const userId = isAuthenticated && user && Number(user.userId) > 0 ? Number(user.userId) : null
 
-  const goOrder = useCallback(() => navigate('/usersmenu?showOrderModal=true'), [navigate])
-
   useEffect(() => { void fetchGeneralSettings() }, [])
 
   useEffect(() => {
-    const el = document.createElement('style')
-    el.id = 'products-css'
-    el.innerHTML = CSS
-    document.head.appendChild(el)
-    return () => el.remove()
+    let cancelled = false
+    const load = <T,>(url: string, set: (d: T[]) => void, map?: (d: unknown[]) => T[]) =>
+      api.get<unknown[]>(url)
+        .then((d: unknown) => { if (!cancelled) { const r = Array.isArray(d) ? d : []; set(map ? map(r) : (r as T[])) } })
+        .catch(() => { })
+        .finally(() => { })
+    load<Product>('/api/products?item_type=menu_item', setProducts, mapProducts)
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
     let cancelled = false
-    const load = <T,>(url: string, key: 'p' | 'f' | 'r', set: (d: T[]) => void, map?: (d: unknown[]) => T[]) =>
-      api.get<unknown[]>(url)
-        .then((d: unknown) => { if (!cancelled) { const r = Array.isArray(d) ? d : []; set(map ? map(r) : (r as T[])) } })
-        .catch(() => { })
-        .finally(() => { if (!cancelled) setLoading(s => ({ ...s, [key]: false })) })
-    load<Product>('/api/products?item_type=menu_item', 'p', setProducts, mapProducts)
-    api.get<MenuCategoryRecord[]>('/settings/menu-categories?activeOnly=1')
-      .then(rows => { if (!cancelled) setMenuCategories(Array.isArray(rows) ? rows : []) })
-      .catch(() => { if (!cancelled) setMenuCategories([]) })
-    load<Flavor>('/api/flavors', 'f', setFlavors)
-    load<Promo>('/api/promos', 'r', setPromos)
+    api.get<unknown[]>('/api/products?item_type=menu_item')
+      .then((d: unknown) => { if (!cancelled) { const r = Array.isArray(d) ? d : []; setProducts(mapProducts(r)) } })
+      .catch(() => { })
+      .finally(() => { })
     return () => { cancelled = true }
   }, [])
 
-  const categoryOptions = useMemo(() => {
-    const actual = new Map<string, string>()
-    products.filter(p => !p.archived).forEach(p => actual.set(p.category.toLowerCase(), p.category))
-    const ordered: string[] = []
-    const seen = new Set<string>()
-    const addIfUsed = (value: string) => {
-      const key = value.trim().toLowerCase()
-      const actualName = actual.get(key)
-      if (!actualName || seen.has(key)) return
-      seen.add(key)
-      ordered.push(actualName)
-    }
-    const configured = [...menuCategories]
-      .filter(item => item.is_active === true || item.is_active === 1)
-      .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0) || a.name.localeCompare(b.name))
-    configured.forEach(item => addIfUsed(item.name))
-    const remaining = [...actual.values()].sort((a, b) => a.localeCompare(b))
-    remaining.forEach(addIfUsed)
-    return ['All', ...ordered]
-  }, [menuCategories, products])
-  const selectedCategory = categoryOptions.includes(category) ? category : 'All'
-  const filtered = useMemo(
-    () => products.filter(p => !p.archived && (selectedCategory === 'All' || p.category === selectedCategory) && p.name.toLowerCase().includes(search.toLowerCase())),
-    [products, search, selectedCategory]
-  )
   const feedbackOptions = useMemo(() => products.filter(p => !p.archived).map(p => ({ id: p.id, name: p.name })), [products])
-  const featured = promos.filter(p => p.highlight)
-  const regular = promos.filter(p => !p.highlight)
 
   return (
-    <div className="pc">
+    <div className="pc" style={{ background: BLACK, minHeight: '100vh' }}>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+
       <Navbar />
 
       {/* HERO SECTION — Signature Glazed Chicken: Premium Black & Gold */}
@@ -2428,132 +1490,14 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
           <motion.div variants={fadeUp}>
             <HeroSection />
           </motion.div>
-
-          {/* Search Bar */}
-          <motion.div variants={fadeUp} style={{ marginTop: 40 }}>
-            <div style={{ position: 'relative', maxWidth: 560, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(26,26,26,0.8)', border: '1px solid var(--line)', borderRadius: 12, backdropFilter: 'blur(16px)' }}>
-              <Search size={18} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-              <input
-                className="input"
-                style={{ paddingLeft: 0, paddingRight: 0, fontSize: 15, height: 44, background: 'transparent', border: 'none', boxShadow: 'none', color: 'var(--text)', width: '100%', outline: 'none' }}
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search the menu..."
-                aria-label="Search the menu"
-              />
-              {search && <button onClick={() => setSearch('')} aria-label="Clear search" style={{ background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer', display: 'flex', padding: 4, borderRadius: 8, transition: 'color 0.2s, background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text)'} onMouseLeave={(e) => e.currentTarget.style.color = 'var(--muted)'}><X size={18} /></button>}
-            </div>
-          </motion.div>
         </div>
       </section>
 
-      {/* FOOD PREVIEW GALLERY - Moved up to appear after Hero */}
-      <FoodPreviewGallery products={products} />
-
-      {/* FEATURED STRIP */}
-      <motion.section variants={staggerContainer} style={{ padding: '20px 0 60px', background: BLACK }}>
-        <div className="wrap">
-          <FeaturedStrip />
-        </div>
-      </motion.section>
-
-      {/* CATEGORY TABS */}
-      <div className="tabs">
-        <div className="wrap tabs-in" role="tablist">
-          {categoryOptions.map((c: string) => (
-            <motion.button
-              key={c}
-              role="tab"
-              aria-selected={selectedCategory === c}
-              className={`tab ${selectedCategory === c ? 'on' : ''}`}
-              onClick={() => setCategory(c)}
-              whileTap={{ scale: 0.97 }}
-              variants={fadeIn}
-              style={{ background: category === c ? 'rgba(233,190,95,0.12)' : 'transparent', borderRadius: 10, border: category === c ? '1px solid var(--butter)' : 'none', boxShadow: category === c ? '0 4px 16px -4px rgba(0,0,0,0.4)' : 'none' }}
-            >
-              {c}
-            </motion.button>
-          ))}
-        </div>
-      </div>
-
-      <motion.main className="wrap" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ paddingTop: 24, paddingBottom: 64, background: BLACK }}>
-        {/* PRODUCTS GRID */}
-        <motion.section variants={staggerContainer} style={{ background: BLACK }}>
-          <div className="section-header" style={{ padding: '16px 20px', display: 'inline-flex', alignItems: 'center', gap: 16, borderRadius: 12, marginBottom: 24 }}>
-            <motion.h2 className="section-title" variants={fadeUp}>Our Menu</motion.h2>
-            <motion.p className="section-subtitle" variants={fadeUp} style={{ color: 'var(--muted)' }}>{filtered.length} item{filtered.length !== 1 ? 's' : ''}</motion.p>
-          </div>
-
-          {loading.p ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "18px", width: "100%" }}>
-              {[...Array(6)].map((_, i) => <SkeletonProductCard key={i} theme="customer" />)}
-            </div>
-          ) : filtered.length === 0 ? (
-            <motion.div variants={fadeIn} style={{ textAlign: 'center', padding: '80px 0' }}>
-              <p style={{ fontSize: 18, fontWeight: 700 }}>No items found</p>
-              <p className="sub" style={{ marginTop: 4 }}>Try a different search or category.</p>
-              {search && <motion.button className="btn btn-ghost" style={{ marginTop: 16 }} onClick={() => setSearch('')} whileTap={{ scale: 0.97 }}>Clear search</motion.button>}
-            </motion.div>
-          ) : (
-            <motion.div className="grid" role="list" variants={staggerContainer}>
-              {filtered.map((p) => (
-                <motion.div key={p.id} variants={fadeUp} style={{ display: 'flex', flexDirection: 'column' }} role="listitem">
-                  <ProductCard p={p} onOrder={goOrder} />
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </motion.section>
-
-        {/* PROMOS */}
-        {!loading.r && promos.length > 0 && (
-          <motion.section className="section" variants={staggerContainer} style={{ background: BLACK, marginTop: 48 }}>
-            <div className="section-header" style={{ padding: '16px 20px', display: 'inline-flex', alignItems: 'center', gap: 16, borderRadius: 12, marginBottom: 24 }}>
-              <motion.h2 className="section-title" variants={fadeUp}>Deals & Promos</motion.h2>
-              <motion.p className="section-subtitle" variants={fadeUp} style={{ color: 'var(--muted)' }}>Current offers and limited-time specials.</motion.p>
-            </div>
-            <motion.div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,260px),1fr))', gap: 16 }} variants={staggerContainer} role="list">
-              {[...featured, ...regular].map(p => (
-                <motion.div key={p.id} variants={fadeUp} role="listitem">
-                  <PromoCard p={p} />
-                </motion.div>
-              ))}
-            </motion.div>
-          </motion.section>
-        )}
-
-      </motion.main>
+      {/* OUR STORY */}
+      <OurStory />
 
       {/* FOOTER */}
-      <footer style={{ background: BLACK, borderTop: '1px solid var(--line)', padding: '48px 0 32px', marginTop: 60 }}>
-        <div className="wrap">
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 28 }}>
-            {/* Left — Business Information */}
-            <div style={{ flex: '1 1 280px', minWidth: 240 }}>
-              <p style={{ fontWeight: 800, fontSize: 18 }}>The <span style={{ color: 'var(--gold)' }}>Crunch</span></p>
-              <p className="sub" style={{ marginTop: 6, fontSize: 13.5 }}>6 Falcon St., cor Dahlia Fairview,<br />Quezon City, Philippines</p>
-              <a href="https://www.google.com/maps/place/The+Crunch+-+Fairview+Branch/@14.7002687,121.0662915,21z" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 13.5, fontWeight: 600, color: 'var(--gold)', textDecoration: 'none' }}>
-                <MapPin size={14} />View on Google Maps
-              </a>
-            </div>
-            {/* Center — Social Media */}
-            <div style={{ flex: '1 1 180px', minWidth: 160, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <p className="sub" style={{ fontSize: 12 }}>Follow us</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                <a className="link" style={{ padding: 0, textDecoration: 'none', color: 'var(--gold)', transition: 'color 0.2s ease' }} href="https://www.instagram.com/thecrunchfairview" target="_blank" rel="noopener noreferrer">Instagram</a>
-                <a className="link" style={{ padding: 0, textDecoration: 'none', color: 'var(--gold)', transition: 'color 0.2s ease' }} href="https://www.facebook.com/thecrunchfairview" target="_blank" rel="noopener noreferrer">Facebook</a>
-              </div>
-            </div>
-            {/* Right — Operating Hours */}
-            <div style={{ flex: '1 1 200px', minWidth: 180, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-              <p className="sub" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}><Clock size={13} />Hours</p>
-              <p className="sub" style={{ marginTop: 6, fontSize: 13.5, textAlign: 'right' }}>Mon–Fri: 10 AM – 10 PM<br />Sat–Sun: 11 AM – 8:30 PM</p>
-            </div>
-          </div>
-          <p className="sub" style={{ marginTop: 36, paddingTop: 18, borderTop: '1px solid var(--line)', fontSize: 12, textAlign: 'center' }}>© {new Date().getFullYear()} The Crunch Fairview. All rights reserved.</p>
-        </div>
-      </footer>
+      <Footer />
 
       {/* FEEDBACK */}
       <AnimatePresence>{feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} options={feedbackOptions} userId={userId} />}</AnimatePresence>

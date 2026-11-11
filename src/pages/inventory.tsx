@@ -255,12 +255,14 @@ function buildIngredientPayload(inputs: IngredientInput[]) {
     }))
     .filter((entry) => entry.productId || entry.quantityRequired);
 
+  if (!filled.length) throw new Error("Add at least one existing inventory ingredient.");
+
   for (const entry of filled) {
     if (!entry.productId || !entry.quantityRequired)
       throw new Error(
         "Each ingredient row needs both an ingredient and a required quantity.",
       );
-    if (Number(entry.quantityRequired) <= 0)
+    if (!Number.isFinite(Number(entry.quantityRequired)) || Number(entry.quantityRequired) <= 0)
       throw new Error("Ingredient quantities must be greater than zero.");
   }
   return filled.map((entry) => ({
@@ -1064,6 +1066,9 @@ function MenuFormModal({
       const ingredients = isChickenFlavor
         ? null
         : buildIngredientPayload(values.ingredients);
+      if (ingredients?.some((ingredient) => !ingredientOptions.some((option) => Number(option.id) === ingredient.product_id))) {
+        throw new Error("Select existing inventory ingredients.");
+      }
 
       let image: string | undefined;
       if (imageFile) image = await uploadProductImage(imageFile);
@@ -1244,7 +1249,7 @@ function MenuFormModal({
       {!isChickenFlavor && (
         <>
           <p className={sectionTitle} style={{ color: T.ink }}>
-            Ingredients
+            Ingredients (required)
           </p>
           <div className="space-y-2">
             {values.ingredients.length === 0 && (
@@ -1256,7 +1261,7 @@ function MenuFormModal({
                   border: `1px dashed ${T.faint}`,
                 }}
               >
-                No ingredients assigned. In Auto mode, this item is unavailable
+                Add at least one existing inventory ingredient before saving. This item is unavailable
                 until at least one ingredient is configured.
               </p>
             )}

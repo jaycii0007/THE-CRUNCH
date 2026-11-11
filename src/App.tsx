@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import React from "react";
 import { useAuth } from "./context/authcontext";
 import {
@@ -117,7 +117,12 @@ function ProtectedRoute({
   permissionsReady: boolean;
   allowedRoles?: readonly Exclude<Role, "customer" | null>[];
 }) {
-  if (!isAuth) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (!isAuth) {
+    // Preserve the attempted path for return after login
+    const returnTo = location.pathname + location.search;
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
+  }
   if (!userRole || userRole === "customer") {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -281,7 +286,7 @@ export default function App() {
       <Route path="/aboutthecrunch" element={<AboutTheCrunch />} />
       <Route
         path="/my-account"
-        element={isAuth ? <MyAccount /> : <Navigate to="/login" replace />}
+        element={isAuth ? <MyAccount /> : <Navigate to="/login?returnTo=/my-account" replace />}
       />
 
       {/* ── Customer landing (public, but passes auth state for nav) ── */}
@@ -291,15 +296,7 @@ export default function App() {
       {/* ── Customer menu ────────────────────────────────────── */}
       <Route
         path="/usersmenu"
-        element={
-          !isAuth ? (
-            <Navigate to="/login" replace />
-          ) : userRole === "administrator" || userRole === "customer" ? (
-            <UsersMenu />
-          ) : (
-            <Navigate to="/unauthorized" replace />
-          )
-        }
+        element={<UsersMenu />}
       />
 
       {/* ── Administrator ────────────────────────────────────── */}

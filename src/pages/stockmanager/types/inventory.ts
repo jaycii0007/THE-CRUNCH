@@ -114,6 +114,7 @@ export interface SupplierHistory {
 }
 
 export interface Supplier {
+  product_ids?: number[];
   supplier_id: number;
   supplier_name: string;
   contact_number: string;

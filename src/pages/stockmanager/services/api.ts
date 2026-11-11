@@ -117,6 +117,7 @@ export const api = {
     apiFetch<{ success: boolean }>(`/suppliers/${id}`, { method: "DELETE" }),
   getSupplierHistory: () => apiFetch<SupplierHistory[]>("/suppliers/history"),
   createProduct: (body: {
+    supplier_ids?: number[];
     name: string;
     price: number;
     quantity: number;
@@ -136,6 +137,7 @@ export const api = {
   updateProduct: (
     id: number,
     body: {
+      supplier_ids?: number[];
       name?: string;
       unit?: string;
       category?: string;

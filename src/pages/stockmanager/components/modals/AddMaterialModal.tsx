@@ -6,6 +6,7 @@ import { StyledSelect } from "../StyledSelect";
 import type {
   RawMaterialForm,
   RawMaterialModalMode,
+  Supplier,
 } from "../../types/inventory";
 import {
   sanitizeMaterialNameInput,
@@ -23,6 +24,9 @@ type AddMaterialModalProps = {
   defaultCriticalStockThreshold: number;
   submitting: boolean;
   mode?: RawMaterialModalMode;
+  suppliers: Supplier[];
+  supplierIds: number[];
+  onSupplierIdsChange: (ids: number[]) => void;
   onClose: () => void;
   onSave: () => void | Promise<void>;
 };
@@ -38,10 +42,14 @@ export function AddMaterialModal({
   defaultCriticalStockThreshold,
   submitting,
   mode = "add",
+  suppliers,
+  supplierIds,
+  onSupplierIdsChange,
   onClose,
   onSave,
 }: AddMaterialModalProps) {
   const isEditMode = mode === "edit";
+  const selectedSupplierNames = suppliers.filter((entry) => supplierIds.includes(entry.supplier_id)).map((entry) => entry.supplier_name).join(", ");
 
   return (
     <motion.div
@@ -140,6 +148,26 @@ export function AddMaterialModal({
             </FormField>
           </div>
           <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <FormField label="Suppliers">
+                <details className="relative mb-4">
+                  <summary aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }}
+                    className={`flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 ${submitting ? "opacity-50" : ""}`}>
+                    <span className="truncate" title={selectedSupplierNames}>{selectedSupplierNames || "Select suppliers"}</span>
+                    <span aria-hidden="true" className="text-slate-400">▾</span>
+                  </summary>
+                  <div className="absolute left-0 right-0 z-20 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                    {suppliers.map((entry) => (
+                      <label key={entry.supplier_id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                        <input type="checkbox" disabled={submitting} checked={supplierIds.includes(entry.supplier_id)}
+                          onChange={(event) => onSupplierIdsChange(event.target.checked ? [...supplierIds, entry.supplier_id] : supplierIds.filter((id) => id !== entry.supplier_id))}
+                          className="accent-emerald-600" />
+                        {entry.supplier_name}
+                      </label>
+                    ))}
+                    {suppliers.length === 0 && <p className="px-2 py-2 text-sm text-slate-400">No suppliers available.</p>}
+                  </div>
+                </details>
+              </FormField>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-slate-700">

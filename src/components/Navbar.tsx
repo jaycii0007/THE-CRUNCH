@@ -360,8 +360,10 @@ export function Navbar({
     setOpen(false);
     if (path === "/usersmenu") {
       navigate("/usersmenu?showOrderModal=true");
-    } else if (path === "/login?tab=signup") {
-      navigate("/login?tab=signup");
+    } else if (path === "/login" || path === "/login?tab=signup") {
+      const returnTo = location.pathname === "/" ? "/products" : location.pathname;
+      const separator = path.includes("?") ? "&" : "?";
+      navigate(`${path}${separator}returnTo=${encodeURIComponent(returnTo)}`);
     } else {
       navigate(path);
     }

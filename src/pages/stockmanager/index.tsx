@@ -372,6 +372,7 @@ export default function StockManager() {
   const [rawMaterialForm, setRawMaterialForm] =
     useState<RawMaterialForm>(BLANK_RAW_MATERIAL);
   const [editingMaterial, setEditingMaterial] = useState<Product | null>(null);
+  const [materialSupplierIds, setMaterialSupplierIds] = useState<number[]>([]);
   const [inventoryCategories, setInventoryCategories] = useState<
     InventoryCategoryMaster[]
   >([]);
@@ -836,6 +837,7 @@ export default function StockManager() {
     setSubmitting(true);
     try {
       await api.createProduct({
+        supplier_ids: materialSupplierIds,
         name,
         price: 0,
         quantity: 0,
@@ -858,6 +860,7 @@ export default function StockManager() {
       await fetchAll();
       setRawMaterialForm(BLANK_RAW_MATERIAL);
       setShowRawMaterialForm(false);
+      void supplier.fetchSuppliers().catch(() => {});
       showToast("Raw material added.", "success");
     } catch (err) {
       showToast(
@@ -869,7 +872,15 @@ export default function StockManager() {
     }
   }
 
-  function openEditMaterial(product: Product) {
+  async function openEditMaterial(product: Product) {
+    try {
+      const suppliers = await supplier.fetchSuppliers();
+      if (suppliers.some((entry) => !Array.isArray(entry.product_ids))) throw new Error("Supplier assignments could not be loaded. Refresh after updating the backend.");
+      setMaterialSupplierIds(suppliers.filter((entry) => entry.product_ids?.includes(product.product_id)).map((entry) => entry.supplier_id));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Failed to load supplier assignments.", "error");
+      return;
+    }
     setEditingMaterial(product);
     setRawMaterialForm({
       name: product.product_name,
@@ -938,6 +949,7 @@ export default function StockManager() {
     setSubmitting(true);
     try {
       await api.updateProduct(editingMaterial.product_id, {
+        supplier_ids: materialSupplierIds,
         name,
         unit: rawMaterialForm.unit.trim(),
         category: rawMaterialForm.category.trim(),
@@ -950,6 +962,7 @@ export default function StockManager() {
           ? null
           : thresholdValidation.criticalStockThreshold,
       });
+      await supplier.fetchSuppliers();
       await fetchAll();
       setEditingMaterial(null);
       setRawMaterialForm(BLANK_RAW_MATERIAL);
@@ -1169,6 +1182,8 @@ export default function StockManager() {
                               <button
                                 onClick={() => {
                                   setEditingMaterial(null);
+                                  setMaterialSupplierIds([]);
+                                  void supplier.fetchSuppliers().catch((error) => showToast(error instanceof Error ? error.message : "Failed to load suppliers.", "error"));
                                   setRawMaterialForm(BLANK_RAW_MATERIAL);
                                   setShowRawMaterialForm(true);
                                 }}
@@ -2228,6 +2243,10 @@ export default function StockManager() {
                 supplier.setShowSupplierForm(true);
               }}
               onAddMaterial={() => {
+                setEditingMaterial(null);
+                setMaterialSupplierIds([]);
+                setRawMaterialForm(BLANK_RAW_MATERIAL);
+                void supplier.fetchSuppliers().catch((error) => showToast(error instanceof Error ? error.message : "Failed to load suppliers.", "error"));
                 po.setEditingOrder(null);
                 po.handleClosePOModal();
                 setShowRawMaterialForm(true);
@@ -2265,6 +2284,9 @@ export default function StockManager() {
               }
               submitting={submitting}
               mode={editingMaterial ? "edit" : "add"}
+              suppliers={supplier.suppliers}
+              supplierIds={materialSupplierIds}
+              onSupplierIdsChange={setMaterialSupplierIds}
               onClose={() => {
                 setShowRawMaterialForm(false);
                 setEditingMaterial(null);
