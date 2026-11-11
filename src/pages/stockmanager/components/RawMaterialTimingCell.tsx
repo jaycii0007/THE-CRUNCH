@@ -22,7 +22,7 @@ export function RawMaterialTimingCell({ product }: { product: Product }) {
       <p className="text-xs font-semibold text-slate-700">
         Shelf Life:{" "}
         <span className="font-normal text-slate-500">
-          {formatShelfLife(product.shelfLifeDays, product.shelfLifeHours)}
+          {product.usableUntil ? "See Batch Records" : formatShelfLife(product.shelfLifeDays, product.shelfLifeHours)}
         </span>
       </p>
       <p className="text-[11px] text-slate-500">

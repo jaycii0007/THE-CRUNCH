@@ -408,12 +408,10 @@ function useMenuAdmin(onError: (message: string) => void) {
   });
 
   // Use the categories from Settings. If there are none, use the ones already on the items.
-  const categories =
-    apiCategories.length > 0
-      ? apiCategories
-      : [...new Set(items.map((item) => item.category).filter(Boolean))].sort(
-          (a, b) => a.localeCompare(b),
-        );
+  const categories = (apiCategories.length > 0
+    ? [...apiCategories]
+    : [...new Set(items.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)))
+    .sort((a, b) => Number(a === chickenFlavorCategoryName) - Number(b === chickenFlavorCategoryName));
 
   return {
     items,
@@ -1464,7 +1462,7 @@ function MenuAdminTab() {
         [item.name, item.category, item.menuCode, item.promoLabel].some(
           (text) => text.toLowerCase().includes(term),
         )),
-  );
+  ).sort((a, b) => Number(isChickenFlavor(a)) - Number(isChickenFlavor(b)));
 
   // Numbers for the summary cards
   const activeItems = items.filter((item) => !isArchived(item));
@@ -1884,7 +1882,7 @@ function MenuAdminTab() {
             <p className="text-[13px]" style={{ color: T.muted }}>No disabled items.</p>
           ) : (
             <div className="divide-y" style={{ borderColor: T.line }}>
-              {items.filter(isArchived).map((item) => (
+              {items.filter(isArchived).sort((a, b) => Number(isChickenFlavor(a)) - Number(isChickenFlavor(b))).map((item) => (
                 <div key={item.id} className="flex items-center justify-between gap-3 py-3">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: T.ink }}>{item.name} <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">Disabled</span></p>

@@ -1669,7 +1669,7 @@ function SuccessModal({
     ? [
         ["Subtotal", r.subtotal],
         ["Discount", r.discount.amount ? -r.discount.amount : 0],
-        [r.tax.amount && Math.abs(Number(r.total) - (Number(r.subtotal) - Number(r.discount.amount) + Number(r.serviceCharge.amount))) < 0.01 ? "Included tax" : "Tax", r.tax.amount],
+        [`${r.tax.amount && Math.abs(Number(r.total) - (Number(r.subtotal) - Number(r.discount.amount) + Number(r.serviceCharge.amount))) < 0.01 ? "Included tax" : "Tax"}${r.tax.rate != null ? ` (${pct(r.tax.rate)}%)` : ""}`, r.tax.amount],
         ["Service charge", r.serviceCharge.amount],
       ]
     : [];

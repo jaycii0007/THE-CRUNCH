@@ -14,7 +14,7 @@ import {
   formatInSettingsTimezone,
   normalizeGeneralSettings,
 } from "@/lib/restaurantSettings";
-import { api } from "./services/api";
+import { api, apiFetch } from "./services/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import type {
   Batch,
@@ -325,7 +325,7 @@ function batchShelfLifeText(batch: MaterialBatch): string {
       ? [`${amount} ${unit}${amount === 1 ? "" : "s"}`]
       : [];
   });
-  return parts.length ? parts.join(", ") : "Not specified";
+  return parts.length ? parts.join(", ") : "Not recorded";
 }
 
 function batchStatus(batch: MaterialBatch): {
@@ -452,6 +452,16 @@ export default function StockManager() {
   const [showDashboardBackToTop, setShowDashboardBackToTop] = useState(false);
   const dashboardTopRef = useRef<HTMLDivElement | null>(null);
   const refreshInventoryRef = useRef<() => Promise<void>>(async () => {});
+  const [recentMovements, setRecentMovements] = useState<{
+    stock_movement_id: number;
+    material_name: string;
+    signed_quantity: number | string;
+    unit: string;
+    occurred_at: string;
+    order_number: number;
+    source_type: "order" | "order_refund";
+  }[]>([]);
+  const [movementsError, setMovementsError] = useState<string | null>(null);
   const alertsLoadStarted = useRef(false);
   const inventoryUnitsLoadStarted = useRef(false);
   const currentStaffDisplayName = useMemo(() => {
@@ -493,12 +503,19 @@ export default function StockManager() {
     setIsRefreshing(true);
     setError(null);
     try {
-      const [invRes, categoryRes, settingsRes] = await Promise.allSettled([
+      const [invRes, categoryRes, settingsRes, movementsRes] = await Promise.allSettled([
         api.getInventory(),
         api.getInventoryCategories(),
         fetchGeneralSettingsPayload(),
+        apiFetch<typeof recentMovements>("/inventory/recent-movements"),
       ]);
 
+      if (movementsRes.status === "fulfilled") {
+        setRecentMovements(movementsRes.value);
+        setMovementsError(null);
+      } else {
+        setMovementsError("Unable to load recent inventory movements.");
+      }
       if (invRes.status !== "fulfilled") {
         const detail =
           invRes.reason instanceof Error
@@ -1094,7 +1111,7 @@ export default function StockManager() {
                 { id: "main-stock" as const, label: "Main Stock Levels" },
                 {
                   id: "last-updates" as const,
-                  label: "Last Inventory Updates",
+                  label: "Recent Inventory Movements",
                 },
               ].map((item) => (
                 <button
@@ -1147,14 +1164,11 @@ export default function StockManager() {
                   totalProductsValue={dashboard.totalProductsCounted.length.toString()}
                   lowStockValue={dashboard.lowStockItems.length.toString()}
                   criticalStockValue={dashboard.alertCriticalStock.length.toString()}
-                  pendingPOValue={po.poOrders
-                    .filter((order) => order.status === "Ordered")
-                    .length.toString()}
+                  pendingPOValue={po.filteredPOs.length.toString()}
                   wholeChickenProducts={dashboard.wholeChickenProducts}
                   choppedChickenProducts={dashboard.choppedChickenProducts}
                   dashboardSubTab={dashboard.dashboardSubTab}
                   onSummarySelect={dashboard.selectDashboardSummary}
-                  onPendingPOSelect={() => setTab("purchases")}
                   mainStockContent={
                     <div
                       id="dashboard-main-stock"
@@ -1469,69 +1483,30 @@ export default function StockManager() {
                         style={{ scrollMarginTop: "180px" }}
                       >
                         <SectionCard
-                          title="Last Inventory Updates"
-                          subtitle="Most recently updated items"
+                          title="Recent Inventory Movements"
+                          subtitle="Latest paid-order deductions and refund restorations"
                         >
                           <div style={{ borderTop: "none" }}>
-                            {[...products]
-                              .sort(
-                                (a, b) =>
-                                  new Date(b.last_update).getTime() -
-                                  new Date(a.last_update).getTime(),
-                              )
-                              .slice(0, 6)
-                              .map((p, i) => (
-                                <motion.div
-                                  key={p.inventory_id}
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  transition={{ delay: i * 0.07 }}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                    padding: "16px 20px",
-                                    borderBottom: "1px solid var(--sm-border)",
-                                  }}
-                                >
-                                  <div>
-                                    <p
-                                      style={{
-                                        fontSize: "var(--sm-text-sm)",
-                                        fontWeight: 500,
-                                        color: "var(--sm-text)",
-                                      }}
-                                    >
-                                      {p.product_name}
-                                    </p>
-                                    <p
-                                      style={{
-                                        fontSize: "var(--sm-text-xs)",
-                                        color: "var(--sm-text-subtle)",
-                                        marginTop: "4px",
-                                      }}
-                                    >
-                                      {p.supplier_name}
-                                    </p>
-                                  </div>
-                                  <span
-                                    style={{
-                                      fontSize: "var(--sm-text-xs)",
-                                      color: "var(--sm-text-muted)",
-                                      background: "var(--sm-surface-alt)",
-                                      border: "1px solid var(--sm-border)",
-                                      padding: "6px 12px",
-                                      borderRadius: "var(--sm-radius-sm)",
-                                    }}
-                                  >
-                                    {formatInSettingsTimezone(
-                                      p.last_update,
-                                      restaurantSettings,
-                                      { month: "short", day: "numeric" },
-                                    )}
-                                  </span>
-                                </motion.div>
-                              ))}
+                            {movementsError ? (
+                              <p style={{ padding: "16px 20px" }}>{movementsError}</p>
+                            ) : recentMovements.length === 0 ? (
+                              <p style={{ padding: "16px 20px", color: "var(--sm-text-muted)" }}>No inventory movements recorded.</p>
+                            ) : recentMovements.map((movement) => (
+                              <div key={movement.stock_movement_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", padding: "16px 20px", borderBottom: "1px solid var(--sm-border)" }}>
+                                <div>
+                                  <p style={{ fontSize: "var(--sm-text-sm)", fontWeight: 500, color: "var(--sm-text)" }}>{movement.material_name}</p>
+                                  <p style={{ fontSize: "var(--sm-text-xs)", color: "var(--sm-text-subtle)", marginTop: "4px" }}>
+                                    Order #{movement.order_number} | {movement.source_type === "order_refund" ? "Refunded | Restored" : "Paid | Deducted"}
+                                  </p>
+                                  <p style={{ fontSize: "var(--sm-text-xs)", color: "var(--sm-text-muted)", marginTop: "4px" }}>
+                                    {formatInSettingsTimezone(movement.occurred_at, restaurantSettings, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                                <span style={{ fontWeight: 600, whiteSpace: "nowrap", color: Number(movement.signed_quantity) < 0 ? "#dc2626" : "#15803d" }}>
+                                  {Number(movement.signed_quantity) < 0 ? "-" : "+"}{Math.abs(Number(movement.signed_quantity)).toLocaleString(undefined, { maximumFractionDigits: 4 })} {movement.unit}
+                                </span>
+                              </div>
+                            ))}
                           </div>
                         </SectionCard>
                       </div>
@@ -1877,7 +1852,7 @@ export default function StockManager() {
                         marginBottom: 4,
                       }}
                     >
-                      Stock Manager / Read-only batch records
+                      Batch Records
                     </p>
                     <h2
                       id="sm-batch-dialog-title"
