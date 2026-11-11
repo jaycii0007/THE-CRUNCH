@@ -1,103 +1,27 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Flame,
-  MapPin,
-  Star,
-  X,
-  MessageSquare,
-  Send,
-  CheckCircle,
-  ShoppingBag,
-  ArrowRight,
-  Clock,
-} from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { api, resolveAssetUrl } from "@/lib/api";
-import {
-  fetchGeneralSettings,
-  formatCurrencyAmount,
-} from "@/lib/restaurantSettings";
-import { useAuth } from "@/context/authcontext";
-import { SkeletonProductCard } from "@/components/ui/skeleton";
-import { Navbar } from "@/components/Navbar";
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { MapPin, Star, X, MessageSquare, Send, CheckCircle, ShoppingBag, ArrowRight, Clock } from 'lucide-react'
+import { api, resolveAssetUrl } from '@/lib/api'
+import { fetchGeneralSettings } from '@/lib/restaurantSettings'
+import { useAuth } from '@/context/authcontext'
+import { Navbar } from '@/components/Navbar';
 
 // ── Types & helpers ────────────────────────────────────────────────────────
-const NAV_H = 72;
-const MAX_FB = 200;
-type Category = string;
+const NAV_H = 72
+const MAX_FB = 200
+type Category = string
 
-interface Product {
-  id: number;
-  name: string;
-  category: Category;
-  rating: number;
-  badge: string;
-  description: string;
-  price: number;
-  spicy: boolean;
-  img: string;
-  archived: boolean;
-}
-interface Flavor {
-  name: string;
-  accent: string;
-  desc: string;
-  img: string;
-}
-interface Promo {
-  id: string;
-  title: string;
-  subtitle?: string;
-  description: string;
-  img: string;
-  badge?: string;
-  validUntil?: string;
-  discount?: string;
-  highlight?: boolean;
-}
-interface MenuCategoryRecord {
-  name: string;
-  display_order?: number;
-  is_active?: boolean | number;
-  system_key?: string | null;
-}
+interface Product { id: number; name: string; category: Category; rating: number; badge: string; description: string; price: number; spicy: boolean; img: string; archived: boolean }
 
-const fmt = (v: number) => formatCurrencyAmount(v);
-
-const normCat = (v: unknown): Category => String(v ?? "").trim();
-
-// The built-in Chicken Flavors category contains selection-only sauce labels,
-// not purchasable menu products. Match its stable system key, not the visible
-// “Sauces” label: a separate sellable Sauces category must remain visible.
-const isSelectionOnlySauceCategory = (
-  value: unknown,
-  categories: MenuCategoryRecord[],
-): boolean => {
-  const normalized = normCat(value).toLowerCase();
-  if (
-    normalized === "chicken flavors" ||
-    normalized === "chicken flavor" ||
-    normalized === "chicken_flavors"
-  )
-    return true;
-  return categories.some(
-    (c) =>
-      String(c.system_key ?? "")
-        .trim()
-        .toLowerCase() === "chicken_flavors" &&
-      normCat(c.name).toLowerCase() === normalized,
-  );
-};
+const normCat = (v: unknown): Category => String(v ?? '').trim()
 
 const mapProducts = (data: unknown[]): Product[] =>
   data
     .map((r: any) => {
-      const rawImage = String(r?.image ?? r?.img ?? "").trim();
-      const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : "";
-      // Debug: log actual API image values for duplicate investigation
+      const rawImage = String(r?.image ?? r?.img ?? '').trim();
+      const resolvedImg = rawImage ? resolveAssetUrl(rawImage) : '';
       if (import.meta.env.DEV && rawImage) {
-        console.log("[mapProducts]", {
+        console.log('[mapProducts]', {
           id: r?.id ?? r?.product_id,
           name: r?.name ?? r?.product_name,
           rawImage,
@@ -106,66 +30,41 @@ const mapProducts = (data: unknown[]): Product[] =>
       }
       return {
         id: Number(r?.id ?? r?.product_id ?? 0),
-        name: String(r?.name ?? r?.product_name ?? "").trim(),
+        name: String(r?.name ?? r?.product_name ?? '').trim(),
         category: normCat(r?.category),
         rating: Number(r?.rating ?? 0),
-        badge: String(r?.badge ?? "").trim(),
-        description: String(r?.description ?? "").trim(),
+        badge: String(r?.badge ?? '').trim(),
+        description: String(r?.description ?? '').trim(),
         price: Number(r?.price ?? 0),
         spicy: Boolean(r?.spicy),
         img: resolvedImg,
-        archived:
-          String(r?.availability_status ?? r?.availabilityStatus ?? "")
-            .trim()
-            .toLowerCase() === "hidden",
+        archived: String(r?.availability_status ?? r?.availabilityStatus ?? '').trim().toLowerCase() === 'hidden',
       };
     })
-    .filter((p) => p.id > 0 && p.name);
-
-const timeLeft = (d?: string) => {
-  if (!d) return null;
-  const diff = new Date(d).getTime() - Date.now();
-  if (diff <= 0) return null;
-  const days = Math.floor(diff / 86400000);
-  if (days > 30) return null;
-  return days > 0 ? `${days}d left` : `${Math.floor(diff / 3600000)}h left`;
-};
+    .filter(p => p.id > 0 && p.name)
 
 // ── Design Tokens ──────────────────────────────────────────────────────────
 // THE CRUNCH Premium Color Palette (Approved) — Signature Glazed Hero uses Black/Gold
-const BLACK = "#1A1A1A";
-const GOLD = "#C9A84C";
-const GOLD_DARK = "#B8953A";
-const GOLD_LIGHT = "#E8D4A0";
-const CREAM = "#F5F0E8";
-const CHARCOAL = "#282823";
-const GREY_FOG = "#595C56";
-const BUTTER = "#E9BE5F";
-const BLOND = "#F5E8B6";
+const BLACK = '#1A1A1A'
+const GOLD = '#C9A84C'
+const GOLD_DARK = '#B8953A'
+const GOLD_LIGHT = '#E8D4A0'
+const CREAM = '#F5F0E8'
+const CHARCOAL = '#282823'
+const GREY_FOG = '#595C56'
+const BUTTER = '#E9BE5F'
+const BLOND = '#F5E8B6'
 
 // Legacy aliases for backward compatibility
-const CARD_BG = BLACK;
-const BORDER = "rgba(89,92,86,0.25)";
-const TEXT = CREAM;
-const MUTED = "rgba(245,240,232,0.58)";
-const PAD = "clamp(20px,5vw,64px)";
+const CARD_BG = BLACK
+const BORDER = 'rgba(89,92,86,0.25)'
+const TEXT = CREAM
+const MUTED = 'rgba(245,240,232,0.58)'
+const PAD = 'clamp(20px,5vw,64px)'
 
 // Hero images for Signature Glazed Chicken
-const HERO_IMAGE_1 = "/img/signatureglazed1.webp";
-const HERO_IMAGE_2 = "/img/signatureglazed2.webp";
-
-// Promotional images for featured strip (use ChatGPT images that are promotional)
-const PROMO_IMAGES = [
-  "/img/ChatGPT Image Sep 29, 2026, 05_21_28 PM.webp",
-  "/img/ChatGPT Image Sep 29, 2026, 05_33_26 PM.webp",
-  "/img/ChatGPT Image Sep 29, 2026, 05_37_12 PM.webp",
-  "/img/ChatGPT Image Sep 29, 2026, 05_37_39 PM.webp",
-  "/img/ChatGPT Image Sep 29, 2026, 05_45_42 PM.webp",
-  "/img/ChatGPT Image Sep 29, 2026, 05_46_01 PM.webp",
-  "/img/ChatGPT Image Sep 29, 2026, 05_50_11 PM.webp",
-  "/img/ChatGPT Image Sep 29, 2026, 05_51_46 PM.webp",
-  "/img/ChatGPT Image Sep 29, 2026, 05_53_39 PM.webp",
-];
+const HERO_IMAGE_1 = '/img/signatureglazed1.webp'
+const HERO_IMAGE_2 = '/img/signatureglazed2.webp'
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@700;800&display=swap');
@@ -384,37 +283,29 @@ body{background:var(--bg)}
 .input:focus{border-color:rgba(233,190,95,0.5);background:rgba(89,92,86,0.2);box-shadow:0 0 0 4px rgba(233,190,95,0.15)}
 .input option{color:#111}
 @keyframes sh{to{background-position:-200% 0}}
+@keyframes steamMorph{
+  0%,100%{border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;transform:translateX(0) scaleY(1)}
+  25%{border-radius:40% 60% 60% 40% / 50% 50% 50% 50%;transform:translateX(-4px) scaleY(1.05)}
+  50%{border-radius:60% 40% 50% 50% / 40% 60% 50% 50%;transform:translateX(4px) scaleY(0.95)}
+  75%{border-radius:50% 50% 40% 60% / 50% 50% 60% 40%;transform:translateX(-2px) scaleY(1.02)}
+}
 @keyframes pulse{
   0%,100%{opacity:1;transform:scale(1)}
   50%{opacity:0.6;transform:scale(0.9)}
 }
 @media(max-width:768px){.links,.status.hide-m{display:none}.burger{display:flex}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-`;
+`
 
-function Photo({
-  src,
-  alt,
-  priority = false,
-  style,
-  className,
-}: {
-  src?: string;
-  alt: string;
-  priority?: boolean;
-  style?: React.CSSProperties;
-  className?: string;
-}) {
-  const [bad, setBad] = useState(false);
-  const [loading, setLoading] = useState(true);
+function Photo({ src, alt, priority = false, style, className }: { src?: string; alt: string; priority?: boolean; style?: React.CSSProperties; className?: string }) {
+  const [bad, setBad] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  // Reset error state when src changes so a newly valid image can load
   useEffect(() => {
-    setBad(false);
-    setLoading(true);
-  }, [src]);
+    setBad(false)
+    setLoading(true)
+  }, [src])
 
-  // For product cards: rely ONLY on API-provided image (src), no static fallback
   const effectiveSrc = src;
 
   if (!effectiveSrc || bad) {
@@ -422,50 +313,38 @@ function Photo({
       <div
         className={className}
         style={{
-          width: "100%",
-          height: "100%",
-          display: "grid",
-          placeItems: "center",
-          color: "var(--muted)",
+          width: '100%',
+          height: '100%',
+          display: 'grid',
+          placeItems: 'center',
+          color: 'var(--muted)',
           fontSize: 12,
           background: BLACK,
-          ...style,
+          ...style
         }}
         role="img"
         aria-label={`${alt} - image not available`}
       >
-        <svg
-          width="48"
-          height="48"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ opacity: 0.4 }}
-        >
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
           <circle cx="8.5" cy="8.5" r="1.5" />
           <path d="M21 15l-5-5L5 17" />
         </svg>
       </div>
-    );
+    )
   }
 
   return (
     <>
-      {/* Loading placeholder */}
       {loading && (
         <div
           style={{
-            width: "100%",
-            height: "100%",
-            background:
-              "linear-gradient(90deg, #1A1A1A 25%, #1A1A1A 50%, #1A1A1A 75%)",
-            backgroundSize: "200% 100%",
-            animation: "shimmer 1.4s infinite",
-            position: "absolute",
+            width: '100%',
+            height: '100%',
+            background: 'linear-gradient(90deg, #1A1A1A 25%, #1A1A1A 50%, #1A1A1A 75%)',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 1.4s infinite',
+            position: 'absolute',
             inset: 0,
             zIndex: 1,
           }}
@@ -474,491 +353,88 @@ function Photo({
       <img
         src={effectiveSrc}
         alt={alt}
-        loading={priority ? "eager" : "lazy"}
+        loading={priority ? 'eager' : 'lazy'}
         onError={(e) => {
           if (import.meta.env.DEV) {
-            console.error("[Photo:error]", {
-              alt,
-              src: effectiveSrc,
-              productId: (e.currentTarget as HTMLImageElement).dataset
-                ?.productId,
-            });
+            console.error('[Photo:error]', { alt, src: effectiveSrc, productId: (e.currentTarget as HTMLImageElement).dataset?.productId });
           }
           setBad(true);
           setLoading(false);
         }}
         onLoad={() => {
           if (import.meta.env.DEV) {
-            console.log("[Photo:loaded]", { alt, src: effectiveSrc });
+            console.log('[Photo:loaded]', { alt, src: effectiveSrc });
           }
           setLoading(false);
         }}
         className={className}
         data-product-id={alt}
         style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
           opacity: loading ? 0 : 1,
-          transition: "opacity 0.4s ease-out",
-          ...style,
+          transition: 'opacity 0.4s ease-out',
+          ...style
         }}
       />
     </>
-  );
+  )
 }
 
 // ── Animated Components ────────────────────────────────────────────────────
-const easeOut = [0.16, 1, 0.3, 1] as const;
-const staggerContainer = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-};
-const fadeUp = {
-  hidden: { opacity: 0, y: 30 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: easeOut } },
-};
-const fadeIn = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { duration: 0.5 } },
-};
-
-// ── Cards ──────────────────────────────────────────────────────────────────
-function ProductCard({ p, onOrder }: { p: Product; onOrder: () => void }) {
-  return (
-    <motion.article
-      className="card"
-      variants={fadeUp}
-      whileHover={{
-        y: -4,
-        boxShadow:
-          "0 12px 32px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.25)",
-        borderColor: "rgba(233,190,95,0.45)",
-        transition: { duration: 0.3, ease: easeOut },
-      }}
-      whileTap={{ scale: 0.98 }}
-      layout
-    >
-      {/* Image container with proper aspect ratio to prevent layout shift */}
-      <motion.div className="thumb" whileHover={{ opacity: 1 }}>
-        <Photo src={p.img} alt={p.name} priority={false} />
-
-        {/* Gradient overlay for text readability on hover */}
-        <motion.div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(180deg, transparent 55%, rgba(11,10,8,0.85) 100%)",
-            opacity: 0,
-            transition: "opacity 0.3s ease",
-          }}
-          animate={{ opacity: 0 }}
-          transition={{ duration: 0.3 }}
-        />
-
-        {/* Badge - top left */}
-        {p.badge && (
-          <span
-            className="chip chip-gold"
-            style={{
-              position: "absolute",
-              top: 8,
-              left: 8,
-              zIndex: 2,
-              fontSize: 10,
-              fontWeight: 700,
-              padding: "3px 8px",
-              borderRadius: 9999,
-              boxShadow: "0 2px 8px rgba(245,200,66,0.3)",
-            }}
-          >
-            {p.badge}
-          </span>
-        )}
-
-        {/* Spicy indicator - top right */}
-        {p.spicy && (
-          <span
-            style={{
-              position: "absolute",
-              top: 8,
-              right: 8,
-              zIndex: 2,
-              background: "rgba(0,0,0,0.7)",
-              borderRadius: "50%",
-              width: 26,
-              height: 26,
-              display: "grid",
-              placeItems: "center",
-              border: "1px solid rgba(255,255,255,0.1)",
-            }}
-            aria-label="Spicy level"
-          >
-            <Flame size={13} color="#f87171" />
-          </span>
-        )}
-
-        {/* Rating badge - bottom left on hover */}
-        {p.rating > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, duration: 0.2 }}
-            style={{
-              position: "absolute",
-              bottom: 8,
-              left: 8,
-              zIndex: 2,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "3px 7px",
-              background: "rgba(11,10,8,0.85)",
-              borderRadius: 9999,
-              border: "1px solid rgba(245,200,66,0.25)",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-            }}
-          >
-            <Star size={11} fill="var(--gold)" color="var(--gold)" />
-            <span
-              style={{ fontSize: 11, fontWeight: 600, color: "var(--gold)" }}
-            >
-              {p.rating.toFixed(1)}
-            </span>
-          </motion.div>
-        )}
-      </motion.div>
-
-      {/* Content area */}
-      <div
-        style={{
-          padding: "clamp(10px, 1.8vw, 14px)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          flex: 1,
-          justifyContent: "space-between",
-        }}
-      >
-        {/* Name & category */}
-        <div>
-          <h3
-            style={{
-              fontSize: "clamp(14px, 1.5vw, 16px)",
-              fontWeight: 700,
-              lineHeight: 1.3,
-              color: "var(--text)",
-              letterSpacing: "-0.01em",
-              margin: 0,
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {p.name}
-          </h3>
-
-          {/* Description */}
-          {p.description && (
-            <p
-              style={{
-                fontSize: "clamp(11.5px, 1.3vw, 13px)",
-                lineHeight: 1.4,
-                color: "var(--muted)",
-                marginTop: 4,
-                marginBottom: 0,
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }}
-            >
-              {p.description}
-            </p>
-          )}
-        </div>
-
-        {/* Price & Order button */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 6,
-            marginTop: 6,
-            paddingTop: 8,
-            borderTop: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "clamp(16px, 1.8vw, 19px)",
-              fontWeight: 800,
-              color: "var(--text)",
-              letterSpacing: "-0.02em",
-              fontFamily: "Inter, system-ui, sans-serif",
-            }}
-          >
-            {fmt(p.price)}
-          </span>
-          <motion.button
-            className="btn btn-gold"
-            onClick={onOrder}
-            whileTap={{ scale: 0.95 }}
-            whileHover={{
-              scale: 1.02,
-              boxShadow: "0 4px 16px rgba(245,200,66,0.35)",
-            }}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "7px 12px",
-              fontSize: "clamp(11.5px, 1.3vw, 13px)",
-              fontWeight: 600,
-              borderRadius: 8,
-              background:
-                "linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)",
-              color: "#15120a",
-              border: "none",
-              boxShadow: "0 2px 10px rgba(245,200,66,0.25)",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-            aria-label={`Order ${p.name}`}
-          >
-            <ShoppingBag size={13} />
-            <span>Order Now</span>
-          </motion.button>
-        </div>
-      </div>
-    </motion.article>
-  );
-}
-
-function PromoCard({ p }: { p: Promo }) {
-  const left = timeLeft(p.validUntil);
-  return (
-    <motion.article
-      className="card"
-      variants={fadeUp}
-      whileHover={{
-        y: -8,
-        boxShadow:
-          "0 20px 48px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.35)",
-        borderColor: "rgba(233,190,95,0.5)",
-        transition: { duration: 0.3, ease: easeOut },
-      }}
-      whileTap={{ scale: 0.99 }}
-      style={{
-        background: BLACK,
-        border: "1px solid rgba(89,92,86,0.25)",
-        borderRadius: 20,
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        boxShadow:
-          "0 8px 24px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.1)",
-        transition:
-          "border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease",
-      }}
-    >
-      <div
-        style={{
-          aspectRatio: "16/9",
-          position: "relative",
-          overflow: "hidden",
-          background: BLACK,
-        }}
-      >
-        <Photo src={p.img ? resolveAssetUrl(p.img) : ""} alt={p.title} />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(180deg, transparent 40%, rgba(11,10,8,0.95) 100%)",
-          }}
-        />
-        {p.badge && (
-          <span
-            className="chip chip-gold"
-            style={{
-              position: "absolute",
-              top: 16,
-              left: 16,
-              fontSize: 12,
-              padding: "6px 14px",
-              fontWeight: 700,
-              boxShadow: "0 4px 16px rgba(245,200,66,0.3)",
-            }}
-          >
-            {p.badge}
-          </span>
-        )}
-        {p.discount && (
-          <span
-            className="chip chip-gold"
-            style={{
-              position: "absolute",
-              bottom: 16,
-              right: 16,
-              fontSize: 13,
-              fontWeight: 700,
-              padding: "6px 14px",
-              boxShadow: "0 4px 16px rgba(245,200,66,0.3)",
-            }}
-          >
-            {p.discount}
-          </span>
-        )}
-      </div>
-      <div
-        style={{
-          padding: "clamp(20px,3vw,24px)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-          flex: 1,
-        }}
-      >
-        <h3
-          style={{
-            fontSize: "clamp(18px,2.2vw,21px)",
-            fontWeight: 700,
-            lineHeight: 1.2,
-            margin: 0,
-            color: "var(--text)",
-          }}
-        >
-          {p.title}
-        </h3>
-        {p.subtitle && (
-          <p
-            style={{
-              fontSize: "clamp(13px,1.6vw,14.5px)",
-              fontWeight: 500,
-              color: "var(--gold)",
-              margin: 0,
-            }}
-          >
-            {p.subtitle}
-          </p>
-        )}
-        <p
-          className="sub"
-          style={{
-            fontSize: "clamp(13px,1.6vw,14.5px)",
-            lineHeight: 1.55,
-            flex: 1,
-            margin: 0,
-            display: "-webkit-box",
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
-          {p.description}
-        </p>
-        {left && (
-          <span
-            className="chip"
-            style={{
-              alignSelf: "flex-start",
-              marginTop: 4,
-              color: "#f87171",
-              fontSize: 11,
-              fontWeight: 600,
-            }}
-          >
-            {left}
-          </span>
-        )}
-        <motion.button
-          className="btn btn-gold"
-          style={{
-            marginTop: "auto",
-            padding: "14px 24px",
-            fontSize: "clamp(13px,1.6vw,14.5px)",
-            fontWeight: 600,
-            borderRadius: 12,
-            background:
-              "linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)",
-            color: "#15120a",
-            border: "none",
-            boxShadow: "0 4px 16px rgba(245,200,66,0.3)",
-            width: "fit-content",
-          }}
-          whileTap={{ scale: 0.96 }}
-          whileHover={{
-            scale: 1.02,
-            boxShadow: "0 8px 28px rgba(245,200,66,0.35)",
-          }}
-        >
-          Order Now
-        </motion.button>
-      </div>
-    </motion.article>
-  );
-}
+const easeOut = [0.16, 1, 0.3, 1] as const
+const fadeUp = { hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: easeOut } } }
 
 // ── Hero Section: Signature Glazed Chicken — Premium Black & Gold ─────────────
 function HeroSection() {
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 768 : false,
-  );
-  const [reduceMotion, setReduceMotion] = useState(false);
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  )
+  const [reduceMotion, setReduceMotion] = useState(false)
 
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    const checkReduceMotion = () =>
-      setReduceMotion(
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-      );
-    checkMobile();
-    checkReduceMotion();
-    window.addEventListener("resize", checkMobile);
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    mq.addEventListener?.("change", checkReduceMotion);
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    const checkReduceMotion = () => setReduceMotion(
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    )
+    checkMobile()
+    checkReduceMotion()
+    window.addEventListener('resize', checkMobile)
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    mq.addEventListener?.('change', checkReduceMotion)
     return () => {
-      window.removeEventListener("resize", checkMobile);
-      mq.removeEventListener?.("change", checkReduceMotion);
-    };
-  }, []);
+      window.removeEventListener('resize', checkMobile)
+      mq.removeEventListener?.('change', checkReduceMotion)
+    }
+  }, [])
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (isMobile || reduceMotion) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
-      const y = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
-      setMousePos({ x, y });
-    },
-    [isMobile, reduceMotion],
-  );
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isMobile || reduceMotion) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = ((e.clientX - rect.left) / rect.width - 0.5) * 2
+    const y = ((e.clientY - rect.top) / rect.height - 0.5) * 2
+    setMousePos({ x, y })
+  }, [isMobile, reduceMotion])
 
   const handleMouseLeave = useCallback(() => {
-    if (isMobile || reduceMotion) return;
-    setMousePos({ x: 0, y: 0 });
-  }, [isMobile, reduceMotion]);
+    if (isMobile || reduceMotion) return
+    setMousePos({ x: 0, y: 0 })
+  }, [isMobile, reduceMotion])
 
   // Mobile View (< 768px): Dedicated clean layout — zero overlapping, professional hierarchy
   if (isMobile) {
     return (
       <motion.section
         style={{
-          position: "relative",
-          width: "100%",
+          position: 'relative',
+          width: '100%',
           borderRadius: 20,
-          overflow: "hidden",
+          overflow: 'hidden',
           background: BLACK,
-          boxShadow:
-            "0 24px 60px -15px rgba(0,0,0,0.85), 0 0 0 1px rgba(201,168,76,0.18)",
-          isolation: "isolate",
+          boxShadow: '0 24px 60px -15px rgba(0,0,0,0.85), 0 0 0 1px rgba(201,168,76,0.18)',
+          isolation: 'isolate',
         }}
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -967,10 +443,10 @@ function HeroSection() {
         {/* Base: Subtle gold radial glow */}
         <div
           style={{
-            position: "absolute",
+            position: 'absolute',
             inset: 0,
             background: `radial-gradient(ellipse 90% 50% at 50% 15%, ${GOLD}18 0%, ${BLACK} 65%, #0a0a0a 100%)`,
-            pointerEvents: "none",
+            pointerEvents: 'none',
             zIndex: 0,
           }}
         />
@@ -978,39 +454,39 @@ function HeroSection() {
         {/* Ambient gold rim light at top */}
         <div
           style={{
-            position: "absolute",
+            position: 'absolute',
             top: 0,
-            left: "8%",
-            right: "8%",
-            height: "2px",
+            left: '8%',
+            right: '8%',
+            height: '2px',
             background: `linear-gradient(90deg, transparent, ${GOLD}40 20%, ${GOLD}80 50%, ${GOLD}40 80%, transparent)`,
-            pointerEvents: "none",
+            pointerEvents: 'none',
             zIndex: 1,
-            filter: "blur(0.5px)",
+            filter: 'blur(0.5px)',
           }}
         />
 
         {/* Background watermark typography — faint, non-intrusive */}
         <div
           style={{
-            position: "absolute",
-            top: "5%",
+            position: 'absolute',
+            top: '5%',
             left: 0,
             right: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            pointerEvents: "none",
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            pointerEvents: 'none',
             zIndex: 1,
-            overflow: "hidden",
+            overflow: 'hidden',
             opacity: 0.05,
-            fontSize: "clamp(56px, 16vw, 90px)",
+            fontSize: 'clamp(56px, 16vw, 90px)',
             fontWeight: 900,
             lineHeight: 0.8,
-            letterSpacing: "-0.04em",
+            letterSpacing: '-0.04em',
             color: GOLD,
-            transform: "rotate(-2deg)",
-            userSelect: "none",
+            transform: 'rotate(-2deg)',
+            userSelect: 'none',
           }}
           aria-hidden="true"
         >
@@ -1022,11 +498,11 @@ function HeroSection() {
         {/* Mobile Content Stack — Zero overlap, professional hierarchy */}
         <div
           style={{
-            position: "relative",
+            position: 'relative',
             zIndex: 10,
-            padding: "clamp(18px, 4.5vw, 24px)",
-            display: "flex",
-            flexDirection: "column",
+            padding: 'clamp(18px, 4.5vw, 24px)',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
           {/* 1. Premium Badge */}
@@ -1035,19 +511,19 @@ function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15, duration: 0.5, ease: easeOut }}
             style={{
-              display: "inline-flex",
-              alignItems: "center",
+              display: 'inline-flex',
+              alignItems: 'center',
               gap: 8,
               background: `linear-gradient(135deg, ${GOLD}1A 0%, ${GOLD}08 100%)`,
               border: `1px solid ${GOLD}40`,
-              padding: "7px 14px",
+              padding: '7px 14px',
               borderRadius: 999,
               fontSize: 11,
               fontWeight: 600,
               color: GOLD_LIGHT,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              width: "fit-content",
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              width: 'fit-content',
               marginBottom: 14,
               boxShadow: `0 4px 16px -4px ${GOLD}20`,
             }}
@@ -1056,11 +532,9 @@ function HeroSection() {
               style={{
                 width: 6,
                 height: 6,
-                borderRadius: "50%",
+                borderRadius: '50%',
                 background: GOLD,
-                animation: reduceMotion
-                  ? "none"
-                  : "pulse 2.2s infinite ease-in-out",
+                animation: reduceMotion ? 'none' : 'pulse 2.2s infinite ease-in-out',
                 boxShadow: `0 0 8px ${GOLD}`,
               }}
             />
@@ -1073,29 +547,25 @@ function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.25, duration: 0.6, ease: easeOut }}
             style={{
-              fontSize: "clamp(28px, 7.5vw, 38px)",
+              fontSize: 'clamp(28px, 7.5vw, 38px)',
               fontWeight: 800,
-              letterSpacing: "-0.035em",
+              letterSpacing: '-0.035em',
               lineHeight: 1.05,
               marginBottom: 16,
-              fontFamily: "Inter, system-ui, sans-serif",
-              textShadow: "0 2px 20px rgba(0,0,0,0.6)",
+              fontFamily: 'Inter, system-ui, sans-serif',
+              textShadow: '0 2px 20px rgba(0,0,0,0.6)',
             }}
           >
-            <span style={{ display: "block", color: CREAM }}>SIGNATURE</span>
-            <span
-              style={{ display: "block", color: GOLD, marginTop: "-0.02em" }}
-            >
-              GLAZED
-            </span>
+            <span style={{ display: 'block', color: CREAM }}>SIGNATURE</span>
+            <span style={{ display: 'block', color: GOLD, marginTop: '-0.02em' }}>GLAZED</span>
             <span
               style={{
-                display: "block",
+                display: 'block',
                 color: CREAM,
                 opacity: 0.92,
                 fontWeight: 700,
-                fontSize: "clamp(22px, 6vw, 30px)",
-                marginTop: "-0.01em",
+                fontSize: 'clamp(22px, 6vw, 30px)',
+                marginTop: '-0.01em',
               }}
             >
               CHICKEN
@@ -1108,123 +578,119 @@ function HeroSection() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.35, duration: 0.7, ease: easeOut }}
             style={{
-              position: "relative",
-              width: "100%",
-              height: "clamp(200px, 54vw, 260px)",
+              position: 'relative',
+              width: '100%',
+              height: 'clamp(200px, 54vw, 260px)',
               borderRadius: 16,
-              overflow: "hidden",
+              overflow: 'hidden',
               marginBottom: 18,
               border: `1px solid ${GOLD}40`,
               boxShadow: `0 16px 40px -10px rgba(0,0,0,0.9), 0 0 30px -8px ${GOLD}20`,
-              background: "#0d0d0d",
+              background: '#0d0d0d',
             }}
           >
-            {/* Primary Hero Image */}
             <Photo
               src={HERO_IMAGE_1}
               alt="Signature glazed chicken - hero view"
               priority
               style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                objectPosition: "center 35%",
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center 35%',
               }}
             />
 
-            {/* Subtle gradient overlay for depth */}
             <div
               style={{
-                position: "absolute",
+                position: 'absolute',
                 inset: 0,
                 background:
-                  "linear-gradient(180deg, rgba(10,10,10,0.2) 0%, transparent 45%, rgba(10,10,10,0.7) 100%)",
-                pointerEvents: "none",
+                  'linear-gradient(180deg, rgba(10,10,10,0.2) 0%, transparent 45%, rgba(10,10,10,0.7) 100%)',
+                pointerEvents: 'none',
               }}
             />
 
-            {/* Gold corner brackets */}
             <div
               style={{
-                position: "absolute",
+                position: 'absolute',
                 top: 0,
                 left: 0,
                 width: 24,
                 height: 24,
                 borderTop: `2px solid ${GOLD}80`,
                 borderLeft: `2px solid ${GOLD}80`,
-                borderRadius: "16px 0 0 0",
-                pointerEvents: "none",
+                borderRadius: '16px 0 0 0',
+                pointerEvents: 'none',
               }}
             />
             <div
               style={{
-                position: "absolute",
+                position: 'absolute',
                 top: 0,
                 right: 0,
                 width: 24,
                 height: 24,
                 borderTop: `2px solid ${GOLD}80`,
                 borderRight: `2px solid ${GOLD}80`,
-                borderRadius: "0 16px 0 0",
-                pointerEvents: "none",
+                borderRadius: '0 16px 0 0',
+                pointerEvents: 'none',
               }}
             />
             <div
               style={{
-                position: "absolute",
+                position: 'absolute',
                 bottom: 0,
                 left: 0,
                 width: 24,
                 height: 24,
                 borderBottom: `2px solid ${GOLD}50`,
                 borderLeft: `2px solid ${GOLD}50`,
-                borderRadius: "0 0 0 16px",
-                pointerEvents: "none",
+                borderRadius: '0 0 0 16px',
+                pointerEvents: 'none',
               }}
             />
             <div
               style={{
-                position: "absolute",
+                position: 'absolute',
                 bottom: 0,
                 right: 0,
                 width: 24,
                 height: 24,
                 borderBottom: `2px solid ${GOLD}50`,
                 borderRight: `2px solid ${GOLD}50`,
-                borderRadius: "0 0 16px 0",
-                pointerEvents: "none",
+                borderRadius: '0 0 16px 0',
+                pointerEvents: 'none',
               }}
             />
 
-            {/* "Hand-Glazed" Badge */}
             <div
               style={{
-                position: "absolute",
+                position: 'absolute',
                 top: 10,
                 right: 10,
                 zIndex: 3,
-                display: "inline-flex",
-                alignItems: "center",
+                display: 'inline-flex',
+                alignItems: 'center',
                 gap: 6,
-                background: "rgba(10,10,10,0.88)",
+                background: 'rgba(10,10,10,0.88)',
                 border: `1px solid ${GOLD}50`,
-                padding: "5px 11px",
+                padding: '5px 11px',
                 borderRadius: 999,
                 fontSize: 10.5,
                 fontWeight: 600,
                 color: GOLD_LIGHT,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                backdropFilter: "blur(8px)",
-                boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                backdropFilter: 'blur(8px)',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
               }}
             >
               <span
                 style={{
                   width: 5,
                   height: 5,
-                  borderRadius: "50%",
+                  borderRadius: '50%',
                   background: GOLD,
                   boxShadow: `0 0 6px ${GOLD}`,
                 }}
@@ -1232,18 +698,17 @@ function HeroSection() {
               Hand-Glazed
             </div>
 
-            {/* Supporting View Inset Thumbnail */}
             <div
               style={{
-                position: "absolute",
+                position: 'absolute',
                 bottom: 10,
                 right: 10,
-                width: "clamp(68px, 18vw, 84px)",
-                height: "clamp(52px, 14vw, 64px)",
+                width: 'clamp(68px, 18vw, 84px)',
+                height: 'clamp(52px, 14vw, 64px)',
                 borderRadius: 8,
-                overflow: "hidden",
+                overflow: 'hidden',
                 border: `1.5px solid ${GOLD}60`,
-                boxShadow: "0 8px 20px rgba(0,0,0,0.85)",
+                boxShadow: '0 8px 20px rgba(0,0,0,0.85)',
                 zIndex: 3,
               }}
             >
@@ -1252,10 +717,10 @@ function HeroSection() {
                 alt="Signature glazed chicken - supporting view"
                 priority
                 style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  objectPosition: "center",
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  objectPosition: 'center',
                 }}
               />
             </div>
@@ -1267,42 +732,39 @@ function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.45, duration: 0.6, ease: easeOut }}
             style={{
-              fontSize: "clamp(13.5px, 3.6vw, 15px)",
+              fontSize: 'clamp(13.5px, 3.6vw, 15px)',
               fontWeight: 400,
               lineHeight: 1.6,
-              color: "rgba(245,240,232,0.85)",
+              color: 'rgba(245,240,232,0.85)',
               marginBottom: 18,
-              textShadow: "0 1px 2px rgba(0,0,0,0.5)",
+              textShadow: '0 1px 2px rgba(0,0,0,0.5)',
             }}
           >
-            Hand-crafted daily with our secret spice rubs. Choose from 7
-            signature glazes — each bite delivers the perfect crunch.
+            Hand-crafted daily with our secret spice rubs. Choose from 7 signature glazes — each bite delivers the perfect crunch.
           </motion.p>
 
           {/* 5. Explore Menu CTA Button */}
           <motion.button
             style={{
-              width: "100%",
+              width: '100%',
               fontSize: 15,
-              padding: "13px 22px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              padding: '13px 22px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               gap: 10,
               borderRadius: 14,
               background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
               color: BLACK,
-              border: "none",
+              border: 'none',
               boxShadow: `0 8px 24px -4px ${GOLD}40, inset 0 1px 0 rgba(255,255,255,0.2)`,
               fontWeight: 600,
-              letterSpacing: "0.015em",
-              cursor: "pointer",
+              letterSpacing: '0.015em',
+              cursor: 'pointer',
               marginBottom: 18,
             }}
             whileTap={{ scale: 0.98 }}
-            onClick={() =>
-              (window.location.href = "/usersmenu?showOrderModal=true")
-            }
+            onClick={() => (window.location.href = '/usersmenu?showOrderModal=true')}
           >
             <ShoppingBag size={18} />
             <span>Explore Menu</span>
@@ -1312,32 +774,32 @@ function HeroSection() {
           {/* 6. Trust Badges */}
           <div
             style={{
-              display: "flex",
-              flexWrap: "wrap",
+              display: 'flex',
+              flexWrap: 'wrap',
               gap: 8,
               paddingTop: 16,
               borderTop: `1px solid ${GOLD}18`,
             }}
           >
             {[
-              { icon: CheckCircle, text: "7 Signature Glazes" },
-              { icon: CheckCircle, text: "250+ Branches Nationwide" },
-              { icon: CheckCircle, text: "Fresh Daily, Never Frozen" },
+              { icon: CheckCircle, text: '7 Signature Glazes' },
+              { icon: CheckCircle, text: '250+ Branches Nationwide' },
+              { icon: CheckCircle, text: 'Fresh Daily, Never Frozen' },
             ].map((badge) => (
               <div
                 key={badge.text}
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
+                  display: 'inline-flex',
+                  alignItems: 'center',
                   gap: 7,
-                  padding: "7px 12px",
-                  background: "rgba(26,26,26,0.75)",
+                  padding: '7px 12px',
+                  background: 'rgba(26,26,26,0.75)',
                   border: `1px solid ${GOLD}22`,
                   borderRadius: 999,
                   fontSize: 11.5,
                   fontWeight: 500,
-                  color: "rgba(245,240,232,0.85)",
-                  whiteSpace: "nowrap",
+                  color: 'rgba(245,240,232,0.85)',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 <badge.icon size={13} color={GOLD} style={{ flexShrink: 0 }} />
@@ -1350,19 +812,19 @@ function HeroSection() {
         {/* Bottom gold accent line */}
         <div
           style={{
-            position: "absolute",
+            position: 'absolute',
             bottom: 0,
-            left: "8%",
-            right: "8%",
-            height: "1px",
+            left: '8%',
+            right: '8%',
+            height: '1px',
             background: `linear-gradient(90deg, transparent, ${GOLD}40, ${GOLD}70 50%, ${GOLD}40, transparent)`,
             opacity: 0.6,
-            pointerEvents: "none",
+            pointerEvents: 'none',
             zIndex: 5,
           }}
         />
       </motion.section>
-    );
+    )
   }
 
   // Desktop View (>= 768px): Cinematic 3D magazine composition
@@ -1371,56 +833,52 @@ function HeroSection() {
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{
-        position: "relative",
-        width: "100%",
+        position: 'relative',
+        width: '100%',
         borderRadius: 28,
-        overflow: "hidden",
+        overflow: 'hidden',
         background: BLACK,
-        boxShadow:
-          "0 40px 100px -30px rgba(0,0,0,0.8), 0 0 0 1px rgba(201,168,76,0.15)",
-        isolation: "isolate",
+        boxShadow: '0 40px 100px -30px rgba(0,0,0,0.8), 0 0 0 1px rgba(201,168,76,0.15)',
+        isolation: 'isolate',
       }}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 1, ease: easeOut }}
     >
-      {/* Base: Solid black with subtle gold radial glow */}
       <div
         style={{
-          position: "absolute",
+          position: 'absolute',
           inset: -80,
           background: `radial-gradient(ellipse 70% 60% at 50% 35%, ${GOLD}1A 0%, ${BLACK} 55%, #0a0a0a 100%)`,
-          pointerEvents: "none",
+          pointerEvents: 'none',
           zIndex: 0,
         }}
       />
 
-      {/* Ambient gold rim light at top edge */}
       <div
         style={{
-          position: "absolute",
+          position: 'absolute',
           top: 0,
-          left: "10%",
-          right: "10%",
-          height: "3px",
+          left: '10%',
+          right: '10%',
+          height: '3px',
           background: `linear-gradient(90deg, transparent, ${GOLD}40 20%, ${GOLD}80 50%, ${GOLD}40 80%, transparent)`,
-          pointerEvents: "none",
+          pointerEvents: 'none',
           zIndex: 1,
-          filter: "blur(1px)",
+          filter: 'blur(1px)',
         }}
       />
 
-      {/* Layer 1: Oversized background typography (editorial, subtle) */}
       <motion.div
         style={{
-          position: "absolute",
+          position: 'absolute',
           inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          pointerEvents: "none",
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
           zIndex: 1,
-          overflow: "hidden",
+          overflow: 'hidden',
         }}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -1429,40 +887,39 @@ function HeroSection() {
       >
         <div
           style={{
-            fontSize: "clamp(120px, 16vw, 280px)",
+            fontSize: 'clamp(120px, 16vw, 280px)',
             fontWeight: 900,
             lineHeight: 0.78,
-            letterSpacing: "-0.045em",
+            letterSpacing: '-0.045em',
             color: `${GOLD}0D`,
-            textTransform: "uppercase",
-            whiteSpace: "nowrap",
-            transform: "rotate(-2.5deg)",
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+            transform: 'rotate(-2.5deg)',
             textShadow: `0 0 100px ${GOLD}15`,
-            userSelect: "none",
-            fontFamily: "Inter, system-ui, sans-serif",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
+            userSelect: 'none',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
           }}
         >
           <span style={{ opacity: 0.5 }}>SIGNATURE</span>
-          <span style={{ opacity: 0.7, marginLeft: "0.12em" }}>GLAZED</span>
-          <span style={{ opacity: 0.45, marginLeft: "0.08em" }}>CHICKEN</span>
+          <span style={{ opacity: 0.7, marginLeft: '0.12em' }}>GLAZED</span>
+          <span style={{ opacity: 0.45, marginLeft: '0.08em' }}>CHICKEN</span>
         </div>
       </motion.div>
 
-      {/* Layer 2: Diagonal gold accent line */}
       <motion.div
         style={{
-          position: "absolute",
-          top: "18%",
-          right: "-15%",
-          width: "130%",
-          height: "1.5px",
+          position: 'absolute',
+          top: '18%',
+          right: '-15%',
+          width: '130%',
+          height: '1.5px',
           background: `linear-gradient(135deg, transparent 0%, ${GOLD}30 25%, ${GOLD}70 50%, ${GOLD}30 75%, transparent 100%)`,
-          transform: "rotate(-10deg)",
-          transformOrigin: "center",
-          pointerEvents: "none",
+          transform: 'rotate(-10deg)',
+          transformOrigin: 'center',
+          pointerEvents: 'none',
           zIndex: 2,
         }}
         initial={{ opacity: 0, scaleX: 0 }}
@@ -1470,16 +927,15 @@ function HeroSection() {
         transition={{ delay: 0.5, duration: 1.2, ease: easeOut }}
       />
 
-      {/* Layer 3: Secondary image (supporting) - bottom right */}
       <motion.div
         style={{
-          position: "absolute",
-          bottom: "5%",
-          right: "3%",
-          width: "32%",
-          aspectRatio: "4/3",
-          borderRadius: "18px 6px 18px 6px",
-          overflow: "hidden",
+          position: 'absolute',
+          bottom: '5%',
+          right: '3%',
+          width: '32%',
+          aspectRatio: '4/3',
+          borderRadius: '18px 6px 18px 6px',
+          overflow: 'hidden',
           zIndex: 3,
           boxShadow: `
             0 24px 64px -16px rgba(0,0,0,0.85),
@@ -1487,12 +943,8 @@ function HeroSection() {
             0 0 0 1px ${GOLD}20,
             0 0 40px -8px ${GOLD}10
           `,
-          transform: reduceMotion
-            ? "none"
-            : `perspective(1000px) rotateY(${mousePos.x * -2.5}deg) rotateX(${mousePos.y * 1.5}deg) translateZ(16px)`,
-          transition: reduceMotion
-            ? "none"
-            : "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)",
+          transform: reduceMotion ? 'none' : `perspective(1000px) rotateY(${mousePos.x * -2.5}deg) rotateX(${mousePos.y * 1.5}deg) translateZ(16px)`,
+          transition: reduceMotion ? 'none' : 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)',
         }}
         initial={{ opacity: 0, y: 50, scale: 0.93 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1503,64 +955,34 @@ function HeroSection() {
           alt="Signature glazed chicken - supporting view"
           priority
           style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center",
-            transform: "scale(1.03)",
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center',
+            transform: 'scale(1.03)',
           }}
         />
-        {/* Vignette for depth */}
         <div
           style={{
-            position: "absolute",
+            position: 'absolute',
             inset: 0,
-            background:
-              "radial-gradient(ellipse at center, transparent 45%, rgba(26,26,26,0.7) 100%)",
-            pointerEvents: "none",
+            background: 'radial-gradient(ellipse at center, transparent 45%, rgba(26,26,26,0.7) 100%)',
+            pointerEvents: 'none',
           }}
         />
-        {/* Gold corner accents */}
-        <div
-          style={{
-            position: "absolute",
-            top: 12,
-            left: 12,
-            width: 28,
-            height: 28,
-            borderTop: `2px solid ${GOLD}60`,
-            borderLeft: `2px solid ${GOLD}60`,
-            borderRadius: "6px 0 0 0",
-            pointerEvents: "none",
-            zIndex: 4,
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            bottom: 12,
-            right: 12,
-            width: 28,
-            height: 28,
-            borderBottom: `2px solid ${GOLD}40`,
-            borderRight: `2px solid ${GOLD}40`,
-            borderRadius: "0 0 0 6px",
-            pointerEvents: "none",
-            zIndex: 4,
-          }}
-        />
+        <div style={{ position: 'absolute', top: 12, left: 12, width: 28, height: 28, borderTop: `2px solid ${GOLD}60`, borderLeft: `2px solid ${GOLD}60`, borderRadius: '6px 0 0 0', pointerEvents: 'none', zIndex: 4 }} />
+        <div style={{ position: 'absolute', bottom: 12, right: 12, width: 28, height: 28, borderBottom: `2px solid ${GOLD}40`, borderRight: `2px solid ${GOLD}40`, borderRadius: '0 0 0 6px', pointerEvents: 'none', zIndex: 4 }} />
       </motion.div>
 
-      {/* Layer 4: Primary image (hero) - dominant, overlapping */}
       <motion.div
         style={{
-          position: "absolute",
-          top: "10%",
-          left: "7%",
-          width: "50%",
-          aspectRatio: "3/4",
-          borderRadius: "22px 10px 22px 10px",
-          overflow: "hidden",
+          position: 'absolute',
+          top: '10%',
+          left: '7%',
+          width: '50%',
+          aspectRatio: '3/4',
+          borderRadius: '22px 10px 22px 10px',
+          overflow: 'hidden',
           zIndex: 4,
           boxShadow: `
             0 40px 100px -20px rgba(0,0,0,0.9),
@@ -1568,12 +990,8 @@ function HeroSection() {
             0 0 0 1.5px ${GOLD}35,
             0 0 80px -15px ${GOLD}20
           `,
-          transform: reduceMotion
-            ? "none"
-            : `perspective(1000px) rotateY(${mousePos.x * 3.5}deg) rotateX(${mousePos.y * -2.5}deg) translateZ(32px)`,
-          transition: reduceMotion
-            ? "none"
-            : "transform 0.65s cubic-bezier(0.22, 1, 0.36, 1)",
+          transform: reduceMotion ? 'none' : `perspective(1000px) rotateY(${mousePos.x * 3.5}deg) rotateX(${mousePos.y * -2.5}deg) translateZ(32px)`,
+          transition: reduceMotion ? 'none' : 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1)',
         }}
         initial={{ opacity: 0, y: 40, scale: 0.94 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1584,306 +1002,172 @@ function HeroSection() {
           alt="Signature glazed chicken - hero view"
           priority
           style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center top",
-            transform: "scale(1.015)",
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center top',
+            transform: 'scale(1.015)',
           }}
         />
-        {/* Bottom gradient fade for text legibility */}
         <div
           style={{
-            position: "absolute",
+            position: 'absolute',
             bottom: 0,
             left: 0,
             right: 0,
-            height: "45%",
-            background:
-              "linear-gradient(180deg, transparent 0%, rgba(26,26,26,0.35) 35%, rgba(10,10,10,0.98) 100%)",
-            pointerEvents: "none",
+            height: '45%',
+            background: 'linear-gradient(180deg, transparent 0%, rgba(26,26,26,0.35) 35%, rgba(10,10,10,0.98) 100%)',
+            pointerEvents: 'none',
           }}
         />
-        {/* Top subtle gradient for depth */}
         <div
           style={{
-            position: "absolute",
+            position: 'absolute',
             top: 0,
             left: 0,
             right: 0,
-            height: "18%",
-            background:
-              "linear-gradient(180deg, rgba(10,10,10,0.35) 0%, transparent 100%)",
-            pointerEvents: "none",
+            height: '18%',
+            background: 'linear-gradient(180deg, rgba(10,10,10,0.35) 0%, transparent 100%)',
+            pointerEvents: 'none',
           }}
         />
-        {/* Gold corner brackets - premium framing */}
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: 48,
-            height: 48,
-            borderTop: `2px solid ${GOLD}50`,
-            borderLeft: `2px solid ${GOLD}50`,
-            borderRadius: "22px 0 0 0",
-            pointerEvents: "none",
-            zIndex: 5,
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 0,
-            width: 48,
-            height: 48,
-            borderTop: `2px solid ${GOLD}50`,
-            borderRight: `2px solid ${GOLD}50`,
-            borderRadius: "0 22px 0 0",
-            pointerEvents: "none",
-            zIndex: 5,
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            width: 48,
-            height: 48,
-            borderBottom: `2px solid ${GOLD}30`,
-            borderLeft: `2px solid ${GOLD}30`,
-            borderRadius: "0 0 0 22px",
-            pointerEvents: "none",
-            zIndex: 5,
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            right: 0,
-            width: 48,
-            height: 48,
-            borderBottom: `2px solid ${GOLD}30`,
-            borderRight: `2px solid ${GOLD}30`,
-            borderRadius: "0 0 22px 0",
-            pointerEvents: "none",
-            zIndex: 5,
-          }}
-        />
-        {/* "Hand-Glazed" badge on image */}
+        <div style={{ position: 'absolute', top: 0, left: 0, width: 48, height: 48, borderTop: `2px solid ${GOLD}50`, borderLeft: `2px solid ${GOLD}50`, borderRadius: '22px 0 0 0', pointerEvents: 'none', zIndex: 5 }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, width: 48, height: 48, borderTop: `2px solid ${GOLD}50`, borderRight: `2px solid ${GOLD}50`, borderRadius: '0 22px 0 0', pointerEvents: 'none', zIndex: 5 }} />
+        <div style={{ position: 'absolute', bottom: 0, left: 0, width: 48, height: 48, borderBottom: `2px solid ${GOLD}30`, borderLeft: `2px solid ${GOLD}30`, borderRadius: '0 0 0 22px', pointerEvents: 'none', zIndex: 5 }} />
+        <div style={{ position: 'absolute', bottom: 0, right: 0, width: 48, height: 48, borderBottom: `2px solid ${GOLD}30`, borderRight: `2px solid ${GOLD}30`, borderRadius: '0 0 22px 0', pointerEvents: 'none', zIndex: 5 }} />
         <motion.div
           style={{
-            position: "absolute",
+            position: 'absolute',
             top: 20,
             right: 20,
             zIndex: 6,
-            display: "inline-flex",
-            alignItems: "center",
+            display: 'inline-flex',
+            alignItems: 'center',
             gap: 8,
             background: `linear-gradient(135deg, rgba(26,26,26,0.95) 0%, rgba(10,10,10,0.98) 100%)`,
             border: `1px solid ${GOLD}40`,
-            padding: "10px 16px",
+            padding: '10px 16px',
             borderRadius: 999,
-            fontSize: "clamp(10px, 1.3vw, 12px)",
+            fontSize: 'clamp(10px, 1.3vw, 12px)',
             fontWeight: 600,
             color: GOLD_LIGHT,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            backdropFilter: "blur(16px)",
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            backdropFilter: 'blur(16px)',
             boxShadow: `0 8px 32px -8px ${GOLD}25, inset 0 1px 0 rgba(255,255,255,0.03)`,
           }}
           initial={{ opacity: 0, y: -16, scale: 0.85 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ delay: 0.8, duration: 0.7, ease: easeOut }}
         >
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: GOLD,
-              animation: reduceMotion
-                ? "none"
-                : "pulse 2.2s infinite ease-in-out",
-              boxShadow: `0 0 8px ${GOLD}`,
-            }}
-          />
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, animation: reduceMotion ? 'none' : 'pulse 2.2s infinite ease-in-out', boxShadow: `0 0 8px ${GOLD}` }} />
           Hand-Glazed
         </motion.div>
       </motion.div>
 
-      {/* Layer 5: 2D Smoke Effects - smooth looping cinematic smoke */}
-      {!reduceMotion && (
-        <>
-          {SMOKE_LAYERS.map((layer) => (
-            <SmokeLayer key={layer.id} {...layer} reduceMotion={reduceMotion} />
-          ))}
-        </>
-      )}
-
-      {/* Layer 6: Content - Text, CTA, Trust badges */}
       <div
         style={{
-          position: "relative",
+          position: 'relative',
           zIndex: 10,
-          padding: "clamp(48px, 9vw, 96px) clamp(28px, 6vw, 96px)",
-          minHeight: "clamp(480px, 70vw, 640px)",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "flex-end",
+          padding: 'clamp(48px, 9vw, 96px) clamp(28px, 6vw, 96px)',
+          minHeight: 'clamp(480px, 70vw, 640px)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
         }}
       >
         <motion.div
           style={{
-            maxWidth: "600px",
-            transform: reduceMotion
-              ? "none"
-              : `translateZ(80px) translateX(${mousePos.x * -12}px) translateY(${mousePos.y * -8}px)`,
-            transition: reduceMotion
-              ? "none"
-              : "transform 0.9s cubic-bezier(0.22, 1, 0.36, 1)",
+            maxWidth: '600px',
+            transform: reduceMotion ? 'none' : `translateZ(80px) translateX(${mousePos.x * -12}px) translateY(${mousePos.y * -8}px)`,
+            transition: reduceMotion ? 'none' : 'transform 0.9s cubic-bezier(0.22, 1, 0.36, 1)',
           }}
           initial={{ opacity: 0, y: 36 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.7, duration: 1, ease: easeOut }}
         >
-          {/* Premium badge pill */}
           <motion.span
             initial={{ opacity: 0, x: -24 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.85, duration: 0.7, ease: easeOut }}
             style={{
-              display: "inline-flex",
-              alignItems: "center",
+              display: 'inline-flex',
+              alignItems: 'center',
               gap: 10,
               background: `linear-gradient(135deg, ${GOLD}18 0%, ${GOLD}0A 100%)`,
               border: `1px solid ${GOLD}35`,
-              padding: "clamp(11px, 1.6vw, 13px) clamp(20px, 3.5vw, 28px)",
+              padding: 'clamp(11px, 1.6vw, 13px) clamp(20px, 3.5vw, 28px)',
               borderRadius: 999,
-              fontSize: "clamp(11px, 1.7vw, 13px)",
+              fontSize: 'clamp(11px, 1.7vw, 13px)',
               fontWeight: 600,
               color: GOLD_LIGHT,
-              width: "fit-content",
-              marginBottom: "clamp(18px, 3vw, 26px)",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              backdropFilter: "blur(16px)",
+              width: 'fit-content',
+              marginBottom: 'clamp(18px, 3vw, 26px)',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              backdropFilter: 'blur(16px)',
               boxShadow: `0 6px 32px -6px ${GOLD}20, inset 0 1px 0 rgba(255,255,255,0.02)`,
             }}
           >
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: GOLD,
-                animation: reduceMotion
-                  ? "none"
-                  : "pulse 2.5s infinite ease-in-out",
-                boxShadow: `0 0 12px ${GOLD}`,
-              }}
-            />
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: GOLD, animation: reduceMotion ? 'none' : 'pulse 2.5s infinite ease-in-out', boxShadow: `0 0 12px ${GOLD}` }} />
             7 Signature Glazes
           </motion.span>
 
-          {/* Main Headline - editorial split styling */}
           <motion.h2
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.0, duration: 0.9, ease: easeOut }}
             style={{
-              fontSize: "clamp(38px, 7.5vw, 80px)",
+              fontSize: 'clamp(38px, 7.5vw, 80px)',
               fontWeight: 800,
-              letterSpacing: "-0.035em",
+              letterSpacing: '-0.035em',
               lineHeight: 1.0,
-              marginBottom: "clamp(16px, 2.5vw, 24px)",
-              fontFamily: "Poppins, Inter, system-ui, sans-serif",
+              marginBottom: 'clamp(16px, 2.5vw, 24px)',
+              fontFamily: 'Poppins, Inter, system-ui, sans-serif',
               textShadow: `0 4px 40px rgba(0,0,0,0.5)`,
             }}
           >
-            <span
-              style={{
-                display: "block",
-                color: CREAM,
-                fontWeight: 800,
-                letterSpacing: "-0.03em",
-              }}
-            >
-              SIGNATURE
-            </span>
-            <span
-              style={{
-                display: "block",
-                color: GOLD,
-                marginTop: "-0.04em",
-                fontWeight: 800,
-                letterSpacing: "-0.03em",
-              }}
-            >
-              GLAZED
-            </span>
-            <span
-              style={{
-                display: "block",
-                color: CREAM,
-                opacity: 0.92,
-                fontWeight: 800,
-                fontSize: "clamp(30px, 6vw, 62px)",
-                marginTop: "-0.015em",
-                letterSpacing: "-0.03em",
-              }}
-            >
-              CHICKEN
-            </span>
+            <span style={{ display: 'block', color: CREAM, fontWeight: 800, letterSpacing: '-0.03em' }}>SIGNATURE</span>
+            <span style={{ display: 'block', color: GOLD, marginTop: '-0.04em', fontWeight: 800, letterSpacing: '-0.03em' }}>GLAZED</span>
+            <span style={{ display: 'block', color: CREAM, opacity: 0.92, fontWeight: 800, fontSize: 'clamp(30px, 6vw, 62px)', marginTop: '-0.015em', letterSpacing: '-0.03em' }}>CHICKEN</span>
           </motion.h2>
 
-          {/* Supporting description */}
           <motion.p
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.15, duration: 0.8, ease: easeOut }}
             style={{
-              fontSize: "clamp(13px, 1.8vw, 16px)",
+              fontSize: 'clamp(13px, 1.8vw, 16px)',
               maxWidth: 480,
-              marginBottom: "clamp(20px, 3.5vw, 28px)",
+              marginBottom: 'clamp(20px, 3.5vw, 28px)',
               fontWeight: 500,
               lineHeight: 1.6,
               color: `rgba(245,240,232,0.85)`,
-              textShadow: "0 1px 3px rgba(0,0,0,0.4)",
+              textShadow: '0 1px 3px rgba(0,0,0,0.4)',
             }}
           >
-            Hand-crafted daily with our secret spice rubs. Choose from 7
-            signature glazes — each bite delivers the perfect crunch.
+            Hand-crafted daily with our secret spice rubs. Choose from 7 signature glazes — each bite delivers the perfect crunch.
           </motion.p>
 
-          {/* Explore Menu CTA - Gold button */}
           <motion.button
             style={{
-              fontSize: "clamp(14px, 1.6vw, 15px)",
-              padding: "clamp(12px, 2vw, 14px) clamp(22px, 4vw, 28px)",
-              display: "inline-flex",
-              alignItems: "center",
+              fontSize: 'clamp(14px, 1.6vw, 15px)',
+              padding: 'clamp(12px, 2vw, 14px) clamp(22px, 4vw, 28px)',
+              display: 'inline-flex',
+              alignItems: 'center',
               gap: 10,
-              width: "fit-content",
+              width: 'fit-content',
               borderRadius: 12,
               background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
               color: BLACK,
-              border: "none",
+              border: 'none',
               boxShadow: `0 6px 24px -4px ${GOLD}40, inset 0 1px 0 rgba(255,255,255,0.15), 0 0 0 1px ${GOLD}25`,
               fontWeight: 600,
-              letterSpacing: "0.01em",
-              position: "relative",
-              overflow: "hidden",
-              transform: reduceMotion
-                ? "none"
-                : `translateZ(100px) translateX(${mousePos.x * -18}px) translateY(${mousePos.y * -10}px)`,
-              transition: reduceMotion
-                ? "none"
-                : "transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, background 0.2s ease",
+              letterSpacing: '0.01em',
+              position: 'relative',
+              overflow: 'hidden',
+              transform: reduceMotion ? 'none' : `translateZ(100px) translateX(${mousePos.x * -18}px) translateY(${mousePos.y * -10}px)`,
+              transition: reduceMotion ? 'none' : 'transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, background 0.2s ease',
             }}
             whileHover={{
               y: -2,
@@ -1892,74 +1176,63 @@ function HeroSection() {
               transition: { duration: 0.2, ease: easeOut },
             }}
             whileTap={{ scale: 0.98, y: 0 }}
-            onClick={() =>
-              (window.location.href = "/usersmenu?showOrderModal=true")
-            }
+            onClick={() => window.location.href = '/usersmenu?showOrderModal=true'}
           >
             <ShoppingBag size={17} />
             <span>Explore Menu</span>
-            <ArrowRight
-              size={17}
-              style={{ transition: "transform 0.2s ease" }}
-            />
+            <ArrowRight size={17} style={{ transition: 'transform 0.2s ease' }} />
           </motion.button>
         </motion.div>
 
-        {/* Trust badges / pills - dark surfaces, gold borders */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.3, duration: 0.7, ease: easeOut }}
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "clamp(8px, 1.2vw, 12px)",
-            marginTop: "clamp(24px, 4vw, 32px)",
-            paddingTop: "clamp(16px, 3vw, 24px)",
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'clamp(8px, 1.2vw, 12px)',
+            marginTop: 'clamp(24px, 4vw, 32px)',
+            paddingTop: 'clamp(16px, 3vw, 24px)',
             borderTop: `1px solid ${GOLD}18`,
           }}
         >
           {[
-            { icon: CheckCircle, text: "7 Signature Glazes" },
-            { icon: CheckCircle, text: "250+ Branches Nationwide" },
-            { icon: CheckCircle, text: "Fresh Daily, Never Frozen" },
+            { icon: CheckCircle, text: '7 Signature Glazes' },
+            { icon: CheckCircle, text: '250+ Branches Nationwide' },
+            { icon: CheckCircle, text: 'Fresh Daily, Never Frozen' },
           ].map((badge, i) => (
             <motion.span
               key={badge.text}
               initial={{ opacity: 0, y: 12, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{
-                delay: 1.35 + i * 0.12,
-                duration: 0.55,
-                ease: easeOut,
-              }}
+              transition={{ delay: 1.35 + i * 0.12, duration: 0.55, ease: easeOut }}
               style={{
-                display: "inline-flex",
-                alignItems: "center",
+                display: 'inline-flex',
+                alignItems: 'center',
                 gap: 8,
-                padding: "clamp(8px, 1.2vw, 10px) clamp(12px, 2vw, 16px)",
+                padding: 'clamp(8px, 1.2vw, 10px) clamp(12px, 2vw, 16px)',
                 background: `rgba(26,26,26,0.8)`,
                 border: `1px solid ${GOLD}25`,
                 borderRadius: 999,
-                fontSize: "clamp(11px, 1.4vw, 12px)",
+                fontSize: 'clamp(11px, 1.4vw, 12px)',
                 fontWeight: 600,
                 color: `rgba(245,240,232,0.8)`,
-                whiteSpace: "nowrap",
-                backdropFilter: "blur(12px)",
-                transition:
-                  "border-color 0.25s ease, color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease",
+                whiteSpace: 'nowrap',
+                backdropFilter: 'blur(12px)',
+                transition: 'border-color 0.25s ease, color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = `${GOLD}60`;
-                e.currentTarget.style.color = GOLD_LIGHT;
-                e.currentTarget.style.background = `rgba(201,168,76,0.12)`;
-                e.currentTarget.style.boxShadow = `0 0 24px -4px ${GOLD}25`;
+                e.currentTarget.style.borderColor = `${GOLD}60`
+                e.currentTarget.style.color = GOLD_LIGHT
+                e.currentTarget.style.background = `rgba(201,168,76,0.12)`
+                e.currentTarget.style.boxShadow = `0 0 24px -4px ${GOLD}25`
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = `${GOLD}25`;
-                e.currentTarget.style.color = `rgba(245,240,232,0.8)`;
-                e.currentTarget.style.background = `rgba(26,26,26,0.8)`;
-                e.currentTarget.style.boxShadow = "none";
+                e.currentTarget.style.borderColor = `${GOLD}25`
+                e.currentTarget.style.color = `rgba(245,240,232,0.8)`
+                e.currentTarget.style.background = `rgba(26,26,26,0.8)`
+                e.currentTarget.style.boxShadow = 'none'
               }}
             >
               <badge.icon size={14} color={GOLD} />
@@ -1969,662 +1242,250 @@ function HeroSection() {
         </motion.div>
       </div>
 
-      {/* Bottom gold accent line */}
       <div
         style={{
-          position: "absolute",
+          position: 'absolute',
           bottom: 0,
-          left: "10%",
-          right: "10%",
+          left: '10%',
+          right: '10%',
           height: 1.5,
           background: `linear-gradient(90deg, transparent, ${GOLD}35, ${GOLD}70 50%, ${GOLD}35, transparent)`,
           opacity: 0.6,
-          pointerEvents: "none",
+          pointerEvents: 'none',
           zIndex: 5,
         }}
       />
     </motion.section>
-  );
+  )
 }
 
-// ── Smoke Component (Realistic 2D Cinematic Smoke/Steam) ────────────────────────
-// Organic, soft white-gray cloud layers that drift seamlessly
-function SmokeLayer({
-  id,
-  startX,
-  startY,
-  driftX,
-  driftY,
-  scale,
-  opacity,
-  duration,
-  delay,
-  reduceMotion,
-}: {
-  id: number;
-  startX: number;
-  startY: number;
-  driftX: number;
-  driftY: number;
-  scale: number;
-  opacity: number;
-  duration: number;
-  delay: number;
-  reduceMotion: boolean;
-}) {
-  if (reduceMotion) return null;
-
-  // Pre-computed organic cloud shapes using CSS border-radius for soft plumes
-  const shapes = [
-    "45% 55% 60% 40% / 50% 60% 55% 45%",
-    "55% 45% 50% 50% / 55% 50% 60% 40%",
-    "40% 60% 55% 45% / 60% 55% 50% 50%",
-    "50% 50% 45% 55% / 45% 55% 60% 40%",
-  ];
-  const shape = shapes[id % shapes.length];
-
-  // Soft white-gray smoke colors
-  const smokeColors = [
-    "rgba(255,255,255,0.18)", // Soft white
-    "rgba(230,230,235,0.16)", // Light gray-white
-    "rgba(210,215,220,0.14)", // Muted gray-white
-    "rgba(200,205,210,0.12)", // Subtle gray
-  ];
-  const baseColor = smokeColors[id % smokeColors.length];
-
+// ── Our Story Section ──────────────────────────────────────────────────────
+function OurStory() {
   return (
-    <motion.div
+    <motion.section
       style={{
-        position: "absolute",
-        left: `${startX}%`,
-        top: `${startY}%`,
-        width: `clamp(80px, 14vw, 200px)`,
-        height: `clamp(60px, 10vw, 160px)`,
-        pointerEvents: "none",
-        zIndex: 3,
-        transformOrigin: "center center",
-        willChange: "transform, opacity",
+        padding: 'var(--section-py) var(--container-pad)',
+        background: 'transparent',
+        position: 'relative',
+        zIndex: 1,
       }}
-      initial={false}
-      animate={{
-        opacity: [0, opacity, opacity * 0.7, opacity * 0.3, 0],
-        y: [0, driftY * 0.3, driftY * 0.6, driftY * 0.85, driftY],
-        x: [0, driftX * 0.25, driftX * 0.55, driftX * 0.8, driftX],
-        scale: [
-          scale * 0.5,
-          scale * 0.85,
-          scale * 1.1,
-          scale * 1.25,
-          scale * 1.35,
-        ],
-        rotate: [0, driftX * 0.3, driftX * -0.2, driftX * 0.15, 0],
-        borderRadius: [shape, shape, shape, shape, shape],
-      }}
-      transition={{
-        duration,
-        delay,
-        ease: [0.25, 0.46, 0.45, 0.94], // Custom easing for natural feel
-        repeat: Infinity,
-        repeatDelay: 0,
-      }}
+      initial={{ opacity: 0, y: 40 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.8, ease: easeOut }}
     >
-      {/* Multi-layered plume for depth - each layer slightly offset */}
-      {[0, 1, 2].map((layerIdx) => (
-        <div
-          key={layerIdx}
+      <div style={{ maxWidth: 'var(--container-max)', margin: '0 auto', textAlign: 'center' }}>
+        <motion.span
           style={{
-            position: "absolute",
-            inset: `${layerIdx * 4}%`,
-            background: `radial-gradient(ellipse 55% 50% at 50% 45%, ${baseColor} 0%, ${baseColor} 20%, ${baseColor.replace(/[\d.]+\)$/, "0)")} 70%, transparent 100%)`,
-            borderRadius: shape,
-            filter: `blur(${8 + layerIdx * 4}px)`,
-            opacity: 1 - layerIdx * 0.15,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '10px 24px',
+            fontSize: 'clamp(11px, 1.4vw, 13px)',
+            fontWeight: 600,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            color: 'var(--gold)',
+            background: 'rgba(245,185,68,0.08)',
+            border: '1px solid rgba(245,185,68,0.4)',
+            borderRadius: '9999px',
+            fontFamily: "'JetBrains Mono', monospace",
+            marginBottom: 'clamp(20px, 3vw, 32px)',
           }}
-        />
-      ))}
-    </motion.div>
-  );
-}
-
-// Smoke configuration - 4 layers with varied timing for seamless looping
-const SMOKE_LAYERS = [
-  {
-    id: 0,
-    startX: 18,
-    startY: 85,
-    driftX: -12,
-    driftY: -140,
-    scale: 1.15,
-    opacity: 0.22,
-    duration: 14,
-    delay: 0,
-  },
-  {
-    id: 1,
-    startX: 75,
-    startY: 88,
-    driftX: 10,
-    driftY: -160,
-    scale: 0.95,
-    opacity: 0.18,
-    duration: 18,
-    delay: 2.5,
-  },
-  {
-    id: 2,
-    startX: 45,
-    startY: 90,
-    driftX: -6,
-    driftY: -130,
-    scale: 1.05,
-    opacity: 0.15,
-    duration: 22,
-    delay: 5,
-  },
-  {
-    id: 3,
-    startX: 60,
-    startY: 82,
-    driftX: 8,
-    driftY: -150,
-    scale: 0.85,
-    opacity: 0.12,
-    duration: 26,
-    delay: 7.5,
-  },
-] as const;
-
-// ── Featured Menu Poster — Clean Image-First Gallery Card ─────────────────────
-function FeaturedMenuPoster({
-  image,
-  alt,
-  index,
-}: {
-  image: string;
-  alt: string;
-  index: number;
-}) {
-  const [canHover, setCanHover] = useState(false);
-
-  useEffect(() => {
-    const mqHover = window.matchMedia("(hover: hover) and (pointer: fine)");
-    const mqMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setCanHover(mqHover.matches && !mqMotion.matches);
-    update();
-    mqHover.addEventListener?.("change", update);
-    mqMotion.addEventListener?.("change", update);
-    return () => {
-      mqHover.removeEventListener?.("change", update);
-      mqMotion.removeEventListener?.("change", update);
-    };
-  }, []);
-
-  return (
-    <motion.article
-      className="featured-menu-card"
-      variants={fadeUp}
-      whileHover={
-        canHover
-          ? {
-              y: -4,
-              scale: 1.012,
-              boxShadow:
-                "0 16px 36px -6px rgba(0, 0, 0, 0.75), 0 0 18px 0 rgba(201, 168, 76, 0.22)",
-              borderColor: "rgba(201, 168, 76, 0.55)",
-              transition: { duration: 0.3, ease: easeOut },
-            }
-          : undefined
-      }
-      style={{
-        position: "relative",
-        borderRadius: 14,
-        overflow: "hidden",
-        background: BLACK,
-        border: "1px solid rgba(201, 168, 76, 0.28)",
-        boxShadow:
-          "0 8px 24px -4px rgba(0, 0, 0, 0.65), 0 2px 6px -1px rgba(0, 0, 0, 0.4)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        boxSizing: "border-box",
-      }}
-    >
-      <Photo
-        src={image}
-        alt={alt}
-        priority={true}
-        style={{
-          width: "100%",
-          height: "auto",
-          maxWidth: "100%",
-          maxHeight: 460,
-          objectFit: "contain",
-          objectPosition: "center",
-          display: "block",
-          aspectRatio: index === 0 ? "1055 / 1491" : "1040 / 1512",
-        }}
-      />
-    </motion.article>
-  );
-}
-
-// ── Featured Menu — Premium Poster Gallery ───────────────────────────────────
-function FeaturedStrip() {
-  const featuredPosters = [
-    { img: PROMO_IMAGES[0], alt: "THE CRUNCH OVERLOAD promotional poster" },
-    { img: PROMO_IMAGES[1], alt: "THE CRUNCH BUCKET promotional poster" },
-    {
-      img: PROMO_IMAGES[2],
-      alt: "THE CRUNCH Rice Meals and Sauces promotional poster",
-    },
-  ];
-
-  return (
-    <div className="featured-menu-section">
-      <motion.div variants={fadeUp}>
-        <div
-          style={{
-            padding: "16px 20px",
-            marginBottom: 24,
-            display: "inline-flex",
-            alignItems: "center",
-            borderRadius: 12,
-          }}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.6, ease: easeOut }}
         >
-          <h2
-            className="h2"
-            style={{ fontSize: "clamp(26px, 4vw, 36px)", margin: 0 }}
-          >
-            Featured Menu
-          </h2>
-        </div>
-      </motion.div>
-      <motion.div variants={staggerContainer} className="featured-menu-grid">
-        {featuredPosters.map((poster, index) => (
-          <FeaturedMenuPoster
-            key={poster.alt}
-            image={poster.img}
-            alt={poster.alt}
-            index={index}
-          />
-        ))}
-      </motion.div>
-    </div>
-  );
+          OUR STORY
+        </motion.span>
+
+        <motion.h2
+          style={{
+            fontSize: 'clamp(38px, 6vw, 64px)',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
+            lineHeight: 1.1,
+            marginBottom: 'clamp(20px, 3vw, 32px)',
+            fontFamily: 'Poppins, Inter, sans-serif',
+            background: 'var(--gold-gradient)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
+            textShadow: '0 0 40px rgba(245,185,68,0.2)',
+          }}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.7, ease: easeOut }}
+        >
+          Where Flavor Meets Craft
+        </motion.h2>
+
+        <motion.p
+          style={{
+            fontSize: 'clamp(16px, 2vw, 20px)',
+            lineHeight: 1.7,
+            maxWidth: '46ch',
+            margin: '0 auto',
+            color: 'var(--muted)',
+            fontWeight: 400,
+          }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4, duration: 0.7, ease: easeOut }}
+        >
+          Every piece of chicken begins with a 24-hour brine, hand-dredged in our signature spice blend, and fried to a golden crunch. Then comes the glaze — seven recipes developed over years, each brushed on by hand so the flavor clings to every ridge. No shortcuts. No central kitchen shortcuts. Just honest work, fresh daily, across 250+ branches.
+        </motion.p>
+      </div>
+    </motion.section>
+  )
 }
 
-// ── Feedback Modal (unchanged functionality) ────────────────────────────────
-function FeedbackModal({
-  onClose,
-  options,
-  userId,
-}: {
-  onClose: () => void;
-  options: { id: number; name: string }[];
-  userId: number | null;
-}) {
-  const [rating, setRating] = useState(0);
-  const [hover, setHover] = useState(0);
-  const [message, setMessage] = useState("");
-  const [productId, setProductId] = useState<number | null>(
-    options[0]?.id ?? null,
-  );
-  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">(
-    "idle",
-  );
-  const [err, setErr] = useState("");
-  const text = message.trim();
-  const can =
-    productId !== null &&
-    rating > 0 &&
-    text.length > 0 &&
-    text.length <= MAX_FB;
+// ── Footer ─────────────────────────────────────────────────────────────────
+function Footer() {
+  return (
+    <footer style={{ background: 'transparent', borderTop: '1px solid rgba(245,185,68,0.15)', padding: '48px 0 32px', marginTop: 60, position: 'relative', zIndex: 1 }}>
+      <div style={{ maxWidth: 'var(--container-max)', margin: '0 auto', padding: '0 var(--container-pad)' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 28 }}>
+          <div style={{ flex: '1 1 280px', minWidth: 240 }}>
+            <p style={{ fontWeight: 800, fontSize: 18, color: 'var(--text)' }}>The <span style={{ color: 'var(--gold)' }}>Crunch</span></p>
+            <p style={{ marginTop: 6, fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.6 }}>6 Falcon St., cor Dahlia Fairview,<br />Quezon City, Philippines</p>
+            <a href="https://www.google.com/maps/place/The+Crunch+-+Fairview+Branch/@14.7002687,121.0662915,21z" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 13.5, fontWeight: 600, color: 'var(--gold)', textDecoration: 'none', transition: 'opacity 200ms' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'} onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>
+              <MapPin size={14} />View on Google Maps
+            </a>
+          </div>
+          <div style={{ flex: '1 1 180px', minWidth: 160, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <p style={{ fontSize: 12, color: 'var(--muted)' }}>Follow us</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+              <a href="https://www.instagram.com/thecrunchfairview" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'var(--gold)', transition: 'opacity 200ms', fontSize: 14 }} onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'} onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>Instagram</a>
+              <a href="https://www.facebook.com/thecrunchfairview" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'var(--gold)', transition: 'opacity 200ms', fontSize: 14 }} onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'} onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>Facebook</a>
+            </div>
+          </div>
+          <div style={{ flex: '1 1 200px', minWidth: 180, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <p style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}><Clock size={13} />Hours</p>
+            <p style={{ marginTop: 6, fontSize: 13.5, textAlign: 'right', color: 'var(--text)', lineHeight: 1.6 }}>Mon–Fri: 10 AM – 10 PM<br />Sat–Sun: 11 AM – 8:30 PM</p>
+          </div>
+        </div>
+        <p style={{ marginTop: 36, paddingTop: 18, borderTop: '1px solid rgba(245,185,68,0.15)', fontSize: 12, textAlign: 'center', color: 'var(--muted)' }}>© {new Date().getFullYear()} The Crunch Fairview. All rights reserved.</p>
+      </div>
+    </footer>
+  )
+}
+
+// ── Feedback Modal (unchanged logic) ───────────────────────────────────────
+function FeedbackModal({ onClose, options, userId }: { onClose: () => void; options: { id: number; name: string }[]; userId: number | null }) {
+  const [rating, setRating] = useState(0)
+  const [hover, setHover] = useState(0)
+  const [message, setMessage] = useState('')
+  const [productId, setProductId] = useState<number | null>(options[0]?.id ?? null)
+  const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
+  const [err, setErr] = useState('')
+  const text = message.trim()
+  const can = productId !== null && rating > 0 && text.length > 0 && text.length <= MAX_FB
 
   const submit = async () => {
-    if (!can) return;
-    setStatus("sending");
-    setErr("");
+    if (!can) return
+    setStatus('sending'); setErr('')
     try {
-      await api.post("/feedback", {
-        product_id: productId,
-        customer_user_id: userId,
-        rating,
-        comment: text,
-      });
-      setStatus("done");
+      await api.post('/feedback', { product_id: productId, customer_user_id: userId, rating, comment: text })
+      setStatus('done')
     } catch (e: any) {
-      setErr(e?.message || "Could not send your feedback. Try again.");
-      setStatus("error");
+      setErr(e?.message || 'Could not send your feedback. Try again.')
+      setStatus('error')
     }
-  };
+  }
 
   return (
     <>
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,.65)",
-          zIndex: 900,
-        }}
-      />
-      <motion.div
-        role="dialog"
-        aria-label="Send feedback"
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 12 }}
-        style={{
-          position: "fixed",
-          zIndex: 901,
-          right: 16,
-          bottom: 80,
-          width: "min(400px,calc(100vw - 32px))",
-          maxHeight: "calc(100vh - 110px)",
-          overflowY: "auto",
-          background: "#15130f",
-          border: "1px solid var(--line)",
-          borderRadius: 16,
-          padding: 22,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginBottom: 16,
-          }}
-        >
-          <div>
-            <p style={{ fontSize: 17, fontWeight: 700 }}>Send feedback</p>
-            <p className="sub" style={{ fontSize: 12.5 }}>
-              Tell us how we did.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              background: "none",
-              border: 0,
-              color: "var(--muted)",
-              cursor: "pointer",
-              height: 28,
-            }}
-          >
-            <X size={18} />
-          </button>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 900, pointerEvents: 'auto' }} />
+      <motion.div role="dialog" aria-label="Send feedback" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }}
+        style={{ position: 'fixed', zIndex: 901, right: 16, bottom: 80, width: 'min(400px,calc(100vw - 32px))', maxHeight: 'calc(100vh - 110px)', overflowY: 'auto', background: 'var(--bg)', border: '1px solid rgba(245,185,68,0.15)', borderRadius: 16, padding: 22, pointerEvents: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, pointerEvents: 'auto' }}>
+          <div style={{ pointerEvents: 'auto' }}><p style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)' }}>Send feedback</p><p style={{ fontSize: 12.5, color: 'var(--muted)' }}>Tell us how we did.</p></div>
+          <button onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close" style={{ background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer', height: 28, pointerEvents: 'auto' }}><X size={18} /></button>
         </div>
-        {status === "done" ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "20px 0",
-              display: "grid",
-              gap: 10,
-              justifyItems: "center",
-            }}
-          >
+        {status === 'done' ? (
+          <div style={{ textAlign: 'center', padding: '20px 0', display: 'grid', gap: 10, justifyItems: 'center' }}>
             <CheckCircle size={38} color="#22c55e" />
-            <p style={{ fontWeight: 700 }}>Feedback sent</p>
-            <button className="btn btn-ghost" onClick={onClose}>
-              Close
-            </button>
+            <p style={{ fontWeight: 700, color: 'var(--text)' }}>Feedback sent</p>
+            <button className="btn-secondary" onClick={onClose}>Close</button>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 14 }}>
+          <div style={{ display: 'grid', gap: 14 }}>
             <div>
-              <p className="sub" style={{ fontSize: 12, marginBottom: 6 }}>
-                Rating
-              </p>
-              <div
-                style={{ display: "flex", gap: 4 }}
-                onMouseLeave={() => setHover(0)}
-              >
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    aria-label={`${n} star${n > 1 ? "s" : ""}`}
-                    onMouseEnter={() => setHover(n)}
-                    onClick={() => setRating(n)}
-                    style={{
-                      background: "none",
-                      border: 0,
-                      cursor: "pointer",
-                      lineHeight: 0,
-                    }}
-                  >
-                    <Star
-                      size={26}
-                      color={
-                        n <= (hover || rating)
-                          ? "#f5c842"
-                          : "rgba(255,255,255,.25)"
-                      }
-                      fill={n <= (hover || rating) ? "#f5c842" : "none"}
-                    />
+              <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Rating</p>
+              <div style={{ display: 'flex', gap: 4 }} onMouseLeave={() => setHover(0)}>
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button key={n} aria-label={`${n} star${n > 1 ? 's' : ''}`} onMouseEnter={() => setHover(n)} onClick={() => setRating(n)} style={{ background: 'none', border: 0, cursor: 'pointer', lineHeight: 0 }}>
+                    <Star size={26} color={n <= (hover || rating) ? 'var(--gold)' : 'rgba(255,255,255,.25)'} fill={n <= (hover || rating) ? 'var(--gold)' : 'none'} />
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <p className="sub" style={{ fontSize: 12, marginBottom: 6 }}>
-                Product
-              </p>
-              <select
-                className="input"
-                value={productId ?? ""}
-                onChange={(e) => setProductId(+e.target.value || null)}
-                disabled={!options.length || status === "sending"}
-              >
-                {options.length === 0 ? (
-                  <option value="">No products available</option>
-                ) : (
-                  options.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))
-                )}
+              <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Product</p>
+              <select style={{ width: '100%', font: 'inherit', fontSize: 14, color: 'var(--text)', background: 'rgba(245,185,68,0.05)', border: '1px solid rgba(245,185,68,0.15)', borderRadius: 12, padding: '14px 18px', outline: 'none' }} value={productId ?? ''} onChange={e => setProductId(+e.target.value || null)} disabled={!options.length || status === 'sending'}>
+                {options.length === 0 ? <option value="">No products available</option> : options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             </div>
             <div>
-              <p className="sub" style={{ fontSize: 12, marginBottom: 6 }}>
-                Comment
-              </p>
-              <textarea
-                className="input"
-                rows={4}
-                maxLength={MAX_FB}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="What did you like or dislike?"
-                style={{ resize: "none" }}
-              />
-              <p
-                className="sub"
-                style={{ fontSize: 11, textAlign: "right", marginTop: 2 }}
-              >
-                {message.length}/{MAX_FB}
-              </p>
+              <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Comment</p>
+              <textarea style={{ width: '100%', font: 'inherit', fontSize: 14, color: 'var(--text)', background: 'rgba(245,185,68,0.05)', border: '1px solid rgba(245,185,68,0.15)', borderRadius: 12, padding: '14px 18px', outline: 'none', resize: 'none', minHeight: 100 }} rows={4} maxLength={MAX_FB} value={message} onChange={e => setMessage(e.target.value)} placeholder="What did you like or dislike?" />
+              <p style={{ fontSize: 11, textAlign: 'right', marginTop: 2, color: 'var(--muted)' }}>{message.length}/{MAX_FB}</p>
             </div>
-            {status === "error" && (
-              <p role="alert" style={{ fontSize: 12.5, color: "#f87171" }}>
-                {err}
-              </p>
-            )}
-            <motion.button
-              className="btn btn-gold"
-              onClick={submit}
-              disabled={!can || status === "sending"}
-              whileTap={{ scale: 0.98 }}
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                gap: 8,
-                padding: 12,
-                opacity: can ? 1 : 0.45,
-                cursor: can ? "pointer" : "not-allowed",
-              }}
-            >
-              <Send size={14} />
-              {status === "sending" ? "Sending…" : "Send feedback"}
+            {status === 'error' && <p role="alert" style={{ fontSize: 12.5, color: '#f87171' }}>{err}</p>}
+            <motion.button style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 12, opacity: can ? 1 : .45, cursor: can ? 'pointer' : 'not-allowed', background: 'var(--gold-gradient)', color: '#1A1208', border: 'none', borderRadius: 12, fontWeight: 600, fontSize: 14, boxShadow: '0 4px 16px rgba(245,185,66,0.3)' }} onClick={submit} disabled={!can || status === 'sending'} whileTap={{ scale: 0.98 }}>
+              <Send size={14} />{status === 'sending' ? 'Sending…' : 'Send feedback'}
             </motion.button>
           </div>
         )}
       </motion.div>
     </>
-  );
+  )
 }
 
-// ── Page ───────────────────────────────────────────────────────────────────
-interface ProductsProps {
-  isAuthenticated?: boolean;
-}
+// ── Page Component ─────────────────────────────────────────────────────────
+interface ProductsProps { isAuthenticated?: boolean }
 
 export default function Products({ isAuthenticated = false }: ProductsProps) {
-  const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user } = useAuth()
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [menuCategories, setMenuCategories] = useState<MenuCategoryRecord[]>(
-    [],
-  );
-  const [_flavors, setFlavors] = useState<Flavor[]>([]);
-  const [promos, setPromos] = useState<Promo[]>([]);
-  const [loading, setLoading] = useState({ p: true, f: true, r: true });
-  const [category, setCategory] = useState<Category>("All");
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [products, setProducts] = useState<Product[]>([])
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
 
-  const userId =
-    isAuthenticated && user && Number(user.userId) > 0
-      ? Number(user.userId)
-      : null;
+  const userId = isAuthenticated && user && Number(user.userId) > 0 ? Number(user.userId) : null
 
-  const goOrder = useCallback(
-    () => navigate("/usersmenu?showOrderModal=true"),
-    [navigate],
-  );
+  useEffect(() => { void fetchGeneralSettings() }, [])
 
   useEffect(() => {
-    void fetchGeneralSettings();
-  }, []);
+    let cancelled = false
+    const load = <T,>(url: string, set: (d: T[]) => void, map?: (d: unknown[]) => T[]) =>
+      api.get<unknown[]>(url)
+        .then((d: unknown) => { if (!cancelled) { const r = Array.isArray(d) ? d : []; set(map ? map(r) : (r as T[])) } })
+        .catch(() => { })
+        .finally(() => { })
+    load<Product>('/api/products?item_type=menu_item', setProducts, mapProducts)
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
-    const el = document.createElement("style");
-    el.id = "products-css";
-    el.innerHTML = CSS;
-    document.head.appendChild(el);
-    return () => el.remove();
-  }, []);
+    let cancelled = false
+    api.get<unknown[]>('/api/products?item_type=menu_item')
+      .then((d: unknown) => { if (!cancelled) { const r = Array.isArray(d) ? d : []; setProducts(mapProducts(r)) } })
+      .catch(() => { })
+      .finally(() => { })
+    return () => { cancelled = true }
+  }, [])
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = <T,>(
-      url: string,
-      key: "p" | "f" | "r",
-      set: (d: T[]) => void,
-      map?: (d: unknown[]) => T[],
-    ) =>
-      api
-        .get<unknown[]>(url)
-        .then((d: unknown) => {
-          if (!cancelled) {
-            const r = Array.isArray(d) ? d : [];
-            set(map ? map(r) : (r as T[]));
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (!cancelled) setLoading((s) => ({ ...s, [key]: false }));
-        });
-    load<Product>(
-      "/api/products?item_type=menu_item",
-      "p",
-      setProducts,
-      mapProducts,
-    );
-    api
-      .get<MenuCategoryRecord[]>("/settings/menu-categories?activeOnly=1")
-      .then((rows) => {
-        if (!cancelled) setMenuCategories(Array.isArray(rows) ? rows : []);
-      })
-      .catch(() => {
-        if (!cancelled) setMenuCategories([]);
-      });
-    load<Flavor>("/api/flavors", "f", setFlavors);
-    load<Promo>("/api/promos", "r", setPromos);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Use one filtered source for the menu grid, category tabs, and feedback choices
-  // so non-sellable flavor labels never appear as products.
-  const visibleProducts = useMemo(
-    () =>
-      products.filter(
-        (p) =>
-          !p.archived &&
-          !isSelectionOnlySauceCategory(p.category, menuCategories),
-      ),
-    [products, menuCategories],
-  );
-
-  const categoryOptions = useMemo(() => {
-    const actual = new Map<string, string>();
-    visibleProducts.forEach((p) =>
-      actual.set(p.category.toLowerCase(), p.category),
-    );
-    const ordered: string[] = [];
-    const seen = new Set<string>();
-    const addIfUsed = (value: string) => {
-      const key = value.trim().toLowerCase();
-      const actualName = actual.get(key);
-      if (!actualName || seen.has(key)) return;
-      seen.add(key);
-      ordered.push(actualName);
-    };
-    const configured = [...menuCategories]
-      .filter((item) => item.is_active === true || item.is_active === 1)
-      .sort(
-        (a, b) =>
-          Number(a.display_order ?? 0) - Number(b.display_order ?? 0) ||
-          a.name.localeCompare(b.name),
-      );
-    configured.forEach((item) => addIfUsed(item.name));
-    const remaining = [...actual.values()].sort((a, b) => a.localeCompare(b));
-    remaining.forEach(addIfUsed);
-    return ["All", ...ordered];
-  }, [menuCategories, visibleProducts]);
-  const selectedCategory = categoryOptions.includes(category)
-    ? category
-    : "All";
-  const filtered = useMemo(
-    () =>
-      visibleProducts.filter(
-        (p) => selectedCategory === "All" || p.category === selectedCategory,
-      ),
-    [visibleProducts, selectedCategory],
-  );
-  const feedbackOptions = useMemo(
-    () => visibleProducts.map((p) => ({ id: p.id, name: p.name })),
-    [visibleProducts],
-  );
-  const featured = promos.filter((p) => p.highlight);
-  const regular = promos.filter((p) => !p.highlight);
+  const feedbackOptions = useMemo(() => products.filter(p => !p.archived).map(p => ({ id: p.id, name: p.name })), [products])
 
   return (
-    <div className="pc">
+    <div className="pc" style={{ background: BLACK, minHeight: '100vh' }}>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+
       <Navbar />
 
       {/* HERO SECTION — Signature Glazed Chicken: Premium Black & Gold */}
-      <section
-        style={{ paddingTop: NAV_H + 60, paddingBottom: 60, background: BLACK }}
-      >
+      <section style={{ paddingTop: NAV_H + 60, paddingBottom: 60, background: BLACK }}>
         <div className="wrap">
           <motion.div variants={fadeUp}>
             <HeroSection />
@@ -2632,350 +1493,17 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
         </div>
       </section>
 
-      {/* FEATURED STRIP */}
-      <motion.section
-        variants={staggerContainer}
-        style={{ padding: "20px 0 60px", background: BLACK }}
-      >
-        <div className="wrap">
-          <FeaturedStrip />
-        </div>
-      </motion.section>
-
-      {/* CATEGORY TABS */}
-      <div className="tabs">
-        <div className="wrap tabs-in" role="tablist">
-          {categoryOptions.map((c: string) => (
-            <motion.button
-              key={c}
-              role="tab"
-              aria-selected={selectedCategory === c}
-              className={`tab ${selectedCategory === c ? "on" : ""}`}
-              onClick={() => setCategory(c)}
-              whileTap={{ scale: 0.97 }}
-              variants={fadeIn}
-              style={{
-                background:
-                  category === c ? "rgba(233,190,95,0.12)" : "transparent",
-                borderRadius: 10,
-                border: category === c ? "1px solid var(--butter)" : "none",
-                boxShadow:
-                  category === c ? "0 4px 16px -4px rgba(0,0,0,0.4)" : "none",
-              }}
-            >
-              {c}
-            </motion.button>
-          ))}
-        </div>
-      </div>
-
-      <motion.main
-        className="wrap"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        style={{ paddingTop: 24, paddingBottom: 64, background: BLACK }}
-      >
-        {/* PRODUCTS GRID */}
-        <motion.section
-          variants={staggerContainer}
-          style={{ background: BLACK }}
-        >
-          <div
-            className="section-header"
-            style={{
-              padding: "16px 20px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 16,
-              borderRadius: 12,
-              marginBottom: 24,
-            }}
-          >
-            <motion.h2 className="section-title" variants={fadeUp}>
-              Our Menu
-            </motion.h2>
-            <motion.p
-              className="section-subtitle"
-              variants={fadeUp}
-              style={{ color: "var(--muted)" }}
-            >
-              {filtered.length} item{filtered.length !== 1 ? "s" : ""}
-            </motion.p>
-          </div>
-
-          {loading.p ? (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-                gap: "18px",
-                width: "100%",
-              }}
-            >
-              {[...Array(6)].map((_, i) => (
-                <SkeletonProductCard key={i} theme="customer" />
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <motion.div
-              variants={fadeIn}
-              style={{ textAlign: "center", padding: "80px 0" }}
-            >
-              <p style={{ fontSize: 18, fontWeight: 700 }}>No items found</p>
-              <p className="sub" style={{ marginTop: 4 }}>
-                Select another category to view available menu items.
-              </p>
-            </motion.div>
-          ) : (
-            <motion.div
-              className="grid"
-              role="list"
-              variants={staggerContainer}
-            >
-              {filtered.map((p) => (
-                <motion.div
-                  key={p.id}
-                  variants={fadeUp}
-                  style={{ display: "flex", flexDirection: "column" }}
-                  role="listitem"
-                >
-                  <ProductCard p={p} onOrder={goOrder} />
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </motion.section>
-
-        {/* PROMOS */}
-        {!loading.r && promos.length > 0 && (
-          <motion.section
-            className="section"
-            variants={staggerContainer}
-            style={{ background: BLACK, marginTop: 48 }}
-          >
-            <div
-              className="section-header"
-              style={{
-                padding: "16px 20px",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 16,
-                borderRadius: 12,
-                marginBottom: 24,
-              }}
-            >
-              <motion.h2 className="section-title" variants={fadeUp}>
-                Deals & Promos
-              </motion.h2>
-              <motion.p
-                className="section-subtitle"
-                variants={fadeUp}
-                style={{ color: "var(--muted)" }}
-              >
-                Current offers and limited-time specials.
-              </motion.p>
-            </div>
-            <motion.div
-              className="grid"
-              style={{
-                gridTemplateColumns:
-                  "repeat(auto-fill,minmax(min(100%,260px),1fr))",
-                gap: 16,
-              }}
-              variants={staggerContainer}
-              role="list"
-            >
-              {[...featured, ...regular].map((p) => (
-                <motion.div key={p.id} variants={fadeUp} role="listitem">
-                  <PromoCard p={p} />
-                </motion.div>
-              ))}
-            </motion.div>
-          </motion.section>
-        )}
-      </motion.main>
+      {/* OUR STORY */}
+      <OurStory />
 
       {/* FOOTER */}
-      <footer
-        style={{
-          background: BLACK,
-          borderTop: "1px solid var(--line)",
-          padding: "48px 0 32px",
-          marginTop: 60,
-        }}
-      >
-        <div className="wrap">
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              justifyContent: "space-between",
-              gap: 28,
-            }}
-          >
-            {/* Left — Business Information */}
-            <div style={{ flex: "1 1 280px", minWidth: 240 }}>
-              <p style={{ fontWeight: 800, fontSize: 18 }}>
-                The <span style={{ color: "var(--gold)" }}>Crunch</span>
-              </p>
-              <p className="sub" style={{ marginTop: 6, fontSize: 13.5 }}>
-                6 Falcon St., cor Dahlia Fairview,
-                <br />
-                Quezon City, Philippines
-              </p>
-              <a
-                href="https://www.google.com/maps/place/The+Crunch+-+Fairview+Branch/@14.7002687,121.0662915,21z"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  marginTop: 12,
-                  fontSize: 13.5,
-                  fontWeight: 600,
-                  color: "var(--gold)",
-                  textDecoration: "none",
-                }}
-              >
-                <MapPin size={14} />
-                View on Google Maps
-              </a>
-            </div>
-            {/* Center — Social Media */}
-            <div
-              style={{
-                flex: "1 1 180px",
-                minWidth: 160,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-              }}
-            >
-              <p className="sub" style={{ fontSize: 12 }}>
-                Follow us
-              </p>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  marginTop: 8,
-                }}
-              >
-                <a
-                  className="link"
-                  style={{
-                    padding: 0,
-                    textDecoration: "none",
-                    color: "var(--gold)",
-                    transition: "color 0.2s ease",
-                  }}
-                  href="https://www.instagram.com/thecrunchfairview"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Instagram
-                </a>
-                <a
-                  className="link"
-                  style={{
-                    padding: 0,
-                    textDecoration: "none",
-                    color: "var(--gold)",
-                    transition: "color 0.2s ease",
-                  }}
-                  href="https://www.facebook.com/thecrunchfairview"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Facebook
-                </a>
-              </div>
-            </div>
-            {/* Right — Operating Hours */}
-            <div
-              style={{
-                flex: "1 1 200px",
-                minWidth: 180,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-end",
-              }}
-            >
-              <p
-                className="sub"
-                style={{
-                  fontSize: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <Clock size={13} />
-                Hours
-              </p>
-              <p
-                className="sub"
-                style={{ marginTop: 6, fontSize: 13.5, textAlign: "right" }}
-              >
-                Mon–Fri: 10 AM – 10 PM
-                <br />
-                Sat–Sun: 11 AM – 8:30 PM
-              </p>
-            </div>
-          </div>
-          <p
-            className="sub"
-            style={{
-              marginTop: 36,
-              paddingTop: 18,
-              borderTop: "1px solid var(--line)",
-              fontSize: 12,
-              textAlign: "center",
-            }}
-          >
-            © {new Date().getFullYear()} The Crunch Fairview. All rights
-            reserved.
-          </p>
-        </div>
-      </footer>
+      <Footer />
 
       {/* FEEDBACK */}
-      <AnimatePresence>
-        {feedbackOpen && (
-          <FeedbackModal
-            onClose={() => setFeedbackOpen(false)}
-            options={feedbackOptions}
-            userId={userId}
-          />
-        )}
-      </AnimatePresence>
-      <motion.button
-        className="btn btn-gold fixed-btn"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          borderRadius: 999,
-          padding: "11px 18px",
-          background:
-            "linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)",
-          color: "#15120a",
-          border: "none",
-          boxShadow: "0 4px 16px rgba(245,200,66,0.3)",
-        }}
-        onClick={() => setFeedbackOpen((v) => !v)}
-        whileHover={{
-          scale: 1.03,
-          boxShadow: "0 8px 28px rgba(245,200,66,0.35)",
-        }}
-        whileTap={{ scale: 0.97 }}
-      >
-        <MessageSquare size={15} />
-        {feedbackOpen ? "Close" : "Feedback"}
+      <AnimatePresence>{feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} options={feedbackOptions} userId={userId} />}</AnimatePresence>
+      <motion.button className="btn btn-gold fixed-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, borderRadius: 999, padding: '11px 18px', background: 'linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%)', color: '#15120a', border: 'none', boxShadow: '0 4px 16px rgba(245,200,66,0.3)' }} onClick={() => setFeedbackOpen(v => !v)} whileHover={{ scale: 1.03, boxShadow: '0 8px 28px rgba(245,200,66,0.35)' }} whileTap={{ scale: 0.97 }}>
+        <MessageSquare size={15} />{feedbackOpen ? 'Close' : 'Feedback'}
       </motion.button>
     </div>
-  );
+  )
 }

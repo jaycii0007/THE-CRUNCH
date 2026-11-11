@@ -1,10 +1,39 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, Mail, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { authApi } from "../lib/api";
 import crunchImg from "../assets/img/crunch22.png";
 import crunchLogo from "../assets/img/crunchlogo.png";
+
+// Helper to get return destination from URL params (mirrors login.tsx)
+function getReturnDestination(location: ReturnType<typeof useLocation>): string | null {
+  const params = new URLSearchParams(location.search);
+  const raw = params.get("returnTo") || params.get("redirect") || null;
+  if (!raw) return null;
+  // Validate: only allow internal paths (starting with /, no protocol, no //)
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//") || raw.includes("://")) return null;
+  // Allowlist known application routes to prevent open redirects
+  const allowedPrefixes = [
+    "/products",
+    "/usersmenu",
+    "/my-account",
+    "/aboutthecrunch",
+    "/login",
+    "/forgot-password",
+    "/dashboard",
+    "/orders",
+    "/inventory",
+    "/menu",
+    "/settings",
+    "/sales-reports",
+    "/stockmanager",
+    "/users",
+  ];
+  const isAllowed = allowedPrefixes.some((prefix) => raw === prefix || raw.startsWith(prefix + "/") || raw.startsWith(prefix + "?"));
+  return isAllowed ? raw : null;
+}
 
 /* ─── tokens (matches login.tsx) ─────────────────────────────────────── */
 const Y = "#F5C518";
@@ -226,9 +255,13 @@ const LEFT = {
 
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN COMPONENT
-═══════════════════════════════════════════════════════════════════════ */
+════════════════════════════════════════════════════════════════════════ */
 export default function ForgotPassword() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Read returnTo from URL and preserve it for navigation back to login
+  const returnTo = getReturnDestination(location);
 
   const [step, setStep]       = useState<Step>("email");
   const [direction, setDir]   = useState(1);
@@ -241,6 +274,15 @@ export default function ForgotPassword() {
   const [resending, setResend] = useState(false);
   const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
+
+  // Helper to navigate to login with preserved returnTo
+  const navigateToLogin = () => {
+    if (returnTo) {
+      navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
+    } else {
+      navigate("/login", { replace: true });
+    }
+  };
 
   const ORDER: Step[] = ["email", "code", "newpassword", "done"];
 
@@ -416,7 +458,7 @@ export default function ForgotPassword() {
                 {/* ── STEP 1: ENTER EMAIL ── */}
                 {step === "email" && (
                   <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                    <motion.button type="button" onClick={() => navigate("/login")} whileHover={{ x: -3 }}
+                    <motion.button type="button" onClick={navigateToLogin} whileHover={{ x: -3 }}
                       style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: "none", color: TEXT_MUTED, cursor: "pointer", fontSize: 12, fontFamily: "'Poppins', sans-serif", padding: 0, marginBottom: 28 }}>
                       <ArrowLeft size={13} /> Back to Sign In
                     </motion.button>
@@ -444,7 +486,7 @@ export default function ForgotPassword() {
 
                     <p style={{ marginTop: "auto", paddingTop: 24, color: TEXT_MUTED, fontSize: 12, fontFamily: "'Poppins', sans-serif", textAlign: "center" }}>
                       Remembered your password?{" "}
-                      <button type="button" onClick={() => navigate("/login")}
+                      <button type="button" onClick={navigateToLogin}
                         style={{ border: "none", background: "none", color: Y, cursor: "pointer", fontWeight: 700, fontFamily: "'Poppins', sans-serif", fontSize: 12, padding: 0 }}>
                         Sign in
                       </button>
@@ -574,7 +616,7 @@ export default function ForgotPassword() {
                     </motion.div>
 
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} style={{ width: "100%" }}>
-                      <PrimaryButton onClick={() => navigate("/login")}>
+                      <PrimaryButton onClick={navigateToLogin}>
                         Back to Sign In
                       </PrimaryButton>
                     </motion.div>

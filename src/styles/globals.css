@@ -250,6 +250,329 @@ body, #root {
   }
 }
 
+/* ========================================================================== */
+/* SALES & REPORTS — PRINT-ONLY LAYOUT                                       */
+/* ========================================================================== */
+
+/* Hide print-only elements by default (screen media) */
+.print-only {
+  display: none !important;
+}
+
+/* Hide screen-only elements by default (print media will override) */
+.screen-only {
+  display: initial;
+}
+
+@media print {
+  /* Hide all dashboard chrome */
+  .sidebar,
+  .navbar,
+  header[role="banner"],
+  nav[role="navigation"],
+  [data-print-hidden="true"],
+  .print-hidden,
+  button:not(.print-only),
+  select:not(.print-only),
+  input:not(.print-only),
+  .filter-chips,
+  .tabs,
+  .date-picker,
+  .dropdown,
+  .pagination,
+  .skeleton,
+  .toast,
+  .notification,
+  .modal-backdrop,
+  .floating-action,
+  .avatar,
+  .user-menu,
+  .hamburger,
+  .mobile-menu,
+  .scrollbar,
+  ::-webkit-scrollbar {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    left: -9999px !important;
+  }
+
+  /* Page setup */
+  @page {
+    size: A4 portrait;
+    margin: 15mm 12mm;
+  }
+
+  /* Root print layout */
+  html, body, #root {
+    background: #fff !important;
+    color: #0f172a !important;
+    font-family: "Poppins", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Main content area */
+  main,
+  .main-content,
+  [data-print-root="true"] {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  /* Print-only report container */
+  .print-report {
+    display: block !important;
+    width: 100%;
+  }
+
+  /* Report Header */
+  .print-report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #1a3a2a;
+  }
+
+  .print-report-brand {
+    font-size: 10pt;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: #1a3a2a;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .print-report-title {
+    font-size: 20pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 4px;
+  }
+
+  .print-report-subtitle {
+    font-size: 10pt;
+    color: #64748b;
+  }
+
+  .print-report-meta {
+    text-align: right;
+    font-size: 9pt;
+    color: #64748b;
+  }
+
+  .print-report-meta p {
+    margin: 2px 0;
+  }
+
+  .print-report-meta strong {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #334155;
+  }
+
+  /* Financial Summary */
+  .print-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .print-summary-card {
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+  }
+
+  .print-summary-label {
+    font-size: 7.5pt;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .print-summary-value {
+    font-size: 16pt;
+    font-weight: 700;
+    margin-bottom: 2px;
+    color: #0f172a;
+  }
+
+  .print-summary-value.revenue {
+    color: #1a3a2a;
+  }
+
+  .print-summary-sub {
+    font-size: 8pt;
+    color: #94a3b8;
+  }
+
+  /* Section Title */
+  .print-section-title {
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+
+  /* Transaction Table */
+  .print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8.5pt;
+  }
+
+  .print-table colgroup col:nth-child(1) { width: 14%; }
+  .print-table colgroup col:nth-child(2) { width: 18%; }
+  .print-table colgroup col:nth-child(3) { width: 26%; }
+  .print-table colgroup col:nth-child(4) { width: 20%; }
+  .print-table colgroup col:nth-child(5) { width: 10%; }
+  .print-table colgroup col:nth-child(6) { width: 12%; }
+
+  .print-table thead {
+    display: table-header-group;
+  }
+
+  .print-table thead tr {
+    background: #f8fafc;
+  }
+
+  .print-table thead th {
+    padding: 7px 6px;
+    text-align: left;
+    font-size: 7pt;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #cbd5e1;
+  }
+
+  .print-table thead th:last-child {
+    text-align: right;
+  }
+
+  .print-table tbody td {
+    padding: 6px;
+    border-bottom: 1px solid #e2e8f0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    vertical-align: top;
+    line-height: 1.3;
+  }
+
+  .print-table tbody td:last-child {
+    text-align: right;
+    font-weight: 700;
+  }
+
+  .print-table .txn,
+  .print-table .amount {
+    white-space: nowrap;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  .print-table .txn {
+    font-size: 7.5pt;
+    font-weight: 600;
+  }
+
+  .print-table .date-time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .print-table .items > div + div {
+    margin-top: 2px;
+  }
+
+  .print-table .payment-method {
+    color: #1a3a2a;
+    font-weight: 600;
+  }
+
+  .print-table .secondary {
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 7pt;
+    overflow-wrap: anywhere;
+  }
+
+  .print-table .delivery-details {
+    margin-top: 4px;
+    padding-top: 3px;
+    border-top: 1px dashed #cbd5e1;
+    color: #64748b;
+    font-size: 7pt;
+    line-height: 1.4;
+  }
+
+  .print-table .delivery-details strong {
+    color: #475569;
+  }
+
+  .print-table .amount {
+    min-width: 80px;
+    font-variant-numeric: tabular-nums;
+    font-size: 8.5pt;
+  }
+
+  .print-table .revenue-summary td {
+    padding: 8px 6px;
+    border-top: 2px solid #cbd5e1;
+    font-weight: 700;
+    font-size: 10pt;
+  }
+
+  .print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Footer */
+  .print-footer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 8pt;
+    color: #cbd5e1;
+  }
+
+  /* Ensure proper page breaks */
+  .page-break-before {
+    page-break-before: always;
+  }
+
+  .page-break-after {
+    page-break-after: always;
+  }
+
+  .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
 /* ===== PREMIUM SPINNER ANIMATIONS ===== */
 @keyframes spin {
   from { transform: rotate(-90deg); }
