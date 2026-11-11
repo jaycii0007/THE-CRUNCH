@@ -2508,7 +2508,7 @@ export default function Delicacy() {
       setActiveCategory((current) =>
         visibleCategories.includes(current) ? current : "All",
       );
-      // Re-sync the cart with fresh stock: drop sold-out items and cap quantities.
+      // Refresh availability without removing entries or changing user-entered quantities.
       const restored = savedCart.current;
       savedCart.current = null;
       setCart((prev) =>
@@ -2517,10 +2517,9 @@ export default function Delicacy() {
           return recipe ? [{ recipe, quantity: item.quantity, selectedFlavorProductId: item.selectedFlavorProductId }] : [];
         })).flatMap((item) => {
           const current = recipes.find((r) => r.id === item.recipe.id);
-          const max = current ? getEffectiveMaxQuantity(current.stock) : 0;
-          return current && max > 0
-            ? [{ ...item, recipe: current, quantity: Math.min(item.quantity, max) }]
-            : [];
+          return [{ ...item, recipe: current
+            ? { ...item.recipe, stock: current.stock, available: current.available, requiresSauce: current.requiresSauce }
+            : { ...item.recipe, stock: 0, available: false } }];
         }),
       );
     } catch (error) {

@@ -13,6 +13,7 @@ import {
 } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { ProductImage } from "@/components/ProductImage";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { api, apiCall } from "@/lib/api";
 import { motion } from "framer-motion";
 import { SkeletonTableRow } from "@/components/ui/skeleton";
@@ -401,6 +402,10 @@ function useMenuAdmin(onError: (message: string) => void) {
   useEffect(() => {
     void reload();
   }, [reload]);
+  useEventInvalidation({
+    topics: ["products.changed", "inventory.changed"],
+    onInvalidate: reload,
+  });
 
   // Use the categories from Settings. If there are none, use the ones already on the items.
   const categories =

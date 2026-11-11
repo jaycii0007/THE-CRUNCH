@@ -1522,6 +1522,7 @@ function DrumDatePicker({
 
 interface RevenueDropdownProps {
   period: Period;
+  scopeDescription?: string;
   setPeriod: (p: Period) => void;
   logs: SaleLog[];
   orders: Order[];
@@ -1531,6 +1532,7 @@ interface RevenueDropdownProps {
 
 function RevenueDropdown({
   period,
+  scopeDescription,
   setPeriod,
   logs,
   orders,
@@ -1669,7 +1671,7 @@ function RevenueDropdown({
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ color: "#64748b", fontSize: 12, fontWeight: 500 }}>
-                {period}
+                {scopeDescription || period}
               </span>
               <motion.span
                 animate={{ rotate: open ? 180 : 0 }}
@@ -3999,6 +4001,8 @@ export default function SalesReports() {
     useState<GeneralRestaurantSettings>(GENERAL_SETTINGS_DEFAULTS);
   const [isLoading, setIsLoading] = useState(true);
   const hasLoadedOnce = useRef(false);
+  const reportPrinting = useRef(false);
+  const refreshAfterPrint = useRef(false);
   const [proofNotice, setProofNotice] = useState("");
 
   // UI state
@@ -4035,9 +4039,11 @@ export default function SalesReports() {
 
   // Data fetching
   const fetchSalesData = useCallback(async () => {
+    if (reportPrinting.current) { refreshAfterPrint.current = true; return; }
     try {
       if (!hasLoadedOnce.current) setIsLoading(true);
       const rows = await api.get<RawOrderRow[]>("/orders");
+      if (reportPrinting.current) { refreshAfterPrint.current = true; return; }
       const { logs: l, orders: o } = processRawRows(rows ?? []);
       setLogs(l);
       setOrders(o);
@@ -4051,6 +4057,19 @@ export default function SalesReports() {
 
   useEffect(() => {
     void fetchSalesData();
+  }, [fetchSalesData]);
+  useEffect(() => {
+    const beforePrint = () => { reportPrinting.current = true; };
+    const afterPrint = () => {
+      reportPrinting.current = false;
+      if (refreshAfterPrint.current) { refreshAfterPrint.current = false; void fetchSalesData(); }
+    };
+    window.addEventListener("beforeprint", beforePrint);
+    window.addEventListener("afterprint", afterPrint);
+    return () => {
+      window.removeEventListener("beforeprint", beforePrint);
+      window.removeEventListener("afterprint", afterPrint);
+    };
   }, [fetchSalesData]);
   useEventInvalidation({
     topics: ["orders.changed", "payments.changed"],
@@ -4491,14 +4510,15 @@ export default function SalesReports() {
           transition={{ delay: 0.1 }}
         >
           <SummaryBar
-            logs={scopedLogs}
+            logs={chartLogs}
             filterDescription={summaryFilterDescription}
             leadingCard={(
               <RevenueDropdown
-                period={period}
+                period={hasReportRange ? "All Time" : period}
+                scopeDescription={hasReportRange ? "Selected dates" : undefined}
                 setPeriod={setPeriod}
-                logs={logs}
-                orders={orders}
+                logs={chartLogs}
+                orders={orders.filter((order) => chartLogs.some((log) => log.orderId === order.id))}
                 restaurantSettings={restaurantSettings}
                 generatedBy={String(user?.username || user?.email || "Staff")}
               />

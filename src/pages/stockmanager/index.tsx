@@ -15,6 +15,7 @@ import {
   normalizeGeneralSettings,
 } from "@/lib/restaurantSettings";
 import { api } from "./services/api";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import type {
   Batch,
   InventoryAlertsPayload,
@@ -487,8 +488,8 @@ export default function StockManager() {
     });
   }, []);
 
-  const fetchAll = useCallback(async () => {
-    setIsLoading(true);
+  const fetchAll = useCallback(async (background = false) => {
+    if (!background) setIsLoading(true);
     setIsRefreshing(true);
     setError(null);
     try {
@@ -711,6 +712,17 @@ export default function StockManager() {
     refreshInventory: fetchAll,
     showToast,
     addNotification,
+  });
+  useEventInvalidation({
+    topics: ["inventory.changed", "products.changed", "purchaseOrders.changed"],
+    enabled: activeTab !== "suppliers",
+    onInvalidate: async () => {
+      await Promise.all([
+        fetchAll(true),
+        ...(activeTab === "alerts" ? [fetchAlerts()] : []),
+        ...(po.poLoaded ? [po.fetchPurchaseOrders()] : []),
+      ]);
+    },
   });
   const mainStockProducts = useMemo(
     () => products.filter((p) => !isMenuFoodProduct(p)),

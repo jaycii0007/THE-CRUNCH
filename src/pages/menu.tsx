@@ -2210,7 +2210,9 @@ export default function CashierView() {
       // Refresh availability without changing existing cart quantities or entries.
       setCart((prev) => prev.map((item) => {
         const cur = next.find((product) => product.id === item.id);
-        return cur ? { ...item, ...cur } : item;
+        return cur
+          ? { ...item, remainingStock: cur.remainingStock, availabilityStatus: cur.availabilityStatus, ingredients: cur.ingredients, requiresSauce: cur.requiresSauce }
+          : { ...item, remainingStock: 0, availabilityStatus: "Hidden" };
       }));
     } catch {
       setProductsError("Failed to load menu items.");
@@ -2302,10 +2304,6 @@ export default function CashierView() {
   useEffect(() => {
     void refreshOrders();
   }, [refreshOrders]);
-  useEventInvalidation({
-    topics: ["orders.changed", "payments.changed"],
-    onInvalidate: refreshOrders,
-  });
 
   const loadShift = useCallback(async () => {
     setShiftLoading(true);
@@ -2323,6 +2321,12 @@ export default function CashierView() {
   useEffect(() => {
     if (showHistory) void loadShift();
   }, [showHistory, loadShift]);
+  useEventInvalidation({
+    topics: ["orders.changed", "payments.changed", "inventory.changed", "products.changed"],
+    onInvalidate: async () => {
+      await Promise.all([refreshOrders(), loadProducts(), ...(showHistory ? [loadShift()] : [])]);
+    },
+  });
 
   /* ── online-order actions ── */
   const patchOrder = (id: number, body: Record<string, unknown>) =>
