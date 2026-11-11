@@ -29,7 +29,6 @@ import {
   type PermissionsMap,
 } from "../lib/permissions";
 import {
-  saveGeneralSettings,
   syncGeneralSettings,
 } from "../lib/restaurantSettings";
 import {
@@ -164,6 +163,7 @@ export interface RestaurantSettings {
   defaultLowStockThreshold: string;
   defaultCriticalStockThreshold: string;
   // Billing
+  taxBreakdownEnabled: boolean;
   taxRate: string;
   serviceCharge: string;
   // Notifications
@@ -241,6 +241,7 @@ export const DEFAULT: RestaurantSettings = {
   storeStatusMode: "auto",
   defaultLowStockThreshold: "",
   defaultCriticalStockThreshold: "",
+  taxBreakdownEnabled: false,
   taxRate: "",
   serviceCharge: "",
   enableToastNotifications: true,
@@ -300,6 +301,7 @@ function normalizeSettings(
     defaultLowStockThreshold: text("defaultLowStockThreshold"),
     defaultCriticalStockThreshold: text("defaultCriticalStockThreshold"),
 
+    taxBreakdownEnabled: readBoolean(src?.taxBreakdownEnabled, false),
     taxRate: text("taxRate"),
     serviceCharge: text("serviceCharge"),
 
@@ -2261,15 +2263,11 @@ export function OrderingTab(p: TabProps) {
 export function BillingTab(p: TabProps) {
   return (
     <Section>
-      <FR label="VAT rate (%)">
-        <SI {...bindText(p, "taxRate")} type="number" placeholder="e.g. 12" />
-      </FR>
-      <FR label="Service charge (%)" last>
-        <SI
-          {...bindText(p, "serviceCharge")}
-          type="number"
-          placeholder="e.g. 10"
-        />
+      <TR label="Enable Tax Breakdown" desc="Show the configured tax included in menu prices. It is never added to the total."
+        {...bindFlag(p, "taxBreakdownEnabled")} />
+      <FR label="Tax Rate (%)" last>
+        <SI {...bindText(p, "taxRate")} type="number" placeholder="0 to 100" />
+        <Hint>Applies to the discounted price when the breakdown is enabled.</Hint>
       </FR>
     </Section>
   );
@@ -3110,8 +3108,8 @@ export const TAB_META: Record<TabKey, { title: string; desc: string }> = {
     desc: "Low and critical stock thresholds.",
   },
   billing: {
-    title: "Tax & Charges",
-    desc: "VAT configuration and service charge rules.",
+    title: "Tax Breakdown",
+    desc: "Optional tax included in menu prices, without an additional charge.",
   },
   notifications: {
     title: "Notifications",
@@ -3406,9 +3404,8 @@ function useSettings() {
     setError(null);
     setNotice(null);
     try {
-      const saved = await saveGeneralSettings(
-        values as unknown as Record<string, unknown>,
-      );
+      const saved = await api.post<Record<string, unknown>>("/settings", values);
+      syncGeneralSettings(saved);
       setValues(normalizeSettings(saved as unknown as Record<string, unknown>));
       setNotice("Settings saved.");
     } catch (err) {

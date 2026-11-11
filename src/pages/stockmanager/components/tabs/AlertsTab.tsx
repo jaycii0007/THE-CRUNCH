@@ -194,19 +194,19 @@ export function AlertsTab({
             {
               items: outOfStockItems,
               label: "Out of Stock",
-              color: "red",
+              color: "text-red-600",
               severity: "out" as const,
             },
             {
               items: alertCriticalStock,
               label: "Critical",
-              color: "orange",
+              color: "text-red-600",
               severity: "critical" as const,
             },
             {
               items: lowStock,
               label: "Warning",
-              color: "yellow",
+              color: "text-amber-600",
               severity: "low" as const,
             },
           ].map(({ items, label, color, severity }) =>
@@ -214,7 +214,7 @@ export function AlertsTab({
               <div key={label}>
                 <motion.div variants={itemVariants} className="pt-1">
                   <p
-                    className={`text-xs font-semibold text-${color}-500 uppercase tracking-wider mb-2`}
+                    className={`text-xs font-semibold ${color} uppercase tracking-wider mb-2`}
                   >
                     {label}
                   </p>

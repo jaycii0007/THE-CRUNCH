@@ -16,7 +16,6 @@ export function DashboardTab({
   choppedChickenProducts,
   dashboardSubTab,
   onSummarySelect,
-  onPendingPOSelect,
   mainStockContent,
   lastUpdatesContent,
 }: {
@@ -32,7 +31,6 @@ export function DashboardTab({
   choppedChickenProducts: Product[];
   dashboardSubTab: "main-stock" | "last-updates";
   onSummarySelect: (key: DashboardSummaryKey) => void;
-  onPendingPOSelect: () => void;
   mainStockContent: ReactNode;
   lastUpdatesContent: ReactNode;
 }) {
@@ -79,11 +77,10 @@ export function DashboardTab({
           />
           <KPICard
             itemVariants={itemVariants}
-            label="Pending POs"
+            label="Active Purchase Orders"
             value={pendingPOValue}
             sub="awaiting receipt"
             accent="indigo"
-            onClick={onPendingPOSelect}
           />
         </motion.div>
 

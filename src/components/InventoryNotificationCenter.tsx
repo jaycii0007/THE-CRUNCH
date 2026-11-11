@@ -165,7 +165,7 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
     const visibleStaff = staffNotifications.filter((notification) => {
       if (
         notification.category === "refund_request" ||
-        notification.category === "inventory_change"
+        notification.category === "inventory_change" && notification.event_type !== "inventory.batch_expired"
       ) {
         return normalizedRole === "administrator";
       }
@@ -244,7 +244,7 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
       return;
     }
     if (notification.source === "staff" && notification.item.category === "inventory_change") {
-      requestStockManagerTab("alerts");
+      requestStockManagerTab(notification.item.event_type === "inventory.batch_expired" ? "dashboard" : "alerts");
       navigate(STOCK_MANAGER_PATH);
       return;
     }
@@ -394,7 +394,7 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
                               {inventory ? inventory.product_name : staff?.title}
                             </span>
                             <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-slate-500">
-                              {inventory ? "Inventory" : isRefund ? "Refund request" : isInventoryChange ? "Inventory write-off" : "Purchase order"}
+                              {inventory ? "Inventory" : isRefund ? "Refund request" : isInventoryChange ? staff?.event_type === "inventory.batch_expired" ? "Expired stock" : "Inventory write-off" : "Purchase order"}
                             </span>
                           </span>
                           <span className="mt-0.5 block text-xs text-slate-500">

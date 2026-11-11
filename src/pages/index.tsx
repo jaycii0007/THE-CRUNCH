@@ -584,7 +584,7 @@ function KpiCard({ label, value, hint, icon: Icon }: KpiCardProps) {
           </p>
         </div>
         <div
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F0F4F1] text-[#486C5D]"
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${label === "Total Revenue" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}
           aria-hidden="true"
         >
           <Icon size={20} strokeWidth={1.8} />

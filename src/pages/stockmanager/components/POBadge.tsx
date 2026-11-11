@@ -4,7 +4,7 @@ const PO_STATUS_STYLES: Record<
   POStatus,
   { bg: string; text: string; dot: string }
 > = {
-  Draft: { bg: "bg-yellow-50", text: "text-yellow-700", dot: "bg-yellow-400" },
+  Draft: { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" },
   Ordered: { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
   Received: {
     bg: "bg-emerald-50",

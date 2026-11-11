@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -79,6 +80,7 @@ type NormalizedPaymentMethod =
 type OrderTypeFilter = "All" | "Dine In" | "Take Out" | "Delivery";
 
 interface SaleLog {
+  invoiceNumber?: string | null;
   id: string;
   transactionId: string;
   orderId: number;
@@ -90,6 +92,7 @@ interface SaleLog {
   quantity: number;
   unitPrice: number;
   total: number;
+  discountAmount?: number | null;
   status: Status;
   paymentMethod: string;
   paymentStatus: string;
@@ -107,11 +110,13 @@ interface SaleLog {
 }
 
 interface Order {
+  invoiceNumber?: string | null;
   id: number;
   orderNumber: string;
   transactionId: string;
   items: { name: string; price: number; quantity: number }[];
   total: number;
+  discountAmount?: number | null;
   date: string;
   createdAt?: string;
   paymentDate?: string | null;
@@ -132,7 +137,10 @@ interface Order {
   proofImageUrl?: string | null;
 }
 
+type OrderReport = { rows: Order[]; fromDate: Date | null; toDate: Date | null; description: string };
+
 interface RawOrderRow {
+  invoiceNumber?: string | null;
   id: number;
   orderNumber?: string;
   order_number?: string;
@@ -145,6 +153,7 @@ interface RawOrderRow {
   paymentDate?: string;
   payment_date?: string;
   total?: number;
+  discountAmount?: number | null;
   date?: string;
   orderType?: string;
   order_type?: string;
@@ -552,6 +561,7 @@ function processRawRows(rows: RawOrderRow[]): {
   type OrderAccum = {
     rows: RawOrderRow[];
     total: number;
+    discountAmount: number | null;
     date: string;
     paymentDate: string | null;
     orderType: string;
@@ -566,6 +576,7 @@ function processRawRows(rows: RawOrderRow[]): {
     proofImageUrl: string | null;
     orderNumber: string;
     transactionId: string;
+    invoiceNumber: string | null;
     prepStartedAt: string | null;
     startedAt: string | null;
     readyAt: string | null;
@@ -578,6 +589,7 @@ function processRawRows(rows: RawOrderRow[]): {
       orderMap[r.id] = {
         rows: [],
         total: Number(r.total) || 0,
+        discountAmount: r.discountAmount == null ? null : Number(r.discountAmount),
         date: r.date ?? "",
         paymentDate:
           String(r.paymentDate ?? r.payment_date ?? "").trim() || null,
@@ -611,6 +623,7 @@ function processRawRows(rows: RawOrderRow[]): {
           String(r.proofImageUrl ?? r.proof_image_url ?? "").trim() || null,
         orderNumber: String(r.orderNumber ?? r.order_number ?? "").trim(),
         transactionId: String(r.transactionId ?? r.transaction_id ?? "").trim(),
+        invoiceNumber: r.invoiceNumber || null,
         prepStartedAt: r.prepStartedAt ?? null,
         startedAt: r.startedAt ?? null,
         readyAt: r.readyAt ?? null,
@@ -665,6 +678,7 @@ function processRawRows(rows: RawOrderRow[]): {
     allLogs.push({
       id: `${orderId}-${resolvedTxnId}`,
       transactionId: resolvedTxnId,
+      invoiceNumber: order.invoiceNumber,
       orderId,
       date: formatDisplayDate(orderDate),
       time: formatDisplayTime(orderDate),
@@ -674,6 +688,7 @@ function processRawRows(rows: RawOrderRow[]): {
       quantity: totalQty,
       unitPrice: order.total,
       total: order.total,
+      discountAmount: order.discountAmount,
       status,
       paymentMethod: order.paymentMethod,
       paymentStatus: formatPaymentStatus(order.paymentStatus),
@@ -693,12 +708,14 @@ function processRawRows(rows: RawOrderRow[]): {
       id: orderId,
       orderNumber: resolvedOrderId,
       transactionId: resolvedTxnId,
+      invoiceNumber: order.invoiceNumber,
       items: order.rows.map((r) => ({
         name: r.productName ?? "",
         price: Number(r.price) || 0,
         quantity: Number(r.quantity) || 1,
       })),
       total: order.total,
+      discountAmount: order.discountAmount,
       date: financialTimestamp || order.date || "",
       createdAt: order.date || undefined,
       paymentDate: order.paymentDate,
@@ -759,6 +776,11 @@ function triggerPrint(
   generatedBy: string,
 ) {
   const now = new Date();
+  const reportStart = period === "All Time"
+    ? logs.length ? logs.reduce((a, b) => a._dateObj < b._dateObj ? a : b)._dateObj : now
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate() - (period === "Last 7 Days" ? 6 : period === "Last 30 Days" ? 29 : 0));
+  const reportDates = [reportStart, now].map((date) => new Intl.DateTimeFormat("en-CA", { timeZone: restaurantSettings.timezone || "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(date));
+  const reportName = `TheCrunch_SalesReport_${reportDates[0] === reportDates[1] ? reportDates[0] : reportDates.join("_to_")}`;
   const periodLogs = logs.filter((log) => isInReportPeriod(log._dateObj, period, now));
   const paidCompleted = periodLogs.filter(isFinalizedSale);
   const gcashSales = paidCompleted.filter(
@@ -826,7 +848,7 @@ function triggerPrint(
         : "—";
       return `
         <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
-          <td class="txn">${escapePrintHtml(o.transactionId)}</td>
+          <td class="txn">${escapePrintHtml(o.transactionId)}<div class="secondary">Invoice No.: ${escapePrintHtml(o.invoiceNumber || "\u2014")}</div></td>
           <td class="date-time">${escapePrintHtml(fmtDateTime)}</td>
           <td class="items">${o.items
             .map(
@@ -848,7 +870,7 @@ function triggerPrint(
             }
           </td>
           <td>${escapePrintHtml(o.cashierName ?? "—")}</td>
-          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}</td>
+          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}<div class="secondary">Discount: ${o.discountAmount != null && o.discountAmount > 0 ? escapePrintHtml(formatPrintCurrency(o.discountAmount, restaurantSettings)) : "&mdash;"}</div></td>
         </tr>
       `;
     })
@@ -859,7 +881,7 @@ function triggerPrint(
     <html>
     <head>
       <meta charset="utf-8"/>
-      <title>Sales Report - ${period}</title>
+      <title>${escapePrintHtml(reportName)}</title>
       <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1500,6 +1522,7 @@ function DrumDatePicker({
 
 interface RevenueDropdownProps {
   period: Period;
+  scopeDescription?: string;
   setPeriod: (p: Period) => void;
   logs: SaleLog[];
   orders: Order[];
@@ -1509,6 +1532,7 @@ interface RevenueDropdownProps {
 
 function RevenueDropdown({
   period,
+  scopeDescription,
   setPeriod,
   logs,
   orders,
@@ -1647,7 +1671,7 @@ function RevenueDropdown({
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ color: "#64748b", fontSize: 12, fontWeight: 500 }}>
-                {period}
+                {scopeDescription || period}
               </span>
               <motion.span
                 animate={{ rotate: open ? 180 : 0 }}
@@ -2357,6 +2381,7 @@ function LogRow({
           style={{ color: "#1e293b", fontSize: 13, fontWeight: 500, flex: 1 }}
         >
           {log.product}
+          <span className="mt-1 block text-xs text-slate-500">Invoice No.: {log.invoiceNumber || "\u2014"}</span>
         </span>
         <span style={{ width: 110, flexShrink: 0 }}>
           <span
@@ -2471,6 +2496,7 @@ function LogRow({
             >
               {[
                 { label: "Transaction ID", value: log.transactionId },
+                { label: "Invoice No.", value: log.invoiceNumber || "\u2014" },
                 {
                   label: "Order Created",
                   value: log.createdAt
@@ -2908,6 +2934,7 @@ function OrderRow({
               {order.transactionId}
             </span>
           </div>
+          <div className="mt-1 text-xs text-slate-500">Invoice No.: {order.invoiceNumber || "\u2014"}</div>
         </TableCell>
         <TableCell className="font-medium text-gray-700 whitespace-nowrap py-4">
           <span
@@ -3007,6 +3034,7 @@ function OrderRow({
                   >
                     {[
                       { label: "Transaction ID", value: order.transactionId },
+                      { label: "Invoice No.", value: order.invoiceNumber || "\u2014" },
                       { label: "Order Number", value: order.orderNumber },
                       {
                         label: "Order Created",
@@ -3326,8 +3354,10 @@ function OrdersTab({
   canRefund,
   onSettle,
   onViewReceipt,
+  onReportChange,
 }: {
   orders: Order[];
+  onReportChange: (report: OrderReport) => void;
   loading: boolean;
   canCancel: boolean;
   canRefund: boolean;
@@ -3414,6 +3444,13 @@ function OrdersTab({
           order.orderType === "delivery" &&
           normalizePaymentMethod(order.paymentCategory) === deliveryPlatformFilter,
       );
+
+  useEffect(() => {
+    onReportChange({ rows: filtered, fromDate, toDate, description: [
+      `${fromDate ? formatDisplayDate(fromDate) : "Beginning"} to ${toDate ? formatDisplayDate(toDate) : "Today"}`,
+      statusFilter, paymentMethodFilter, orderTypeFilter, deliveryPlatformFilter,
+    ].join(" | ") });
+  }, [orders, fromDate, toDate, statusFilter, paymentMethodFilter, orderTypeFilter, deliveryPlatformFilter, onReportChange]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ORDER_PAGE_SIZE));
 
@@ -3655,7 +3692,7 @@ function PrintReport({
   orders,
   scopedLogs: _scopedLogs,
   filteredLogs,
-  filterDescription: _filterDescription,
+  filterDescription,
   restaurantSettings,
   generatedBy,
   logFromDate,
@@ -3674,12 +3711,12 @@ function PrintReport({
   if (hasLogRange) {
     filterParts.push(`Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`);
   } else {
-    filterParts.push("All dates");
+    filterParts.push(period === "All Time" ? "All dates" : period);
   }
   if (logPaymentFilter !== "All") filterParts.push(logPaymentFilter);
   if (logOrderTypeFilter !== "All") filterParts.push(logOrderTypeFilter);
   if (logDeliveryPlatformFilter !== "All Platforms") filterParts.push(logDeliveryPlatformFilter);
-  const activeFilters = filterParts.join(" · ");
+  const activeFilters = isSalesLogs ? filterParts.join(" · ") : filterDescription;
 
   const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
     month: "long",
@@ -3704,7 +3741,7 @@ function PrintReport({
         const paymentMethodLabel = normalizePaymentMethod(l.paymentMethod);
         return `
           <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
-            <td class="txn">${escapePrintHtml(l.transactionId)}</td>
+            <td class="txn">${escapePrintHtml(l.transactionId)}<div class="secondary">Invoice No.: ${escapePrintHtml(l.invoiceNumber || "\u2014")}</div></td>
             <td class="date-time">${escapePrintHtml(`${l.date} ${l.time}`)}</td>
             <td class="items">
               <div>${escapePrintHtml(l.product)} <strong>×${escapePrintHtml(l.quantity)}</strong></div>
@@ -3714,7 +3751,7 @@ function PrintReport({
               ${l.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(l.paymentReference)}</div>` : ""}
             </td>
             <td>${escapePrintHtml(l.cashierName)}</td>
-            <td class="amount">${escapePrintHtml(formatPrintCurrency(Math.abs(l.total), restaurantSettings))}</td>
+            <td class="amount">${escapePrintHtml(formatPrintCurrency(Math.abs(l.total), restaurantSettings))}<div class="secondary">Discount: ${l.discountAmount != null && l.discountAmount > 0 ? escapePrintHtml(formatPrintCurrency(l.discountAmount, restaurantSettings)) : "&mdash;"}</div></td>
           </tr>
         `;
       })
@@ -3726,7 +3763,7 @@ function PrintReport({
           <div>
             <p className="print-report-brand">{restaurantSettings.restaurantName}</p>
             <p className="print-report-title">Sales Report</p>
-            <p className="print-report-subtitle">{reportTitle} — {period}</p>
+            <p className="print-report-subtitle">{reportTitle} — {hasLogRange ? "Custom dates" : period}</p>
             {restaurantSettings.tagline && (
               <p className="print-report-subtitle">{restaurantSettings.tagline}</p>
             )}
@@ -3836,7 +3873,7 @@ function PrintReport({
         : "—";
       return `
         <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
-          <td class="txn">${escapePrintHtml(o.transactionId)}</td>
+          <td class="txn">${escapePrintHtml(o.transactionId)}<div class="secondary">Invoice No.: ${escapePrintHtml(o.invoiceNumber || "\u2014")}</div></td>
           <td class="date-time">${escapePrintHtml(fmtDateTime)}</td>
           <td class="items">${o.items
             .map(
@@ -3858,7 +3895,7 @@ function PrintReport({
             }
           </td>
           <td>${escapePrintHtml(o.cashierName ?? "—")}</td>
-          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}</td>
+          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}<div class="secondary">Discount: ${o.discountAmount != null && o.discountAmount > 0 ? escapePrintHtml(formatPrintCurrency(o.discountAmount, restaurantSettings)) : "&mdash;"}</div></td>
         </tr>
       `;
     })
@@ -3870,7 +3907,7 @@ function PrintReport({
         <div>
           <p className="print-report-brand">{restaurantSettings.restaurantName}</p>
           <p className="print-report-title">Sales Report</p>
-          <p className="print-report-subtitle">{reportTitle} — {period}</p>
+          <p className="print-report-subtitle">{reportTitle} — {hasLogRange ? "Custom dates" : period}</p>
           {restaurantSettings.tagline && (
             <p className="print-report-subtitle">{restaurantSettings.tagline}</p>
           )}
@@ -3959,10 +3996,13 @@ export default function SalesReports() {
   // Core state
   const [logs, setLogs] = useState<SaleLog[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [orderReport, setOrderReport] = useState<OrderReport | null>(null);
   const [restaurantSettings, setRestaurantSettings] =
     useState<GeneralRestaurantSettings>(GENERAL_SETTINGS_DEFAULTS);
   const [isLoading, setIsLoading] = useState(true);
   const hasLoadedOnce = useRef(false);
+  const reportPrinting = useRef(false);
+  const refreshAfterPrint = useRef(false);
   const [proofNotice, setProofNotice] = useState("");
 
   // UI state
@@ -3999,9 +4039,11 @@ export default function SalesReports() {
 
   // Data fetching
   const fetchSalesData = useCallback(async () => {
+    if (reportPrinting.current) { refreshAfterPrint.current = true; return; }
     try {
       if (!hasLoadedOnce.current) setIsLoading(true);
       const rows = await api.get<RawOrderRow[]>("/orders");
+      if (reportPrinting.current) { refreshAfterPrint.current = true; return; }
       const { logs: l, orders: o } = processRawRows(rows ?? []);
       setLogs(l);
       setOrders(o);
@@ -4015,6 +4057,19 @@ export default function SalesReports() {
 
   useEffect(() => {
     void fetchSalesData();
+  }, [fetchSalesData]);
+  useEffect(() => {
+    const beforePrint = () => { reportPrinting.current = true; };
+    const afterPrint = () => {
+      reportPrinting.current = false;
+      if (refreshAfterPrint.current) { refreshAfterPrint.current = false; void fetchSalesData(); }
+    };
+    window.addEventListener("beforeprint", beforePrint);
+    window.addEventListener("afterprint", afterPrint);
+    return () => {
+      window.removeEventListener("beforeprint", beforePrint);
+      window.removeEventListener("afterprint", afterPrint);
+    };
   }, [fetchSalesData]);
   useEventInvalidation({
     topics: ["orders.changed", "payments.changed"],
@@ -4208,6 +4263,22 @@ export default function SalesReports() {
   const grouped = groupByDate(paginatedLogs);
   const dates = Object.keys(grouped);
   const hasLogRange = !!(logFromDate || logToDate);
+  const reportFromDate = activeTab === "logs" ? logFromDate : orderReport?.fromDate ?? null;
+  const reportToDate = activeTab === "logs" ? logToDate : orderReport?.toDate ?? null;
+  const hasReportRange = Boolean(reportFromDate || reportToDate);
+  const reportOrderIds = new Set((orderReport?.rows ?? orders).map((order) => order.id));
+  const chartLogs = (activeTab === "logs" ? filteredLogs : completedLogs.filter((log) => reportOrderIds.has(log.orderId)))
+    .filter((log) => hasReportRange || isInReportPeriod(log._dateObj, period, now));
+  const dailySales = new Map<string, number>();
+  const paymentSales = new Map<string, number>();
+  for (const log of chartLogs) {
+    const date = new Intl.DateTimeFormat("en-CA", { timeZone: restaurantSettings.timezone || "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(log._dateObj);
+    dailySales.set(date, (dailySales.get(date) ?? 0) + log.total);
+    const method = normalizePaymentMethod(log.paymentMethod);
+    paymentSales.set(method, (paymentSales.get(method) ?? 0) + log.total);
+  }
+  const trendData = [...dailySales].sort(([a], [b]) => a.localeCompare(b)).map(([date, revenue]) => ({ date, revenue }));
+  const paymentData = [...paymentSales].map(([method, revenue]) => ({ method: method === "Online Payment" ? "GCash / E-Payment" : method, revenue }));
   const summaryFilterDescription = [
     hasLogRange
       ? `Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`
@@ -4397,7 +4468,17 @@ export default function SalesReports() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15, duration: 0.3 }}
-          onClick={() => window.print()}
+          onClick={() => {
+            const previousTitle = document.title;
+            const dates = (hasReportRange ? [reportFromDate, reportToDate ?? now] : period === "All Time"
+              ? [chartLogs.length ? chartLogs.reduce((a, b) => a._dateObj < b._dateObj ? a : b)._dateObj : now, now]
+              : [new Date(now.getFullYear(), now.getMonth(), now.getDate() - (period === "Last 7 Days" ? 6 : period === "Last 30 Days" ? 29 : 0)), now])
+              .map((date) => date ? new Intl.DateTimeFormat("en-CA", { timeZone: restaurantSettings.timezone || "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(date) : "Beginning");
+            document.title = `TheCrunch_SalesReport_${dates[0] === dates[1] ? dates[0] : dates.join("_to_")}`;
+            const restoreTitle = () => { document.title = previousTitle; };
+            window.addEventListener("afterprint", restoreTitle, { once: true });
+            try { window.print(); } catch (error) { restoreTitle(); window.removeEventListener("afterprint", restoreTitle); throw error; }
+          }}
           className="screen-only"
           style={{
             display: "inline-flex",
@@ -4429,20 +4510,52 @@ export default function SalesReports() {
           transition={{ delay: 0.1 }}
         >
           <SummaryBar
-            logs={scopedLogs}
+            logs={chartLogs}
             filterDescription={summaryFilterDescription}
             leadingCard={(
               <RevenueDropdown
-                period={period}
+                period={hasReportRange ? "All Time" : period}
+                scopeDescription={hasReportRange ? "Selected dates" : undefined}
                 setPeriod={setPeriod}
-                logs={logs}
-                orders={orders}
+                logs={chartLogs}
+                orders={orders.filter((order) => chartLogs.some((log) => log.orderId === order.id))}
                 restaurantSettings={restaurantSettings}
                 generatedBy={String(user?.username || user?.email || "Staff")}
               />
             )}
           />
         </motion.div>
+
+        {(
+          <section className="screen-only mb-6 grid gap-4 lg:grid-cols-2" aria-label="Sales charts">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h2 className="font-semibold text-slate-800">Sales Trend</h2>
+              <p className="mb-3 text-xs text-slate-500">{hasReportRange ? "Selected dates" : period} | {activeTab === "logs" ? "Sales Logs" : "Order History"} filters | completed paid sales</p>
+              {trendData.length ? <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={trendData} margin={{ left: 20, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                  <YAxis tickFormatter={(value) => formatReportCurrency(Number(value))} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(value) => [formatReportCurrency(Number(value)), "Revenue"]} />
+                  <Line type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer> : <p className="py-16 text-center text-sm text-slate-500">No completed paid sales for these filters.</p>}
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h2 className="font-semibold text-slate-800">Sales by Payment Method</h2>
+              <p className="mb-3 text-xs text-slate-500">{hasReportRange ? "Selected dates" : period} | {activeTab === "logs" ? "Sales Logs" : "Order History"} filters | completed paid sales</p>
+              {paymentData.length ? <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={paymentData} margin={{ left: 20, right: 16, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="method" tick={{ fontSize: 10 }} interval={0} />
+                  <YAxis tickFormatter={(value) => formatReportCurrency(Number(value))} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(value) => [formatReportCurrency(Number(value)), "Revenue"]} />
+                  <Bar dataKey="revenue" fill="#059669" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer> : <p className="py-16 text-center text-sm text-slate-500">No completed paid sales for these filters.</p>}
+            </div>
+          </section>
+        )}
 
         {/* Tabs */}
         <div
@@ -4825,6 +4938,7 @@ export default function SalesReports() {
           >
             <OrdersTab
               orders={orders}
+              onReportChange={setOrderReport}
               loading={isLoading}
               canCancel={canCancelPersisted}
               canRefund={canRefundPersisted}
@@ -4844,18 +4958,18 @@ export default function SalesReports() {
           activeTab={activeTab}
           period={period}
           logs={logs}
-          orders={orders}
+          orders={(orderReport?.rows ?? orders).filter((order) => chartLogs.some((log) => log.orderId === order.id))}
           scopedLogs={scopedLogs}
-          filteredLogs={filteredLogs}
-          filterDescription={summaryFilterDescription}
+          filteredLogs={chartLogs}
+          filterDescription={activeTab === "orders" ? orderReport?.description ?? "All orders" : summaryFilterDescription}
           restaurantSettings={restaurantSettings}
           generatedBy={String(user?.username || user?.email || "Staff")}
-          logFromDate={logFromDate}
-          logToDate={logToDate}
+          logFromDate={reportFromDate}
+          logToDate={reportToDate}
           logPaymentFilter={logPaymentFilter}
           logOrderTypeFilter={logOrderTypeFilter}
           logDeliveryPlatformFilter={logDeliveryPlatformFilter}
-          hasLogRange={hasLogRange}
+          hasLogRange={hasReportRange}
         />
       </div>
     </div>
