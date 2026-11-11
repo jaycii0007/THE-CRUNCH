@@ -230,7 +230,7 @@ export function usePurchaseOrders({
         number,
         { shelfLifeMonths?: number | null; shelfLifeDays?: number | null; shelfLifeHours?: number | null }
       >;
-      itemReceivedQuantities: Record<number, number>;
+      itemReceivedQuantities: Record<number, number | string>;
     }) => {
       if (!receivingOrder) return;
       setPoLoading(true);

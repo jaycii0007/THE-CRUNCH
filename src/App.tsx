@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import React from "react";
 import { useAuth } from "./context/authcontext";
 import {
@@ -26,6 +26,7 @@ import Order from "./pages/Order";
 import StaffAccounts from "./pages/staffaccounts";
 import StockManager from "./pages/stockmanager";
 import Products from "./pages/products";
+import ProductsV2 from "./pages/productv2";
 import Settings from "./pages/settings";
 import MyAccount from "./pages/my-account";
 import { ROLE_HOME_PATHS, resolveRootRoute } from "./lib/rootRoutePolicy";
@@ -116,7 +117,12 @@ function ProtectedRoute({
   permissionsReady: boolean;
   allowedRoles?: readonly Exclude<Role, "customer" | null>[];
 }) {
-  if (!isAuth) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (!isAuth) {
+    // Preserve the attempted path for return after login
+    const returnTo = location.pathname + location.search;
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
+  }
   if (!userRole || userRole === "customer") {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -280,24 +286,17 @@ export default function App() {
       <Route path="/aboutthecrunch" element={<AboutTheCrunch />} />
       <Route
         path="/my-account"
-        element={isAuth ? <MyAccount /> : <Navigate to="/login" replace />}
+        element={isAuth ? <MyAccount /> : <Navigate to="/login?returnTo=/my-account" replace />}
       />
 
       {/* ── Customer landing (public, but passes auth state for nav) ── */}
       <Route path="/products" element={<Products isAuthenticated={isAuth} />} />
+      <Route path="/products-v2" element={<ProductsV2 />} />
 
       {/* ── Customer menu ────────────────────────────────────── */}
       <Route
         path="/usersmenu"
-        element={
-          !isAuth ? (
-            <Navigate to="/login" replace />
-          ) : userRole === "administrator" || userRole === "customer" ? (
-            <UsersMenu />
-          ) : (
-            <Navigate to="/unauthorized" replace />
-          )
-        }
+        element={<UsersMenu />}
       />
 
       {/* ── Administrator ────────────────────────────────────── */}

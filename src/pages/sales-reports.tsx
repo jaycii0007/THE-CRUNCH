@@ -3758,6 +3758,324 @@ function OrdersTab({
   );
 }
 
+// --- Print Report Component ---
+
+interface PrintReportProps {
+  activeTab: TabKey;
+  period: Period;
+  logs: SaleLog[];
+  orders: Order[];
+  scopedLogs: SaleLog[];
+  filteredLogs: SaleLog[];
+  filterDescription: string;
+  restaurantSettings: GeneralRestaurantSettings;
+  generatedBy: string;
+  logFromDate: Date | null;
+  logToDate: Date | null;
+  logPaymentFilter: PaymentMethodFilter;
+  logOrderTypeFilter: OrderTypeFilter;
+  logDeliveryPlatformFilter: DeliveryPlatformFilter;
+  hasLogRange: boolean;
+}
+
+function PrintReport({
+  activeTab,
+  period,
+  logs: _logs,
+  orders,
+  scopedLogs: _scopedLogs,
+  filteredLogs,
+  filterDescription: _filterDescription,
+  restaurantSettings,
+  generatedBy,
+  logFromDate,
+  logToDate,
+  logPaymentFilter,
+  logOrderTypeFilter,
+  logDeliveryPlatformFilter,
+  hasLogRange,
+}: PrintReportProps) {
+  const now = new Date();
+  const isSalesLogs = activeTab === "logs";
+  const reportTitle = isSalesLogs ? "Sales Logs" : "Order History";
+
+  // Build filter descriptions
+  const filterParts: string[] = [];
+  if (hasLogRange) {
+    filterParts.push(`Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`);
+  } else {
+    filterParts.push("All dates");
+  }
+  if (logPaymentFilter !== "All") filterParts.push(logPaymentFilter);
+  if (logOrderTypeFilter !== "All") filterParts.push(logOrderTypeFilter);
+  if (logDeliveryPlatformFilter !== "All Platforms") filterParts.push(logDeliveryPlatformFilter);
+  const activeFilters = filterParts.join(" · ");
+
+  const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timeLabel = formatInSettingsTimezone(now, restaurantSettings, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  if (isSalesLogs) {
+    const reportLogs = filteredLogs;
+    const completedLogs = reportLogs.filter(isFinalizedSale);
+    const totalRevenue = completedLogs.reduce((sum, log) => sum + log.total, 0);
+    const completedCount = completedLogs.length;
+
+    // Build log rows for Sales Logs tab
+    const logRows = completedLogs
+      .map((l, i) => {
+        const paymentMethodLabel = normalizePaymentMethod(l.paymentMethod);
+        return `
+          <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
+            <td class="txn">${escapePrintHtml(l.transactionId)}</td>
+            <td class="date-time">${escapePrintHtml(`${l.date} ${l.time}`)}</td>
+            <td class="items">
+              <div>${escapePrintHtml(l.product)} <strong>×${escapePrintHtml(l.quantity)}</strong></div>
+            </td>
+            <td class="payment">
+              <div class="payment-method">${escapePrintHtml(paymentMethodLabel)}</div>
+              ${l.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(l.paymentReference)}</div>` : ""}
+            </td>
+            <td>${escapePrintHtml(l.cashierName)}</td>
+            <td class="amount">${escapePrintHtml(formatPrintCurrency(Math.abs(l.total), restaurantSettings))}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    return (
+      <div className="print-report">
+        <div className="print-report-header">
+          <div>
+            <p className="print-report-brand">{restaurantSettings.restaurantName}</p>
+            <p className="print-report-title">Sales Report</p>
+            <p className="print-report-subtitle">{reportTitle} — {period}</p>
+            {restaurantSettings.tagline && (
+              <p className="print-report-subtitle">{restaurantSettings.tagline}</p>
+            )}
+            <p className="print-report-subtitle">Period: {activeFilters}</p>
+            {[
+              restaurantSettings.address,
+              restaurantSettings.phone,
+              restaurantSettings.email,
+            ]
+              .filter(Boolean)
+              .map((line) => <p className="print-report-subtitle" key={line}>{line}</p>)}
+          </div>
+          <div className="print-report-meta">
+            <p>Generated</p>
+            <strong>{dateLabel}</strong>
+            <p>{timeLabel}</p>
+            <p style={{ marginTop: "8px" }}>Prepared by</p>
+            <strong>{generatedBy || "Staff"}</strong>
+          </div>
+        </div>
+
+        <div className="print-summary-grid">
+          <div className="print-summary-card">
+            <p className="print-summary-label">Total Revenue</p>
+            <p className="print-summary-value revenue">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
+            <p className="print-summary-sub">Scope: {period} · {completedCount} completed</p>
+          </div>
+          <div className="print-summary-card">
+            <p className="print-summary-label">Total Sales</p>
+            <p className="print-summary-value">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
+            <p className="print-summary-sub">{completedCount} completed orders</p>
+          </div>
+        </div>
+
+        <p className="print-section-title">Sales Logs ({completedCount})</p>
+
+        <table className="print-table">
+          <colgroup>
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Transaction ID</th>
+              <th>Date & Time</th>
+              <th>Items</th>
+              <th>Payment / Reference</th>
+              <th>Cashier</th>
+              <th style={{ textAlign: "right" }}>Amount</th>
+            </tr>
+          </thead>
+          <tbody dangerouslySetInnerHTML={{ __html: logRows }} />
+          <tfoot>
+            <tr className="revenue-summary">
+              <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
+                Total Revenue
+              </td>
+              <td style={{ textAlign: "right", color: "#1a3a2a", fontSize: "13px" }}>
+                {formatPrintCurrency(totalRevenue, restaurantSettings)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <p className="print-footer">
+          Auto-generated by {restaurantSettings.restaurantName} POS System · Confidential
+        </p>
+      </div>
+    );
+  }
+
+  // Order History tab
+  const completedOrders = orders.filter(isFinalizedSale);
+  const totalRevenue = completedOrders.reduce((sum, log) => sum + log.total, 0);
+  const completedCount = completedOrders.length;
+
+  // Build order rows for Order History tab
+  const orderRows = completedOrders
+    .map((o, i) => {
+      const fmtDateTime = parseDateSafe(o.date)
+        ? formatInSettingsTimezone(o.date, restaurantSettings, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+          })
+        : "—";
+      const fmtHandover = parseDateSafe(o.handoverTimestamp)
+        ? formatInSettingsTimezone(
+            o.handoverTimestamp ?? "",
+            restaurantSettings,
+            {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            },
+          )
+        : "—";
+      return `
+        <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
+          <td class="txn">${escapePrintHtml(o.transactionId)}</td>
+          <td class="date-time">${escapePrintHtml(fmtDateTime)}</td>
+          <td class="items">${o.items
+            .map(
+              (item) =>
+                `<div><span>${escapePrintHtml(item.name)}</span> <strong>×${escapePrintHtml(item.quantity)}</strong></div>`,
+            )
+            .join("")}</td>
+          <td class="payment">
+            <div class="payment-method">${escapePrintHtml(normalizePaymentMethod(o.paymentCategory))}</div>
+            ${o.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(o.paymentReference)}</div>` : ""}
+            ${
+              o.orderType === "delivery"
+                ? `<div class="delivery-details">
+                    <div><strong>Rider:</strong> ${escapePrintHtml(o.riderName ?? "—")}</div>
+                    <div><strong>Handover:</strong> ${escapePrintHtml(fmtHandover)}</div>
+                    <div><strong>Confirmed by:</strong> ${escapePrintHtml(o.handoverStaffName ?? "—")}</div>
+                  </div>`
+                : ""
+            }
+          </td>
+          <td>${escapePrintHtml(o.cashierName ?? "—")}</td>
+          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return (
+    <div className="print-report">
+      <div className="print-report-header">
+        <div>
+          <p className="print-report-brand">{restaurantSettings.restaurantName}</p>
+          <p className="print-report-title">Sales Report</p>
+          <p className="print-report-subtitle">{reportTitle} — {period}</p>
+          {restaurantSettings.tagline && (
+            <p className="print-report-subtitle">{restaurantSettings.tagline}</p>
+          )}
+          <p className="print-report-subtitle">Period: {activeFilters}</p>
+          {[
+            restaurantSettings.address,
+            restaurantSettings.phone,
+            restaurantSettings.email,
+          ]
+            .filter(Boolean)
+            .map((line) => <p className="print-report-subtitle" key={line}>{line}</p>)}
+        </div>
+        <div className="print-report-meta">
+          <p>Generated</p>
+          <strong>{dateLabel}</strong>
+          <p>{timeLabel}</p>
+          <p style={{ marginTop: "8px" }}>Prepared by</p>
+          <strong>{generatedBy || "Staff"}</strong>
+        </div>
+      </div>
+
+      <div className="print-summary-grid">
+        <div className="print-summary-card">
+          <p className="print-summary-label">Total Revenue</p>
+          <p className="print-summary-value revenue">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
+          <p className="print-summary-sub">Scope: {period} · {completedCount} completed</p>
+        </div>
+        <div className="print-summary-card">
+          <p className="print-summary-label">Total Sales</p>
+          <p className="print-summary-value">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
+          <p className="print-summary-sub">{completedCount} completed orders</p>
+        </div>
+      </div>
+
+      <p className="print-section-title">Completed Orders ({completedCount})</p>
+
+      <table className="print-table">
+        <colgroup>
+          <col />
+          <col />
+          <col />
+          <col />
+          <col />
+          <col />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Transaction ID</th>
+            <th>Date & Time</th>
+            <th>Items</th>
+            <th>Payment / Reference</th>
+            <th>Cashier</th>
+            <th style={{ textAlign: "right" }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody dangerouslySetInnerHTML={{ __html: orderRows }} />
+          <tfoot>
+          <tr className="revenue-summary">
+            <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
+              Total Revenue
+            </td>
+            <td style={{ textAlign: "right", color: "#1a3a2a", fontSize: "13px" }}>
+              {formatPrintCurrency(totalRevenue, restaurantSettings)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <p className="print-footer">
+        Auto-generated by {restaurantSettings.restaurantName} POS System · Confidential
+      </p>
+    </div>
+  );
+}
+
 // --- Main Page ---
 
 export default function SalesReports() {
@@ -4204,6 +4522,36 @@ export default function SalesReports() {
           </div>
         </motion.div>
 
+        {/* Print Button */}
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.3 }}
+          onClick={() => window.print()}
+          className="screen-only"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 16px",
+            borderRadius: 12,
+            border: `1px solid ${DEEP_LINE}`,
+            background: DEEP,
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            boxShadow: "0 2px 8px rgba(26,58,42,0.25)",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#142d21"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(26,58,42,0.35)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = DEEP; e.currentTarget.style.boxShadow = "0 2px 8px rgba(26,58,42,0.25)"; }}
+          aria-label="Print Sales Report"
+        >
+          <Printer size={16} />
+          <span>Print Report</span>
+        </motion.button>
+
         {/* Summary Bar */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -4618,6 +4966,27 @@ export default function SalesReports() {
             />
           </motion.div>
         )}
+      </div>
+
+      {/* Print-Only Report Component - Only visible when printing */}
+      <div className="print-only print-report" data-print-root="true" aria-hidden="true">
+        <PrintReport
+          activeTab={activeTab}
+          period={period}
+          logs={logs}
+          orders={orders}
+          scopedLogs={scopedLogs}
+          filteredLogs={filteredLogs}
+          filterDescription={summaryFilterDescription}
+          restaurantSettings={restaurantSettings}
+          generatedBy={String(user?.username || user?.email || "Staff")}
+          logFromDate={logFromDate}
+          logToDate={logToDate}
+          logPaymentFilter={logPaymentFilter}
+          logOrderTypeFilter={logOrderTypeFilter}
+          logDeliveryPlatformFilter={logDeliveryPlatformFilter}
+          hasLogRange={hasLogRange}
+        />
       </div>
     </div>
   );

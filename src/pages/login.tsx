@@ -26,6 +26,35 @@ const ROLE_REDIRECT_PATHS: Record<string, string> = {
   customer: "/products",
 };
 
+// Helper to get return destination from URL params or navigation state
+function getReturnDestination(location: ReturnType<typeof useLocation>): string | null {
+  const params = new URLSearchParams(location.search);
+  const raw = params.get("returnTo") || params.get("redirect") || null;
+  if (!raw) return null;
+  // Validate: only allow internal paths (starting with /, no protocol, no //)
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//") || raw.includes("://")) return null;
+  // Allowlist known application routes to prevent open redirects
+  const allowedPrefixes = [
+    "/products",
+    "/usersmenu",
+    "/my-account",
+    "/aboutthecrunch",
+    "/login",
+    "/forgot-password",
+    "/dashboard",
+    "/orders",
+    "/inventory",
+    "/menu",
+    "/settings",
+    "/sales-reports",
+    "/stockmanager",
+    "/users",
+  ];
+  const isAllowed = allowedPrefixes.some((prefix) => raw === prefix || raw.startsWith(prefix + "/") || raw.startsWith(prefix + "?"));
+  return isAllowed ? raw : null;
+}
+
 // ── Design Tokens ──────────────────────────────────────────────────────────
 const FONT_FAMILY = "'Poppins', sans-serif";
 
@@ -147,7 +176,8 @@ export default function Login() {
           email_verified: loginResponse.email_verified,
         });
 
-        const targetRedirectPath = ROLE_REDIRECT_PATHS[loginResponse.role] || HOME_PAGE_PATH;
+        const returnTo = getReturnDestination(location);
+        const targetRedirectPath = returnTo || ROLE_REDIRECT_PATHS[loginResponse.role] || HOME_PAGE_PATH;
         navigate(targetRedirectPath, { replace: true });
       } else {
         if (!fullName.trim()) throw new Error("Please enter your full name.");
@@ -162,6 +192,7 @@ export default function Login() {
           setIsVerifyModalOpen(true);
         } else {
           switchAuthenticationMode("signin");
+          setEmailAddress(cleanedEmail);
           setFormSuccessMessage("Account created successfully. You can now sign in.");
         }
       }
@@ -193,12 +224,10 @@ export default function Login() {
 
     try {
       await authApi.verifyEmail(verificationEmail, cleanedCode);
-      setVerificationSuccess("Email verified successfully! You may now sign in.");
-      setTimeout(() => {
-        setIsVerifyModalOpen(false);
-        switchAuthenticationMode("signin");
-        setEmailAddress(verificationEmail);
-      }, 1200);
+      setIsVerifyModalOpen(false);
+      switchAuthenticationMode("signin");
+      setEmailAddress(verificationEmail);
+      setFormSuccessMessage("Email verified successfully. Please sign in to continue.");
     } catch (networkError: any) {
       setVerificationError(networkError?.message || "Could not verify code. Please try again.");
     } finally {

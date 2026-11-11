@@ -1395,6 +1395,9 @@ interface InventoryUnitSetting {
   name: string;
   abbreviation: string | null;
   is_active: boolean | number;
+  base_unit_id?: number | null;
+  conversion_to_base?: number | string | null;
+  is_system?: boolean | number;
 }
 
 function CategoriesUnitsTab() {
@@ -1432,6 +1435,8 @@ function CategoriesUnitsTab() {
   >({});
   const [unitName, setUnitName] = useState("");
   const [unitAbbreviation, setUnitAbbreviation] = useState("");
+  const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
+  const [unitConversionDrafts, setUnitConversionDrafts] = useState<Record<number, { base: string; left: string; right: string }>>({});
   const [menuCategoryDrafts, setMenuCategoryDrafts] = useState<
     Record<number, string>
   >({});
@@ -1458,6 +1463,11 @@ function CategoriesUnitsTab() {
       setMenuCategories(nextMenuCategories);
       setCategories(nextCategories);
       setUnits(nextUnits);
+      setUnitConversionDrafts(Object.fromEntries(nextUnits.map((unit) => [unit.unit_id, {
+        base: unit.base_unit_id == null ? "" : String(unit.base_unit_id),
+        left: "1",
+        right: unit.conversion_to_base == null ? "" : String(unit.conversion_to_base),
+      }])));
       setMenuCategoryDrafts(
         Object.fromEntries(
           nextMenuCategories.map((category) => [
@@ -2117,6 +2127,7 @@ function CategoriesUnitsTab() {
         <h3 style={{ ...typo("0.9rem", INK, 700), marginBottom: 12 }}>
           Inventory Units
         </h3>
+        <Hint>Set how many base units equal 1 unit, e.g. 1 kg = 1000 g (base: g, factor: 1000). Only direct conversions and their inverse are used.</Hint>
         <div
           style={{
             display: "grid",
@@ -2140,22 +2151,78 @@ function CategoriesUnitsTab() {
             Add
           </button>
         </div>
-        {units.map((unit) => (
+        {units.map((unit) => {
+          const conversion = unitConversionDrafts[unit.unit_id] ?? {
+            base: unit.base_unit_id == null ? "" : String(unit.base_unit_id),
+            left: "1",
+        right: unit.conversion_to_base == null ? "" : String(unit.conversion_to_base),
+          };
+          return (
           <div key={unit.unit_id} style={rowStyle}>
-            <span style={typo("0.8rem", INK, 500)}>
-              {unit.name}
-              {unit.abbreviation ? ` (${unit.abbreviation})` : ""}
-            </span>
+            <div>
+              <span style={typo("0.8rem", INK, 500)}>{unit.name}{unit.abbreviation ? ` (${unit.abbreviation})` : ""}</span>
+              {unit.base_unit_id && unit.conversion_to_base && (
+                <p className="mt-1 text-xs text-stone-500">1 {unit.abbreviation || unit.name} = {Number(unit.conversion_to_base)} {units.find((base) => base.unit_id === unit.base_unit_id)?.abbreviation || units.find((base) => base.unit_id === unit.base_unit_id)?.name}</p>
+              )}
+            </div>
+            <button type="button" disabled={busy} style={secondaryButton()} onClick={() => {
+              setUnitConversionDrafts((current) => ({ ...current, [unit.unit_id]: {
+                base: unit.base_unit_id == null ? "" : String(unit.base_unit_id),
+                left: "1",
+        right: unit.conversion_to_base == null ? "" : String(unit.conversion_to_base),
+              } }));
+              setEditingUnitId(unit.unit_id); setError(null);
+            }}>Edit</button>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || Boolean(unit.is_system)}
               onClick={() => void toggleUnit(unit)}
               style={secondaryButton()}
             >
               {unit.is_active ? "Active" : "Inactive"}
             </button>
+            {editingUnitId === unit.unit_id && (
+            <div className="w-full rounded-xl border border-stone-200 bg-stone-50 p-4">
+            <label className="mb-1 block text-sm">Convert to</label>
+            <select aria-label={`Convert ${unit.name} to`} value={conversion.base} disabled={busy}
+              onChange={(event) => setUnitConversionDrafts((current) => ({ ...current, [unit.unit_id]: { ...conversion, base: event.target.value, ...(event.target.value ? {} : { right: "" }) } }))}>
+              <option value="">No conversion</option>
+              {units.filter((base) => base.unit_id !== unit.unit_id).map((base) => <option key={base.unit_id} value={base.unit_id}>{base.abbreviation || base.name}</option>)}
+            </select>
+            <div className="my-3 flex flex-wrap items-center gap-2">
+              <div className="w-24">
+                <SI value={conversion.left} type="number" ariaLabel={`Quantity in ${unit.name}`} disabled={busy}
+                  onChange={(left) => setUnitConversionDrafts((current) => ({ ...current, [unit.unit_id]: { ...conversion, left } }))} />
+              </div>
+              <span>{unit.abbreviation || unit.name} =</span>
+              <div className="w-24">
+                <SI value={conversion.right} type="number" ariaLabel="Equivalent quantity" disabled={busy}
+                  onChange={(right) => setUnitConversionDrafts((current) => ({ ...current, [unit.unit_id]: { ...conversion, right } }))} />
+              </div>
+              <span>{units.find((base) => String(base.unit_id) === conversion.base)?.abbreviation || units.find((base) => String(base.unit_id) === conversion.base)?.name || ""}</span>
+            </div>
+            <button type="button" disabled={busy} style={secondaryButton()} onClick={async () => {
+              if (Boolean(conversion.base) !== Boolean(conversion.right) ||
+                  (conversion.base && (!Number.isFinite(Number(conversion.left)) || Number(conversion.left) <= 0 ||
+                    !Number.isFinite(Number(conversion.right)) || Number(conversion.right) <= 0))) {
+                setError("Choose a unit and enter positive quantities on both sides."); return;
+              }
+              setBusy(true); setError(null);
+              try {
+                const updated = await api.patch<InventoryUnitSetting>(`/settings/inventory-units/${unit.unit_id}`, {
+                  base_unit_id: conversion.base ? Number(conversion.base) : null,
+                  conversion_to_base: conversion.base ? Number(conversion.right) / Number(conversion.left) : null,
+                });
+                setUnits((current) => current.map((entry) => entry.unit_id === updated.unit_id ? updated : entry));
+                setEditingUnitId(null);
+              } catch (error) { setError(error instanceof Error ? error.message : "Failed to save conversion."); }
+              finally { setBusy(false); }
+            }}>Save</button>
+            <button type="button" disabled={busy} style={{ ...secondaryButton(), marginLeft: 8 }} onClick={() => setEditingUnitId(null)}>Cancel</button>
+            </div>
+            )}
           </div>
-        ))}
+        ); })}
       </Section>
     </div>
   );

@@ -267,7 +267,7 @@ export const api = {
         number,
         { shelfLifeMonths?: number | null; shelfLifeDays?: number | null; shelfLifeHours?: number | null }
       >,
-      itemReceivedQuantities?: Record<number, number>,
+      itemReceivedQuantities?: Record<number, number | string>,
     ) =>
       apiFetch<PurchaseOrder>(`/purchase-orders/${id}/receive`, {
         method: "PATCH",

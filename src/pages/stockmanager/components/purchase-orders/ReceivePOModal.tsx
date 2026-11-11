@@ -14,7 +14,7 @@ import { getPOItemDateTrackingType, getPOItemCategoryTrackingType } from "../../
 const RECEIPT_NUMBER_MAX_LENGTH = 25;
 const RECEIPT_NUMBER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 /-]*$/;
 const RECEIVED_QUANTITY_MAX = 100_000;
-const RECEIVED_QUANTITY_PATTERN = /^\d+(?:\.\d{0,2})?$/;
+const RECEIVED_QUANTITY_PATTERN = /^\d+(?:\.\d{0,2})?(?:\s*[a-z]+)?\s*$/i;
 
 function getUsableUntilPreview(
   receivedDate: string,
@@ -76,7 +76,7 @@ export function ReceivePOModal({
       number,
       { shelfLifeMonths?: number | null; shelfLifeDays?: number | null; shelfLifeHours?: number | null }
     >;
-    itemReceivedQuantities: Record<number, number>;
+    itemReceivedQuantities: Record<number, number | string>;
   }) => Promise<void>;
   onShowToast: (message: string, type: "success" | "error") => void;
 }) {
@@ -120,23 +120,12 @@ export function ReceivePOModal({
   };
 
   const updateReceivedQuantity = (itemId: number, value: string) => {
-    const setError = (message: string) =>
-      setItemReceivedQuantityErrors((current) => ({ ...current, [itemId]: message }));
     if (value === "") {
       setItemReceivedQuantities((current) => ({ ...current, [itemId]: "" }));
       setItemReceivedQuantityErrors((current) => ({ ...current, [itemId]: "" }));
       return;
     }
     const normalizedValue = value.startsWith(".") ? `0${value}` : value;
-    if (!/^\d+(?:\.\d{0,2})?$/.test(normalizedValue)) {
-      setError("Enter a valid quantity with up to two decimal places.");
-      return;
-    }
-    const numericValue = Number(normalizedValue);
-    if (Number.isFinite(numericValue) && numericValue > RECEIVED_QUANTITY_MAX) {
-      setError("Actual received quantity cannot exceed 100,000.");
-      return;
-    }
     setItemReceivedQuantities((current) => ({ ...current, [itemId]: normalizedValue }));
     setItemReceivedQuantityErrors((current) => ({ ...current, [itemId]: "" }));
   };
@@ -177,16 +166,16 @@ export function ReceivePOModal({
     }
     const invalidQuantity = order.items.find((item) => {
       const raw = itemReceivedQuantities[item.id] ?? "";
-      const quantity = Number(raw);
+      const quantity = Number.parseFloat(raw);
       return (
         !RECEIVED_QUANTITY_PATTERN.test(raw) ||
         !Number.isFinite(quantity) ||
         quantity < 0 ||
-        quantity > RECEIVED_QUANTITY_MAX
+        (!/[a-z]/i.test(raw) && quantity > RECEIVED_QUANTITY_MAX)
       );
     });
     if (invalidQuantity) {
-      const message = `Actual received quantity for ${invalidQuantity.name} must be from 0 to 100,000 with up to two decimal places.`;
+      const message = `Actual received quantity for ${invalidQuantity.name} must be a quantity with up to two decimals, optionally followed by a unit abbreviation (e.g. 2 kg). The converted quantity must be within the receiving limit.`;
       setItemReceivedQuantityErrors((current) => ({
         ...current,
         [invalidQuantity.id]: message,
@@ -194,12 +183,12 @@ export function ReceivePOModal({
       onShowToast(message, "error");
       return;
     }
-    if (!order.items.some((item) => Number(itemReceivedQuantities[item.id]) > 0)) {
+    if (!order.items.some((item) => Number.parseFloat(itemReceivedQuantities[item.id] ?? "") > 0)) {
       onShowToast("At least one item must have an actual received quantity greater than zero.", "error");
       return;
     }
     const missing = order.items.filter((item) => {
-      if (Number(itemReceivedQuantities[item.id]) === 0) return false;
+      if (Number.parseFloat(itemReceivedQuantities[item.id] ?? "") === 0) return false;
       const trackingType = getPOItemDateTrackingType(
         item,
         inventoryCategoryNameLookup,
@@ -242,7 +231,7 @@ export function ReceivePOModal({
       receivedDate,
       itemExpiryDates,
       itemReceivedQuantities: Object.fromEntries(
-        Object.entries(itemReceivedQuantities).map(([itemId, value]) => [Number(itemId), Number(value)]),
+        Object.entries(itemReceivedQuantities).map(([itemId, value]) => [Number(itemId), /[a-z]/i.test(value) ? value.trim() : Number(value)]),
       ),
       itemShelfLife: Object.fromEntries(
         Object.entries(itemShelfLife).map(([itemId, value]) => [
@@ -418,9 +407,8 @@ export function ReceivePOModal({
                   </label>
                   <input
                     type="text"
-                    inputMode="decimal"
                     value={itemReceivedQuantities[item.id] ?? ""}
-                    onKeyDown={(event) => blockInvalidNumberKeys(event, { allowDecimal: true })}
+                    placeholder={`e.g. 2 kg, or a number in ${item.unit}`}
                     onChange={(event) => updateReceivedQuantity(item.id, event.target.value)}
                     aria-invalid={Boolean(itemReceivedQuantityErrors[item.id])}
                     aria-describedby={itemReceivedQuantityErrors[item.id] ? `po-received-quantity-error-${item.id}` : undefined}
