@@ -86,6 +86,7 @@ export interface Product {
   wasted: number;
   expiryDate?: string | null;
   usableUntil?: string | null;
+  batchShelfLife?: string;
   shelfLifeMonths?: number | null;
   shelfLifeDays?: number | null;
   shelfLifeHours?: number | null;

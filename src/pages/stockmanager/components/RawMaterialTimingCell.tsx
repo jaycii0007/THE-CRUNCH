@@ -1,5 +1,5 @@
 import type { Product } from "../types/inventory";
-import { formatShelfLife, fmtDateTime } from "../utils/formatters";
+import { fmtDateTime } from "../utils/formatters";
 import {
   getProductUiStatus,
   getShelfLifeStatusSummary,
@@ -22,7 +22,7 @@ export function RawMaterialTimingCell({ product }: { product: Product }) {
       <p className="text-xs font-semibold text-slate-700">
         Shelf Life:{" "}
         <span className="font-normal text-slate-500">
-          {product.usableUntil ? "See Batch Records" : formatShelfLife(product.shelfLifeDays, product.shelfLifeHours)}
+          {product.batchShelfLife || "Not recorded"}
         </span>
       </p>
       <p className="text-[11px] text-slate-500">
