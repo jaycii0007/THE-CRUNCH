@@ -1882,7 +1882,7 @@ function MenuAdminTab() {
               {items.filter(isArchived).map((item) => (
                 <div key={item.id} className="flex items-center justify-between gap-3 py-3">
                   <div>
-                    <p className="text-sm font-semibold" style={{ color: T.ink }}>{item.name}</p>
+                    <p className="text-sm font-semibold" style={{ color: T.ink }}>{item.name} <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">Disabled</span></p>
                     <p className="text-xs" style={{ color: T.muted }}>{isChickenFlavor(item) ? "Sauces" : item.category}</p>
                   </div>
                   <div className="flex gap-1">

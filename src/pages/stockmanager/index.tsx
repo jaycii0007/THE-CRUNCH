@@ -122,13 +122,13 @@ const RAW_MATERIAL_UNITS = [
   "case",
 ] as const;
 const STATUS_BADGE: Record<StockStatus, string> = {
-  critical: "bg-orange-100 text-orange-600",
-  low: "bg-yellow-100 text-yellow-700",
+  critical: "bg-red-100 text-red-700",
+  low: "bg-amber-100 text-amber-700",
   normal: "bg-emerald-100 text-emerald-600",
 };
 const STATUS_DOT: Record<StockStatus, string> = {
-  critical: "bg-orange-500",
-  low: "bg-yellow-400",
+  critical: "bg-red-500",
+  low: "bg-amber-500",
   normal: "bg-emerald-500",
 };
 const ease: Transition = { duration: 0.38, ease: [0.25, 0.46, 0.45, 0.94] };
@@ -1252,14 +1252,14 @@ export default function StockManager() {
                                   const isOutOfStock =
                                     uiStatus === "Out of Stock";
                                   const statusDotClass = isOutOfStock
-                                    ? "bg-slate-500"
+                                    ? "bg-red-500"
                                     : STATUS_DOT[status];
                                   const statusBadgeClass = isOutOfStock
-                                    ? "bg-slate-100 text-slate-700"
+                                    ? "bg-red-100 text-red-700"
                                     : p.isRawMaterial
                                       ? uiStatus === "Past Shelf Life"
                                         ? "bg-red-100 text-red-700"
-                                        : "bg-emerald-100 text-emerald-700"
+                                        : STATUS_BADGE[status]
                                       : STATUS_BADGE[status];
                                   const statusLabel = p.isRawMaterial
                                     ? uiStatus

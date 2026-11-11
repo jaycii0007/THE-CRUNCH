@@ -263,14 +263,15 @@ function getPlatformReferenceError(
 
 const computePricing = (subtotal: number, b: Billing, discountRate: number) => {
   const discountAmount = subtotal * (Math.max(0, discountRate) / 100);
-  const taxAmount = subtotal * (b.taxRate / 100);
-  const serviceChargeAmount = subtotal * (b.serviceCharge / 100);
+  const discountedSubtotal = subtotal - discountAmount;
+  const taxAmount = Math.round((discountedSubtotal - discountedSubtotal / (1 + b.taxRate / 100) + Number.EPSILON) * 100) / 100;
+  const serviceChargeAmount = 0;
   return {
     subtotal,
     discountAmount,
     taxAmount,
     serviceChargeAmount,
-    amountDue: subtotal - discountAmount + taxAmount + serviceChargeAmount,
+    amountDue: discountedSubtotal,
   };
 };
 
@@ -1668,7 +1669,7 @@ function SuccessModal({
     ? [
         ["Subtotal", r.subtotal],
         ["Discount", r.discount.amount ? -r.discount.amount : 0],
-        ["Tax", r.tax.amount],
+        [r.tax.amount && Math.abs(Number(r.total) - (Number(r.subtotal) - Number(r.discount.amount) + Number(r.serviceCharge.amount))) < 0.01 ? "Included tax" : "Tax", r.tax.amount],
         ["Service charge", r.serviceCharge.amount],
       ]
     : [];
@@ -1697,6 +1698,7 @@ function SuccessModal({
           </div>
           <div className="grid grid-cols-2 gap-px border-y border-neutral-100 bg-neutral-100 text-center">
             {[
+              ["Invoice No.", r.invoiceNumber || "\u2014"],
               ["Cashier", r.cashierName || cashier || "—"],
               ["Date", dateTime(r.orderDate)],
               [
@@ -1755,7 +1757,7 @@ function SuccessModal({
                 </p>
               ))}
             <p className="flex items-center justify-between bg-neutral-50 px-4 py-3">
-              <span className="font-medium text-neutral-600">Total paid</span>
+              <span className="font-medium text-neutral-600">Total Due</span>
               <span className="text-xl font-semibold">{m(r.total)}</span>
             </p>
             {isCash && (
@@ -1915,7 +1917,11 @@ function HistoryModal({
                           ? "bg-red-100 text-red-600"
                           : refunded
                             ? "bg-slate-100 text-slate-600"
-                            : "bg-green-100 text-green-700"
+                            : norm(o.status).includes("prepar")
+                              ? "bg-blue-100 text-blue-700"
+                              : ["queued", "pending", "awaiting cashier review"].includes(norm(o.status))
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-green-100 text-green-700"
                       }
                     >
                       {o.status}
@@ -2225,8 +2231,8 @@ export default function CashierView() {
         (d) =>
           !off &&
           setBilling({
-            taxRate: Math.max(0, Number(d?.taxRate || 0)),
-            serviceCharge: Math.max(0, Number(d?.serviceCharge || 0)),
+            taxRate: d?.taxBreakdownEnabled === true && Number.isFinite(Number(d.taxRate)) && Number(d.taxRate) >= 0 && Number(d.taxRate) <= 100 ? Number(d.taxRate) : 0,
+            serviceCharge: 0,
           }),
       )
       .catch(() => {});
@@ -3353,16 +3359,7 @@ export default function CashierView() {
                         `-${fmt.money(pricing.discountAmount)}`,
                         "text-green-600",
                       ],
-                      [
-                        `Tax (${pct(billing.taxRate)}%)`,
-                        fmt.money(pricing.taxAmount),
-                        "text-neutral-500",
-                      ],
-                      [
-                        `Service charge (${pct(billing.serviceCharge)}%)`,
-                        fmt.money(pricing.serviceChargeAmount),
-                        "text-neutral-500",
-                      ],
+                      ...(billing.taxRate > 0 ? [[`Included tax (${pct(billing.taxRate)}%)`, fmt.money(pricing.taxAmount), "text-neutral-500"]] : []),
                     ]
                 ).map(([l, v, c]) => (
                   <p

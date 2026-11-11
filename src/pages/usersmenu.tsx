@@ -422,13 +422,13 @@ const getHoursLabel = (s: StoreStatusSettings) => {
 
 const calcBilling = (sub: number, s: BillingSettings) => {
   const subtotal = Number(sub || 0),
-    taxAmount = subtotal * (s.taxRate / 100),
-    serviceChargeAmount = subtotal * (s.serviceCharge / 100);
+    taxAmount = Math.round((subtotal - subtotal / (1 + s.taxRate / 100) + Number.EPSILON) * 100) / 100,
+    serviceChargeAmount = 0;
   return {
     subtotal,
     taxAmount,
     serviceChargeAmount,
-    grandTotal: subtotal + taxAmount + serviceChargeAmount,
+    grandTotal: subtotal,
   };
 };
 type Billing = ReturnType<typeof calcBilling>;
@@ -2022,8 +2022,7 @@ function CartDrawer({
           {(
             [
               ["Subtotal", billing.subtotal],
-              ["Tax", billing.taxAmount],
-              ["Service charge", billing.serviceChargeAmount],
+              ...(billing.taxAmount > 0 ? [["Included tax", billing.taxAmount] as [string, number]] : []),
             ] as [string, number][]
           ).map(([label, value]) => (
             <div
@@ -2446,8 +2445,8 @@ export default function Delicacy() {
       .then((data) => {
         if (cancelled) return;
         setBillingSettings({
-          taxRate: Math.max(0, Number(data?.taxRate || 0)),
-          serviceCharge: Math.max(0, Number(data?.serviceCharge || 0)),
+          taxRate: data?.taxBreakdownEnabled === true && Number.isFinite(Number(data.taxRate)) && Number(data.taxRate) >= 0 && Number(data.taxRate) <= 100 ? Number(data.taxRate) : 0,
+          serviceCharge: 0,
         });
         const mode = data?.storeStatusMode;
         const pick = (k: keyof StoreStatusSettings) =>

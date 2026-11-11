@@ -17,6 +17,7 @@ export interface ReceiptAdjustmentDto {
 export interface ReceiptDto {
   id: number;
   transactionId: string | null;
+  invoiceNumber?: string | null;
   orderNumber: string;
   orderDate: string;
   orderType: string | null;
@@ -132,6 +133,7 @@ export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): stri
   const info: [string, string][] = [
     ["Order #", r.orderNumber],
     ["Transaction ID", r.transactionId || ""],
+    ["Invoice No.", r.invoiceNumber || "\u2014"],
     ["Date", formatReceiptDate(r)],
     ["Cashier", cashier],
     ["Order Type", orderTypeLabel(r.orderType) + (r.tableNumber ? ` / Table ${r.tableNumber}` : "")],
@@ -147,18 +149,21 @@ export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): stri
     row("Total Sales", money(r.subtotal, cur)),
     hasDiscount
       ? row(`Discount${r.discount.name ? ` (${r.discount.name})` : ""}${rate(r.discount.rate)}`, `-${money(r.discount.amount, cur)}`) : "",
-    num(r.tax.amount) && r.tax.amount > 0 ? row(`Tax${rate(r.tax.rate)}`, money(r.tax.amount, cur)) : "",
+    num(r.tax.amount) && r.tax.amount > 0 ? row(`${num(r.subtotal) && num(r.total) && Math.abs(r.total - (r.subtotal - Number(r.discount.amount ?? 0) + Number(r.serviceCharge.amount ?? 0))) < 0.01 ? "Included tax" : "Tax"}${rate(r.tax.rate)}`, money(r.tax.amount, cur)) : "",
     num(r.serviceCharge.amount) && r.serviceCharge.amount > 0 ? row(`Service Charge${rate(r.serviceCharge.rate)}`, money(r.serviceCharge.amount, cur)) : "",
   ].join("");
 
+  const cashMethod = String(r.paymentMethod || "").trim().toLowerCase();
+  const cashPayment = cashMethod === "cash" || (cashMethod === "cash_on_pickup" &&
+    ["paid", "refunded"].includes(String(r.currentPaymentStatus || "").trim().toLowerCase()));
   const payment =
     (r.paymentMethod ? row("Payment", paymentLabel(r.paymentMethod)) : "") +
-    (num(r.cashTendered)
-      ? row("Amount Received", money(r.cashTendered, cur))
+    (cashPayment && num(r.cashTendered)
+      ? row("Cash Tendered", money(r.cashTendered, cur))
       : num(r.amountPaid) && r.amountPaid > 0
         ? row("Amount Received", money(r.amountPaid, cur))
         : "") +
-    (num(r.change) ? row("Change", money(r.change, cur), "b") : "");
+    (cashPayment && num(r.cashTendered) && num(r.change) ? row("Change", money(r.change, cur), "b") : "");
 
   const merchantName = r.merchant.name || "The Crunch";
   const merchantLines = [r.merchant.address, r.merchant.phone, r.merchant.email].filter(Boolean);
@@ -178,7 +183,7 @@ ${merchantLines.map((line) => `<p class="c s">${esc(line)}</p>`).join("")}
 <table><tr><th class="q">Qty</th><th>Description</th><th class="r">Amount</th></tr><tbody class="item">${items}</tbody></table>
 <hr/>
 ${extras ? `<table>${extras}</table><hr/>` : ""}
-<table>${row("TOTAL", money(r.total, cur), "tot")}</table>
+<table>${row("Total Due", money(r.total, cur), "tot")}</table>
 <hr/>
 <table>${payment}</table>
 ${r.orderNote ? `<hr/><p><b>Note:</b> ${esc(r.orderNote)}</p>` : ""}

@@ -121,14 +121,14 @@ const STATUS_TO_COUNT: Record<string, keyof OrderStatusCounts> = {
 };
 
 const STATS: { key: keyof OrderStatusCounts; label: string; icon: LucideIcon; tone: string }[] = [
-  { key: "queued", label: "Queued", icon: ClipboardList, tone: "bg-slate-100 text-slate-600" },
-  { key: "preparing", label: "Preparing", icon: Flame, tone: "bg-amber-50 text-amber-600" },
+  { key: "queued", label: "Queued", icon: ClipboardList, tone: "bg-amber-50 text-amber-700" },
+  { key: "preparing", label: "Preparing", icon: Flame, tone: "bg-blue-50 text-blue-700" },
   { key: "ready", label: "Ready", icon: PackageCheck, tone: "bg-emerald-50 text-emerald-600" },
 ];
 
 const COLUMNS: { stage: Stage; title: string; icon: LucideIcon; accent: string; badge: string; empty: string }[] = [
-  { stage: "new", title: "New orders", icon: ClipboardList, accent: "bg-slate-400", badge: "bg-slate-100 text-slate-600", empty: "No new orders" },
-  { stage: "preparing", title: "In preparation", icon: Flame, accent: "bg-amber-500", badge: "bg-amber-100 text-amber-700", empty: "Nothing on the line" },
+  { stage: "new", title: "New orders", icon: ClipboardList, accent: "bg-amber-500", badge: "bg-amber-100 text-amber-700", empty: "No new orders" },
+  { stage: "preparing", title: "In preparation", icon: Flame, accent: "bg-blue-500", badge: "bg-blue-100 text-blue-700", empty: "Nothing on the line" },
   { stage: "ready", title: "Ready", icon: PackageCheck, accent: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", empty: "Nothing waiting" },
 ];
 
