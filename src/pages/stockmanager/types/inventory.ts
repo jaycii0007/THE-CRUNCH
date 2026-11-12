@@ -64,6 +64,7 @@ export interface PurchaseOrder {
 }
 
 export interface Product {
+  unit_id?: number;
   inventory_id: number;
   product_id: number;
   item_type?: string;

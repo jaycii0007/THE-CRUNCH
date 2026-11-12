@@ -16,6 +16,7 @@ export function DashboardTab({
   choppedChickenProducts,
   dashboardSubTab,
   onSummarySelect,
+  onPurchaseOrdersSelect,
   mainStockContent,
   lastUpdatesContent,
 }: {
@@ -31,6 +32,7 @@ export function DashboardTab({
   choppedChickenProducts: Product[];
   dashboardSubTab: "main-stock" | "last-updates";
   onSummarySelect: (key: DashboardSummaryKey) => void;
+  onPurchaseOrdersSelect: () => void;
   mainStockContent: ReactNode;
   lastUpdatesContent: ReactNode;
 }) {
@@ -81,6 +83,7 @@ export function DashboardTab({
             value={pendingPOValue}
             sub="awaiting receipt"
             accent="indigo"
+            onClick={onPurchaseOrdersSelect}
           />
         </motion.div>
 

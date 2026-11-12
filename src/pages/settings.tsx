@@ -777,6 +777,7 @@ export function BusinessTab(p: TabProps) {
           </FR>
         ))}
       </Section>
+      <BillingTab {...p} />
     </>
   );
 }
