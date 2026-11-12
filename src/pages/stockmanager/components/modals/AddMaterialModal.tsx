@@ -17,7 +17,7 @@ type AddMaterialModalProps = {
   rawMaterialForm: RawMaterialForm;
   setRawMaterialForm: Dispatch<SetStateAction<RawMaterialForm>>;
   activeInventoryCategoryOptions: string[];
-  activeInventoryUnitOptions: string[];
+  activeInventoryUnitOptions: { value: string; label: string }[];
   materialNameMaxLength: number;
   materialDescriptionMaxLength: number;
   defaultLowStockThreshold: number;
@@ -122,8 +122,8 @@ export function AddMaterialModal({
               onChange={(v) => setRawMaterialForm((p) => ({ ...p, unit: v }))}
             >
               {activeInventoryUnitOptions.map((u) => (
-                <option key={u} value={u}>
-                  {u}
+                <option key={u.value} value={u.value}>
+                  {u.label}
                 </option>
               ))}
             </StyledSelect>

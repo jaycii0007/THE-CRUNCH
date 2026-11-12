@@ -826,12 +826,14 @@ export default function StockManager() {
     return names;
   }, [inventoryCategories, rawMaterialForm.category]);
   const activeInventoryUnitOptions = useMemo(() => {
-    const names = inventoryUnits
-      .filter((unit) => unit.is_active === true || unit.is_active === 1)
-      .map((unit) => unit.name.trim())
-      .filter(Boolean);
-    return names.length > 0 ? names : [...RAW_MATERIAL_UNITS];
-  }, [inventoryUnits]);
+    const options = inventoryUnits
+      .filter((unit) => unit.is_active === true || unit.is_active === 1 || Number(unit.unit_id) === Number(editingMaterial?.unit_id))
+      .map((unit) => ({ value: editingMaterial ? String(unit.unit_id) : unit.name.trim(), label: unit.name.trim() }));
+    if (editingMaterial && !options.some((unit) => unit.value === String(editingMaterial.unit_id))) {
+      options.unshift({ value: String(editingMaterial.unit_id), label: editingMaterial.unit });
+    }
+    return options.length > 0 ? options : RAW_MATERIAL_UNITS.map((unit) => ({ value: unit, label: unit }));
+  }, [inventoryUnits, editingMaterial]);
 
   async function addRawMaterial() {
     const name = rawMaterialForm.name.trim();
@@ -922,7 +924,7 @@ export default function StockManager() {
     setRawMaterialForm({
       name: product.product_name,
       category: product.category,
-      unit: product.unit,
+      unit: String(product.unit_id),
       description: product.description ?? "",
       useDefaultThresholds:
         product.useDefaultThresholds === true ||
@@ -988,7 +990,9 @@ export default function StockManager() {
       await api.updateProduct(editingMaterial.product_id, {
         supplier_ids: materialSupplierIds,
         name,
-        unit: rawMaterialForm.unit.trim(),
+        ...(rawMaterialForm.unit === String(editingMaterial.unit_id) ? {} : {
+          unit: inventoryUnits.find((unit) => String(unit.unit_id) === rawMaterialForm.unit)?.name,
+        }),
         category: rawMaterialForm.category.trim(),
         description: description || "",
         use_default_thresholds: rawMaterialForm.useDefaultThresholds,
@@ -1173,6 +1177,7 @@ export default function StockManager() {
                   lowStockValue={dashboard.lowStockItems.length.toString()}
                   criticalStockValue={dashboard.alertCriticalStock.length.toString()}
                   pendingPOValue={po.filteredPOs.length.toString()}
+                  onPurchaseOrdersSelect={() => setTab("purchases")}
                   wholeChickenProducts={dashboard.wholeChickenProducts}
                   choppedChickenProducts={dashboard.choppedChickenProducts}
                   dashboardSubTab={dashboard.dashboardSubTab}

@@ -71,7 +71,7 @@ type OrderStatusFilter =
   | "Pending"
   | "Cancelled"
   | "Refunded";
-type PaymentMethodFilter = "All" | "Cash" | "Online Payment" | "Cash on Pickup";
+type PaymentMethodFilter = "All" | "Cash" | "Online Payment" | "Cash on Pickup" | "Unknown";
 type DeliveryPlatformFilter = "All Platforms" | "GrabFood" | "Foodpanda";
 type NormalizedPaymentMethod =
   | Exclude<PaymentMethodFilter, "All">
@@ -450,6 +450,9 @@ function normalizePaymentMethod(value?: string | null): NormalizedPaymentMethod 
     return "Cash on Pickup";
   }
   if (
+    normalized === "online payment" ||
+    normalized === "online_payment" ||
+    normalized === "paymongo" ||
     normalized.includes("gcash") ||
     normalized.includes("e-payment") ||
     normalized.includes("epayment")
@@ -459,7 +462,8 @@ function normalizePaymentMethod(value?: string | null): NormalizedPaymentMethod 
   if (normalized === "grabfood" || normalized === "grab food") return "GrabFood";
   if (normalized === "foodpanda" || normalized === "food panda") return "Foodpanda";
   if (normalized === "other" || normalized === "other platform") return "Other";
-  return "Cash";
+  if (normalized === "cash") return "Cash";
+  return "Unknown";
 }
 
 function formatOrderType(value?: string | null): string {
@@ -596,8 +600,7 @@ function processRawRows(rows: RawOrderRow[]): {
         orderType: r.orderType ?? r.order_type ?? "Order",
         status: r.status ?? "",
         paymentMethod: normalizePaymentMethod(
-          String(r.paymentMethod ?? r.payment_method ?? "cash").trim() ||
-            "cash",
+          r.paymentMethod ?? r.payment_method,
         ),
         paymentStatus: formatPaymentStatus(
           String(r.paymentStatus ?? r.payment_status ?? "").trim() || "Pending",
@@ -970,7 +973,7 @@ function triggerPrint(
           <p class="summary-card-sub">Paid transactions</p>
         </div>
         <div class="summary-card">
-          <p class="summary-card-label">GCash Sales</p>
+          <p class="summary-card-label">Online Payment Sales</p>
           <p class="summary-card-value">${formatPrintCurrency(
             gcashSales.reduce((sum, log) => sum + log.total, 0),
             restaurantSettings,
@@ -3324,6 +3327,7 @@ const ORDER_PAYMENT_FILTERS: PaymentMethodFilter[] = [
   "Cash",
   "Online Payment",
   "Cash on Pickup",
+  "Unknown",
 ];
 
 const DELIVERY_PLATFORM_FILTERS: DeliveryPlatformFilter[] = [
@@ -4278,7 +4282,7 @@ export default function SalesReports() {
     paymentSales.set(method, (paymentSales.get(method) ?? 0) + log.total);
   }
   const trendData = [...dailySales].sort(([a], [b]) => a.localeCompare(b)).map(([date, revenue]) => ({ date, revenue }));
-  const paymentData = [...paymentSales].map(([method, revenue]) => ({ method: method === "Online Payment" ? "GCash / E-Payment" : method, revenue }));
+  const paymentData = [...paymentSales].map(([method, revenue]) => ({ method, revenue }));
   const summaryFilterDescription = [
     hasLogRange
       ? `Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`
