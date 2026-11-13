@@ -1,0 +1,4611 @@
+﻿import { useState, useRef, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+  X,
+  RotateCcw,
+  ChevronDown,
+  Printer,
+  TrendingUp,
+  Search,
+  Image as ImageIcon,
+} from "lucide-react";
+import { SkeletonTable } from "@/components/ui/skeleton";
+import { Sidebar } from "@/components/Sidebar";
+import {
+  api,
+  fetchAuthenticatedAsset,
+  isConfiguredBackendUrl,
+  resolveBackendUrl,
+} from "@/lib/api";
+import {
+  fetchGeneralSettings,
+  formatCurrencyAmount,
+  formatInSettingsTimezone,
+  GENERAL_SETTINGS_DEFAULTS,
+  type GeneralRestaurantSettings,
+} from "@/lib/restaurantSettings";
+import { useViewport } from "@/hooks/use-tablet";
+import { ReceiptViewerModal } from "@/components/receipt-viewer-modal";
+import type { ReceiptDto } from "@/lib/receipt";
+import { useEventInvalidation } from "@/hooks/use-event-invalidation";
+import { useAuth } from "@/context/authcontext";
+import {
+  canCancelPersistedOrders,
+  canRefundPersistedOrders,
+} from "@/lib/permissions";
+import { isFinalizedSale } from "@/lib/financialStatus";
+import { getSettlementAction as getRefundSettlementAction } from "@/lib/refundEligibility";
+
+// --- Types ---
+
+type Status = "Completed" | "Pending" | "Cancelled" | "Refunded";
+type LogType = "Sale" | "Refund" | "Void" | "Adjustment";
+type Period = "Today" | "Last 7 Days" | "Last 30 Days" | "All Time";
+type TabKey = "logs" | "orders";
+type SettlementAction = "refund" | "void";
+type QuickKey =
+  | "today"
+  | "yesterday"
+  | "week"
+  | "month"
+  | "last7"
+  | "last30"
+  | "all";
+type OrderStatusFilter =
+  | "All"
+  | "Completed"
+  | "Pending"
+  | "Cancelled"
+  | "Refunded";
+type PaymentMethodFilter = "All" | "Cash" | "Online Payment" | "Cash on Pickup";
+type DeliveryPlatformFilter = "All Platforms" | "GrabFood" | "Foodpanda";
+type NormalizedPaymentMethod =
+  | Exclude<PaymentMethodFilter, "All">
+  | Exclude<DeliveryPlatformFilter, "All Platforms">
+  | "Other";
+type OrderTypeFilter = "All" | "Dine In" | "Take Out" | "Delivery";
+
+interface SaleLog {
+  id: string;
+  transactionId: string;
+  orderId: number;
+  date: string;
+  time: string;
+  type: LogType;
+  product: string;
+  category: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  status: Status;
+  paymentMethod: string;
+  paymentStatus: string;
+  paymentReference?: string;
+  createdAt?: string;
+  paymentDate?: string | null;
+  riderName?: string;
+  handoverTimestamp?: string | null;
+  handoverStaffName?: string;
+  proofImageUrl?: string;
+  operator: string;
+  cashierName: string;
+  note?: string;
+  _dateObj: Date;
+}
+
+interface Order {
+  id: number;
+  orderNumber: string;
+  transactionId: string;
+  items: { name: string; price: number; quantity: number }[];
+  total: number;
+  date: string;
+  createdAt?: string;
+  paymentDate?: string | null;
+  time: string;
+  orderType: string;
+  status: Status;
+  rawStatus: string;
+  paymentCategory: string;
+  paymentStatus: string;
+  prepStartedAt?: string | null;
+  startedAt?: string | null;
+  readyAt?: string | null;
+  cashierName?: string;
+  riderName?: string;
+  handoverTimestamp?: string | null;
+  handoverStaffName?: string | null;
+  paymentReference?: string | null;
+  proofImageUrl?: string | null;
+}
+
+interface RawOrderRow {
+  id: number;
+  orderNumber?: string;
+  order_number?: string;
+  transactionId?: string;
+  transaction_id?: string;
+  paymentReference?: string;
+  payment_reference?: string;
+  paymentId?: number;
+  payment_id?: number;
+  paymentDate?: string;
+  payment_date?: string;
+  total?: number;
+  date?: string;
+  orderType?: string;
+  order_type?: string;
+  status?: string;
+  paymentMethod?: string;
+  payment_method?: string;
+  paymentStatus?: string;
+  payment_status?: string;
+  prepStartedAt?: string;
+  startedAt?: string;
+  readyAt?: string;
+  proofImageUrl?: string;
+  proof_image_url?: string;
+  productId?: number;
+  productName?: string;
+  price?: number;
+  subtotal?: number;
+  quantity?: number;
+  cashierName?: string;
+  cashier_name?: string;
+  operatorName?: string;
+  operator_name?: string;
+  riderName?: string;
+  rider_name?: string;
+  handoverTimestamp?: string;
+  handover_timestamp?: string;
+  handoverStaffName?: string;
+  handover_staff_name?: string;
+}
+
+// --- Constants ---
+
+const ORDER_PAGE_SIZE = 10;
+const LOG_PAGE_SIZE = 20;
+const ITEM_H = 36;
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+const YEAR_OFFSET = 2;
+
+const QUICK_RANGES = [
+  { label: "Today", key: "today" },
+  { label: "Yesterday", key: "yesterday" },
+  { label: "This week", key: "week" },
+  { label: "This month", key: "month" },
+  { label: "Last 7 days", key: "last7" },
+  { label: "Last 30 days", key: "last30" },
+  { label: "All time", key: "all" },
+] as const;
+
+// Palette: one strong color (deep green) + neutrals. Red is kept only for
+// destructive states (cancelled, refund confirmation).
+const DEEP = "#1A3A2A";
+const DEEP_SOFT = "#E7EFE9";
+const DEEP_LINE = "#C3D6CB";
+const BAD = "#C23B2E";
+const BAD_SOFT = "#FBEAE8";
+
+const STATUS_COLOR: Record<Status, string> = {
+  Completed: DEEP,
+  Pending: "#64748b",
+  Cancelled: BAD,
+  Refunded: "#334155",
+};
+
+const TYPE_COLOR: Record<LogType, string> = {
+  Sale: DEEP,
+  Refund: "#334155",
+  Void: "#9ca3af",
+  Adjustment: "#64748b",
+};
+
+// --- Helpers ---
+
+function daysInMonth(month: number, year: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function formatDisplayDate(d: Date): string {
+  return formatInSettingsTimezone(d, undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatDisplayTime(value: Date | string | number): string {
+  return formatInSettingsTimezone(value, undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function formatReportCurrency(
+  value: number,
+  settings?: GeneralRestaurantSettings,
+): string {
+  return formatCurrencyAmount(value, settings, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
+function parseDateSafe(value?: string | null): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function getQuickRange(key: QuickKey): { from: Date; to: Date } | null {
+  if (key === "all") return null;
+  const now = new Date();
+  const f = new Date(now);
+  const t = new Date(now);
+
+  if (key === "today") {
+    f.setHours(0, 0, 0, 0);
+    t.setHours(23, 59, 59, 999);
+  } else if (key === "yesterday") {
+    f.setDate(now.getDate() - 1);
+    f.setHours(0, 0, 0, 0);
+    t.setDate(now.getDate() - 1);
+    t.setHours(23, 59, 59, 999);
+  } else if (key === "week") {
+    f.setDate(now.getDate() - now.getDay());
+    f.setHours(0, 0, 0, 0);
+    t.setHours(23, 59, 59, 999);
+  } else if (key === "month") {
+    f.setDate(1);
+    f.setHours(0, 0, 0, 0);
+    t.setHours(23, 59, 59, 999);
+  } else if (key === "last7") {
+    f.setDate(now.getDate() - 6);
+    f.setHours(0, 0, 0, 0);
+    t.setHours(23, 59, 59, 999);
+  } else if (key === "last30") {
+    f.setDate(now.getDate() - 29);
+    f.setHours(0, 0, 0, 0);
+    t.setHours(23, 59, 59, 999);
+  }
+
+  return { from: f, to: t };
+}
+
+function isDateInRange(
+  date: Date,
+  from: Date | null,
+  to: Date | null,
+): boolean {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+
+  if (from) {
+    const f = new Date(from);
+    f.setHours(0, 0, 0, 0);
+    if (day < f) return false;
+  }
+  if (to) {
+    const t = new Date(to);
+    t.setHours(0, 0, 0, 0);
+    if (day > t) return false;
+  }
+  return true;
+}
+
+function filterOrdersByRange(
+  orders: Order[],
+  from: Date | null,
+  to: Date | null,
+): Order[] {
+  if (!from && !to) return orders;
+  return orders.filter((o) => {
+    const d = parseDateSafe(o.date);
+    return d ? isDateInRange(d, from, to) : false;
+  });
+}
+
+function filterLogsByRange(
+  logs: SaleLog[],
+  from: Date | null,
+  to: Date | null,
+): SaleLog[] {
+  if (!from && !to) return logs;
+  return logs.filter((log) => isDateInRange(log._dateObj, from, to));
+}
+
+function groupByDate(logs: SaleLog[]): Record<string, SaleLog[]> {
+  return logs.reduce(
+    (acc, l) => {
+      if (!acc[l.date]) acc[l.date] = [];
+      acc[l.date].push(l);
+      return acc;
+    },
+    {} as Record<string, SaleLog[]>,
+  );
+}
+
+function getPeriodStart(period: Period, now = new Date()): Date | null {
+  if (period === "All Time") return null;
+  const start = new Date(now);
+
+  if (period === "Today") {
+    start.setHours(0, 0, 0, 0);
+  } else if (period === "Last 7 Days") {
+    start.setDate(now.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+  } else if (period === "Last 30 Days") {
+    start.setDate(now.getDate() - 29);
+    start.setHours(0, 0, 0, 0);
+  }
+  return start;
+}
+
+function isInReportPeriod(value: Date, period: Period, now = new Date()): boolean {
+  const start = getPeriodStart(period, now);
+  return !start || (value >= start && value <= now);
+}
+
+function getRevenueForPeriod(logs: SaleLog[], period: Period): number {
+  const now = new Date();
+
+  return logs
+    .filter((l) => {
+      if (!isFinalizedSale(l)) return false;
+      return isInReportPeriod(l._dateObj, period, now);
+    })
+    .reduce((sum, l) => sum + l.total, 0);
+}
+
+function normalizeStatus(value?: string): Status {
+  switch (
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+  ) {
+    case "completed":
+    case "picked up":
+      return "Completed";
+    case "cancelled":
+      return "Cancelled";
+    case "refunded":
+      return "Refunded";
+    default:
+      return "Pending";
+  }
+}
+
+function normalizeLogType(status: Status): LogType {
+  if (status === "Refunded") return "Refund";
+  if (status === "Cancelled") return "Void";
+  return "Sale";
+}
+
+function formatPaymentStatus(value?: string | null): string {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return "Pending";
+  if (normalized === "pending payment") return "Unpaid";
+  if (normalized === "paid") return "Paid";
+  return String(value);
+}
+
+function getOrderSettlementAction(order: Order): SettlementAction | null {
+  const action = getRefundSettlementAction({
+    ...order,
+    status: order.rawStatus,
+  });
+  return action === "cancel" ? "void" : action;
+}
+
+function normalizePaymentMethod(value?: string | null): NormalizedPaymentMethod {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    normalized === "cash on pickup" ||
+    normalized === "cash_on_pickup" ||
+    normalized === "pickup_cash"
+  ) {
+    return "Cash on Pickup";
+  }
+  if (
+    normalized.includes("gcash") ||
+    normalized.includes("e-payment") ||
+    normalized.includes("epayment")
+  ) {
+    return "Online Payment";
+  }
+  if (normalized === "grabfood" || normalized === "grab food") return "GrabFood";
+  if (normalized === "foodpanda" || normalized === "food panda") return "Foodpanda";
+  if (normalized === "other" || normalized === "other platform") return "Other";
+  return "Cash";
+}
+
+function formatOrderType(value?: string | null): string {
+  switch (
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+  ) {
+    case "dine-in":
+      return "Dine In";
+    case "take-out":
+      return "Take Out";
+    case "delivery":
+      return "Delivery";
+    default:
+      return value || "—";
+  }
+}
+
+const PROOF_NOTICE_EVENT = "the-crunch:proof-notice";
+
+function showProofNotice(message: string) {
+  window.dispatchEvent(
+    new CustomEvent(PROOF_NOTICE_EVENT, { detail: { message } }),
+  );
+}
+
+function resolveProofRequestUrl(proofImageUrl: string): string {
+  const resolvedUrl = resolveBackendUrl(proofImageUrl);
+  const url = new URL(resolvedUrl);
+  if (
+    isConfiguredBackendUrl(resolvedUrl) &&
+    url.pathname.startsWith("/uploads/proofs/")
+  ) {
+    const encodedFilename = url.pathname.slice("/uploads/proofs/".length);
+    const filename = decodeURIComponent(encodedFilename);
+    url.pathname = `/api/upload-proof/${encodeURIComponent(filename)}`;
+  }
+  return url.toString();
+}
+
+async function openProofImage(
+  e: { preventDefault: () => void; stopPropagation: () => void },
+  proofImageUrl?: string | null,
+) {
+  e.preventDefault();
+  e.stopPropagation();
+  const trimmed = String(proofImageUrl || "").trim();
+  if (!trimmed) {
+    showProofNotice("Proof image is no longer available.");
+    return;
+  }
+
+  let resolvedUrl: string;
+  try {
+    resolvedUrl = resolveProofRequestUrl(trimmed);
+  } catch {
+    showProofNotice("The stored proof reference is invalid.");
+    return;
+  }
+
+  if (!isConfiguredBackendUrl(resolvedUrl)) {
+    const opened = window.open(resolvedUrl, "_blank", "noopener,noreferrer");
+    if (!opened) showProofNotice("Allow pop-ups to view the payment proof.");
+    return;
+  }
+
+  const proofWindow = window.open("", "_blank", "width=720,height=820");
+  if (!proofWindow) {
+    showProofNotice("Allow pop-ups to view the payment proof.");
+    return;
+  }
+  proofWindow.opener = null;
+  proofWindow.document.title = "Loading payment proof";
+  proofWindow.document.body.innerHTML =
+    '<p style="font:14px system-ui;padding:24px;color:#475569">Loading payment proof…</p>';
+
+  try {
+    const proofBlob = await fetchAuthenticatedAsset(resolvedUrl);
+    const objectUrl = URL.createObjectURL(proofBlob);
+    proofWindow.location.replace(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
+  } catch (error) {
+    proofWindow.close();
+    showProofNotice(
+      error instanceof Error
+        ? error.message
+        : "Proof image is no longer available.",
+    );
+  }
+}
+
+function processRawRows(rows: RawOrderRow[]): {
+  logs: SaleLog[];
+  orders: Order[];
+} {
+  if (!rows?.length) return { logs: [], orders: [] };
+
+  type OrderAccum = {
+    rows: RawOrderRow[];
+    total: number;
+    date: string;
+    paymentDate: string | null;
+    orderType: string;
+    status: string;
+    paymentMethod: string;
+    paymentStatus: string;
+    cashierName: string;
+    riderName: string;
+    handoverTimestamp: string | null;
+    handoverStaffName: string | null;
+    paymentReference: string | null;
+    proofImageUrl: string | null;
+    orderNumber: string;
+    transactionId: string;
+    prepStartedAt: string | null;
+    startedAt: string | null;
+    readyAt: string | null;
+  };
+
+  const orderMap: Record<number, OrderAccum> = {};
+
+  for (const r of rows) {
+    if (!orderMap[r.id]) {
+      orderMap[r.id] = {
+        rows: [],
+        total: Number(r.total) || 0,
+        date: r.date ?? "",
+        paymentDate:
+          String(r.paymentDate ?? r.payment_date ?? "").trim() || null,
+        orderType: r.orderType ?? r.order_type ?? "Order",
+        status: r.status ?? "",
+        paymentMethod: normalizePaymentMethod(
+          String(r.paymentMethod ?? r.payment_method ?? "cash").trim() ||
+            "cash",
+        ),
+        paymentStatus: formatPaymentStatus(
+          String(r.paymentStatus ?? r.payment_status ?? "").trim() || "Pending",
+        ),
+        cashierName:
+          String(
+            r.cashierName ??
+              r.cashier_name ??
+              r.operatorName ??
+              r.operator_name ??
+              "",
+          ).trim() || "Unknown",
+        riderName: String(r.riderName ?? r.rider_name ?? "").trim(),
+        handoverTimestamp:
+          String(r.handoverTimestamp ?? r.handover_timestamp ?? "").trim() ||
+          null,
+        handoverStaffName:
+          String(r.handoverStaffName ?? r.handover_staff_name ?? "").trim() ||
+          null,
+        paymentReference:
+          String(r.paymentReference ?? r.payment_reference ?? "").trim() || null,
+        proofImageUrl:
+          String(r.proofImageUrl ?? r.proof_image_url ?? "").trim() || null,
+        orderNumber: String(r.orderNumber ?? r.order_number ?? "").trim(),
+        transactionId: String(r.transactionId ?? r.transaction_id ?? "").trim(),
+        prepStartedAt: r.prepStartedAt ?? null,
+        startedAt: r.startedAt ?? null,
+        readyAt: r.readyAt ?? null,
+      };
+    }
+
+    const riderName = String(r.riderName ?? r.rider_name ?? "").trim();
+    const handoverTimestamp = String(
+      r.handoverTimestamp ?? r.handover_timestamp ?? "",
+    ).trim();
+    const handoverStaffName = String(
+      r.handoverStaffName ?? r.handover_staff_name ?? "",
+    ).trim();
+    const proofImageUrl = String(
+      r.proofImageUrl ?? r.proof_image_url ?? "",
+    ).trim();
+
+    if (riderName) orderMap[r.id].riderName = riderName;
+    if (handoverTimestamp) orderMap[r.id].handoverTimestamp = handoverTimestamp;
+    if (handoverStaffName) orderMap[r.id].handoverStaffName = handoverStaffName;
+    if (proofImageUrl) orderMap[r.id].proofImageUrl = proofImageUrl;
+
+    orderMap[r.id].rows.push(r);
+  }
+
+  const allLogs: SaleLog[] = [];
+  const ordersMap: Record<number, Order> = {};
+
+  for (const [idStr, order] of Object.entries(orderMap)) {
+    const orderId = Number(idStr);
+    const createdDate = order.date ? new Date(order.date) : new Date();
+    const financialTimestamp =
+      order.handoverTimestamp ||
+      order.readyAt ||
+      order.paymentDate ||
+      order.date;
+    const orderDate = financialTimestamp
+      ? new Date(financialTimestamp)
+      : createdDate;
+    const status = normalizeStatus(order.status);
+    const productNames = order.rows
+      .map((r) => r.productName)
+      .filter(Boolean)
+      .join(", ");
+    const totalQty = order.rows.reduce(
+      (s, r) => s + (Number(r.quantity) || 0),
+      0,
+    );
+    const resolvedOrderId = order.orderNumber || `#${orderId}`;
+    const resolvedTxnId = order.transactionId || "N/A";
+
+    allLogs.push({
+      id: `${orderId}-${resolvedTxnId}`,
+      transactionId: resolvedTxnId,
+      orderId,
+      date: formatDisplayDate(orderDate),
+      time: formatDisplayTime(orderDate),
+      type: normalizeLogType(status),
+      product: productNames || `Order #${orderId}`,
+      category: order.orderType,
+      quantity: totalQty,
+      unitPrice: order.total,
+      total: order.total,
+      status,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: formatPaymentStatus(order.paymentStatus),
+      paymentReference: order.paymentReference || undefined,
+      createdAt: order.date || undefined,
+      paymentDate: order.paymentDate,
+      riderName: order.riderName || undefined,
+      handoverTimestamp: order.handoverTimestamp,
+      handoverStaffName: order.handoverStaffName || undefined,
+      proofImageUrl: order.proofImageUrl || undefined,
+      operator: order.cashierName,
+      cashierName: order.cashierName,
+      _dateObj: orderDate,
+    });
+
+    ordersMap[orderId] = {
+      id: orderId,
+      orderNumber: resolvedOrderId,
+      transactionId: resolvedTxnId,
+      items: order.rows.map((r) => ({
+        name: r.productName ?? "",
+        price: Number(r.price) || 0,
+        quantity: Number(r.quantity) || 1,
+      })),
+      total: order.total,
+      date: financialTimestamp || order.date || "",
+      createdAt: order.date || undefined,
+      paymentDate: order.paymentDate,
+      time: formatDisplayTime(orderDate),
+      orderType: order.orderType,
+      status,
+      rawStatus: order.status,
+      paymentCategory: order.paymentMethod,
+      paymentStatus: formatPaymentStatus(order.paymentStatus),
+      prepStartedAt: order.prepStartedAt,
+      startedAt: order.startedAt,
+      readyAt: order.readyAt,
+      cashierName: order.cashierName,
+      riderName: order.riderName || undefined,
+      handoverTimestamp: order.handoverTimestamp,
+      handoverStaffName: order.handoverStaffName,
+      paymentReference: order.paymentReference,
+      proofImageUrl: order.proofImageUrl,
+    };
+  }
+
+  return {
+    logs: allLogs.sort((a, b) => b._dateObj.getTime() - a._dateObj.getTime()),
+    orders: Object.values(ordersMap),
+  };
+}
+
+// --- Print Helper ---
+
+const escapePrintHtml = (value: unknown) =>
+  String(value ?? "").replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[character]!,
+  );
+
+const formatPrintCurrency = (
+  value: number,
+  settings: GeneralRestaurantSettings,
+) =>
+  formatCurrencyAmount(value, settings, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+function triggerPrint(
+  revenue: number,
+  period: Period,
+  logs: SaleLog[],
+  orders: Order[],
+  restaurantSettings: GeneralRestaurantSettings,
+  generatedBy: string,
+) {
+  const now = new Date();
+  const periodLogs = logs.filter((log) => isInReportPeriod(log._dateObj, period, now));
+  const paidCompleted = periodLogs.filter(isFinalizedSale);
+  const refundedCount = periodLogs.filter((log) => log.status === "Refunded").length;
+  const cancelledCount = periodLogs.filter((log) => log.status === "Cancelled").length;
+  const gcashSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Online Payment",
+  );
+  const cashSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash",
+  );
+  const cashOnPickupSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash on Pickup",
+  );
+  const grabFoodSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "GrabFood",
+  );
+  const foodpandaSales = paidCompleted.filter(
+    (l) => normalizePaymentMethod(l.paymentMethod) === "Foodpanda",
+  );
+  const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timeLabel = formatInSettingsTimezone(now, restaurantSettings, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  const completedOrders = orders
+    .filter((order) => {
+      const date = parseDateSafe(order.date);
+      return isFinalizedSale(order) && !!date && isInReportPeriod(date, period, now);
+    })
+    .sort(
+      (a, b) =>
+        (parseDateSafe(b.date)?.getTime() ?? 0) -
+        (parseDateSafe(a.date)?.getTime() ?? 0),
+    );
+
+  const rows = completedOrders
+    .map((o, i) => {
+      const fmtDateTime = parseDateSafe(o.date)
+        ? formatInSettingsTimezone(o.date, restaurantSettings, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+          })
+        : "—";
+      const fmtHandover = parseDateSafe(o.handoverTimestamp)
+        ? formatInSettingsTimezone(
+            o.handoverTimestamp ?? "",
+            restaurantSettings,
+            {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            },
+          )
+        : "—";
+      return `
+        <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
+          <td class="txn">${escapePrintHtml(o.transactionId)}</td>
+          <td class="date-time">${escapePrintHtml(fmtDateTime)}</td>
+          <td class="items">${o.items
+            .map(
+              (item) =>
+                `<div><span>${escapePrintHtml(item.name)}</span> <strong>×${escapePrintHtml(item.quantity)}</strong></div>`,
+            )
+            .join("")}</td>
+          <td class="payment">
+            <div class="payment-method">${escapePrintHtml(normalizePaymentMethod(o.paymentCategory))}</div>
+            ${o.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(o.paymentReference)}</div>` : ""}
+            ${
+              o.orderType === "delivery"
+                ? `<div class="delivery-details">
+                    <div><strong>Rider:</strong> ${escapePrintHtml(o.riderName ?? "—")}</div>
+                    <div><strong>Handover:</strong> ${escapePrintHtml(fmtHandover)}</div>
+                    <div><strong>Confirmed by:</strong> ${escapePrintHtml(o.handoverStaffName ?? "—")}</div>
+                  </div>`
+                : ""
+            }
+          </td>
+          <td>${escapePrintHtml(o.cashierName ?? "—")}</td>
+          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8"/>
+      <title>Sales Report - ${period}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Poppins', sans-serif; background: #fff; color: #0f172a; padding: 40px 48px; font-size: 12px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #f1f5f9; }
+        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: ${DEEP}; text-transform: uppercase; margin-bottom: 6px; }
+        .header-title { font-size: 24px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+        .header-period { font-size: 12px; color: #94a3b8; }
+        .header-meta { text-align: right; }
+        .header-meta p { font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
+        .header-meta strong { font-size: 13px; font-weight: 600; color: #334155; }
+        .revenue-hero { background: ${DEEP}; border-radius: 14px; padding: 20px 24px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .revenue-label { font-size: 10px; color: ${DEEP_LINE}; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+        .revenue-amount { font-size: 32px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+        .revenue-stats { display: flex; gap: 28px; }
+        .stat-item { text-align: center; }
+        .stat-number { font-size: 20px; font-weight: 700; margin-bottom: 2px; color: #fff; }
+        .stat-label { font-size: 10px; color: ${DEEP_LINE}; }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+        .summary-card { border-radius: 10px; padding: 14px 16px; background: #fff; border: 1px solid #e2e8f0; }
+        .summary-card-label { font-size: 9px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+        .summary-card-value { font-size: 20px; font-weight: 700; margin-bottom: 2px; color: #0f172a; }
+        .summary-card-sub { font-size: 10px; color: #94a3b8; }
+        .section-title { font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+        colgroup col:nth-child(1) { width: 13%; }
+        colgroup col:nth-child(2) { width: 16%; }
+        colgroup col:nth-child(3) { width: 28%; }
+        colgroup col:nth-child(4) { width: 20%; }
+        colgroup col:nth-child(5) { width: 11%; }
+        colgroup col:nth-child(6) { width: 12%; }
+        thead tr { background: #f8fafc; }
+        thead { display: table-header-group; }
+        tfoot { display: table-footer-group; }
+        thead th { padding: 8px 7px; text-align: left; font-size: 8px; font-weight: 700; color: #64748b; letter-spacing: .8px; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; }
+        thead th:last-child { text-align: right; }
+        tbody td { padding: 7px; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; white-space: normal; vertical-align: top; line-height: 1.35; }
+        tbody td:last-child { text-align: right; font-weight: 700; }
+        .txn, .amount { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
+        .txn { font-size: 9px; font-weight: 600; }
+        .date-time { font-variant-numeric: tabular-nums; }
+        .items > div + div { margin-top: 3px; }
+        .payment-method { color: ${DEEP}; font-weight: 600; }
+        .secondary { margin-top: 2px; color: #64748b; font-size: 8.5px; overflow-wrap: anywhere; }
+        .delivery-details { margin-top: 5px; padding-top: 4px; border-top: 1px dashed #cbd5e1; color: #64748b; font-size: 8px; line-height: 1.45; }
+        .delivery-details strong { color: #475569; }
+        .amount { min-width: 90px; font-variant-numeric: tabular-nums; font-size: 10px; }
+        tfoot td { padding: 10px 7px; border-top: 2px solid #cbd5e1; font-weight: 700; font-size: 12px; }
+        tr { break-inside: avoid; page-break-inside: avoid; }
+        .footer { margin-top: 24px; text-align: center; font-size: 10px; color: #cbd5e1; }
+        @page { margin: 10mm; size: A4 landscape; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div>
+          <p class="header-brand">${restaurantSettings.restaurantName}</p>
+          <p class="header-title">Sales Report</p>
+          ${
+            restaurantSettings.tagline
+              ? `<p class="header-period">${restaurantSettings.tagline}</p>`
+              : ""
+          }
+          <p class="header-period">Period: ${period}</p>
+          ${[
+            restaurantSettings.address,
+            restaurantSettings.phone,
+            restaurantSettings.email,
+          ]
+            .filter(Boolean)
+            .map((line) => `<p class="header-period">${line}</p>`)
+            .join("")}
+        </div>
+        <div class="header-meta">
+          <p>Generated</p>
+          <strong>${dateLabel}</strong>
+          <p style="margin-top:2px">${timeLabel}</p>
+          <p style="margin-top:8px">Prepared by</p>
+          <strong>${generatedBy || "Staff"}</strong>
+        </div>
+      </div>
+      <div class="revenue-hero">
+        <div>
+          <p class="revenue-label">Total Revenue</p>
+          <p class="revenue-amount">${formatPrintCurrency(revenue, restaurantSettings)}</p>
+        </div>
+        <div class="revenue-stats">
+          <div class="stat-item"><p class="stat-number">${paidCompleted.length}</p><p class="stat-label">Paid Orders</p></div>
+          <div class="stat-item"><p class="stat-number">${refundedCount}</p><p class="stat-label">Refunded</p></div>
+          <div class="stat-item"><p class="stat-number">${cancelledCount}</p><p class="stat-label">Cancelled</p></div>
+        </div>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <p class="summary-card-label">Total Sales</p>
+          <p class="summary-card-value" style="color:${DEEP}">${formatPrintCurrency(
+            paidCompleted.reduce((sum, log) => sum + log.total, 0),
+            restaurantSettings,
+          )}</p>
+          <p class="summary-card-sub">Completed</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">Completed Orders</p>
+          <p class="summary-card-value">${paidCompleted.length}</p>
+          <p class="summary-card-sub">Paid transactions</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">GCash Sales</p>
+          <p class="summary-card-value">${formatPrintCurrency(
+            gcashSales.reduce((sum, log) => sum + log.total, 0),
+            restaurantSettings,
+          )}</p>
+          <p class="summary-card-sub">${gcashSales.length} orders</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">Cash Sales</p>
+          <p class="summary-card-value">${formatPrintCurrency(
+            cashSales.reduce((sum, log) => sum + log.total, 0),
+            restaurantSettings,
+          )}</p>
+          <p class="summary-card-sub">${cashSales.length} orders</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">Cash on Pickup</p>
+          <p class="summary-card-value">${formatPrintCurrency(cashOnPickupSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${cashOnPickupSales.length} orders</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">GrabFood</p>
+          <p class="summary-card-value">${formatPrintCurrency(grabFoodSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${grabFoodSales.length} orders</p>
+        </div>
+        <div class="summary-card">
+          <p class="summary-card-label">Foodpanda</p>
+          <p class="summary-card-value">${formatPrintCurrency(foodpandaSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
+          <p class="summary-card-sub">${foodpandaSales.length} orders</p>
+        </div>
+      </div>
+      <p class="section-title">Completed Orders (${completedOrders.length})</p>
+      <table>
+        <colgroup><col/><col/><col/><col/><col/><col/></colgroup>
+        <thead>
+          <tr>
+            <th>Transaction ID</th><th>Date &amp; Time</th><th>Items</th>
+            <th>Payment / Reference</th><th>Cashier</th>
+            <th style="text-align:right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="5" style="text-align:right;color:#0f172a">Total Revenue</td>
+            <td style="text-align:right;color:${DEEP};font-size:15px">${formatPrintCurrency(revenue, restaurantSettings)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p class="footer">Auto-generated by ${restaurantSettings.restaurantName} POS System · Confidential</p>
+    </body>
+    </html>
+  `;
+
+  const win = window.open("", "_blank");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => {
+    win.focus();
+    win.print();
+  };
+}
+
+// --- Drum Picker Column ---
+
+interface DrumColProps {
+  label: string;
+  items: (string | number)[];
+  selectedIndex: number;
+  onChange: (index: number) => void;
+}
+
+function DrumCol({ label, items, selectedIndex, onChange }: DrumColProps) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const state = useRef({
+    curY: -selectedIndex * ITEM_H,
+    targetIdx: selectedIndex,
+    vel: 0,
+    startY: 0,
+    startCurY: 0,
+    dragging: false,
+    lastY: 0,
+    lastT: 0,
+  });
+
+  function clamp(i: number) {
+    return Math.max(0, Math.min(items.length - 1, Math.round(i)));
+  }
+
+  function updateItems(idx: number) {
+    if (!innerRef.current) return;
+    Array.from(innerRef.current.children).forEach((el, i) => {
+      const div = el as HTMLDivElement;
+      div.style.fontSize = i === idx ? "17px" : "14px";
+      div.style.fontWeight = i === idx ? "600" : "400";
+      div.style.color = i === idx ? DEEP : "#94a3b8";
+    });
+  }
+
+  function applyY(y: number, animate: boolean) {
+    if (!innerRef.current) return;
+    const min = -(items.length - 1) * ITEM_H;
+    const clamped = Math.max(min, Math.min(0, y));
+    state.current.curY = clamped;
+    innerRef.current.style.transition = animate
+      ? "transform 0.42s cubic-bezier(0.15, 1, 0.3, 1)"
+      : "none";
+    innerRef.current.style.transform = `translateY(${clamped}px)`;
+    updateItems(clamp(-clamped / ITEM_H));
+  }
+
+  function snapTo(idx: number) {
+    const i = clamp(idx);
+    state.current.targetIdx = i;
+    applyY(-i * ITEM_H, true);
+    onChange(i);
+  }
+
+  useEffect(() => {
+    const i = clamp(selectedIndex);
+    state.current.targetIdx = i;
+    state.current.curY = -i * ITEM_H;
+    applyY(-i * ITEM_H, false);
+    updateItems(i);
+  }, [selectedIndex, items.length]);
+
+  function onMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    const s = state.current;
+    s.dragging = true;
+    s.startY = e.clientY;
+    s.startCurY = s.curY;
+    s.lastY = e.clientY;
+    s.lastT = Date.now();
+    s.vel = 0;
+    if (innerRef.current) innerRef.current.style.transition = "none";
+  }
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      const s = state.current;
+      if (!s.dragging || !innerRef.current) return;
+      const now = Date.now();
+      const dt = Math.max(1, now - s.lastT);
+      s.vel = ((e.clientY - s.lastY) / dt) * 16;
+      s.lastY = e.clientY;
+      s.lastT = now;
+      let newY = s.startCurY + (e.clientY - s.startY);
+      const min = -(items.length - 1) * ITEM_H;
+      if (newY < min) newY = min + (newY - min) * 0.3;
+      if (newY > 0) newY = newY * 0.3;
+      s.curY = newY;
+      innerRef.current.style.transform = `translateY(${newY}px)`;
+      updateItems(clamp(-newY / ITEM_H));
+    }
+    function onMouseUp() {
+      const s = state.current;
+      if (!s.dragging) return;
+      s.dragging = false;
+      snapTo(clamp(-(s.curY + s.vel * 8) / ITEM_H));
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [items.length]);
+
+  function onTouchStart(e: React.TouchEvent) {
+    const s = state.current;
+    s.dragging = true;
+    s.startY = e.touches[0].clientY;
+    s.startCurY = s.curY;
+    s.lastY = e.touches[0].clientY;
+    s.lastT = Date.now();
+    s.vel = 0;
+    if (innerRef.current) innerRef.current.style.transition = "none";
+  }
+
+  function onTouchMove(e: React.TouchEvent) {
+    e.preventDefault();
+    const s = state.current;
+    if (!s.dragging || !innerRef.current) return;
+    const now = Date.now();
+    const dt = Math.max(1, now - s.lastT);
+    s.vel = ((e.touches[0].clientY - s.lastY) / dt) * 16;
+    s.lastY = e.touches[0].clientY;
+    s.lastT = now;
+    let newY = s.startCurY + (e.touches[0].clientY - s.startY);
+    const min = -(items.length - 1) * ITEM_H;
+    if (newY < min) newY = min + (newY - min) * 0.3;
+    if (newY > 0) newY = newY * 0.3;
+    s.curY = newY;
+    innerRef.current.style.transform = `translateY(${newY}px)`;
+    updateItems(clamp(-newY / ITEM_H));
+  }
+
+  function onTouchEnd() {
+    const s = state.current;
+    if (!s.dragging) return;
+    s.dragging = false;
+    snapTo(clamp(-(s.curY + s.vel * 8) / ITEM_H));
+  }
+
+  function onWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    snapTo(state.current.targetIdx + (e.deltaY > 0 ? 1 : -1));
+  }
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+      }}
+    >
+      <p
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: 1,
+          textTransform: "uppercase",
+          color: "#94a3b8",
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </p>
+      <div
+        style={{
+          position: "relative",
+          height: 180,
+          width: "100%",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 64,
+            zIndex: 2,
+            pointerEvents: "none",
+            background: "linear-gradient(to bottom, #fff 20%, transparent)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 64,
+            zIndex: 2,
+            pointerEvents: "none",
+            background: "linear-gradient(to top, #fff 20%, transparent)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: 6,
+            right: 6,
+            height: ITEM_H,
+            marginTop: -ITEM_H / 2,
+            borderRadius: 10,
+            background: "rgba(26,58,42,0.08)",
+            border: "0.5px solid rgba(26,58,42,0.22)",
+            zIndex: 1,
+            pointerEvents: "none",
+          }}
+        />
+        <div
+          ref={innerRef}
+          onMouseDown={onMouseDown}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          onWheel={onWheel}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            paddingTop: 72,
+            paddingBottom: 72,
+            transform: `translateY(${-selectedIndex * ITEM_H}px)`,
+            cursor: "grab",
+            userSelect: "none",
+            willChange: "transform",
+          }}
+        >
+          {items.map((item, i) => (
+            <div
+              key={i}
+              style={{
+                height: ITEM_H,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "100%",
+                fontSize: i === selectedIndex ? 17 : 14,
+                fontWeight: i === selectedIndex ? 600 : 400,
+                color: i === selectedIndex ? DEEP : "#94a3b8",
+                transition: "color 0.15s, font-size 0.15s",
+              }}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Drum Date Picker ---
+
+interface DrumDatePickerProps {
+  open: boolean;
+  title: string;
+  initial: Date;
+  onApply: (date: Date) => void;
+  onClose: () => void;
+}
+
+function DrumDatePicker({
+  open,
+  title,
+  initial,
+  onApply,
+  onClose,
+}: DrumDatePickerProps) {
+  const now = new Date();
+  const years = Array.from(
+    { length: 10 },
+    (_, i) => now.getFullYear() - YEAR_OFFSET + i,
+  );
+
+  const [monthIdx, setMonthIdx] = useState(initial.getMonth());
+  const [dayIdx, setDayIdx] = useState(initial.getDate() - 1);
+  const [yearIdx, setYearIdx] = useState(YEAR_OFFSET);
+  const [days, setDays] = useState<number[]>([]);
+
+  useEffect(() => {
+    const year = years[yearIdx] ?? now.getFullYear();
+    const count = daysInMonth(monthIdx, year);
+    setDays(Array.from({ length: count }, (_, i) => i + 1));
+    setDayIdx((prev) => Math.min(prev, count - 1));
+  }, [monthIdx, yearIdx]);
+
+  useEffect(() => {
+    if (!open) return;
+    const yi = years.findIndex((y) => y === initial.getFullYear());
+    setMonthIdx(initial.getMonth());
+    setDayIdx(initial.getDate() - 1);
+    setYearIdx(yi >= 0 ? yi : YEAR_OFFSET);
+  }, [open]);
+
+  function handleApply() {
+    const year = years[yearIdx] ?? now.getFullYear();
+    const maxDay = daysInMonth(monthIdx, year);
+    onApply(new Date(year, monthIdx, Math.min(dayIdx + 1, maxDay)));
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            key="backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 200,
+              background: "rgba(0,0,0,0.35)",
+              backdropFilter: "blur(6px)",
+            }}
+          />
+          <motion.div
+            key="sheet"
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            transition={{ duration: 0.28, ease: "easeOut" }}
+            style={{
+              position: "fixed",
+              top: "30%",
+              left: "35%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 201,
+              width: 420,
+              background: "#fff",
+              borderRadius: 20,
+              border: "0.5px solid #e2e8f0",
+              paddingBottom: 32,
+              boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                paddingTop: 12,
+                marginBottom: 4,
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 4,
+                  borderRadius: 99,
+                  background: "#e2e8f0",
+                }}
+              />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 20px 14px",
+                borderBottom: "0.5px solid #f1f5f9",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "#0f172a",
+                  margin: 0,
+                }}
+              >
+                {title}
+              </p>
+              <button
+                onClick={onClose}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  border: "0.5px solid #e2e8f0",
+                  background: "#f8fafc",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
+                  color: "#94a3b8",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 0,
+                padding: "8px 16px 0",
+                justifyContent: "center",
+                maxWidth: 360,
+                margin: "0 auto",
+              }}
+            >
+              <DrumCol
+                label="Month"
+                items={MONTHS as unknown as string[]}
+                selectedIndex={monthIdx}
+                onChange={setMonthIdx}
+              />
+              <div
+                style={{
+                  width: 1,
+                  background: "#f1f5f9",
+                  margin: "40px 4px 0",
+                }}
+              />
+              <DrumCol
+                label="Day"
+                items={days}
+                selectedIndex={Math.min(dayIdx, days.length - 1)}
+                onChange={setDayIdx}
+              />
+              <div
+                style={{
+                  width: 1,
+                  background: "#f1f5f9",
+                  margin: "40px 4px 0",
+                }}
+              />
+              <DrumCol
+                label="Year"
+                items={years}
+                selectedIndex={yearIdx}
+                onChange={setYearIdx}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 10, padding: "20px 20px 0" }}>
+              <button
+                onClick={onClose}
+                style={{
+                  flex: 1,
+                  padding: "11px 0",
+                  borderRadius: 12,
+                  border: "0.5px solid #e2e8f0",
+                  background: "#f8fafc",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "#64748b",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApply}
+                style={{
+                  flex: 2,
+                  padding: "11px 0",
+                  borderRadius: 12,
+                  border: "none",
+                  background: DEEP,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                Apply
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// --- Revenue Dropdown ---
+
+interface RevenueDropdownProps {
+  period: Period;
+  setPeriod: (p: Period) => void;
+  logs: SaleLog[];
+  orders: Order[];
+  restaurantSettings: GeneralRestaurantSettings;
+  generatedBy: string;
+}
+
+function RevenueDropdown({
+  period,
+  setPeriod,
+  logs,
+  orders,
+  restaurantSettings,
+  generatedBy,
+}: RevenueDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [printToast, setPrintToast] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const periods: Period[] = [
+    "Today",
+    "Last 7 Days",
+    "Last 30 Days",
+    "All Time",
+  ];
+  const revenue = getRevenueForPeriod(logs, period);
+
+  const now = new Date();
+  const start = new Date(now);
+  if (period === "Today") {
+    start.setHours(0, 0, 0, 0);
+  } else if (period === "Last 7 Days") {
+    start.setDate(now.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+  } else if (period === "Last 30 Days") {
+    start.setDate(now.getDate() - 29);
+    start.setHours(0, 0, 0, 0);
+  }
+
+  const inPeriod =
+    period === "All Time"
+      ? logs
+      : logs.filter((l) => l._dateObj >= start && l._dateObj <= now);
+  const paidCompleted = inPeriod.filter(isFinalizedSale);
+  const completedCount = paidCompleted.length;
+  const pendingCount = inPeriod.filter((l) => l.status === "Pending").length;
+  const cancelledCount = inPeriod.filter(
+    (l) => l.status === "Cancelled",
+  ).length;
+  const refundedCount = inPeriod.filter((l) => l.status === "Refunded").length;
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  function handlePrint() {
+    setOpen(false);
+    triggerPrint(revenue, period, logs, orders, restaurantSettings, generatedBy);
+    setPrintToast(true);
+    setTimeout(() => setPrintToast(false), 3000);
+  }
+
+  return (
+    <>
+      <AnimatePresence>
+        {printToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -16, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -16, scale: 0.95 }}
+            transition={{ duration: 0.22 }}
+            style={{
+              position: "fixed",
+              top: 20,
+              right: 24,
+              zIndex: 9999,
+              background: DEEP,
+              borderRadius: 12,
+              padding: "12px 18px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+            }}
+          >
+            <Printer size={14} color={DEEP_LINE} />
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#fff" }}>
+              Print dialog opened
+            </span>
+            <span style={{ fontSize: 11, color: DEEP_LINE }}>
+              · {period} report
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+     <div
+  ref={ref}
+  style={{
+    position: "relative",
+    minWidth: 0,
+    width: "100%",
+    // Only rise above other UI while the period menu is open.
+    // When closed, stay low so the notification popup is never covered.
+    zIndex: open ? 40 : 1,
+  }}
+>
+        <motion.div
+          whileHover={{ boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}
+          onClick={() => setOpen(!open)}
+          style={{
+            background: "#fff",
+            border: "1px solid #e2e8f0",
+            borderRadius: 20,
+            padding: "18px 20px",
+            minHeight: 122,
+            cursor: "pointer",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+            userSelect: "none",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 10,
+            }}
+          >
+            <span
+              style={{
+                color: "#94a3b8",
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+              }}
+            >
+              Total Revenue
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: "#64748b", fontSize: 12, fontWeight: 500 }}>
+                {period}
+              </span>
+              <motion.span
+                animate={{ rotate: open ? 180 : 0 }}
+                transition={{ duration: 0.2 }}
+                style={{
+                  color: "#94a3b8",
+                  fontSize: 10,
+                  display: "inline-block",
+                }}
+              >
+                ▼
+              </motion.span>
+            </div>
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={`${period}-${revenue}`}
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              transition={{ duration: 0.18 }}
+              style={{
+                color: DEEP,
+                fontSize: 28,
+                fontWeight: 700,
+                margin: "0 0 8px",
+                letterSpacing: -0.5,
+              }}
+            >
+              {formatReportCurrency(revenue)}
+            </motion.p>
+          </AnimatePresence>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {[
+              { label: "Paid", count: completedCount, color: DEEP },
+              { label: "Pending", count: pendingCount, color: "#64748b" },
+              { label: "Cancelled", count: cancelledCount, color: BAD },
+              { label: "Refunded", count: refundedCount, color: "#334155" },
+            ].map((s) => (
+              <span
+                key={s.label}
+                style={{
+                  fontSize: 10,
+                  color: s.color,
+                  fontWeight: 600,
+                  background: `${s.color}18`,
+                  padding: "2px 8px",
+                  borderRadius: 99,
+                }}
+              >
+                {s.label}: {s.count}
+              </span>
+            ))}
+          </div>
+        </motion.div>
+
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              initial={{ opacity: 0, y: -8, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.97 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              style={{
+                position: "absolute",
+                top: "calc(100% + 8px)",
+                right: 0,
+                background: "#fff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 14,
+                boxShadow: "0 8px 30px rgba(0,0,0,0.14)",
+                zIndex: 9999,
+                minWidth: "100%",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  padding: "10px 16px 6px",
+                  borderBottom: "1px solid #f1f5f9",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: 1.2,
+                    color: "#cbd5e1",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Select Period
+                </span>
+              </div>
+
+              {periods.map((p) => (
+                <motion.div
+                  key={p}
+                  whileHover={{ background: "#f8fafc" }}
+                  onClick={() => {
+                    setPeriod(p);
+                    setOpen(false);
+                  }}
+                  style={{
+                    padding: "11px 16px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    borderBottom: "1px solid #f8fafc",
+                  }}
+                >
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <div
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        background: period === p ? DEEP : "#f1f5f9",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <TrendingUp
+                        size={12}
+                        color={period === p ? "#fff" : "#94a3b8"}
+                      />
+                    </div>
+                    <div>
+                      <span
+                        style={{
+                          color: period === p ? "#0f172a" : "#64748b",
+                          fontSize: 13,
+                          fontWeight: period === p ? 600 : 400,
+                          display: "block",
+                        }}
+                      >
+                        {p}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#cbd5e1",
+                        }}
+                      >
+                        {formatReportCurrency(getRevenueForPeriod(logs, p))}{" "}
+                        revenue
+                      </span>
+                    </div>
+                  </div>
+                  {period === p && (
+                    <span style={{ color: DEEP, fontSize: 12 }}>✓</span>
+                  )}
+                </motion.div>
+              ))}
+
+              <div
+                style={{ height: 1, background: "#f1f5f9", margin: "4px 0" }}
+              />
+              <div style={{ padding: "8px 16px 4px" }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: 1.2,
+                    color: "#cbd5e1",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Actions
+                </span>
+              </div>
+
+              <motion.div
+                whileHover={{ background: "#f1f5f9" }}
+                onClick={handlePrint}
+                style={{
+                  margin: "4px 10px 10px",
+                  padding: "12px 14px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  borderRadius: 16,
+                  border: "1px solid #e2e8f0",
+                  background: "#f8fafc",
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: DEEP,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    boxShadow: "0 2px 8px rgba(26,58,42,0.25)",
+                  }}
+                >
+                  <Printer size={16} color="#fff" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "#0f172a",
+                    }}
+                  >
+                    Print Sales Report
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 11,
+                      color: "#64748b",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {period} · {formatReportCurrency(revenue)} ·{" "}
+                    {completedCount} completed
+                  </p>
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "3px 8px",
+                    borderRadius: 6,
+                    background: DEEP_SOFT,
+                    color: DEEP,
+                    border: `1px solid ${DEEP_LINE}`,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  PDF ready
+                </div>
+              </motion.div>
+
+              <div style={{ padding: "8px 16px 12px", background: "#f8fafc" }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 10,
+                    color: "#94a3b8",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Includes: revenue summary, completed orders, cashier
+                  breakdown, payment methods
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </>
+  );
+}
+
+// --- Refund Modal ---
+
+interface RefundModalProps {
+  open: boolean;
+  log: SaleLog | null;
+  order: Order | null;
+  action: SettlementAction;
+  onConfirm: () => void;
+  onClose: () => void;
+  loading: boolean;
+}
+
+function RefundModal({
+  open,
+  log,
+  order,
+  action,
+  onConfirm,
+  onClose,
+  loading,
+}: RefundModalProps) {
+  const isRefund = action === "refund";
+  const actionLabel = isRefund ? "Refund" : "Void";
+  const txnId = log?.transactionId ?? order?.transactionId ?? "";
+  const product =
+    log?.product ?? (order ? order.items.map((i) => i.name).join(", ") : "");
+  const total = log?.total ?? order?.total ?? 0;
+  const cashierName = log?.cashierName ?? order?.cashierName ?? "—";
+  const paymentMethod = log?.paymentMethod ?? order?.paymentCategory ?? "—";
+  const paymentStatus = formatPaymentStatus(
+    log?.paymentStatus ?? order?.paymentStatus ?? null,
+  );
+  const proofImageUrl = log?.proofImageUrl ?? order?.proofImageUrl ?? null;
+
+  return (
+    <AnimatePresence>
+      {open && (log || order) && (
+        <>
+          <motion.div
+            key="backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => !loading && onClose()}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 300,
+              background: "rgba(0,0,0,0.35)",
+              backdropFilter: "blur(4px)",
+            }}
+          />
+          <motion.div
+            key="modal"
+            initial={{ opacity: 0, scale: 0.93, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.93, y: 16 }}
+            transition={{ duration: 0.24, ease: "easeOut" }}
+            style={{
+              position: "fixed",
+              top: "25%",
+              left: "34%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 301,
+              width: 460,
+              background: "#fff",
+              borderRadius: 20,
+              boxShadow: "0 16px 48px rgba(0,0,0,0.12)",
+              overflow: "hidden",
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <div style={{ height: 4, background: "#e2e8f0" }} />
+            <div style={{ padding: "24px 24px 22px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  marginBottom: 18,
+                }}
+              >
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    background: BAD_SOFT,
+                    border: "1px solid #f3c9c4",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <RotateCcw size={18} color={BAD} />
+                </div>
+                <div>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: "#0f172a",
+                    }}
+                  >
+                    Confirm {actionLabel}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  marginBottom: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}
+              >
+                {[
+                  { label: "Transaction ID", value: txnId },
+                  { label: "Product", value: product },
+                  { label: "Amount", value: formatReportCurrency(total) },
+                  { label: "Cashier", value: cashierName },
+                  { label: "Payment Method", value: paymentMethod },
+                  { label: "Payment Status", value: paymentStatus },
+                ].map((f) => (
+                  <div
+                    key={f.label}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 16,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "#94a3b8",
+                        fontWeight: 600,
+                        letterSpacing: 0.5,
+                        textTransform: "uppercase",
+                        flexShrink: 0,
+                        paddingTop: 2,
+                      }}
+                    >
+                      {f.label}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        textAlign: "right",
+                        wordBreak: "break-word",
+                        maxWidth: "65%",
+                        lineHeight: 1.5,
+                        color:
+                          f.label === "Amount"
+                            ? BAD
+                            : f.label === "Transaction ID"
+                              ? "#111"
+                              : "#1e293b",
+                        fontFamily:
+                          f.label === "Transaction ID"
+                            ? "'Poppins', monospace"
+                            : undefined,
+                        letterSpacing:
+                          f.label === "Transaction ID" ? "0.03em" : undefined,
+                      }}
+                    >
+                      {f.value}
+                    </span>
+                  </div>
+                ))}
+                {proofImageUrl && (
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 16,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "#94a3b8",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Payment Proof
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => openProofImage(e, proofImageUrl)}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: DEEP,
+                        textDecoration: "underline",
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                      }}
+                    >
+                      View Proof
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <p
+                style={{
+                  margin: "0 0 20px",
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.65,
+                }}
+              >
+                Are you sure you want to {isRefund ? "refund" : "void"} the order
+                for <strong style={{ color: "#0f172a" }}>{product}</strong>{" "}
+                totaling <strong style={{ color: "#0f172a" }}>
+                  {formatReportCurrency(total)}
+                </strong>? The
+                order status will be updated to{" "}
+                <span style={{ color: "#334155", fontWeight: 600 }}>
+                  {isRefund ? "Refunded" : "Cancelled"}
+                </span>
+                .
+              </p>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={onClose}
+                  disabled={loading}
+                  style={{
+                    flex: 1,
+                    padding: "11px 0",
+                    borderRadius: 12,
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "#64748b",
+                    cursor: loading ? "not-allowed" : "pointer",
+                    opacity: loading ? 0.6 : 1,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={onConfirm}
+                  disabled={loading}
+                  style={{
+                    flex: 2,
+                    padding: "11px 0",
+                    borderRadius: 12,
+                    border: "none",
+                    background: loading ? "#d9857c" : BAD,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#fff",
+                    cursor: loading ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    opacity: loading ? 0.85 : 1,
+                  }}
+                >
+                  {loading ? (
+                    <>
+                      <motion.span
+                        animate={{ rotate: 360 }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 0.8,
+                          ease: "linear",
+                        }}
+                        style={{ display: "inline-block" }}
+                      >
+                        <RotateCcw size={13} />
+                      </motion.span>
+                      Processing…
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw size={13} /> Confirm {actionLabel}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// --- Summary Bar ---
+
+function SummaryBar({
+  logs,
+  filterDescription,
+  leadingCard,
+}: {
+  logs: SaleLog[];
+  filterDescription: string;
+  leadingCard?: React.ReactNode;
+}) {
+  const [showTotalSales, setShowTotalSales] = useState(false);
+  const paidCompleted = logs.filter(isFinalizedSale);
+  const refunded = logs.filter((log) => log.status === "Refunded");
+  const byMethod = (method: NormalizedPaymentMethod) =>
+    paidCompleted.filter(
+      (log) => normalizePaymentMethod(log.paymentMethod) === method,
+    );
+  const gcashSales = byMethod("Online Payment");
+  const cashSales = byMethod("Cash");
+  const cashOnPickupSales = byMethod("Cash on Pickup");
+  const grabFoodSales = byMethod("GrabFood");
+  const foodpandaSales = byMethod("Foodpanda");
+  const totalSales = paidCompleted.reduce((sum, log) => sum + log.total, 0);
+  const methodGroups = [
+    { label: "GCash Sales", logs: gcashSales },
+    { label: "Cash Sales", logs: cashSales },
+    { label: "Cash on Pickup", logs: cashOnPickupSales },
+    { label: "GrabFood", logs: grabFoodSales },
+    { label: "Foodpanda", logs: foodpandaSales },
+  ];
+  const categorizedIds = new Set(methodGroups.flatMap((group) => group.logs.map((log) => log.id)));
+  const legacySales = paidCompleted.filter((log) => !categorizedIds.has(log.id));
+  const stats = [
+    {
+      label: "Total Sales",
+      value: formatReportCurrency(totalSales),
+      sub: `${paidCompleted.length} completed paid orders · View summary`,
+      dark: true,
+      clickable: true,
+    },
+    {
+      label: "Completed Orders",
+      value: `${paidCompleted.length}`,
+      sub: "Paid transactions",
+      dark: false,
+      clickable: false,
+    },
+    ...methodGroups.map((group) => ({
+      label: group.label,
+      value: formatReportCurrency(
+        group.logs.reduce((sum, log) => sum + log.total, 0),
+      ),
+      sub: `${group.logs.length} order${group.logs.length === 1 ? "" : "s"}`,
+      dark: false,
+      clickable: false,
+    })),
+  ];
+
+  return (
+    <>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+          gap: 14,
+          marginBottom: 24,
+          alignItems: "stretch",
+        }}
+      >
+        {leadingCard}
+        {stats.map((stat) => {
+          const Component = stat.clickable ? motion.button : motion.div;
+          return (
+            <Component
+              key={stat.label}
+              {...(stat.clickable
+                ? {
+                    type: "button" as const,
+                    onClick: () => setShowTotalSales(true),
+                    "aria-label": "Open Total Sales summary",
+                  }
+                : {})}
+              whileHover={{ y: -2, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+              style={{
+                minHeight: 122,
+                background: stat.dark ? DEEP : "#fff",
+                border: `1px solid ${stat.dark ? DEEP : "#e2e8f0"}`,
+                borderRadius: 18,
+                padding: "18px 20px",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                textAlign: "left",
+                cursor: stat.clickable ? "pointer" : "default",
+                fontFamily: "inherit",
+              }}
+            >
+              <p style={{ color: stat.dark ? DEEP_LINE : "#94a3b8", fontSize: 10, fontWeight: 700, margin: "0 0 10px", letterSpacing: 1.2, textTransform: "uppercase" }}>
+                {stat.label}
+              </p>
+              <p style={{ color: stat.dark ? "#fff" : "#0f172a", fontSize: 24, fontWeight: 700, margin: "0 0 8px", lineHeight: 1.1 }}>
+                {stat.value}
+              </p>
+              <p style={{ color: stat.dark ? DEEP_LINE : "#64748b", fontSize: 11, margin: 0, lineHeight: 1.5 }}>
+                {stat.sub}
+              </p>
+            </Component>
+          );
+        })}
+      </div>
+
+      <AnimatePresence>
+        {showTotalSales && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowTotalSales(false)}
+              className="fixed inset-0 z-[120] bg-slate-950/45"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="total-sales-summary-title"
+              className="fixed left-1/2 top-1/2 z-[121] max-h-[85vh] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Sales breakdown</p>
+                  <h2 id="total-sales-summary-title" className="mt-1 text-xl font-bold text-slate-900">Total Sales Summary</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{filterDescription}</p>
+                </div>
+                <button type="button" onClick={() => setShowTotalSales(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100" aria-label="Close Total Sales summary">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-emerald-950 p-4 text-white">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-200">Completed paid sales</p>
+                  <p className="mt-2 text-2xl font-bold">{formatReportCurrency(totalSales)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Transactions</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{paidCompleted.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average sale</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{formatReportCurrency(paidCompleted.length ? totalSales / paidCompleted.length : 0)}</p>
+                </div>
+              </div>
+
+              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+                {[
+                  ...methodGroups,
+                  ...(legacySales.length ? [{ label: "Historical payment methods", logs: legacySales }] : []),
+                ].map((group) => (
+                  <div key={group.label} className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 last:border-0">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{group.label}</p>
+                      <p className="text-xs text-slate-400">{group.logs.length} order{group.logs.length === 1 ? "" : "s"}</p>
+                    </div>
+                    <p className="text-sm font-bold text-slate-900">{formatReportCurrency(group.logs.reduce((sum, log) => sum + log.total, 0))}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                <p><strong className="text-slate-800">Refunded orders:</strong> {refunded.length}</p>
+                <p className="mt-1"><strong className="text-slate-800">Refunded order value:</strong> {formatReportCurrency(refunded.reduce((sum, log) => sum + log.total, 0))} (excluded from Total Sales)</p>
+                <p className="mt-2 text-xs leading-5 text-slate-400">Gross sales and discount totals are not shown because the current report feed does not expose those values separately.</p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+// --- Log Row ---
+
+function LogRow({
+  log,
+  index,
+  onViewReceipt,
+}: {
+  log: SaleLog;
+  index: number;
+  onViewReceipt: (orderId: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const paymentTone = paymentBadgeStyle[
+    normalizePaymentMethod(log.paymentMethod)
+  ] ?? {
+    bg: "#f8fafc",
+    text: "#475569",
+    border: "#cbd5e1",
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.03, duration: 0.28, ease: "easeOut" }}
+    >
+      <motion.div
+        onClick={() => setOpen(!open)}
+        whileHover={{ backgroundColor: "#fafafa" }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          padding: "14px 20px",
+          cursor: "pointer",
+          borderBottom: "1px solid #f1f5f9",
+          backgroundColor: "#fff",
+          transition: "background 0.15s",
+        }}
+      >
+        <div
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: TYPE_COLOR[log.type],
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{ color: "#94a3b8", fontSize: 12, width: 72, flexShrink: 0 }}
+        >
+          {log.time}
+        </span>
+        <span
+          style={{ color: "#1e293b", fontSize: 13, fontWeight: 500, flex: 1 }}
+        >
+          {log.product}
+        </span>
+        <span style={{ width: 110, flexShrink: 0 }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "5px 10px",
+              borderRadius: 999,
+              background: paymentTone.bg,
+              color: paymentTone.text,
+              border: `1px solid ${paymentTone.border}`,
+              fontSize: 11,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {normalizePaymentMethod(log.paymentMethod)}
+          </span>
+        </span>
+        <span
+          style={{
+            color: TYPE_COLOR[log.type],
+            fontSize: 11,
+            fontWeight: 700,
+            width: 70,
+            textAlign: "center",
+            flexShrink: 0,
+          }}
+        >
+          {log.type}
+        </span>
+        <span
+          style={{
+            color: "#64748b",
+            fontSize: 12,
+            width: 52,
+            flexShrink: 0,
+            textAlign: "center",
+            fontWeight: 600,
+          }}
+        >
+          ×{log.quantity}
+        </span>
+        <span
+          style={{
+            color: "#0f172a",
+            fontSize: 14,
+            fontWeight: 600,
+            width: 100,
+            textAlign: "right",
+            flexShrink: 0,
+          }}
+        >
+          {log.total === 0 ? "—" : formatReportCurrency(Math.abs(log.total))}
+        </span>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: DEEP_SOFT,
+            color: STATUS_COLOR["Completed"],
+            fontSize: 11,
+            fontWeight: 700,
+            width: 96,
+            textAlign: "center",
+            flexShrink: 0,
+            borderRadius: 999,
+            border: `1px solid ${DEEP_LINE}`,
+            padding: "5px 10px",
+          }}
+        >
+          Completed
+        </span>
+        <motion.span
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ duration: 0.2 }}
+          style={{
+            color: "#cbd5e1",
+            fontSize: 10,
+            width: 16,
+            textAlign: "center",
+            flexShrink: 0,
+          }}
+        >
+          ▼
+        </motion.span>
+      </motion.div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: "easeInOut" }}
+            style={{
+              overflow: "hidden",
+              background: "#f8fafc",
+              borderBottom: "1px solid #f1f5f9",
+            }}
+          >
+            <div
+              style={{
+                padding: "14px 20px 14px 42px",
+                display: "flex",
+                gap: 32,
+                flexWrap: "wrap",
+                alignItems: "flex-end",
+              }}
+            >
+              {[
+                { label: "Transaction ID", value: log.transactionId },
+                {
+                  label: "Order Created",
+                  value: log.createdAt
+                    ? `${formatDisplayDate(new Date(log.createdAt))} ${formatDisplayTime(log.createdAt)}`
+                    : "—",
+                },
+                { label: "Sale Recorded", value: `${log.date} ${log.time}` },
+                { label: "Cashier", value: log.cashierName },
+                { label: "Payment Method", value: log.paymentMethod },
+                ...(String(log.category).toLowerCase() === "delivery"
+                  ? [
+                      { label: "Platform Reference", value: log.paymentReference || "—" },
+                      { label: "Rider", value: log.riderName || "—" },
+                      {
+                        label: "Handover",
+                        value: log.handoverTimestamp
+                          ? `${formatDisplayDate(new Date(log.handoverTimestamp))} ${formatDisplayTime(log.handoverTimestamp)}`
+                          : "—",
+                      },
+                      { label: "Confirmed By", value: log.handoverStaffName || "—" },
+                    ]
+                  : []),
+                {
+                  label: "Payment Status",
+                  value: formatPaymentStatus(log.paymentStatus),
+                },
+                {
+                  label: "Unit Price",
+                  value: formatReportCurrency(log.unitPrice),
+                },
+                { label: "Quantity", value: `${log.quantity} pcs` },
+                { label: "Subtotal", value: formatReportCurrency(log.total) },
+                { label: "Order Status", value: "Completed" },
+              ].map((f) => (
+                <div key={f.label}>
+                  <p
+                    style={{
+                      color: "#94a3b8",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: 1,
+                      margin: "0 0 2px",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {f.label}
+                  </p>
+                  <p
+                    style={{
+                      color:
+                        f.label === "Order Status"
+                          ? STATUS_COLOR["Completed"]
+                          : f.label === "Cashier"
+                            ? DEEP
+                            : f.label === "Transaction ID"
+                              ? "#111"
+                              : "#334155",
+                      fontSize: 13,
+                      fontWeight: ["Cashier", "Transaction ID"].includes(
+                        f.label,
+                      )
+                        ? 600
+                        : 500,
+                      margin: 0,
+                      fontFamily:
+                        f.label === "Transaction ID"
+                          ? "'Poppins', monospace"
+                          : undefined,
+                      letterSpacing:
+                        f.label === "Transaction ID" ? "0.03em" : undefined,
+                    }}
+                  >
+                    {f.value}
+                  </p>
+                </div>
+              ))}
+              {log.proofImageUrl && (
+                <div>
+                  <p
+                    style={{
+                      color: "#94a3b8",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: 1,
+                      margin: "0 0 2px",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Payment Proof
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => openProofImage(e, log.proofImageUrl)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      color: DEEP,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      margin: 0,
+                      textDecoration: "none",
+                      background: DEEP_SOFT,
+                      border: `1px solid ${DEEP_LINE}`,
+                      borderRadius: 12,
+                      padding: "9px 13px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <ImageIcon size={14} />
+                    View Proof
+                  </button>
+                </div>
+              )}
+              <div>
+                <p style={{ color: "#94a3b8", fontSize: 10, fontWeight: 600, letterSpacing: 1, margin: "0 0 2px", textTransform: "uppercase" }}>
+                  Receipt
+                </p>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onViewReceipt(log.orderId);
+                  }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, color: DEEP, fontSize: 12, fontWeight: 700, background: DEEP_SOFT, border: `1px solid ${DEEP_LINE}`, borderRadius: 12, padding: "9px 13px", cursor: "pointer" }}
+                >
+                  <Printer size={14} /> View Receipt
+                </button>
+              </div>
+              {log.note && (
+                <div>
+                  <p
+                    style={{
+                      color: "#94a3b8",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: 1,
+                      margin: "0 0 2px",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Note
+                  </p>
+                  <p
+                    style={{
+                      color: "#64748b",
+                      fontSize: 13,
+                      fontWeight: 500,
+                      margin: 0,
+                    }}
+                  >
+                    Warning: {log.note}
+                  </p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// --- Empty / Loading States ---
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      style={{
+        padding: "56px 24px",
+        textAlign: "center",
+        color: "#cbd5e1",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: 16,
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#94a3b8",
+        }}
+      >
+        <Search size={18} />
+      </div>
+      <p
+        style={{
+          fontSize: 15,
+          fontWeight: 700,
+          margin: 0,
+          color: "#475569",
+        }}
+      >
+        No completed transactions yet
+      </p>
+      <p
+        style={{
+          fontSize: 12,
+          margin: 0,
+          color: "#94a3b8",
+          maxWidth: 360,
+          lineHeight: 1.6,
+        }}
+      >
+        {message}
+      </p>
+    </motion.div>
+  );
+}
+
+// --- Pagination ---
+
+interface LogPaginationProps {
+  currentPage: number;
+  totalPages: number;
+  totalCount: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  itemLabel?: string;
+}
+
+function LogPagination({
+  currentPage,
+  totalPages,
+  totalCount,
+  pageSize,
+  onPageChange,
+  itemLabel = "sales",
+}: LogPaginationProps) {
+  if (totalPages <= 1) return null;
+
+  const start = (currentPage - 1) * pageSize + 1;
+  const end = Math.min(currentPage * pageSize, totalCount);
+
+  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1)
+    .filter(
+      (p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1,
+    )
+    .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+      if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+      acc.push(p);
+      return acc;
+    }, []);
+
+  return (
+    <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100 px-1">
+      <span className="text-sm text-gray-500">
+        Showing {start}–{end} of {totalCount} {itemLabel}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 rounded-lg"
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        {pageNumbers.map((p, idx) =>
+          p === "..." ? (
+            <span key={`e-${idx}`} className="text-gray-400 text-sm px-1">
+              ...
+            </span>
+          ) : (
+            <Button
+              key={p}
+              variant={currentPage === p ? "default" : "outline"}
+              size="icon"
+              className={`h-8 w-8 rounded-lg text-sm ${currentPage === p ? "bg-[#1A3A2A] hover:bg-[#12291d] text-white border-0" : ""}`}
+              onClick={() => onPageChange(p as number)}
+            >
+              {p}
+            </Button>
+          ),
+        )}
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 rounded-lg"
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// --- Filter Chips ---
+// Shared pill-button filter group, used for order status, payment method,
+// and order type so we don't repeat the same markup three times.
+
+function FilterChips<T extends string>({
+  label,
+  options,
+  active,
+  onChange,
+  activeClass,
+}: {
+  label: string;
+  options: readonly T[];
+  active: T;
+  onChange: (value: T) => void;
+  activeClass?: (option: T) => string;
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-3">
+        {label}
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        {options.map((opt) => (
+          <button
+            key={opt}
+            onClick={() => onChange(opt)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+              active === opt
+                ? (activeClass?.(opt) ??
+                  "bg-[#1A3A2A] text-white border-[#1A3A2A]")
+                : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
+            }`}
+          >
+            {opt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- Order Row ---
+
+const statusStyle: Record<string, { bg: string; text: string }> = {
+  Completed: { bg: DEEP_SOFT, text: DEEP },
+  Pending: { bg: "#f1f5f9", text: "#64748b" },
+  Cancelled: { bg: BAD_SOFT, text: BAD },
+  Refunded: { bg: "#f1f5f9", text: "#334155" },
+};
+
+// Order types are neutral; only delivery gets the soft green tint.
+const orderTypeStyle: Record<string, { bg: string; text: string }> = {
+  "take-out": { bg: "#f1f5f9", text: "#475569" },
+  delivery: { bg: DEEP_SOFT, text: DEEP },
+  "dine-in": { bg: "#f1f5f9", text: "#475569" },
+};
+
+const paymentBadgeStyle: Record<
+  string,
+  { bg: string; text: string; border: string }
+> = {
+  Cash: { bg: "#f1f5f9", text: "#334155", border: "#cbd5e1" },
+  "Online Payment": { bg: DEEP_SOFT, text: DEEP, border: DEEP_LINE },
+  "Cash on Pickup": { bg: "#f8fafc", text: "#334155", border: "#cbd5e1" },
+};
+
+function OrderRow({
+  order,
+  canCancel,
+  canRefund,
+  onSettle,
+  onViewReceipt,
+}: {
+  order: Order;
+  canCancel: boolean;
+  canRefund: boolean;
+  onSettle: (order: Order, action: SettlementAction) => void;
+  onViewReceipt: (order: Order) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const sc = statusStyle[order.status] ?? { bg: "#f1f5f9", text: "#64748b" };
+  const otb = orderTypeStyle[order.orderType] ?? {
+    bg: "#f1f5f9",
+    text: "#64748b",
+  };
+
+  const fmtDate = (v?: string | null) => {
+    const d = parseDateSafe(v);
+    return d ? formatDisplayDate(d) : "—";
+  };
+  const fmtTime = (v?: string | null) => {
+    const d = parseDateSafe(v);
+    return d ? formatDisplayTime(d) : "—";
+  };
+
+  const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
+  const settlementAction = getOrderSettlementAction(order);
+  const showSettlement =
+    settlementAction !== null &&
+    (settlementAction === "refund" ? canRefund : canCancel);
+  const isDelivery = order.orderType === "delivery";
+  const orderTypeLabel = formatOrderType(order.orderType);
+
+  const paymentTone = paymentBadgeStyle[
+    normalizePaymentMethod(order.paymentCategory)
+  ] ?? {
+    bg: "#f8fafc",
+    text: "#475569",
+    border: "#cbd5e1",
+  };
+
+  return (
+    <>
+      <TableRow
+        className="border-gray-100 hover:bg-slate-50/80 transition-colors cursor-pointer"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <TableCell className="font-medium text-gray-900 py-4">
+          <div className="flex items-center gap-2">
+            <motion.div
+              animate={{ rotate: open ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+              className="text-gray-400"
+            >
+              <ChevronDown size={14} />
+            </motion.div>
+            <span
+              style={{
+                fontFamily: "'Poppins', monospace",
+                letterSpacing: "0.02em",
+              }}
+            >
+              {order.transactionId}
+            </span>
+          </div>
+        </TableCell>
+        <TableCell className="font-medium text-gray-700 whitespace-nowrap py-4">
+          <span
+            style={{
+              fontFamily: "'Poppins', monospace",
+              letterSpacing: "0.02em",
+            }}
+          >
+            {order.orderNumber}
+          </span>
+        </TableCell>
+        <TableCell className="text-gray-600 whitespace-nowrap py-4">
+          {fmtDate(order.date)}
+        </TableCell>
+        <TableCell className="text-gray-800 font-semibold whitespace-nowrap py-4">
+          {fmtTime(order.date)}
+        </TableCell>
+        <TableCell className="py-4">
+          <span
+            style={{
+              background: otb.bg,
+              color: otb.text,
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "5px 10px",
+              borderRadius: 99,
+              border: "1px solid rgba(148,163,184,0.18)",
+              display: "inline-flex",
+            }}
+          >
+            {orderTypeLabel}
+          </span>
+        </TableCell>
+        <TableCell className="py-4">
+          <span
+            style={{
+              background: sc.bg,
+              color: sc.text,
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "5px 10px",
+              borderRadius: 99,
+              border: "1px solid rgba(148,163,184,0.18)",
+              display: "inline-flex",
+            }}
+          >
+            {order.status}
+          </span>
+        </TableCell>
+        <TableCell className="py-4">
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "5px 10px",
+              borderRadius: 999,
+              background: paymentTone.bg,
+              color: paymentTone.text,
+              border: `1px solid ${paymentTone.border}`,
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            {normalizePaymentMethod(order.paymentCategory)}
+          </span>
+        </TableCell>
+        <TableCell className="font-semibold text-gray-900 text-right py-4">
+          {formatReportCurrency(order.total)}
+        </TableCell>
+      </TableRow>
+
+      <AnimatePresence>
+        {open && (
+          <tr>
+            <td colSpan={8} style={{ padding: 0, border: "none" }}>
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.22, ease: "easeInOut" }}
+                style={{ overflow: "hidden" }}
+              >
+                <div
+                  style={{
+                    background: "#f8fafc",
+                    borderBottom: "2px solid #e2e8f0",
+                    padding: "20px 24px 20px 36px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      marginBottom: 16,
+                    }}
+                  >
+                    {[
+                      { label: "Transaction ID", value: order.transactionId },
+                      { label: "Order Number", value: order.orderNumber },
+                      {
+                        label: "Order Created",
+                        value: order.createdAt
+                          ? `${fmtDate(order.createdAt)} ${fmtTime(order.createdAt)}`
+                          : "—",
+                      },
+                      { label: "Sale Recorded", value: `${fmtDate(order.date)} ${fmtTime(order.date)}` },
+                      { label: "Cashier", value: order.cashierName || "—" },
+                      ...(isDelivery
+                        ? [
+                            { label: "Platform Reference", value: order.paymentReference || "—" },
+                            { label: "Rider", value: order.riderName || "—" },
+                            {
+                              label: "Handover",
+                              value:
+                                fmtTime(order.handoverTimestamp) === "—"
+                                  ? "—"
+                                  : `${fmtDate(order.handoverTimestamp)} ${fmtTime(order.handoverTimestamp)}`,
+                            },
+                            { label: "Confirmed By", value: order.handoverStaffName || "—" },
+                          ]
+                        : []),
+                      { label: "Total Qty", value: `${totalQty} pcs` },
+                      {
+                        label: "Subtotal",
+                        value: formatReportCurrency(order.total),
+                      },
+                      { label: "Payment Method", value: order.paymentCategory },
+                      {
+                        label: "Payment Status",
+                        value: formatPaymentStatus(order.paymentStatus),
+                      },
+                      {
+                        label: "Order Status",
+                        value: order.status,
+                        isStatus: true,
+                      },
+                    ].map((f, i, arr) => (
+                      <div
+                        key={f.label}
+                        style={{
+                          minWidth: 130,
+                          flex: "0 0 auto",
+                          paddingRight: 32,
+                          paddingBottom: 12,
+                          borderRight:
+                            i < arr.length - 1 ? "1px solid #e2e8f0" : "none",
+                          marginRight: i < arr.length - 1 ? 32 : 0,
+                        }}
+                      >
+                        <p
+                          style={{
+                            color: "#94a3b8",
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: 1.2,
+                            margin: "0 0 4px",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {f.label}
+                        </p>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: 13,
+                            fontWeight: [
+                              "Cashier",
+                              "Subtotal",
+                              "Transaction ID",
+                              "Order Number",
+                            ].includes(f.label)
+                              ? 700
+                              : 500,
+                            color: (f as any).isStatus
+                              ? (statusStyle[order.status]?.text ?? "#64748b")
+                              : f.label === "Subtotal"
+                                ? "#0f172a"
+                                : f.label === "Cashier"
+                                  ? DEEP
+                                  : f.label === "Transaction ID"
+                                    ? "#111"
+                                    : f.label === "Order Number"
+                                      ? "#111"
+                                      : "#334155",
+                            fontFamily:
+                              f.label === "Transaction ID" ||
+                              f.label === "Order Number"
+                                ? "'Poppins', monospace"
+                                : undefined,
+                            letterSpacing:
+                              f.label === "Transaction ID" ||
+                              f.label === "Order Number"
+                                ? "0.03em"
+                                : undefined,
+                          }}
+                        >
+                          {f.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginBottom: 16 }}>
+                    <p
+                      style={{
+                        color: "#94a3b8",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: 1.2,
+                        margin: "0 0 8px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Receipt
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onViewReceipt(order);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "9px 13px",
+                        borderRadius: 12,
+                        border: "1px solid #cbd5e1",
+                        background: "#fff",
+                        color: "#0f172a",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Printer size={14} /> View Receipt
+                    </button>
+                  </div>
+
+                  {order.proofImageUrl && (
+                    <div style={{ marginBottom: showSettlement ? 16 : 0 }}>
+                      <p
+                        style={{
+                          color: "#94a3b8",
+                          fontSize: 9,
+                          fontWeight: 700,
+                          letterSpacing: 1.2,
+                          margin: "0 0 8px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Payment Proof
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => openProofImage(e, order.proofImageUrl)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "9px 13px",
+                          borderRadius: 12,
+                          border: `1px solid ${DEEP_LINE}`,
+                          background: DEEP_SOFT,
+                          color: DEEP,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          textDecoration: "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <ImageIcon size={14} />
+                        View Proof
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={{ marginBottom: showSettlement ? 16 : 0 }}>
+                    <p
+                      style={{
+                        color: "#94a3b8",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: 1.2,
+                        margin: "0 0 8px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Items Ordered
+                    </p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {order.items.length > 0 ? (
+                        order.items.map((item, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              background: "#fff",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: 8,
+                              padding: "6px 12px",
+                              fontSize: 12,
+                              fontWeight: 500,
+                              color: "#334155",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <span
+                              style={{
+                                background: "#f1f5f9",
+                                borderRadius: 4,
+                                padding: "1px 6px",
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: "#64748b",
+                              }}
+                            >
+                              ×{item.quantity}
+                            </span>
+                            {item.name}
+                            <span style={{ color: "#94a3b8", fontSize: 11 }}>
+                              {formatReportCurrency(item.price)}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <span style={{ color: "#cbd5e1", fontSize: 12 }}>
+                          No items
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {showSettlement && settlementAction && (
+                    <motion.button
+                      whileHover={{
+                        scale: 1.02,
+                        boxShadow: "0 4px 16px rgba(194,59,46,0.18)",
+                      }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSettle(order, settlementAction);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "8px 18px",
+                        borderRadius: 10,
+                        border: "1px solid #f3c9c4",
+                        background: BAD_SOFT,
+                        color: BAD,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <RotateCcw size={13} /> {settlementAction === "refund" ? "Refund Order" : "Void Order"}
+                    </motion.button>
+                  )}
+                </div>
+              </motion.div>
+            </td>
+          </tr>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+// --- Orders Tab ---
+
+const ORDER_STATUS_FILTERS: OrderStatusFilter[] = [
+  "All",
+  "Completed",
+  "Pending",
+  "Cancelled",
+  "Refunded",
+];
+
+const ORDER_PAYMENT_FILTERS: PaymentMethodFilter[] = [
+  "All",
+  "Cash",
+  "Online Payment",
+  "Cash on Pickup",
+];
+
+const DELIVERY_PLATFORM_FILTERS: DeliveryPlatformFilter[] = [
+  "All Platforms",
+  "GrabFood",
+  "Foodpanda",
+];
+
+const ORDER_TYPE_FILTERS: OrderTypeFilter[] = [
+  "All",
+  "Dine In",
+  "Take Out",
+  "Delivery",
+];
+
+const statusActiveColor: Record<OrderStatusFilter, string> = {
+  All: "bg-[#1A3A2A] text-white border-[#1A3A2A]",
+  Completed: "bg-[#1A3A2A] text-white border-[#1A3A2A]",
+  Pending: "bg-slate-500 text-white border-slate-500",
+  Cancelled: "bg-[#C23B2E] text-white border-[#C23B2E]",
+  Refunded: "bg-slate-700 text-white border-slate-700",
+};
+
+function OrdersTab({
+  orders,
+  loading,
+  canCancel,
+  canRefund,
+  onSettle,
+  onViewReceipt,
+}: {
+  orders: Order[];
+  loading: boolean;
+  canCancel: boolean;
+  canRefund: boolean;
+  onSettle: (order: Order, action: SettlementAction) => void;
+  onViewReceipt: (order: Order) => void;
+}) {
+  const now = new Date();
+  const [currentPage, setCurrentPage] = useState(1);
+  const [fromDate, setFromDate] = useState<Date | null>(null);
+  const [toDate, setToDate] = useState<Date | null>(null);
+  const [activeQuick, setActiveQuick] = useState<QuickKey | null>("all");
+  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>("All");
+  const [paymentMethodFilter, setPaymentMethodFilter] =
+    useState<PaymentMethodFilter>("All");
+  const [orderTypeFilter, setOrderTypeFilter] =
+    useState<OrderTypeFilter>("All");
+  const [deliveryPlatformFilter, setDeliveryPlatformFilter] =
+    useState<DeliveryPlatformFilter>("All Platforms");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<"from" | "to">("from");
+  const [pickerInitial, setPickerInitial] = useState<Date>(now);
+
+  function openDatePicker(target: "from" | "to") {
+    setPickerTarget(target);
+    setPickerInitial(target === "from" ? (fromDate ?? now) : (toDate ?? now));
+    setPickerOpen(true);
+  }
+
+  function handlePickerApply(date: Date) {
+    if (pickerTarget === "from") {
+      setFromDate(date);
+      if (toDate && date > toDate) setToDate(date);
+    } else {
+      setToDate(date);
+      if (fromDate && date < fromDate) setToDate(fromDate);
+    }
+    setActiveQuick(null);
+    setCurrentPage(1);
+    setPickerOpen(false);
+  }
+
+  function clearRange() {
+    setFromDate(null);
+    setToDate(null);
+    setActiveQuick("all");
+    setCurrentPage(1);
+  }
+
+  function applyQuick(key: QuickKey) {
+    setActiveQuick(key);
+    if (key === "all") {
+      setFromDate(null);
+      setToDate(null);
+    } else {
+      const range = getQuickRange(key)!;
+      setFromDate(range.from);
+      setToDate(range.to);
+    }
+    setCurrentPage(1);
+  }
+
+  const dateFiltered = filterOrdersByRange(orders, fromDate, toDate);
+  const statusFiltered =
+    statusFilter === "All"
+      ? dateFiltered
+      : dateFiltered.filter((o) => o.status === statusFilter);
+  const paymentFiltered =
+    paymentMethodFilter === "All"
+      ? statusFiltered
+      : statusFiltered.filter(
+          (o) =>
+            normalizePaymentMethod(o.paymentCategory) === paymentMethodFilter,
+        );
+  const orderTypeFiltered =
+    orderTypeFilter === "All"
+      ? paymentFiltered
+      : paymentFiltered.filter(
+          (o) => formatOrderType(o.orderType) === orderTypeFilter,
+        );
+  const filtered = deliveryPlatformFilter === "All Platforms"
+    ? orderTypeFiltered
+    : orderTypeFiltered.filter(
+        (order) =>
+          order.orderType === "delivery" &&
+          normalizePaymentMethod(order.paymentCategory) === deliveryPlatformFilter,
+      );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ORDER_PAGE_SIZE));
+
+  const sorted = [...filtered].sort(
+    (a, b) =>
+      (parseDateSafe(b.date)?.getTime() ?? -Infinity) -
+      (parseDateSafe(a.date)?.getTime() ?? -Infinity),
+  );
+  const paginated = sorted.slice(
+    (currentPage - 1) * ORDER_PAGE_SIZE,
+    currentPage * ORDER_PAGE_SIZE,
+  );
+
+  const totalRevenue = filtered
+    .filter(isFinalizedSale)
+    .reduce((sum, o) => sum + o.total, 0);
+  const completedCount = filtered.filter(isFinalizedSale).length;
+  const hasRange = !!(fromDate || toDate);
+
+  return (
+    <>
+      <DrumDatePicker
+        open={pickerOpen}
+        title={pickerTarget === "from" ? "Select from date" : "Select to date"}
+        initial={pickerInitial}
+        onApply={handlePickerApply}
+        onClose={() => setPickerOpen(false)}
+      />
+
+      <Card className="bg-white rounded-[24px] p-6 shadow-md border-0">
+        <div className="flex items-start justify-between mb-5 flex-wrap gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-gray-800">
+              Order History
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {filtered.length} order{filtered.length !== 1 ? "s" : ""} ·{" "}
+              <span className="text-[#1A3A2A] font-medium">
+                {completedCount} completed
+              </span>{" "}
+              ·{" "}
+              <span className="text-gray-600 font-medium">
+                {formatReportCurrency(totalRevenue)} revenue
+              </span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <CalendarDays className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            <button
+              onClick={() => openDatePicker("from")}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                fromDate
+                  ? "border-[#1A3A2A] text-[#1A3A2A] bg-[#1A3A2A]/5"
+                  : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white"
+              }`}
+            >
+              {fromDate ? formatDisplayDate(fromDate) : "Select date"}
+            </button>
+            <span className="text-xs text-gray-400">to</span>
+            <button
+              onClick={() => openDatePicker("to")}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                toDate
+                  ? "border-[#1A3A2A] text-[#1A3A2A] bg-[#1A3A2A]/5"
+                  : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white"
+              }`}
+            >
+              {toDate ? formatDisplayDate(toDate) : "Select date"}
+            </button>
+            {hasRange && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-lg text-gray-400 hover:text-gray-600"
+                onClick={clearRange}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-100 bg-slate-50/80 p-4 mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-3">
+            Quick Range
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            {QUICK_RANGES.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => applyQuick(r.key)}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                  activeQuick === r.key
+                    ? "bg-[#1A3A2A] text-white border-[#1A3A2A]"
+                    : "bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-4">
+          <FilterChips
+            label="Order Status"
+            options={ORDER_STATUS_FILTERS}
+            active={statusFilter}
+            activeClass={(s) => statusActiveColor[s]}
+            onChange={(s) => {
+              setStatusFilter(s);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Payment Method"
+            options={ORDER_PAYMENT_FILTERS}
+            active={paymentMethodFilter}
+            onChange={(m) => {
+              setPaymentMethodFilter(m);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Order Type"
+            options={ORDER_TYPE_FILTERS}
+            active={orderTypeFilter}
+            onChange={(t) => {
+              setOrderTypeFilter(t);
+              setCurrentPage(1);
+            }}
+          />
+          <FilterChips
+            label="Delivery Platform"
+            options={DELIVERY_PLATFORM_FILTERS}
+            active={deliveryPlatformFilter}
+            onChange={(platform) => {
+              setDeliveryPlatformFilter(platform);
+              setCurrentPage(1);
+            }}
+          />
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-gray-100">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-gray-100 bg-slate-50 hover:bg-slate-50">
+                {[
+                  "Transaction ID",
+                  "Order Number",
+                  "Date",
+                  "Time",
+                  "Order Type",
+                  "Status",
+                  "Payment",
+                  "Amount",
+                ].map((h) => (
+                  <TableHead
+                    key={h}
+                    className={`text-[11px] uppercase tracking-[0.16em] text-slate-500 font-bold${h === "Amount" ? " text-right" : ""}`}
+                  >
+                    {h}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="p-0">
+                    <SkeletonTable rowCount={5} columnCount={8} theme="admin" showHeader={false} />
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="p-0">
+                    <EmptyState
+                      message={
+                        orders.length === 0
+                          ? "No orders yet. Orders will appear here once the cashier processes them."
+                          : "No orders found for the selected filters."
+                      }
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginated.map((order) => (
+                  <OrderRow
+                    key={order.id}
+                    order={order}
+                    canCancel={canCancel}
+                    canRefund={canRefund}
+                    onSettle={onSettle}
+                    onViewReceipt={onViewReceipt}
+                  />
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <LogPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={filtered.length}
+          pageSize={ORDER_PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="orders"
+        />
+      </Card>
+    </>
+  );
+}
+
+// --- Main Page ---
+
+export default function SalesReports() {
+  const { user } = useAuth();
+  const canCancelPersisted = canCancelPersistedOrders(user?.role);
+  const canRefundPersisted = canRefundPersistedOrders(user?.role);
+  const now = new Date();
+  const { width, isMobile, isTablet } = useViewport();
+  const isNarrow = width < 980;
+
+  // Core state
+  const [logs, setLogs] = useState<SaleLog[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [restaurantSettings, setRestaurantSettings] =
+    useState<GeneralRestaurantSettings>(GENERAL_SETTINGS_DEFAULTS);
+  const [isLoading, setIsLoading] = useState(true);
+  const hasLoadedOnce = useRef(false);
+  const [proofNotice, setProofNotice] = useState("");
+
+  // UI state
+  const [activeTab, setActiveTab] = useState<TabKey>("logs");
+  const [logPage, setLogPage] = useState(1);
+  const [period, setPeriod] = useState<Period>("Today");
+
+  // Refund state
+  const [refundLog, setRefundLog] = useState<SaleLog | null>(null);
+  const [refundOrder, setRefundOrder] = useState<Order | null>(null);
+  const [settlementAction, setSettlementAction] = useState<SettlementAction>("refund");
+  const [refundLoading, setRefundLoading] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+  const [receiptError, setReceiptError] = useState("");
+  const [receipt, setReceipt] = useState<ReceiptDto | null>(null);
+
+  // Log date filter state
+  const [logFromDate, setLogFromDate] = useState<Date | null>(null);
+  const [logToDate, setLogToDate] = useState<Date | null>(null);
+  const [activeLogQuick, setActiveLogQuick] = useState<QuickKey | null>("all");
+  const [logPaymentFilter, setLogPaymentFilter] =
+    useState<PaymentMethodFilter>("All");
+  const [logOrderTypeFilter, setLogOrderTypeFilter] =
+    useState<OrderTypeFilter>("All");
+  const [logDeliveryPlatformFilter, setLogDeliveryPlatformFilter] =
+    useState<DeliveryPlatformFilter>("All Platforms");
+  const [logPickerOpen, setLogPickerOpen] = useState(false);
+  const [logPickerTarget, setLogPickerTarget] = useState<"from" | "to">("from");
+  const [logPickerInitial, setLogPickerInitial] = useState<Date>(now);
+
+  // Data fetching
+  const fetchSalesData = useCallback(async () => {
+    try {
+      if (!hasLoadedOnce.current) setIsLoading(true);
+      const rows = await api.get<RawOrderRow[]>("/orders");
+      const { logs: l, orders: o } = processRawRows(rows ?? []);
+      setLogs(l);
+      setOrders(o);
+    } catch (err) {
+      console.error("Failed to fetch sales data:", err);
+    } finally {
+      setIsLoading(false);
+      hasLoadedOnce.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchSalesData();
+  }, [fetchSalesData]);
+  useEventInvalidation({
+    topics: ["orders.changed", "payments.changed"],
+    onInvalidate: fetchSalesData,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchGeneralSettings().then((data) => {
+      if (!cancelled) {
+        setRestaurantSettings(data);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleProofNotice = (event: Event) => {
+      const customEvent = event as CustomEvent<{ message?: string }>;
+      setProofNotice(
+        String(customEvent.detail?.message || "Proof image is unavailable."),
+      );
+    };
+    window.addEventListener(PROOF_NOTICE_EVENT, handleProofNotice);
+    return () =>
+      window.removeEventListener(PROOF_NOTICE_EVENT, handleProofNotice);
+  }, []);
+
+  useEffect(() => {
+    if (!proofNotice) return;
+    const timeout = window.setTimeout(() => setProofNotice(""), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [proofNotice]);
+
+  // Reset log page when report filters change.
+  useEffect(() => {
+    setLogPage(1);
+  }, [
+    logFromDate,
+    logToDate,
+    logPaymentFilter,
+    logOrderTypeFilter,
+    logDeliveryPlatformFilter,
+  ]);
+
+  // Log date picker handlers
+  function openLogDatePicker(target: "from" | "to") {
+    setLogPickerTarget(target);
+    setLogPickerInitial(
+      target === "from" ? (logFromDate ?? now) : (logToDate ?? now),
+    );
+    setLogPickerOpen(true);
+  }
+
+  function handleLogPickerApply(date: Date) {
+    if (logPickerTarget === "from") {
+      setLogFromDate(date);
+      if (logToDate && date > logToDate) setLogToDate(date);
+    } else {
+      setLogToDate(date);
+      if (logFromDate && date < logFromDate) setLogToDate(logFromDate);
+    }
+    setActiveLogQuick(null);
+    setLogPage(1);
+    setLogPickerOpen(false);
+  }
+
+  function clearLogRange() {
+    setLogFromDate(null);
+    setLogToDate(null);
+    setActiveLogQuick("all");
+    setLogPage(1);
+  }
+
+  function applyLogQuick(key: QuickKey) {
+    setActiveLogQuick(key);
+    if (key === "all") {
+      setLogFromDate(null);
+      setLogToDate(null);
+    } else {
+      const range = getQuickRange(key)!;
+      setLogFromDate(range.from);
+      setLogToDate(range.to);
+    }
+    setLogPage(1);
+  }
+
+  // Persisted order settlement handler
+  async function handleRefundConfirm() {
+    const orderId = refundLog?.orderId ?? refundOrder?.id;
+    if (orderId == null) return;
+    if (
+      settlementAction === "refund"
+        ? !canRefundPersisted
+        : !canCancelPersisted
+    ) return;
+
+    setRefundLoading(true);
+    try {
+      await api.patch(`/orders/${orderId}`, {
+        status: settlementAction === "refund" ? "Refunded" : "Cancelled",
+      });
+      await fetchSalesData();
+    } catch (err) {
+      console.error("Order settlement failed:", err);
+      setProofNotice(
+        err instanceof Error
+          ? err.message
+          : "The order could not be settled. Refresh and try again.",
+      );
+      await fetchSalesData();
+    } finally {
+      setRefundLoading(false);
+      setRefundLog(null);
+      setRefundOrder(null);
+    }
+  }
+
+  async function handleViewReceipt(order: Pick<Order, "id">) {
+    setReceiptOpen(true);
+    setReceiptLoading(true);
+    setReceiptError("");
+    setReceipt(null);
+    try {
+      setReceipt(await api.get<ReceiptDto>(`/orders/${order.id}/receipt`));
+    } catch (error) {
+      console.error("Receipt load failed:", error);
+      setReceiptError(
+        error instanceof Error ? error.message : "Unable to load receipt.",
+      );
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
+
+  // Derived log data
+  const completedLogs = logs.filter(isFinalizedSale);
+  const dateFilteredLogs = filterLogsByRange(
+    logs,
+    logFromDate,
+    logToDate,
+  );
+
+  const scopedLogs = dateFilteredLogs.filter((l) => {
+    if (
+      logPaymentFilter !== "All" &&
+      normalizePaymentMethod(l.paymentMethod) !== logPaymentFilter
+    ) {
+      return false;
+    }
+    if (
+      logOrderTypeFilter !== "All" &&
+      formatOrderType(l.category) !== logOrderTypeFilter
+    ) {
+      return false;
+    }
+    if (
+      logDeliveryPlatformFilter !== "All Platforms" &&
+      !(
+        String(l.category).toLowerCase() === "delivery" &&
+        normalizePaymentMethod(l.paymentMethod) === logDeliveryPlatformFilter
+      )
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const filteredLogs = scopedLogs.filter(isFinalizedSale);
+
+  const logTotalPages = Math.max(
+    1,
+    Math.ceil(filteredLogs.length / LOG_PAGE_SIZE),
+  );
+  const paginatedLogs = filteredLogs.slice(
+    (logPage - 1) * LOG_PAGE_SIZE,
+    logPage * LOG_PAGE_SIZE,
+  );
+  const grouped = groupByDate(paginatedLogs);
+  const dates = Object.keys(grouped);
+  const hasLogRange = !!(logFromDate || logToDate);
+  const summaryFilterDescription = [
+    hasLogRange
+      ? `Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`
+      : "All dates",
+    logPaymentFilter === "All" ? "All payment methods" : logPaymentFilter,
+    logOrderTypeFilter === "All" ? "All order types" : logOrderTypeFilter,
+    logDeliveryPlatformFilter,
+  ].join(" · ");
+
+  const tabs: {
+    key: TabKey;
+    label: string;
+    count: number;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      key: "logs",
+      label: "Sales Logs",
+      count: completedLogs.length,
+      icon: (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="5" y="2" width="14" height="20" rx="2" />
+          <path d="M9 7h6M9 11h6M9 15h4" />
+        </svg>
+      ),
+    },
+    {
+      key: "orders",
+      label: "Order History",
+      count: orders.length,
+      icon: (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 8v4l2 2" />
+          <circle cx="12" cy="12" r="9" />
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f8fafc",
+        fontFamily: "'Poppins', sans-serif",
+      }}
+    >
+      <Sidebar />
+
+      <AnimatePresence>
+        {proofNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            role="alert"
+            style={{
+              position: "fixed",
+              top: 22,
+              right: 22,
+              zIndex: 500,
+              maxWidth: 380,
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: "1px solid #f3c9c4",
+              background: BAD_SOFT,
+              color: BAD,
+              boxShadow: "0 10px 30px rgba(15,23,42,0.12)",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {proofNotice}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <RefundModal
+        open={!!(refundLog || refundOrder)}
+        log={refundLog}
+        order={refundOrder}
+        action={settlementAction}
+        onConfirm={handleRefundConfirm}
+        onClose={() => {
+          if (!refundLoading) {
+            setRefundLog(null);
+            setRefundOrder(null);
+          }
+        }}
+        loading={refundLoading}
+      />
+
+      <ReceiptViewerModal
+        open={receiptOpen}
+        receipt={receipt}
+        loading={receiptLoading}
+        error={receiptError}
+        onClose={() => {
+          setReceiptOpen(false);
+          setReceipt(null);
+          setReceiptError("");
+        }}
+      />
+
+      <DrumDatePicker
+        open={logPickerOpen}
+        title={
+          logPickerTarget === "from" ? "Select from date" : "Select to date"
+        }
+        initial={logPickerInitial}
+        onApply={handleLogPickerApply}
+        onClose={() => setLogPickerOpen(false)}
+      />
+
+      <div
+        style={{
+          padding: isMobile
+            ? "78px 14px 24px"
+            : isTablet
+              ? "84px 18px 28px"
+              : "112px 40px 40px 88px",
+        }}
+      >
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 20,
+            marginBottom: 28,
+          }}
+        >
+          <div>
+            <p
+              style={{
+                color: DEEP,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 2,
+                margin: "0 0 6px",
+              }}
+            >
+              THE CRUNCH
+            </p>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 26,
+                fontWeight: 700,
+                color: "#0f172a",
+              }}
+            >
+              Sales & Reports
+            </h1>
+            <p style={{ margin: "6px 0 0", color: "#94a3b8", fontSize: 13 }}>
+              Transaction history & audit trail
+            </p>
+          </div>
+        </motion.div>
+
+        {/* Summary Bar */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
+          <SummaryBar
+            logs={scopedLogs}
+            filterDescription={summaryFilterDescription}
+            leadingCard={(
+              <RevenueDropdown
+                period={period}
+                setPeriod={setPeriod}
+                logs={logs}
+                orders={orders}
+                restaurantSettings={restaurantSettings}
+                generatedBy={String(user?.username || user?.email || "Staff")}
+              />
+            )}
+          />
+        </motion.div>
+
+        {/* Tabs */}
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            marginBottom: 20,
+            background: "#f1f5f9",
+            borderRadius: 99,
+            padding: 4,
+            maxWidth: "100%",
+            overflowX: "auto",
+            width: "fit-content",
+          }}
+        >
+          {tabs.map(({ key, label, count, icon }) => {
+            const active = activeTab === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "7px 14px",
+                  borderRadius: 99,
+                  border: "none",
+                  background: active ? "#fff" : "transparent",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: active ? 600 : 500,
+                  color: active ? "#0f172a" : "#94a3b8",
+                  boxShadow: active ? "0 1px 6px rgba(0,0,0,0.10)" : "none",
+                  transition: "all 0.2s",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span
+                  style={{
+                    color: active ? "#0f172a" : "#94a3b8",
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
+                  {icon}
+                </span>
+                {label}
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minWidth: 20,
+                    height: 20,
+                    padding: "0 6px",
+                    borderRadius: 99,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    background: active ? DEEP : "#cbd5e1",
+                    color: active ? "#fff" : "#64748b",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sales Logs Tab */}
+        {activeTab === "logs" && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.15, duration: 0.35 }}
+              style={{
+                display: "flex",
+                gap: 14,
+                marginBottom: 20,
+                alignItems: "center",
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  justifyContent: isNarrow ? "flex-start" : "flex-end",
+                }}
+              >
+                <CalendarDays className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <button
+                  onClick={() => openLogDatePicker("from")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 12px",
+                    borderRadius: 14,
+                    border: logFromDate
+                      ? `1px solid ${DEEP}`
+                      : "1px solid #e5e7eb",
+                    background: logFromDate ? "rgba(26,58,42,0.08)" : "#fff",
+                    color: logFromDate ? DEEP : "#6b7280",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {logFromDate ? formatDisplayDate(logFromDate) : "Select date"}
+                </button>
+                <span style={{ color: "#9ca3af", fontSize: 12 }}>to</span>
+                <button
+                  onClick={() => openLogDatePicker("to")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 12px",
+                    borderRadius: 14,
+                    border: logToDate
+                      ? `1px solid ${DEEP}`
+                      : "1px solid #e5e7eb",
+                    background: logToDate ? "rgba(26,58,42,0.08)" : "#fff",
+                    color: logToDate ? DEEP : "#6b7280",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {logToDate ? formatDisplayDate(logToDate) : "Select date"}
+                </button>
+                {hasLogRange && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-lg text-gray-400 hover:text-gray-600"
+                    onClick={clearLogRange}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "9px 14px",
+                  borderRadius: 99,
+                  background: DEEP_SOFT,
+                  border: `1px solid ${DEEP_LINE}`,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: DEEP,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: DEEP,
+                    display: "inline-block",
+                  }}
+                />
+                Showing completed paid sales only
+              </div>
+            </motion.div>
+
+            {/* Quick ranges */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginBottom: 18,
+              }}
+            >
+              {QUICK_RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => applyLogQuick(r.key)}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    padding: "7px 13px",
+                    borderRadius: 999,
+                    border:
+                      activeLogQuick === r.key
+                        ? `1px solid ${DEEP}`
+                        : "1px solid #e5e7eb",
+                    background: activeLogQuick === r.key ? DEEP : "#f9fafb",
+                    color: activeLogQuick === r.key ? "#fff" : "#6b7280",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-3">
+              <FilterChips
+                label="Payment Method"
+                options={ORDER_PAYMENT_FILTERS}
+                active={logPaymentFilter}
+                onChange={setLogPaymentFilter}
+              />
+              <FilterChips
+                label="Order Type"
+                options={ORDER_TYPE_FILTERS}
+                active={logOrderTypeFilter}
+                onChange={setLogOrderTypeFilter}
+              />
+              <FilterChips
+                label="Delivery Platform"
+                options={DELIVERY_PLATFORM_FILTERS}
+                active={logDeliveryPlatformFilter}
+                onChange={setLogDeliveryPlatformFilter}
+              />
+            </div>
+
+            {/* Log list */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.35 }}
+              style={{
+                background: "#fff",
+                borderRadius: 20,
+                border: "1px solid #e2e8f0",
+                overflow: "hidden",
+                boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
+              }}
+            >
+              {/* Column headers */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  padding: "12px 20px",
+                  borderBottom: "1px solid #f1f5f9",
+                  background: "#f8fafc",
+                }}
+              >
+                <div style={{ width: 8, flexShrink: 0 }} />
+                {[
+                  { label: "TIME", width: 72 },
+                  { label: "PRODUCT", flex: 1 },
+                  { label: "PAYMENT", width: 110 },
+                  { label: "TYPE", width: 70 },
+                  { label: "QTY", width: 52 },
+                  { label: "AMOUNT", width: 100, align: "right" },
+                  { label: "STATUS", width: 96, align: "right" },
+                ].map((col) => (
+                  <span
+                    key={col.label}
+                    style={{
+                      color: "#94a3b8",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: 1,
+                      ...(col.flex
+                        ? { flex: col.flex }
+                        : { width: col.width, flexShrink: 0 }),
+                      ...(col.align ? { textAlign: col.align as any } : {}),
+                    }}
+                  >
+                    {col.label}
+                  </span>
+                ))}
+                <div style={{ width: 16, flexShrink: 0 }} />
+              </div>
+
+              <AnimatePresence>
+                {isLoading ? (
+                  <SkeletonTable rowCount={5} columnCount={7} theme="admin" showHeader={false} />
+                ) : dates.length === 0 ? (
+                  <EmptyState
+                    key="empty"
+                    message={
+                      hasLogRange || logPaymentFilter !== "All" || logOrderTypeFilter !== "All" || logDeliveryPlatformFilter !== "All Platforms"
+                        ? "No completed sales found for the selected filters."
+                        : "Completed orders from the cashier view will appear here automatically."
+                    }
+                  />
+                ) : (
+                  dates.map((date) => {
+                    const entries = grouped[date];
+                    const dayRevenue = entries.reduce((s, l) => s + l.total, 0);
+                    return (
+                      <div key={date}>
+                        <div
+                          style={{
+                            padding: "8px 20px",
+                            background: "#f8fafc",
+                            borderBottom: "1px solid #f1f5f9",
+                            borderTop: "1px solid #f1f5f9",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: "#64748b",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              letterSpacing: 0.5,
+                            }}
+                          >
+                            {date}
+                          </span>
+                          <span style={{ color: "#cbd5e1", fontSize: 11 }}>
+                            {entries.length} records ·{" "}
+                            {formatReportCurrency(dayRevenue)} revenue
+                          </span>
+                        </div>
+                        {entries.map((log, i) => (
+                          <LogRow
+                            key={log.transactionId}
+                            log={log}
+                            index={i}
+                            onViewReceipt={(orderId) => void handleViewReceipt({ id: orderId })}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })
+                )}
+              </AnimatePresence>
+
+              {filteredLogs.length > LOG_PAGE_SIZE && (
+                <div style={{ padding: "0 16px 16px" }}>
+                  <LogPagination
+                    currentPage={logPage}
+                    totalPages={logTotalPages}
+                    totalCount={filteredLogs.length}
+                    pageSize={LOG_PAGE_SIZE}
+                    onPageChange={(p) => {
+                      setLogPage(p);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                  />
+                </div>
+              )}
+            </motion.div>
+
+            <p
+              style={{
+                color: "#cbd5e1",
+                fontSize: 11,
+                textAlign: "center",
+                marginTop: 20,
+                fontWeight: 500,
+              }}
+            >
+              {filteredLogs.length} of {completedLogs.length} completed sales
+              {(hasLogRange || logPaymentFilter !== "All" || logOrderTypeFilter !== "All" || logDeliveryPlatformFilter !== "All Platforms") && " matching your filters"}
+            </p>
+          </>
+        )}
+
+        {/* Orders Tab */}
+        {activeTab === "orders" && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <OrdersTab
+              orders={orders}
+              loading={isLoading}
+              canCancel={canCancelPersisted}
+              canRefund={canRefundPersisted}
+              onSettle={(order, action) => {
+                setSettlementAction(action);
+                setRefundOrder(order);
+              }}
+              onViewReceipt={handleViewReceipt}
+            />
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+}

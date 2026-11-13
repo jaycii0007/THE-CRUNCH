@@ -25,3 +25,6 @@ dist-ssr
 *.sw?
 src/pages/login.tsx
 graphify-out/
+
+test-results/
+playwright-report/

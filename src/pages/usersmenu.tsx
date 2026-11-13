@@ -1,3 +1,5 @@
+import "../components/customer-nav.css";
+import "./usersmenu.css";
 import {
   useState,
   useEffect,
@@ -39,15 +41,15 @@ import { ProductImage } from "@/components/ProductImage";
 // ── Design tokens (match the landing page: warm black, brand yellow, brand red) ──
 // Yellow is the brand/action colour. Green/red/amber are used ONLY for status.
 const C = {
-  bg: "#0a0808",
-  surface: "#121010",
-  surfaceAlt: "#1b1717",
+  bg: "#140f0c",
+  surface: "#211914",
+  surfaceAlt: "#30251e",
   border: "rgba(255,255,255,0.09)",
   borderStrong: "rgba(255,255,255,0.20)",
-  text: "#f3efe9",
-  muted: "#a8a29e",
-  faint: "#78716c",
-  primary: "#f7c948",
+  text: "#fff4e6",
+  muted: "#d1beb0",
+  faint: "#b09e90",
+  primary: "#ecc17f",
   onPrimary: "#1a1200",
   red: "#dc0000",
   success: "#4ade80",
@@ -538,9 +540,9 @@ const Icon = ({
 type BtnVariant = "primary" | "secondary" | "ghost" | "danger";
 const BTN: Record<BtnVariant, CSSProperties> = {
   primary: {
-    background: C.primary,
-    color: C.onPrimary,
-    border: `1px solid ${C.primary}`,
+    background: "linear-gradient(165deg,#382a20,#1b1511)",
+    color: C.text,
+    border: "1px solid #906f50",
   },
   secondary: {
     background: "transparent",
@@ -584,6 +586,8 @@ function Button({
     fontWeight: 600,
     padding: small ? "8px 14px" : "12px 20px",
     borderRadius: 8,
+    minHeight: 44,
+    maxWidth: "100%",
     width: full ? "100%" : undefined,
     display: "inline-flex",
     alignItems: "center",
@@ -592,17 +596,18 @@ function Button({
     textDecoration: "none",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.45 : 1,
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
   };
   if (href)
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" style={style}>
+      <a className="menu-action" href={href} target="_blank" rel="noopener noreferrer" style={style}>
         {children}
       </a>
     );
   return (
     <motion.button
       type="button"
+      className="menu-action"
       aria-label={ariaLabel}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
@@ -769,7 +774,7 @@ function Modal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: `min(${width}px,100%)`,
-          maxHeight: "calc(100vh - 40px)",
+          maxHeight: "calc(100dvh - 40px)",
           overflowY: "auto",
           background: C.surface,
           border: `1px solid ${C.border}`,
@@ -1014,7 +1019,7 @@ function ProductCard({
   ).filter((f) => f[1] !== undefined) as [string, number, string][];
 
   return (
-    <motion.article
+    <motion.article className="menu-dish"
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{
@@ -1023,7 +1028,7 @@ function ProductCard({
         transition: {
           duration: 0.45,
           ease: EASE,
-          delay: Math.min(index, 8) * 0.05,
+          delay: Math.min(index, 5) * 0.025,
         },
       }}
       exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.2 } }}
@@ -1034,14 +1039,17 @@ function ProductCard({
         border: `1px solid ${highlighted ? C.primary : C.border}`,
         borderRadius: 14,
         overflow: "hidden",
-        minHeight: isPhone ? 150 : 200,
+        flexDirection: "column",
+        minWidth: 0,
+        overflowWrap: "anywhere",
         transition: "border-color .3s",
       }}
     >
       <div
         style={{
           position: "relative",
-          width: isPhone ? 116 : 200,
+          width: "100%",
+          aspectRatio: "1.8",
           flexShrink: 0,
         }}
       >
@@ -1068,7 +1076,7 @@ function ProductCard({
         style={{
           flex: 1,
           minWidth: 0,
-          padding: isPhone ? "12px 14px" : "16px 20px",
+          padding: isPhone ? "16px" : "20px",
           display: "flex",
           flexDirection: "column",
           gap: 6,
@@ -1090,7 +1098,8 @@ function ProductCard({
             display: "flex",
             justifyContent: "space-between",
             alignItems: "baseline",
-            gap: 12,
+            flexWrap: "wrap",
+            gap: "4px 12px",
           }}
         >
           <h2
@@ -1218,7 +1227,7 @@ function ProductCard({
             />
           ) : (
             <Button variant="primary" small onClick={onAdd}>
-              Add to order
+              <Icon d={D.bag} size={15} /> Add to order
             </Button>
           )}
         </div>
@@ -1276,7 +1285,7 @@ function PaymentMethodSelector({
               style={{
                 background: active ? C.surfaceAlt : "transparent",
                 border: `1px solid ${active ? C.primary : C.border}`,
-                borderRadius: 10,
+                borderRadius: 8,
                 padding: 12,
                 cursor: "pointer",
                 fontFamily: FONT,
@@ -1422,7 +1431,7 @@ function OrderTypeModal({ onClose }: { onClose: () => void }) {
   const option: CSSProperties = {
     background: C.surface,
     border: `1px solid ${C.border}`,
-    borderRadius: 12,
+    borderRadius: 8,
     padding: 24,
     cursor: "pointer",
     fontFamily: FONT,
@@ -1604,7 +1613,7 @@ function LoginRequiredModal({
           style={{
             width: 56,
             height: 56,
-            borderRadius: "50%",
+            borderRadius: 8,
             border: `1px solid ${C.borderStrong}`,
             color: C.warning,
             display: "flex",
@@ -1667,7 +1676,7 @@ function OrderPlacedModal({
           style={{
             width: 52,
             height: 52,
-            borderRadius: "50%",
+            borderRadius: 8,
             border: `1px solid ${C.borderStrong}`,
             color: C.success,
             display: "flex",
@@ -3049,7 +3058,7 @@ export default function Delicacy() {
   const navLinks = (
     <nav
       aria-label="Main"
-      style={{ display: "flex", alignItems: "center", gap: 2 }}
+      style={{ display: "flex", alignItems: "center", gap: 8 }}
     >
       {NAV_LINKS.map((item) => {
         const current = item.label === "Menu";
@@ -3060,26 +3069,10 @@ export default function Delicacy() {
             onClick={() =>
               current ? setOrderTypeOpen(true) : navigate(item.path)
             }
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontFamily: FONT,
-              fontSize: 13.5,
-              fontWeight: current ? 600 : 500,
-              color: current ? C.primary : C.muted,
-              padding: "8px 12px",
-              borderRadius: 8,
-              transition: "color .2s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = C.primary;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = current ? C.primary : C.muted;
-            }}
+            className="customer-nav-link"
+            aria-current={current ? "page" : undefined}
           >
-            {item.label}
+            <span>{item.label}</span>
           </button>
         );
       })}
@@ -3087,7 +3080,7 @@ export default function Delicacy() {
   );
 
   const badge: CSSProperties = {
-    borderRadius: 10,
+    borderRadius: 4,
     minWidth: 18,
     height: 18,
     fontSize: 10.5,
@@ -3100,7 +3093,7 @@ export default function Delicacy() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div
+      <div className="customer-menu"
         style={{
           fontFamily: FONT,
           background: C.bg,
@@ -3122,7 +3115,7 @@ export default function Delicacy() {
             right: 0,
             zIndex: 100,
             boxSizing: "border-box",
-            background: scrolled ? "rgba(10,8,8,0.97)" : "rgba(10,8,8,0.85)",
+            background: scrolled ? "rgba(20,15,12,0.97)" : "rgba(20,15,12,0.85)",
             backdropFilter: "blur(16px)",
             borderBottom: `1px solid ${C.border}`,
             transition: "background .3s",
@@ -3130,7 +3123,7 @@ export default function Delicacy() {
         >
           <div
             style={{
-              maxWidth: 1200,
+              maxWidth: 1440,
               margin: "0 auto",
               padding: isNarrowPhone ? "10px 14px" : "0 clamp(16px,4vw,40px)",
               minHeight: 64,
@@ -3169,7 +3162,7 @@ export default function Delicacy() {
 
             {!isNarrow && navLinks}
 
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="menu-nav-actions" style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
@@ -3247,7 +3240,7 @@ export default function Delicacy() {
                         style={{
                           width: 26,
                           height: 26,
-                          borderRadius: "50%",
+                          borderRadius: 8,
                           background: C.surfaceAlt,
                           border: `1px solid ${C.borderStrong}`,
                           display: "flex",
@@ -3313,13 +3306,14 @@ export default function Delicacy() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, ease: EASE, delay: 0.1 }}
           style={{
-            maxWidth: 1200,
+            maxWidth: 1440,
             margin: "0 auto",
             padding: "clamp(28px,5vw,52px) clamp(16px,4vw,40px) 0",
           }}
         >
           {/* ── Page title and store info ── */}
-          <div style={{ marginBottom: 32 }}>
+          <section className="menu-intro">
+            <div className="menu-intro-copy">
             <div
               style={{
                 display: "flex",
@@ -3331,14 +3325,14 @@ export default function Delicacy() {
             >
               <h1
                 style={{
-                  fontSize: "clamp(28px,4.5vw,40px)",
+                  fontSize: "clamp(42px,6vw,80px)",
                   fontWeight: 700,
                   margin: 0,
                   letterSpacing: "-0.02em",
                   lineHeight: 1.1,
                 }}
               >
-                Menu
+                Our menu
               </h1>
               <Badge tone={storeOpen ? "success" : "danger"}>
                 {storeOpen ? "Open now" : "Closed"}
@@ -3383,7 +3377,9 @@ export default function Delicacy() {
                 {STORE_CLOSED_MESSAGE}
               </p>
             )}
-          </div>
+            </div>
+            <div className="menu-intro-photo" aria-hidden="true" />
+          </section>
 
           {customerNeedsVerification && (
             <EmailVerificationPanel
@@ -3406,11 +3402,12 @@ export default function Delicacy() {
           {/* ── Category tabs ── */}
           {!loading && !loadError && categories.length > 1 && (
             <div
-              role="tablist"
+              role="tablist" aria-label="Menu categories"
               style={{
                 display: "flex",
                 marginBottom: 28,
-                borderBottom: `1px solid ${C.border}`,
+                gap: 8,
+                padding: "4px 2px 8px",
                 overflowX: "auto",
                 scrollbarWidth: "none",
               }}
@@ -3425,8 +3422,9 @@ export default function Delicacy() {
                     aria-selected={active}
                     onClick={() => setActiveCategory(cat)}
                     style={{
-                      background: "none",
-                      border: "none",
+                      borderRadius: 8,
+                      background: active ? C.surfaceAlt : "transparent",
+                      border: `1px solid ${active ? "#987650" : C.borderStrong}`,
                       cursor: "pointer",
                       fontFamily: FONT,
                       fontSize: 14,
@@ -3439,20 +3437,6 @@ export default function Delicacy() {
                     }}
                   >
                     {cat}
-                    {active && (
-                      <motion.div
-                        layoutId="categoryTab"
-                        transition={{ duration: 0.25, ease: EASE }}
-                        style={{
-                          position: "absolute",
-                          bottom: -1,
-                          left: 0,
-                          right: 0,
-                          height: 2,
-                          background: C.primary,
-                        }}
-                      />
-                    )}
                   </button>
                 );
               })}
@@ -3462,12 +3446,7 @@ export default function Delicacy() {
           {/* ── Product grid ── */}
           {loading ? (
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-                gap: "18px",
-                width: "100%",
-              }}
+              style={gridStyle}
             >
               {[...Array(6)].map((_, i) => (
                 <SkeletonProductCard key={i} theme="customer" />
@@ -3614,6 +3593,6 @@ export default function Delicacy() {
 // Landscape cards: two per row on desktop, one on mobile.
 const gridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,460px),1fr))",
+  gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,275px),1fr))",
   gap: 18,
 };

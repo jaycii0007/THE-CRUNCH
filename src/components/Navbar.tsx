@@ -1,3 +1,4 @@
+import "./customer-nav.css";
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -156,36 +157,14 @@ const NAVBAR_CSS = `
   }
 }
 .nav-center {
+  gap: 10px;
   display: flex;
   justify-content: center;
 }
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 4px;
-}
-.nav-link {
-  background: none;
-  border: 0;
-  color: rgba(245, 240, 232, 0.58);
-  font-size: 14px;
-  font-weight: 500;
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s;
-  font-family: 'Inter', system-ui, sans-serif;
-}
-.nav-link:hover {
-  color: ${CREAM};
-  background: rgba(245, 232, 182, 0.08);
-}
-.nav-link.active {
-  color: ${GOLD};
-  background: rgba(201, 168, 76, 0.12);
-  border: 1px solid rgba(201, 168, 76, 0.3);
-  border-radius: 999px;
-  padding: 8px 18px;
+  gap: 8px;
 }
 .nav-right {
   display: flex;
@@ -208,7 +187,8 @@ const NAVBAR_CSS = `
 }
 .nav-btn {
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
+  min-height: 44px;
   padding: 9px 18px;
   font-size: 13px;
   font-weight: 600;
@@ -236,7 +216,10 @@ const NAVBAR_CSS = `
   border-color: rgba(201, 168, 76, 0.3);
   color: ${GOLD};
 }
+.nav-brand, button.nav-status, .nav-burger { border-radius: 8px; }
+button.nav-status { padding: 8px 12px; border: 1px solid rgba(201,168,76,.25); max-width: 12rem; overflow-wrap: anywhere; }
 .nav-burger {
+  min-width: 44px; min-height: 44px; align-items: center; justify-content: center;
   display: none;
   background: none;
   border: 0;
@@ -245,7 +228,7 @@ const NAVBAR_CSS = `
   padding: 8px;
 }
 @media (max-width: 768px) {
-  .nav-links, .nav-status { display: none; }
+  .nav-links, .nav-status, .nav-right > .nav-btn { display: none; }
   .nav-burger { display: flex; }
 }
 .mobile-menu {
@@ -257,12 +240,12 @@ const NAVBAR_CSS = `
   border-bottom: 1px solid rgba(89, 92, 86, 0.25);
   padding: 8px clamp(20px, 5vw, 64px) 18px;
   display: grid;
-  gap: 4px;
+  gap: 8px;
 }
 .mobile-link {
   text-align: left;
   font-size: 15px;
-  padding: 12px 0;
+  padding: 10px 14px;
 }
 .mobile-auth {
   display: flex;
@@ -429,12 +412,12 @@ export function Navbar({
               {CUSTOMER_NAV_LINKS.map(({ label, path, exact }) => (
                 <motion.button
                   key={label}
-                  className={`nav-link ${isActive(path, exact) ? "active" : ""}`}
+                  aria-current={isActive(path, exact) ? "page" : undefined}
+                  className={`customer-nav-link nav-link ${isActive(path, exact) ? "active" : ""}`}
                   onClick={() => handleNav(path)}
                   whileTap={{ scale: 0.97 }}
-                  whileHover={isActive(path, exact) ? {} : { scale: 1.02 }}
                 >
-                  {label}
+                  <span>{label}</span>
                 </motion.button>
               ))}
             </div>
@@ -524,11 +507,12 @@ export function Navbar({
               {CUSTOMER_NAV_LINKS.map(({ label, path, exact }) => (
                 <motion.button
                   key={label}
-                  className={`nav-link mobile-link ${isActive(path, exact) ? "active" : ""}`}
+                  aria-current={isActive(path, exact) ? "page" : undefined}
+                  className={`customer-nav-link nav-link mobile-link ${isActive(path, exact) ? "active" : ""}`}
                   onClick={() => handleNav(path)}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {label}
+                  <span>{label}</span>
                 </motion.button>
               ))}
               <div className="mobile-auth">

@@ -293,6 +293,7 @@ export default function App() {
       <Route path="/products" element={<Products isAuthenticated={isAuth} />} />
       <Route path="/products-v2" element={<ProductsV2 />} />
 
+
       {/* ── Customer menu ────────────────────────────────────── */}
       <Route
         path="/usersmenu"

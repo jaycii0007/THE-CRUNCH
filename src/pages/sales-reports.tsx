@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { Card } from "@/components/ui/card";
@@ -3968,7 +3968,7 @@ function PrintReport({
           </tr>
         </thead>
         <tbody dangerouslySetInnerHTML={{ __html: orderRows }} />
-          <tfoot>
+        <tfoot>
           <tr className="revenue-summary">
             <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
               Total Revenue
