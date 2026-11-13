@@ -15,7 +15,7 @@ if (typeof document !== 'undefined' && !document.getElementById('crunch-fonts'))
 
 const PP = "'Poppins', sans-serif";
 // Synced with products.tsx: Black & Gold palette
-const BLACK = '#1A1A1A';
+const BLACK = '#140f0c';
 const GOLD = '#C9A84C';
 const GOLD_DARK = '#B8953A';
 const GOLD_LIGHT = '#E8D4A0';
@@ -229,16 +229,6 @@ export default function AboutTheCrunch() {
   return (
     <MotionConfig reducedMotion="user">
       <div style={{ fontFamily: PP, background: BG, color: CR, overflowX: 'hidden', minHeight: '100vh', position: 'relative' }}>
-        {/* Global Vignette for Cinematic Depth */}
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            pointerEvents: 'none',
-            zIndex: 9999,
-            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(8,7,6,0.3) 80%, rgba(8,7,6,0.5) 100%)',
-          }}
-        />
         <ScrollProgressBar />
         <Navbar />
 
@@ -247,6 +237,14 @@ export default function AboutTheCrunch() {
           ref={heroTargetRef}
           style={{
             minHeight: '100vh',
+            backgroundImage: [
+              'radial-gradient(ellipse 32% 100% at 32% 100%, rgb(166 79 34 / 8%), transparent)',
+              'radial-gradient(ellipse 38% 92% at 76% 100%, rgb(166 79 34 / 8%), transparent)',
+              'linear-gradient(to top, rgb(166 79 34 / 7%), transparent 78%)',
+            ].join(', '),
+            backgroundSize: '100% clamp(180px, 36vh, 370px)',
+            backgroundPosition: 'center bottom',
+            backgroundRepeat: 'no-repeat',
             position: 'relative',
             display: 'grid',
             gridTemplateColumns: isTablet ? '1fr' : '1.15fr 0.85fr',
@@ -256,43 +254,6 @@ export default function AboutTheCrunch() {
             perspective: 1000,
           }}
         >
-          {/* Atmospheric depth layers - subtle, no infinite loops */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: -20,
-              pointerEvents: 'none',
-              zIndex: 0,
-              background: `
-                radial-gradient(ellipse 60% 50% at 20% 20%, ${Y}14 0%, transparent 60%),
-                radial-gradient(ellipse 50% 60% at 80% 80%, ${Y_DARK}10 0%, transparent 55%),
-                ${BG}
-              `,
-            }}
-          />
-          <motion.div
-            style={{
-              position: 'absolute',
-              inset: -10,
-              pointerEvents: 'none',
-              zIndex: 0,
-              opacity: 0,
-            }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.6 }}
-            transition={{ delay: 0.8, duration: 1.2, ease: 'easeOut' }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-                opacity: 0.02,
-                mixBlendMode: 'overlay',
-              }}
-            />
-          </motion.div>
-
           {/* Left Text Content */}
           <motion.div
             style={{
@@ -465,7 +426,7 @@ export default function AboutTheCrunch() {
                 position: 'absolute',
                 inset: '10% 5% 20% 5%',
                 borderRadius: 32,
-                background: `radial-gradient(ellipse at center, rgba(245, 200, 66, 0.12) 0%, transparent 70%)`,
+                background: `radial-gradient(ellipse at center, rgba(166, 79, 34, 0.12) 0%, transparent 70%)`,
                 filter: 'blur(60px)',
                 zIndex: 0,
                 transform: 'translateZ(-40px)',
@@ -632,7 +593,7 @@ export default function AboutTheCrunch() {
                     position: 'absolute',
                     inset: '10% 5% 20% 5%',
                     borderRadius: 28,
-                    background: `radial-gradient(ellipse at center, rgba(245, 200, 66, 0.12) 0%, transparent 70%)`,
+                    background: `radial-gradient(ellipse at center, rgba(166, 79, 34, 0.12) 0%, transparent 70%)`,
                     filter: 'blur(40px)',
                     zIndex: -1,
                     transform: 'translateZ(-20px)',
@@ -978,13 +939,13 @@ export default function AboutTheCrunch() {
               background: `radial-gradient(ellipse at center, transparent 15%, rgba(8,7,6,0.4) 50%, ${BLACK} 95%)`,
               transform: 'translateZ(-20px)',
             }} />
-            {/* Ambient golden glow layers */}
+            {/* Copper light behind the store image */}
             <motion.div
               style={{
                 position: 'absolute',
                 inset: '15% 10% 25% 10%',
                 borderRadius: '50%',
-                background: `radial-gradient(ellipse at center, rgba(245, 200, 66, 0.08) 0%, transparent 70%)`,
+                background: `radial-gradient(ellipse at center, rgba(166, 79, 34, 0.08) 0%, transparent 70%)`,
                 filter: 'blur(80px)',
                 transform: 'translateZ(-30px)',
               }}
