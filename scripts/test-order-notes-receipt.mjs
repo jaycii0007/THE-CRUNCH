@@ -57,6 +57,9 @@ const receipt = {
 };
 
 const walkInHtml = buildReceiptHtml(receipt);
+const includedHtml = buildReceiptHtml({ ...receipt, items: [{ ...receipt.items[0], includedSelections: [{ kind: 'drinks', name: 'Lychee <Drink>', qty: 1 }] }] });
+assert.match(includedHtml, /Included Drink: Lychee &lt;Drink&gt; x1/);
+assert.equal((includedHtml.match(/100\.00/g) || []).length, (walkInHtml.match(/100\.00/g) || []).length, 'Included selection adds no independently charged receipt row');
 assert.match(
   walkInHtml,
   /Sold To \/ Registered Name:<\/b> ________________________<\/p><p><b>TIN:<\/b>/,

@@ -1,3 +1,4 @@
+import { IncludedSelectionModal, IncludedChoices, hasIncludedChoices, includedKey, type IncludedChoice, type IncludedConfig } from "@/components/included-menu-selections";
 import "../components/customer-nav.css";
 import "./usersmenu.css";
 import {
@@ -20,7 +21,7 @@ import {
 } from "../lib/restaurantSettings";
 import { useAuth } from "../context/authcontext";
 import { useViewport } from "@/hooks/use-tablet";
-import { getEffectiveMaxQuantity } from "../lib/orderQuantity";
+import { cartFitsInventory, getEffectiveMaxQuantity } from "../lib/orderQuantity";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { ProductImage } from "@/components/ProductImage";
 
@@ -69,6 +70,9 @@ interface Nutrition {
   servingSize?: string;
 }
 interface InventoryMenuRow {
+  ingredients?: { product_id: number; quantity_required: number; stock: number }[];
+  included_selection_kind?: 'drinks' | 'sauces' | null;
+  customizations?: IncludedConfig;
   product_id?: number;
   id?: number;
   item_type?: string;
@@ -93,6 +97,9 @@ interface InventoryMenuRow {
   nutrition?: Record<string, unknown> | null;
 }
 interface Recipe {
+  ingredients: { product_id: number; quantity_required: number; stock: number }[];
+  includedKind?: 'drinks' | 'sauces' | null;
+  customizations?: IncludedConfig;
   id: number;
   name: string;
   description: string;
@@ -111,6 +118,8 @@ interface MenuCategoryRecord {
   system_key?: string | null;
 }
 interface CartItem {
+  lineId?: number;
+  includedSelections?: IncludedChoice[];
   recipe: Recipe;
   quantity: number;
   selectedFlavorProductId?: number;
@@ -126,7 +135,7 @@ interface CustomerOrder {
   paymentReference: string | null;
   paymentStatus: string | null;
   paymentMethod: string;
-  items: { name: string; quantity: number }[];
+  items: { name: string; quantity: number; includedSelections?: IncludedChoice[] }[];
 }
 interface PaymentSessionState {
   checkoutSessionId: string;
@@ -172,7 +181,7 @@ const pendingPayMongoKey = (customerUserId: number) =>
 
 function cartPaymentFingerprint(cart: CartItem[]) {
   return cart
-    .map((item) => `${Number(item.recipe.id)}:${Number(item.quantity)}:${item.selectedFlavorProductId ?? ""}`)
+    .map((item) => `${Number(item.recipe.id)}:${Number(item.quantity)}:${item.selectedFlavorProductId ?? ""}:${includedKey(item.includedSelections)}`)
     .sort()
     .join("|");
 }
@@ -244,7 +253,7 @@ function newCheckoutRequestId() {
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const LOW_STOCK_THRESHOLD = 5;
-const PLACEHOLDER_IMG = "/img/placeholder.jpg";
+const PLACEHOLDER_IMG = "/images/menu-placeholder.jpg";
 const DEFAULT_BILLING: BillingSettings = { taxRate: 0, serviceCharge: 0 };
 const DEFAULT_STORE: StoreStatusSettings = {
   weekdayOpenTime: "10:00",
@@ -508,6 +517,9 @@ function mapMenuRows(rows: InventoryMenuRow[]): Recipe[] {
       available: stock > 0 && flagOk,
       nutrition: mapNutrition(row),
       requiresSauce: row.requires_sauce === true,
+      customizations: row.customizations,
+      includedKind: row.included_selection_kind,
+      ingredients: (row.ingredients || []).map((ingredient) => ({ product_id: Number(ingredient.product_id), quantity_required: Number(ingredient.quantity_required), stock: Number(ingredient.stock) })),
     };
   });
 }
@@ -712,6 +724,7 @@ function Img({
     >
       <ProductImage
         src={src}
+        fallbackSrc={PLACEHOLDER_IMG}
         alt={alt}
         style={{
           width: "100%",
@@ -1783,7 +1796,7 @@ function TrackingPanel({ orders }: { orders: CustomerOrder[] }) {
                 lineHeight: 1.6,
               }}
             >
-              {o.items.map((i) => `${i.quantity}x ${i.name}`).join(", ")}
+              {o.items.map((i) => `${i.quantity}x ${i.name}${(i.includedSelections ?? []).map((choice) => ` (Included ${choice.name} x${choice.qty})`).join("")}`).join(", ")}
             </p>
           </div>
         ))}
@@ -1938,6 +1951,7 @@ function HistoryDrawer({
                           }}
                         >
                           {item.name}
+                          <IncludedChoices choices={item.includedSelections} />
                         </span>
                         <span style={{ fontSize: 12.5, color: C.muted }}>
                           x{item.quantity}
@@ -1977,6 +1991,7 @@ function CartDrawer({
   onChangeQty,
   sauces,
   onSelectSauce,
+  onEditIncluded,
   onClear,
   onSendPayment,
   onVerifyPayment,
@@ -1995,6 +2010,7 @@ function CartDrawer({
   onClose: () => void;
   sauces: { id: number; name: string }[];
   onSelectSauce: (id: number, sauceId: number) => void;
+  onEditIncluded: (id: number) => void;
   onRemove: (id: number) => void;
   onChangeQty: (id: number, delta: number) => void;
   onClear: () => void;
@@ -2142,9 +2158,9 @@ function CartDrawer({
           Add items from the menu to get started.
         </p>
       ) : (
-        cart.map(({ recipe, quantity, selectedFlavorProductId }) => (
+        cart.map(({ recipe, quantity, selectedFlavorProductId, includedSelections, lineId }) => (
           <div
-            key={recipe.id}
+            key={lineId ?? recipe.id}
             style={{
               display: "flex",
               gap: 14,
@@ -2177,12 +2193,14 @@ function CartDrawer({
                   {formatPHP(recipe.price * quantity)}
                 </span>
               </div>
+              <IncludedChoices choices={includedSelections} flavorId={selectedFlavorProductId} />
+              {hasIncludedChoices(recipe.customizations) && <button type="button" className="mt-2 text-xs underline" onClick={() => onEditIncluded(lineId ?? recipe.id)}>Change included selections</button>}
               {recipe.requiresSauce && (
-                <label style={{ display: "block", marginTop: 8, fontSize: 12 }}>
-                  Included sauce (required)
+                <label className="text-orange-700 dark:text-orange-300" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+                  Chicken Flavor (required)
                   <select aria-label={`Included sauce for ${recipe.name}`} value={selectedFlavorProductId ?? ""}
-                    onChange={(event) => onSelectSauce(recipe.id, Number(event.target.value))}
-                    style={{ display: "block", width: "100%", color: C.text, background: C.surfaceAlt, padding: 8 }}>
+                    onChange={(event) => onSelectSauce(lineId ?? recipe.id, Number(event.target.value))}
+                    className="text-orange-700 dark:text-orange-300" style={{ display: "block", width: "100%", background: C.surfaceAlt, padding: 8 }}>
                     <option value="">Choose one sauce</option>
                     {sauces.map((sauce) => <option key={sauce.id} value={sauce.id}>{sauce.name}</option>)}
                   </select>
@@ -2205,12 +2223,12 @@ function CartDrawer({
                   qty={quantity}
                   max={getEffectiveMaxQuantity(recipe.stock)}
                   name={recipe.name}
-                  onChange={(d) => onChangeQty(recipe.id, d)}
+                  onChange={(d) => onChangeQty(lineId ?? recipe.id, d)}
                 />
                 <Button
                   variant="ghost"
                   small
-                  onClick={() => onRemove(recipe.id)}
+                  onClick={() => onRemove(lineId ?? recipe.id)}
                 >
                   Remove
                 </Button>
@@ -2342,8 +2360,8 @@ export default function Delicacy() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  const savedCart = useRef<{ productId: number; quantity: number; selectedFlavorProductId?: number }[] | null>(null);
-  const [sauces, setSauces] = useState<{ id: number; name: string }[]>([]);
+  const savedCart = useRef<{ productId: number; quantity: number; selectedFlavorProductId?: number; lineId?: number; includedSelections?: IncludedChoice[] }[] | null>(null);
+  const [sauces, setSauces] = useState<{ id: number; name: string; kind?: 'sauces' | null }[]>([]);
   useEffect(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem("the-crunch:customer-cart") || "[]");
@@ -2363,9 +2381,13 @@ export default function Delicacy() {
       sessionStorage.setItem("the-crunch:customer-cart", JSON.stringify(cart.map((item) => ({
         productId: item.recipe.id, quantity: item.quantity,
         selectedFlavorProductId: item.selectedFlavorProductId,
+        lineId: item.lineId, includedSelections: item.includedSelections,
       }))));
     } catch { /* Cart remains usable when browser storage is unavailable. */ }
   }, [cart, loading, loadError]);
+  const [includedTarget, setIncludedTarget] = useState<Recipe | null>(null);
+  const [includedEditingId, setIncludedEditingId] = useState<number | null>(null);
+  const nextLineId = useRef(Date.now());
   const [paymentSession, setPaymentSession] =
     useState<PaymentSessionState | null>(null);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
@@ -2499,7 +2521,7 @@ export default function Delicacy() {
         isSelectionOnlySauceCategory(row.category, configuredCategories) &&
         normalizeName(row.availability_status) !== "hidden" &&
         !isUnavailable(row.availability_status))
-        .map((row) => ({ id: Number(row.product_id ?? row.id), name: String(row.product_name ?? row.name) })));
+        .map((row) => ({ id: Number(row.product_id ?? row.id), name: String(row.product_name ?? row.name), kind: row.included_selection_kind === 'sauces' ? 'sauces' as const : null })));
       // Exclude selection-only sauce labels from the purchasable catalog,
       // category tabs and cart refresh; keep normal sellable sauces visible.
       const recipes = mapMenuRows(
@@ -2523,11 +2545,11 @@ export default function Delicacy() {
       setCart((prev) =>
         (prev.length ? prev : (restored ?? []).flatMap((item) => {
           const recipe = recipes.find((entry) => entry.id === item.productId);
-          return recipe ? [{ recipe, quantity: item.quantity, selectedFlavorProductId: item.selectedFlavorProductId }] : [];
+          return recipe ? [{ recipe, quantity: item.quantity, selectedFlavorProductId: item.selectedFlavorProductId, lineId: item.lineId, includedSelections: item.includedSelections }] : [];
         })).flatMap((item) => {
           const current = recipes.find((r) => r.id === item.recipe.id);
           return [{ ...item, recipe: current
-            ? { ...item.recipe, stock: current.stock, available: current.available, requiresSauce: current.requiresSauce }
+            ? { ...item.recipe, stock: current.stock, available: current.available, requiresSauce: current.requiresSauce, customizations: current.customizations, ingredients: current.ingredients }
             : { ...item.recipe, stock: 0, available: false } }];
         }),
       );
@@ -2731,11 +2753,17 @@ export default function Delicacy() {
     removePendingPayMongoCheckout(customerUserId);
   };
 
+  const fitsCart = (lines: CartItem[]) => cartFitsInventory(
+    lines.map((entry) => ({ id: entry.recipe.id, quantity: entry.quantity, includedSelections: entry.includedSelections })),
+    [...menuItems, ...sauces.map((sauce) => ({ id: sauce.id, ingredients: [] }))],
+  );
+
   const addToCart = (recipe: Recipe) => {
     if (!recipe.available) return;
-    const existing = cart.find((c) => c.recipe.id === recipe.id);
+    if (recipe.requiresSauce || hasIncludedChoices(recipe.customizations)) { setIncludedEditingId(null); setIncludedTarget(recipe); return; }
+    const existing = cart.find((c) => c.recipe.id === recipe.id && !c.lineId);
     const nextQty = (existing?.quantity ?? 0) + 1;
-    if (nextQty > getEffectiveMaxQuantity(recipe.stock)) {
+    if (nextQty > getEffectiveMaxQuantity(recipe.stock) || !fitsCart([...cart.filter((entry) => entry !== existing), { recipe, quantity: nextQty }])) {
       flashStockWarning(recipe.id);
       return;
     }
@@ -2750,11 +2778,11 @@ export default function Delicacy() {
   };
   const removeFromCart = (id: number) => {
     clearPayment();
-    setCart((p) => p.filter((c) => c.recipe.id !== id));
+    setCart((p) => p.filter((c) => (c.lineId ?? c.recipe.id) !== id));
   };
   // Quantity can never go above the real stock.
   const changeQty = (id: number, delta: number) => {
-    const item = cart.find((c) => c.recipe.id === id);
+    const item = cart.find((c) => (c.lineId ?? c.recipe.id) === id) ?? cart.find((c) => c.recipe.id === id);
     if (!item) return;
     const max = getEffectiveMaxQuantity(item.recipe.stock),
       next = item.quantity + delta;
@@ -2762,11 +2790,12 @@ export default function Delicacy() {
       flashStockWarning(id);
       return;
     }
+    if (delta > 0 && !fitsCart(cart.map((entry) => entry === item ? { ...entry, quantity: next } : entry))) { flashStockWarning(item.recipe.id); return; }
     clearPayment();
     setCart((p) =>
       p
         .map((c) =>
-          c.recipe.id === id ? { ...c, quantity: Math.min(next, max) } : c,
+          c === item ? { ...c, quantity: Math.min(next, max) } : c,
         )
         .filter((c) => c.quantity > 0),
     );
@@ -2781,6 +2810,7 @@ export default function Delicacy() {
     cart.map((i) => ({
       product_id: i.recipe.id,
       selected_flavor_product_id: i.selectedFlavorProductId,
+      included_selections: i.includedSelections,
       qty: i.quantity,
       subtotal: i.recipe.price * i.quantity,
       name: i.recipe.name,
@@ -3489,13 +3519,12 @@ export default function Delicacy() {
                       recipe={recipe}
                       index={index}
                       cartQty={
-                        cart.find((c) => c.recipe.id === recipe.id)?.quantity ??
-                        0
+                        cart.filter((c) => c.recipe.id === recipe.id).reduce((sum, entry) => sum + entry.quantity, 0)
                       }
                       highlighted={highlightedId === recipe.id}
                       stockWarning={stockWarningId === recipe.id}
                       onAdd={() => addToCart(recipe)}
-                      onChangeQty={(delta) => changeQty(recipe.id, delta)}
+                      onChangeQty={(delta) => delta > 0 ? addToCart(recipe) : changeQty(recipe.id, delta)}
                     />
                   </div>
                 ))}
@@ -3505,6 +3534,27 @@ export default function Delicacy() {
         </motion.main>
 
         {/* ── Overlays ── */}
+        {includedTarget && <IncludedSelectionModal name={includedTarget.name} config={includedTarget.customizations}
+          requireFlavor={includedTarget.requiresSauce} flavors={sauces}
+          options={[...menuItems.filter((recipe) => recipe.id !== includedTarget.id).map((recipe) => ({ kind: recipe.includedKind, id: recipe.id, name: recipe.name, stock: Math.floor(Math.max(0, recipe.stock - cart.filter((entry) => (entry.lineId ?? entry.recipe.id) !== includedEditingId).reduce((sum, entry) => sum + entry.quantity * ((entry.recipe.id === recipe.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === recipe.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => (entry.lineId ?? entry.recipe.id) === includedEditingId)?.quantity || 1)), available: recipe.available })), ...sauces.map((sauce) => ({ ...sauce, stock: 999, available: true }))]}
+          onCancel={() => { setIncludedTarget(null); setIncludedEditingId(null); }} onConfirm={(choices, flavorId) => {
+            const recipe = includedTarget;
+            clearPayment();
+            const editing = cart.find((entry) => (entry.lineId ?? entry.recipe.id) === includedEditingId);
+            const matching = cart.find((entry) => entry !== editing && entry.recipe.id === recipe.id && entry.selectedFlavorProductId === flavorId && includedKey(entry.includedSelections) === includedKey(choices));
+            const total = cart.filter((entry) => entry.recipe.id === recipe.id).reduce((sum, entry) => sum + entry.quantity, 0);
+            if (!editing && total >= getEffectiveMaxQuantity(recipe.stock)) { flashStockWarning(recipe.id); return; }
+            const quantity = editing?.quantity ?? 1;
+            setCart((current) => {
+              const remaining = current.filter((entry) => entry !== editing);
+              const proposed = [...remaining.filter((entry) => entry !== matching), { recipe, quantity: quantity + (matching?.quantity || 0), includedSelections: choices }];
+              if (!fitsCart(proposed)) { flashStockWarning(recipe.id); return current; }
+              return matching ? remaining.map((entry) => entry === matching ? { ...entry, quantity: entry.quantity + quantity } : entry)
+                : [...remaining, { recipe, quantity, selectedFlavorProductId: flavorId, includedSelections: choices, lineId: editing?.lineId ?? ++nextLineId.current }];
+            });
+            setIncludedTarget(null);
+            setIncludedEditingId(null);
+          }} />}
         <AnimatePresence>
           {orderTypeOpen && (
             <OrderTypeModal onClose={() => setOrderTypeOpen(false)} />
@@ -3513,10 +3563,11 @@ export default function Delicacy() {
         <AnimatePresence>
           {drawerOpen && (
             <CartDrawer
+              onEditIncluded={(id) => { const entry = cart.find((item) => (item.lineId ?? item.recipe.id) === id); if (entry) { setIncludedTarget(entry.recipe); setIncludedEditingId(id); } }}
               sauces={sauces}
               onSelectSauce={(id, sauceId) => {
                 clearPayment();
-                setCart((current) => current.map((item) => item.recipe.id === id ? { ...item, selectedFlavorProductId: sauceId || undefined } : item));
+                setCart((current) => current.map((item) => (item.lineId ?? item.recipe.id) === id ? { ...item, selectedFlavorProductId: sauceId || undefined } : item));
               }}
               cart={cart}
               billing={billing}

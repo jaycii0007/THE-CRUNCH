@@ -1,4 +1,5 @@
 "use client";
+import { IncludedChoices } from "@/components/included-menu-selections";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -63,6 +64,7 @@ interface OrderItem {
   note?: string | null;
   selectedFlavorProductId?: number | null;
   selectedFlavorName?: string | null;
+  includedSelections?: { kind: string; name: string; qty: number }[];
 }
 
 interface OrderCard {
@@ -360,6 +362,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
               <span className="w-9 text-base font-bold text-slate-900">{item.quantity}×</span>
               <span className="flex-1 text-base text-slate-700">
                 {item.name}
+                <IncludedChoices choices={item.includedSelections} />
                 {item.selectedFlavorName && (
                   <span className="block text-sm font-semibold text-amber-700">
                     Sauce: {item.selectedFlavorName}

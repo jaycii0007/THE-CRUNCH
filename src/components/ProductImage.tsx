@@ -47,12 +47,12 @@ export function ProductImage({
   ...imageProps
 }: ProductImageProps) {
   const resolvedSource = resolveAssetUrl(src);
-  const resolvedFallback = resolveAssetUrl(fallbackSrc);
+  const resolvedFallback = fallbackSrc.startsWith("/images/") ? fallbackSrc : resolveAssetUrl(fallbackSrc);
   return (
     <FallbackImage
       key={resolvedSource}
       {...imageProps}
-      source={resolvedSource}
+      source={resolvedSource === PRODUCT_IMAGE_PLACEHOLDER ? resolvedFallback : resolvedSource}
       fallback={resolvedFallback}
     />
   );
