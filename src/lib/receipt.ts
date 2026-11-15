@@ -179,7 +179,6 @@ ${merchantLines.map((line) => `<p class="c s">${esc(line)}</p>`).join("")}
 <p class="receipt-title">ORDER / TRANSACTION RECEIPT</p>
 <hr/>
 <table>${info.filter(([, v]) => v).map(([l, v]) => row(l, v)).join("")}</table>
-<hr/><div class="customer"><p class="label">Customer information</p><p><b>Sold To / Registered Name:</b> ${customerValue(customer.soldTo)}</p><p><b>TIN:</b> ${blankCustomerLine}</p><p><b>Business Address:</b> ${blankCustomerLine}</p></div>
 <hr/>
 <table><tr><th class="q">Qty</th><th>Description</th><th class="r">Amount</th></tr><tbody class="item">${items}</tbody></table>
 <hr/>
@@ -188,6 +187,7 @@ ${extras ? `<table>${extras}</table><hr/>` : ""}
 <hr/>
 <table>${payment}</table>
 ${r.orderNote ? `<hr/><p><b>Note:</b> ${esc(r.orderNote)}</p>` : ""}
+<hr/><div class="customer"><p class="label">Customer information</p><p><b>Sold To / Registered Name:</b> ${customerValue(customer.soldTo)}</p><p><b>TIN:</b> ${blankCustomerLine}</p><p><b>Business Address:</b> ${blankCustomerLine}</p></div>
 <hr class="d"/>
 <p class="c b" style="font-size:14px">THANK YOU!</p>
 <p class="c">Please come again</p>
