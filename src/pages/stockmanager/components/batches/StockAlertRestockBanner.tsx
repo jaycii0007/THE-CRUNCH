@@ -99,12 +99,12 @@ export function StockAlertRestockBanner({
               {
                 items: criticalItems,
                 severity: "critical" as const,
-                label: "\uD83D\uDD34 Critical \u2014 Order Immediately",
+                label: "\uD83D\uDD34 Low Stock \u2014 Order Immediately",
               },
               {
                 items: lowItems,
                 severity: "low" as const,
-                label: "\uD83D\uDFE1 Low Stock \u2014 Reorder Soon",
+                label: "\uD83D\uDFE1 Reorder Stock \u2014 Reorder Soon",
               },
             ].map(({ items, severity, label }, gi) =>
               items.length > 0 ? (

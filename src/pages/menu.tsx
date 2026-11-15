@@ -1,4 +1,5 @@
 import { cartFitsInventory } from "../lib/orderQuantity";
+import { capitalizeFirstLetter } from "@/lib/utils";
 import { IncludedSelectionModal, IncludedChoices, hasIncludedChoices, includedKey, type IncludedChoice, type IncludedConfig } from "@/components/included-menu-selections";
 import {
   createContext,
@@ -139,6 +140,7 @@ interface DiscountApproval {
   discountId: number;
 }
 interface MenuItem {
+  includedCategoryKey?: string | null;
   includedKind?: 'drinks' | 'sauces' | null;
   customizations?: IncludedConfig;
   ingredients: { product_id: number; quantity_required: number; stock: number }[];
@@ -315,9 +317,10 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
       categorySystemKey: p.category_system_key
         ? String(p.category_system_key).trim().toLowerCase()
         : null,
-      requiresSauce: p.requires_sauce === true || p.requires_sauce === 1,
+      requiresSauce: false,
       customizations: p.customizations,
       includedKind: p.included_selection_kind,
+      includedCategoryKey: p.included_category_key,
       ingredients: (p.ingredients ?? []).map((ingredient: Record<string, unknown>) => ({
         product_id: Number(ingredient.product_id),
         quantity_required: Number(ingredient.quantity_required),
@@ -714,6 +717,7 @@ const ProductCard = memo(
           </p>
           <p className="mt-2 text-base font-semibold text-neutral-900">
             {money(item.price)}
+            {Object.entries(item.customizations || {}).filter(([key, rule]) => key.startsWith('category:') && rule?.enabled && rule.includedQuantity > 0).map(([key, rule]) => <span key={key} className={`mt-1 block text-xs ${key === 'sauces' || rule?.sauce ? 'text-orange-700 dark:text-orange-300' : key === 'drinks' || rule?.beverage ? 'text-blue-700 dark:text-blue-300' : 'text-purple-700 dark:text-purple-300'}`}>{rule?.includedQuantity} {rule?.label || (key === 'drinks' ? 'Beverage' : 'Sauce')} Included</span>)}
           </p>
         </div>
       </motion.button>
@@ -832,7 +836,7 @@ const CartRow = memo(
               {item.name}
             </p>
             <p className="text-xs text-neutral-400">{money(item.price)} each</p>
-            <IncludedChoices choices={item.includedSelections} flavorId={item.selectedFlavorProductId} />
+            <CartIncludedChoices item={item} />
               {item.selectedFlavorName && (
               <p className="mt-0.5 text-xs font-semibold text-orange-700 dark:text-orange-300">
                 Sauce: {item.selectedFlavorName}
@@ -845,7 +849,7 @@ const CartRow = memo(
         </div>
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <button className={step} onClick={() => onQty(item.cartKey, -1)}>
+            <button className={step} onClick={() => item.quantity === 1 ? onRemove(item.cartKey) : onQty(item.cartKey, -1)}>
               <Minus className="h-3.5 w-3.5 text-neutral-600" />
             </button>
             <input
@@ -896,6 +900,17 @@ const CartRow = memo(
 );
 
 /* ───────────────────────── modals ───────────────────────── */
+
+function CartIncludedChoices({ item }: { item: CartItem }) {
+  return <>{(item.includedSelections ?? [])
+    .filter((choice) => choice.product_id !== item.selectedFlavorProductId)
+    .map((choice, index) => (
+      <span key={index} title={item.customizations?.[choice.kind]?.label || choice.kind}
+        className="mt-1 block whitespace-normal text-xs text-neutral-500">
+        {choice.name} × {choice.qty}
+      </span>
+    ))}</>;
+}
 
 function ConfirmModal({
   show,
@@ -1366,6 +1381,13 @@ function AmountModal({
                 {inputError}
               </p>
             )}
+            <button
+              type="button"
+              onClick={() => updateCashInput(amountDue.toFixed(2))}
+              className="mt-2 mb-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600"
+            >
+              Exact Amount
+            </button>
             {quick.length > 0 && (
               <div
                 className={`${inputError ? "mb-3" : "mt-2 mb-3"} flex flex-wrap gap-1.5`}
@@ -2115,6 +2137,7 @@ export default function CashierView() {
   const [discountAuthError, setDiscountAuthError] = useState("");
   const [authorizingDiscount, setAuthorizingDiscount] = useState(false);
   const [showVoidConfirm, setShowVoidConfirm] = useState(false);
+  const [removeCartKey, setRemoveCartKey] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [done, setDone] = useState<ReceiptDto | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -2247,7 +2270,7 @@ export default function CashierView() {
         const choices = Array.isArray(entry.choices) ? entry.choices.flatMap((choice: any) => {
           if (!choice || typeof choice !== 'object') return [];
           const linked = products.find((candidate) => candidate.id === choice.product_id);
-          return linked && ['drinks', 'sauces'].includes(choice.kind) && Number.isInteger(choice.qty) && choice.qty > 0
+          return linked && (['drinks', 'sauces'].includes(choice.kind) || /^category:[1-9][0-9]*$/.test(choice.kind)) && Number.isInteger(choice.qty) && choice.qty > 0
             ? [{ kind: choice.kind, product_id: linked.id, name: linked.name, qty: choice.qty }] : [];
         }) : [];
         return [{ ...product, cartKey: `${product.id}:${flavor?.id ?? ''}:${includedKey(choices)}`, quantity: entry.quantity,
@@ -2755,6 +2778,7 @@ export default function CashierView() {
   const clearOrderForm = () => {
     try { sessionStorage.removeItem(draftKey); } catch { /* Storage unavailable. */ }
     setCart([]);
+    setRemoveCartKey(null);
     setFlavorTarget(null);
     setSelectedFlavorId(null);
     setCheckoutStep(1);
@@ -2915,10 +2939,10 @@ export default function CashierView() {
       const product = currentProducts.find((entry) => entry.id === item.id);
       if (!product || isUnavailable(product.availabilityStatus) || product.price !== item.price || item.quantity > getEffectiveMaxQuantity(product.remainingStock)) return true;
       if (product.requiresSauce && !currentProducts.some((entry) => entry.id === item.selectedFlavorProductId && entry.categorySystemKey === 'chicken_flavors' && !isUnavailable(entry.availabilityStatus))) return true;
-      return (['drinks', 'sauces'] as const).some((kind) => {
+      return Object.keys(product.customizations || {}).filter((key) => key === 'drinks' || key === 'sauces' || key.startsWith('category:')).some((kind) => {
         const choices = (item.includedSelections || []).filter((entry) => entry.kind === kind);
         const required = product.customizations?.[kind]?.enabled ? Number(product.customizations[kind]?.includedQuantity) : 0;
-        return choices.reduce((sum, entry) => sum + entry.qty, 0) !== required || choices.some((choice) => !currentProducts.some((entry) => entry.id === choice.product_id && entry.includedKind === kind && !isUnavailable(entry.availabilityStatus)));
+        return choices.reduce((sum, entry) => sum + entry.qty, 0) !== required || choices.some((choice) => !currentProducts.some((entry) => entry.id === choice.product_id && (entry.includedKind === kind || entry.includedCategoryKey === kind) && !isUnavailable(entry.availabilityStatus)));
       });
     });
     if (invalid || !cartFitsInventory(cart, currentProducts)) {
@@ -3138,9 +3162,8 @@ export default function CashierView() {
                     No online pickup orders waiting for cashier action
                   </Empty>
                 )}
-                {review.length > 0 && (
-                  <PanelTitle>Awaiting cashier review</PanelTitle>
-                )}
+                {review.length > 0 && <section aria-label="Awaiting cashier review" className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/60">
+                  <PanelTitle>Awaiting cashier review ({review.length})</PanelTitle>
                 {review.map((o) => {
                   const action = getSettlementAction(
                     o.trackingStatus,
@@ -3189,7 +3212,9 @@ export default function CashierView() {
                     />
                   );
                 })}
-                {ready.length > 0 && <PanelTitle>Ready for pickup</PanelTitle>}
+                </section>}
+                {ready.length > 0 && <section aria-label="Ready for pickup" className={`${review.length ? "mt-3" : ""} overflow-hidden rounded-2xl border border-green-300 bg-green-50/60`}>
+                  <PanelTitle>Ready for pickup ({ready.length})</PanelTitle>
                 {ready.map((o) => (
                   <OrderRow
                     key={`r${o.id}`}
@@ -3205,6 +3230,7 @@ export default function CashierView() {
                     }
                   />
                 ))}
+                </section>}
               </div>
             </Collapse>
 
@@ -3372,7 +3398,7 @@ export default function CashierView() {
                   <CartRow
                     key={item.cartKey}
                     item={item}
-                    onRemove={removeFromCart}
+                    onRemove={setRemoveCartKey}
                     onQty={updateQty}
                     canIncrease={(products.find((p) => p.id === item.id) ?? item).ingredients.every((ingredient) =>
                       cart.reduce((total, entry) => total + entry.quantity *
@@ -3396,7 +3422,7 @@ export default function CashierView() {
                       <p className="truncate text-sm font-semibold text-neutral-800">
                         {item.name}
                       </p>
-                      <IncludedChoices choices={item.includedSelections} flavorId={item.selectedFlavorProductId} />
+                      <CartIncludedChoices item={item} />
               {item.selectedFlavorName && (
                         <p className="text-xs font-semibold text-orange-700 dark:text-orange-300">
                           Sauce: {item.selectedFlavorName}
@@ -3576,8 +3602,9 @@ export default function CashierView() {
                   <input
                     value={soldToName}
                     onChange={(event) =>
-                      setSoldToName(event.target.value.slice(0, 150))
+                      setSoldToName(((event.nativeEvent as InputEvent).isComposing ? event.target.value : capitalizeFirstLetter(event.target.value)).slice(0, 150))
                     }
+                    onCompositionEnd={(event) => setSoldToName(capitalizeFirstLetter(event.currentTarget.value).slice(0, 150))}
                     placeholder="Sold To"
                     className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-900"
                   />
@@ -3653,7 +3680,7 @@ export default function CashierView() {
 
       {includedTarget && <IncludedSelectionModal name={includedTarget.item.name} config={includedTarget.item.customizations}
         requireFlavor={includedTarget.item.requiresSauce} flavors={chickenFlavors}
-        options={products.filter((product) => product.id !== includedTarget.item.id).map((product) => ({ kind: product.includedKind, id: product.id, name: product.name, stock: product.categorySystemKey === 'chicken_flavors' ? 999 : Math.floor(Math.max(0, product.remainingStock - cart.filter((entry) => entry.cartKey !== includedTarget.editingCartKey).reduce((sum, entry) => sum + entry.quantity * ((entry.id === product.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === product.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => entry.cartKey === includedTarget.editingCartKey)?.quantity || 1)), available: !isUnavailable(product.availabilityStatus) }))}
+        options={products.filter((product) => product.id !== includedTarget.item.id).map((product) => ({ categoryKey: product.includedCategoryKey, kind: product.includedKind, id: product.id, name: product.name, stock: product.categorySystemKey === 'chicken_flavors' ? 999 : Math.floor(Math.max(0, product.remainingStock - cart.filter((entry) => entry.cartKey !== includedTarget.editingCartKey).reduce((sum, entry) => sum + entry.quantity * ((entry.id === product.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === product.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => entry.cartKey === includedTarget.editingCartKey)?.quantity || 1)), available: !isUnavailable(product.availabilityStatus) }))}
         onCancel={() => setIncludedTarget(null)} onConfirm={(choices, flavorId) => {
           const target = includedTarget;
           const flavor = chickenFlavors.find((entry) => entry.id === flavorId);
@@ -3681,6 +3708,18 @@ export default function CashierView() {
           setFlavorTarget(null);
           setSelectedFlavorId(null);
         }}
+      />
+      <ConfirmModal
+        show={removeCartKey !== null}
+        title="Remove item"
+        message="Remove this item from your cart?"
+        confirmLabel="Remove item"
+        busy={false}
+        onConfirm={() => {
+          if (removeCartKey !== null) removeFromCart(removeCartKey);
+          setRemoveCartKey(null);
+        }}
+        onCancel={() => setRemoveCartKey(null)}
       />
       <ConfirmModal
         show={showVoidConfirm}

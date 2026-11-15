@@ -70,6 +70,7 @@ interface Nutrition {
   servingSize?: string;
 }
 interface InventoryMenuRow {
+  included_category_key?: string | null;
   ingredients?: { product_id: number; quantity_required: number; stock: number }[];
   included_selection_kind?: 'drinks' | 'sauces' | null;
   customizations?: IncludedConfig;
@@ -97,6 +98,7 @@ interface InventoryMenuRow {
   nutrition?: Record<string, unknown> | null;
 }
 interface Recipe {
+  includedCategoryKey?: string | null;
   ingredients: { product_id: number; quantity_required: number; stock: number }[];
   includedKind?: 'drinks' | 'sauces' | null;
   customizations?: IncludedConfig;
@@ -515,9 +517,10 @@ function mapMenuRows(rows: InventoryMenuRow[]): Recipe[] {
       image: resolvedImg,
       available: stock > 0 && flagOk,
       nutrition: mapNutrition(row),
-      requiresSauce: row.requires_sauce === true,
+      requiresSauce: false,
       customizations: row.customizations,
       includedKind: row.included_selection_kind,
+      includedCategoryKey: row.included_category_key,
       ingredients: (row.ingredients || []).map((ingredient) => ({ product_id: Number(ingredient.product_id), quantity_required: Number(ingredient.quantity_required), stock: Number(ingredient.stock) })),
     };
   });
@@ -1135,6 +1138,7 @@ function ProductCard({
             }}
           >
             {formatPHP(recipe.price)}
+            {Object.entries(recipe.customizations || {}).filter(([key, rule]) => key.startsWith('category:') && rule?.enabled && rule.includedQuantity > 0).map(([key, rule]) => <span key={key} className={`mt-1 block text-xs ${key === 'sauces' || rule?.sauce ? 'text-orange-700 dark:text-orange-300' : key === 'drinks' || rule?.beverage ? 'text-blue-700 dark:text-blue-300' : 'text-purple-700 dark:text-purple-300'}`}>{rule?.includedQuantity} {rule?.label || (key === 'drinks' ? 'Beverage' : 'Sauce')} Included</span>)}
           </span>
         </div>
         {recipe.description && !isPhone && (
@@ -2360,7 +2364,7 @@ export default function Delicacy() {
   const [loadError, setLoadError] = useState(false);
 
   const savedCart = useRef<{ productId: number; quantity: number; selectedFlavorProductId?: number; lineId?: number; includedSelections?: IncludedChoice[] }[] | null>(null);
-  const [sauces, setSauces] = useState<{ id: number; name: string; kind?: 'sauces' | null }[]>([]);
+  const [sauces, setSauces] = useState<{ id: number; name: string; kind?: 'sauces' | null; categoryKey?: string | null }[]>([]);
   useEffect(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem("the-crunch:customer-cart") || "[]");
@@ -2520,7 +2524,7 @@ export default function Delicacy() {
         isSelectionOnlySauceCategory(row.category, configuredCategories) &&
         normalizeName(row.availability_status) !== "hidden" &&
         !isUnavailable(row.availability_status))
-        .map((row) => ({ id: Number(row.product_id ?? row.id), name: String(row.product_name ?? row.name), kind: row.included_selection_kind === 'sauces' ? 'sauces' as const : null })));
+        .map((row) => ({ id: Number(row.product_id ?? row.id), name: String(row.product_name ?? row.name), categoryKey: row.included_category_key, kind: row.included_selection_kind === 'sauces' ? 'sauces' as const : null })));
       // Exclude selection-only sauce labels from the purchasable catalog,
       // category tabs and cart refresh; keep normal sellable sauces visible.
       const recipes = mapMenuRows(
@@ -3535,7 +3539,7 @@ export default function Delicacy() {
         {/* ── Overlays ── */}
         {includedTarget && <IncludedSelectionModal name={includedTarget.name} config={includedTarget.customizations}
           requireFlavor={includedTarget.requiresSauce} flavors={sauces}
-          options={[...menuItems.filter((recipe) => recipe.id !== includedTarget.id).map((recipe) => ({ kind: recipe.includedKind, id: recipe.id, name: recipe.name, stock: Math.floor(Math.max(0, recipe.stock - cart.filter((entry) => (entry.lineId ?? entry.recipe.id) !== includedEditingId).reduce((sum, entry) => sum + entry.quantity * ((entry.recipe.id === recipe.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === recipe.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => (entry.lineId ?? entry.recipe.id) === includedEditingId)?.quantity || 1)), available: recipe.available })), ...sauces.map((sauce) => ({ ...sauce, stock: 999, available: true }))]}
+          options={[...menuItems.filter((recipe) => recipe.id !== includedTarget.id).map((recipe) => ({ categoryKey: recipe.includedCategoryKey, kind: recipe.includedKind, id: recipe.id, name: recipe.name, stock: Math.floor(Math.max(0, recipe.stock - cart.filter((entry) => (entry.lineId ?? entry.recipe.id) !== includedEditingId).reduce((sum, entry) => sum + entry.quantity * ((entry.recipe.id === recipe.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === recipe.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => (entry.lineId ?? entry.recipe.id) === includedEditingId)?.quantity || 1)), available: recipe.available })), ...sauces.map((sauce) => ({ ...sauce, stock: 999, available: true }))]}
           onCancel={() => { setIncludedTarget(null); setIncludedEditingId(null); }} onConfirm={(choices, flavorId) => {
             const recipe = includedTarget;
             clearPayment();

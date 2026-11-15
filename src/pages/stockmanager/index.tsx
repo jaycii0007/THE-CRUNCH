@@ -366,7 +366,7 @@ export default function StockManager() {
   const activeTab = sanitizeStockManagerTab(tab);
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showRawMaterialForm, setShowRawMaterialForm] = useState(false);
@@ -1071,14 +1071,6 @@ export default function StockManager() {
                   attention
                 </button>
               )}
-              <div className="sm-status-badge">
-                <span
-                  className={`sm-status-dot ${isLoading || isRefreshing ? "sm-status-dot--syncing" : "sm-status-dot--synced"}`}
-                />
-                <span>
-                  {isLoading || isRefreshing ? "Syncing" : "Up to date"}
-                </span>
-              </div>
             </div>
           </div>
 
@@ -1176,12 +1168,16 @@ export default function StockManager() {
                   totalProductsValue={dashboard.totalProductsCounted.length.toString()}
                   lowStockValue={dashboard.lowStockItems.length.toString()}
                   criticalStockValue={dashboard.alertCriticalStock.length.toString()}
+                  outOfStockValue={dashboard.outOfStockItems.length.toString()}
                   pendingPOValue={po.filteredPOs.length.toString()}
                   onPurchaseOrdersSelect={() => setTab("purchases")}
                   wholeChickenProducts={dashboard.wholeChickenProducts}
                   choppedChickenProducts={dashboard.choppedChickenProducts}
                   dashboardSubTab={dashboard.dashboardSubTab}
-                  onSummarySelect={dashboard.selectDashboardSummary}
+                  onSummarySelect={(key) => {
+                    if (["low", "critical", "out"].includes(key)) setTab("alerts");
+                    dashboard.selectDashboardSummary(key);
+                  }}
                   mainStockContent={
                     <div
                       id="dashboard-main-stock"
@@ -1346,7 +1342,7 @@ export default function StockManager() {
                                       </td>
                                       <td>
                                         <span
-                                          className={`sm-category-badge ${getCategoryStyle(p.category).replace("bg-", "sm-category-badge--").replace("text-", "").replace("border-", "")}`}
+                                          className={`sm-category-badge ${getCategoryStyle(p.category)}`}
                                         >
                                           {p.category}
                                         </span>
@@ -1642,7 +1638,9 @@ export default function StockManager() {
                     setEditingSupplier={supplier.setEditingSupplier}
                     addProductToSupplierForm={supplier.addProductToSupplierForm}
                     addSupplier={supplier.addSupplier}
-                    removeSupplier={supplier.removeSupplier}
+                    removeSupplier={(id) => {
+                      if (window.confirm("Remove this supplier?")) return supplier.removeSupplier(id);
+                    }}
                     handleRemoveSupplierProduct={
                       supplier.handleRemoveSupplierProduct
                     }
@@ -1680,7 +1678,9 @@ export default function StockManager() {
                   onNewPO={() => po.setPrefillPOProduct(null)}
                   onSelectOrder={po.setSelectedOrder}
                   onPrintOrder={po.setPrintOrder}
-                  onDeleteOrder={po.handlePODelete}
+                  onDeleteOrder={(id) => {
+                    if (window.confirm(`Cancel purchase order ${id}?`)) return po.handlePODelete(id);
+                  }}
                   onSummarySelect={dashboard.selectDashboardSummary}
                 />
               )}
@@ -2330,6 +2330,11 @@ export default function StockManager() {
             rows={dashboard.selectedSummaryConfig.rows}
             emptyMessage={dashboard.selectedSummaryConfig.emptyMessage}
             onClose={dashboard.closeDashboardSummary}
+            onCreatePO={["low", "critical", "out"].includes(dashboard.dashboardSummary) ? () => {
+              dashboard.closeDashboardSummary();
+              setTab("purchases");
+              po.setPrefillPOProduct(null);
+            } : undefined}
           />
         )}
       </div>

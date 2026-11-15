@@ -69,12 +69,12 @@ export function PODetailDrawer({
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
       className="fixed right-0 top-0 h-full w-full max-w-[440px] bg-white shadow-2xl z-50 flex flex-col"
     >
-      <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5 border-b border-gray-100">
         <div>
           <p className="text-xs text-gray-400 font-medium">{order.date}</p>
           <h2 className="text-lg font-semibold text-gray-800">{order.id}</h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {order.status === "Draft" && (
             <button
               onClick={() => onEdit(order)}
@@ -95,7 +95,8 @@ export function PODetailDrawer({
           {(order.status === "Draft" || order.status === "Ordered") && (
             <button
               onClick={() => setShowDeleteConfirm(true)}
-              className="p-1.5 rounded-lg text-slate-300 hover:text-red-400 hover:bg-red-50 transition-colors"
+              className="sm-action-btn sm-action-btn--delete"
+              aria-label={`Cancel purchase order ${order.id}`}
               title="Cancel order"
             >
               <TrashIcon />

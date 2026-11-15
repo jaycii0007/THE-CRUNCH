@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+﻿import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -114,7 +114,7 @@ interface Order {
   id: number;
   orderNumber: string;
   transactionId: string;
-  items: { name: string; price: number; quantity: number }[];
+  items: { productId?: number; name: string; price: number; quantity: number }[];
   total: number;
   discountAmount?: number | null;
   date: string;
@@ -160,6 +160,7 @@ interface RawOrderRow {
   status?: string;
   paymentMethod?: string;
   payment_method?: string;
+  paymentRecordMethod?: string | null;
   paymentStatus?: string;
   payment_status?: string;
   prepStartedAt?: string;
@@ -479,7 +480,7 @@ function formatOrderType(value?: string | null): string {
     case "delivery":
       return "Delivery";
     default:
-      return value || "—";
+      return value || "-";
   }
 }
 
@@ -539,7 +540,7 @@ async function openProofImage(
   proofWindow.opener = null;
   proofWindow.document.title = "Loading payment proof";
   proofWindow.document.body.innerHTML =
-    '<p style="font:14px system-ui;padding:24px;color:#475569">Loading payment proof…</p>';
+    '<p style="font:14px system-ui;padding:24px;color:#475569">Loading payment proof...</p>';
 
   try {
     const proofBlob = await fetchAuthenticatedAsset(resolvedUrl);
@@ -600,7 +601,9 @@ function processRawRows(rows: RawOrderRow[]): {
         orderType: r.orderType ?? r.order_type ?? "Order",
         status: r.status ?? "",
         paymentMethod: normalizePaymentMethod(
-          r.paymentMethod ?? r.payment_method,
+          String(r.paymentMethod ?? "").trim() ||
+            String(r.payment_method ?? "").trim() ||
+            r.paymentRecordMethod,
         ),
         paymentStatus: formatPaymentStatus(
           String(r.paymentStatus ?? r.payment_status ?? "").trim() || "Pending",
@@ -713,6 +716,7 @@ function processRawRows(rows: RawOrderRow[]): {
       transactionId: resolvedTxnId,
       invoiceNumber: order.invoiceNumber,
       items: order.rows.map((r) => ({
+        productId: r.productId,
         name: r.productName ?? "",
         price: Number(r.price) || 0,
         quantity: Number(r.quantity) || 1,
@@ -770,273 +774,119 @@ const formatPrintCurrency = (
     maximumFractionDigits: 2,
   });
 
-function triggerPrint(
-  revenue: number,
-  period: Period,
-  logs: SaleLog[],
-  orders: Order[],
-  restaurantSettings: GeneralRestaurantSettings,
-  generatedBy: string,
-) {
-  const now = new Date();
-  const reportStart = period === "All Time"
-    ? logs.length ? logs.reduce((a, b) => a._dateObj < b._dateObj ? a : b)._dateObj : now
-    : new Date(now.getFullYear(), now.getMonth(), now.getDate() - (period === "Last 7 Days" ? 6 : period === "Last 30 Days" ? 29 : 0));
-  const reportDates = [reportStart, now].map((date) => new Intl.DateTimeFormat("en-CA", { timeZone: restaurantSettings.timezone || "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(date));
-  const reportName = `TheCrunch_SalesReport_${reportDates[0] === reportDates[1] ? reportDates[0] : reportDates.join("_to_")}`;
-  const periodLogs = logs.filter((log) => isInReportPeriod(log._dateObj, period, now));
-  const paidCompleted = periodLogs.filter(isFinalizedSale);
-  const gcashSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "Online Payment",
-  );
-  const cashSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash",
-  );
-  const cashOnPickupSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "Cash on Pickup",
-  );
-  const grabFoodSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "GrabFood",
-  );
-  const foodpandaSales = paidCompleted.filter(
-    (l) => normalizePaymentMethod(l.paymentMethod) === "Foodpanda",
-  );
-  const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-  const timeLabel = formatInSettingsTimezone(now, restaurantSettings, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-
-  const completedOrders = orders
-    .filter((order) => {
-      const date = parseDateSafe(order.date);
-      return isFinalizedSale(order) && !!date && isInReportPeriod(date, period, now);
-    })
-    .sort(
-      (a, b) =>
-        (parseDateSafe(b.date)?.getTime() ?? 0) -
-        (parseDateSafe(a.date)?.getTime() ?? 0),
-    );
-
-  const rows = completedOrders
-    .map((o, i) => {
-      const fmtDateTime = parseDateSafe(o.date)
-        ? formatInSettingsTimezone(o.date, restaurantSettings, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-          })
-        : "—";
-      const fmtHandover = parseDateSafe(o.handoverTimestamp)
-        ? formatInSettingsTimezone(
-            o.handoverTimestamp ?? "",
-            restaurantSettings,
-            {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-            },
-          )
-        : "—";
-      return `
-        <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
-          <td class="txn">${escapePrintHtml(o.transactionId)}<div class="secondary">Invoice No.: ${escapePrintHtml(o.invoiceNumber || "\u2014")}</div></td>
-          <td class="date-time">${escapePrintHtml(fmtDateTime)}</td>
-          <td class="items">${o.items
-            .map(
-              (item) =>
-                `<div><span>${escapePrintHtml(item.name)}</span> <strong>×${escapePrintHtml(item.quantity)}</strong></div>`,
-            )
-            .join("")}</td>
-          <td class="payment">
-            <div class="payment-method">${escapePrintHtml(normalizePaymentMethod(o.paymentCategory))}</div>
-            ${o.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(o.paymentReference)}</div>` : ""}
-            ${
-              o.orderType === "delivery"
-                ? `<div class="delivery-details">
-                    <div><strong>Rider:</strong> ${escapePrintHtml(o.riderName ?? "—")}</div>
-                    <div><strong>Handover:</strong> ${escapePrintHtml(fmtHandover)}</div>
-                    <div><strong>Confirmed by:</strong> ${escapePrintHtml(o.handoverStaffName ?? "—")}</div>
-                  </div>`
-                : ""
-            }
-          </td>
-          <td>${escapePrintHtml(o.cashierName ?? "—")}</td>
-          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}<div class="secondary">Discount: ${o.discountAmount != null && o.discountAmount > 0 ? escapePrintHtml(formatPrintCurrency(o.discountAmount, restaurantSettings)) : "&mdash;"}</div></td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8"/>
-      <title>${escapePrintHtml(reportName)}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-      <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Poppins', sans-serif; background: #fff; color: #0f172a; padding: 40px 48px; font-size: 12px; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #f1f5f9; }
-        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: ${DEEP}; text-transform: uppercase; margin-bottom: 6px; }
-        .header-title { font-size: 24px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
-        .header-period { font-size: 12px; color: #94a3b8; }
-        .header-meta { text-align: right; }
-        .header-meta p { font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
-        .header-meta strong { font-size: 13px; font-weight: 600; color: #334155; }
-        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
-        .summary-card { border-radius: 10px; padding: 14px 16px; background: #fff; border: 1px solid #e2e8f0; }
-        .summary-card-label { font-size: 9px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
-        .summary-card-value { font-size: 20px; font-weight: 700; margin-bottom: 2px; color: #0f172a; }
-        .summary-card-sub { font-size: 10px; color: #94a3b8; }
-        .section-title { font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
-        colgroup col:nth-child(1) { width: 13%; }
-        colgroup col:nth-child(2) { width: 16%; }
-        colgroup col:nth-child(3) { width: 28%; }
-        colgroup col:nth-child(4) { width: 20%; }
-        colgroup col:nth-child(5) { width: 11%; }
-        colgroup col:nth-child(6) { width: 12%; }
-        thead tr { background: #f8fafc; }
-        thead { display: table-header-group; }
-        thead th { padding: 8px 7px; text-align: left; font-size: 8px; font-weight: 700; color: #64748b; letter-spacing: .8px; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; }
-        thead th:last-child { text-align: right; }
-        tbody td { padding: 7px; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; white-space: normal; vertical-align: top; line-height: 1.35; }
-        tbody td:last-child { text-align: right; font-weight: 700; }
-        .txn, .amount { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
-        .txn { font-size: 9px; font-weight: 600; }
-        .date-time { font-variant-numeric: tabular-nums; }
-        .items > div + div { margin-top: 3px; }
-        .payment-method { color: ${DEEP}; font-weight: 600; }
-        .secondary { margin-top: 2px; color: #64748b; font-size: 8.5px; overflow-wrap: anywhere; }
-        .delivery-details { margin-top: 5px; padding-top: 4px; border-top: 1px dashed #cbd5e1; color: #64748b; font-size: 8px; line-height: 1.45; }
-        .delivery-details strong { color: #475569; }
-        .amount { min-width: 90px; font-variant-numeric: tabular-nums; font-size: 10px; }
-        .revenue-summary td { padding: 10px 7px; border-top: 2px solid #cbd5e1; font-weight: 700; font-size: 12px; }
-        tr { break-inside: avoid; page-break-inside: avoid; }
-        .footer { margin-top: 24px; text-align: center; font-size: 10px; color: #cbd5e1; }
-        @page { margin: 10mm; size: A4 landscape; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <div>
-          <p class="header-brand">${restaurantSettings.restaurantName}</p>
-          <p class="header-title">Sales Report</p>
-          ${
-            restaurantSettings.tagline
-              ? `<p class="header-period">${restaurantSettings.tagline}</p>`
-              : ""
-          }
-          <p class="header-period">Period: ${period}</p>
-          ${[
-            restaurantSettings.address,
-            restaurantSettings.phone,
-            restaurantSettings.email,
-          ]
-            .filter(Boolean)
-            .map((line) => `<p class="header-period">${line}</p>`)
-            .join("")}
-        </div>
-        <div class="header-meta">
-          <p>Generated</p>
-          <strong>${dateLabel}</strong>
-          <p style="margin-top:2px">${timeLabel}</p>
-          <p style="margin-top:8px">Prepared by</p>
-          <strong>${generatedBy || "Staff"}</strong>
-        </div>
-      </div>
-      <div class="summary-grid">
-        <div class="summary-card">
-          <p class="summary-card-label">Total Sales</p>
-          <p class="summary-card-value" style="color:${DEEP}">${formatPrintCurrency(
-            paidCompleted.reduce((sum, log) => sum + log.total, 0),
-            restaurantSettings,
-          )}</p>
-          <p class="summary-card-sub">Completed</p>
-        </div>
-        <div class="summary-card">
-          <p class="summary-card-label">Completed Orders</p>
-          <p class="summary-card-value">${paidCompleted.length}</p>
-          <p class="summary-card-sub">Paid transactions</p>
-        </div>
-        <div class="summary-card">
-          <p class="summary-card-label">Online Payment Sales</p>
-          <p class="summary-card-value">${formatPrintCurrency(
-            gcashSales.reduce((sum, log) => sum + log.total, 0),
-            restaurantSettings,
-          )}</p>
-          <p class="summary-card-sub">${gcashSales.length} orders</p>
-        </div>
-        <div class="summary-card">
-          <p class="summary-card-label">Cash Sales</p>
-          <p class="summary-card-value">${formatPrintCurrency(
-            cashSales.reduce((sum, log) => sum + log.total, 0),
-            restaurantSettings,
-          )}</p>
-          <p class="summary-card-sub">${cashSales.length} orders</p>
-        </div>
-        <div class="summary-card">
-          <p class="summary-card-label">Cash on Pickup</p>
-          <p class="summary-card-value">${formatPrintCurrency(cashOnPickupSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
-          <p class="summary-card-sub">${cashOnPickupSales.length} orders</p>
-        </div>
-        <div class="summary-card">
-          <p class="summary-card-label">GrabFood</p>
-          <p class="summary-card-value">${formatPrintCurrency(grabFoodSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
-          <p class="summary-card-sub">${grabFoodSales.length} orders</p>
-        </div>
-        <div class="summary-card">
-          <p class="summary-card-label">Foodpanda</p>
-          <p class="summary-card-value">${formatPrintCurrency(foodpandaSales.reduce((sum, log) => sum + log.total, 0), restaurantSettings)}</p>
-          <p class="summary-card-sub">${foodpandaSales.length} orders</p>
-        </div>
-      </div>
-      <p class="section-title">Completed Orders (${completedOrders.length})</p>
-      <table>
-        <colgroup><col/><col/><col/><col/><col/><col/></colgroup>
-        <thead>
-          <tr>
-            <th>Transaction ID</th><th>Date &amp; Time</th><th>Items</th>
-            <th>Payment / Reference</th><th>Cashier</th>
-            <th style="text-align:right">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-          <tr class="revenue-summary">
-            <td colspan="5" style="text-align:right;color:#0f172a">Total Revenue</td>
-            <td style="text-align:right;color:${DEEP};font-size:15px">${formatPrintCurrency(revenue, restaurantSettings)}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="footer">Auto-generated by ${restaurantSettings.restaurantName} POS System · Confidential</p>
-    </body>
-    </html>
-  `;
-
-  const win = window.open("", "_blank");
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
-  win.onload = () => {
-    win.focus();
-    win.print();
+function buildSalesChartData(logs: SaleLog[], orders: Order[], hourly: boolean, timezone: string) {
+  const sales = [...new Map(logs.filter(isFinalizedSale).map((log) => [log.orderId, log])).values()];
+  const orderLookup = new Map(orders.map((order) => [order.id, order]));
+  const trend = new Map<string, number>();
+  const payments = new Map<string, number>();
+  const orderTypes = new Map<string, number>();
+  const products = new Map<string, { name: string; quantity: number }>();
+  const dateFormat = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" });
+  for (const log of sales) {
+    const parts = dateFormat.formatToParts(log._dateObj);
+    const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
+    const date = hourly ? `${part("hour")}:00` : `${part("year")}-${part("month")}-${part("day")}`;
+    trend.set(date, (trend.get(date) ?? 0) + log.total);
+    const method = normalizePaymentMethod(log.paymentMethod);
+    payments.set(method, (payments.get(method) ?? 0) + log.total);
+    const type = String(log.category ?? "").trim() ? formatOrderType(log.category) : "Unknown";
+    const label = type === "Dine In" ? "Dine-in" : type === "Take Out" ? "Takeout" : type;
+    orderTypes.set(label, (orderTypes.get(label) ?? 0) + log.total);
+    for (const item of orderLookup.get(log.orderId)?.items ?? []) {
+      if (!item.name || !(item.quantity > 0)) continue;
+      const key = String(item.productId ?? item.name);
+      const product = products.get(key) ?? { name: item.name, quantity: 0 };
+      product.quantity += item.quantity;
+      products.set(key, product);
+    }
+  }
+  return {
+    trendData: [...trend].sort(([a], [b]) => a.localeCompare(b)).map(([date, revenue]) => ({ date, revenue })),
+    paymentData: [...payments].map(([method, revenue]) => ({ method, revenue })),
+    bestSellerData: [...products.values()].sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name)).slice(0, 5),
+    orderTypeData: [...orderTypes].map(([type, revenue]) => ({ type, revenue })),
   };
 }
 
+function buildSalesExport(orders: Order[]) {
+  const unique = [...new Map(orders.map((order) => [order.id, order])).values()].filter(isFinalizedSale);
+  const rows = unique.map((order) => {
+    const net = Math.round(order.total * 100);
+    const discount = order.discountAmount == null ? null : Math.round(order.discountAmount * 100);
+    const method = normalizePaymentMethod(order.paymentCategory);
+    const payment = method === "Cash on Pickup" ? "Cash" : method === "Online Payment" ? "GCash" : method;
+    return { order, net, discount, food: discount == null ? null : net + discount, payment };
+  });
+  const methods = ["Cash", "GCash", ...new Set(rows.map((row) => row.payment).filter((method) => method !== "Cash" && method !== "GCash"))];
+  const missingDiscounts = rows.filter((row) => row.discount == null).length;
+  return {
+    rows, methods, missingDiscounts,
+    net: rows.reduce((sum, row) => sum + row.net, 0),
+    food: missingDiscounts ? null : rows.reduce((sum, row) => sum + (row.food ?? 0), 0),
+    discount: missingDiscounts ? null : rows.reduce((sum, row) => sum + (row.discount ?? 0), 0),
+    payments: new Map(methods.map((method) => [method, rows.filter((row) => row.payment === method).reduce((sum, row) => sum + row.net, 0)])),
+  };
+}
+
+function formatReportPeriod(period: Period, hasDateRange: boolean, description: string): string {
+  const parts = description.split(/\s*(?:\u00c2?\u00b7|\|)\s*/).filter(Boolean);
+  if (!hasDateRange) {
+    if (["All dates", "Beginning to Today", "All orders"].includes(parts[0])) parts.shift();
+    parts.unshift(period);
+  }
+  return parts.join(" | ");
+}
+
+function salesReportMarkup(orders: Order[], settings: GeneralRestaurantSettings, reportingPeriod: string, generatedBy: string, now = new Date()) {
+  const report = buildSalesExport(orders);
+  const money = (cents: number | null, dashForZero = false) => cents == null || (dashForZero && cents === 0) ? "&mdash;" : escapePrintHtml(formatPrintCurrency(cents / 100, settings));
+  const rows = report.rows.map(({ order, food, discount, net, payment }) => `<tr>
+    <td>${escapePrintHtml(parseDateSafe(order.date) ? formatInSettingsTimezone(order.date, settings, { year: "numeric", month: "short", day: "numeric" }) : "\u2014")}</td>
+    <td>${escapePrintHtml(order.invoiceNumber || "\u2014")}</td><td>${escapePrintHtml(order.orderNumber || "\u2014")}</td>
+    <td class="number">${money(food)}</td><td class="number">${money(discount, true)}</td>
+    ${report.methods.map((method) => `<td class="number">${payment === method ? money(net) : "&mdash;"}</td>`).join("")}
+  </tr>`).join("");
+  return `<style>
+    .business-sales-report { font-family: Arial, sans-serif; color: #17201b; font-size: 10px; }
+    .business-sales-report header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; border-bottom: 1px solid #aab5ae; padding-bottom: 12px; margin-bottom: 16px; }
+    .business-sales-report h1 { font-size: 20px; margin: 3px 0 6px; } .business-sales-report p { margin: 4px 0; }
+    .business-sales-report table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .business-sales-report th, .business-sales-report td { padding: 7px 6px; border-bottom: 1px solid #d7ded9; text-align: left; overflow-wrap: anywhere; vertical-align: top; }
+    .business-sales-report th { background: #f1f4f2; font-size: 10px; }
+    .business-sales-report .number { text-align: right; font-variant-numeric: tabular-nums; }
+    .business-sales-report tfoot { font-weight: bold; } .business-sales-report .net-sales { margin-top: 16px; padding-top: 10px; border-top: 2px solid #486c5d; text-align: right; font-size: 14px; font-weight: bold; }
+    .business-sales-report .note, .business-sales-report footer { margin-top: 12px; font-size: 9px; color: #47564d; }
+    @media print { @page { size: A4 landscape; margin: 12mm; } .business-sales-report thead { display: table-header-group; } .business-sales-report tfoot { display: table-row-group; } .business-sales-report tr { break-inside: avoid; } }
+  </style><article class="business-sales-report">
+    <header><div><strong>${escapePrintHtml(settings.restaurantName || "The Crunch")}</strong><h1>Sales Report</h1>
+    ${[settings.tagline, settings.address, settings.phone, settings.email].filter(Boolean).map((line) => `<p>${escapePrintHtml(line)}</p>`).join("")}
+    <p>Period: ${escapePrintHtml(reportingPeriod)}</p></div>
+    <div><p>Generated: ${escapePrintHtml(formatInSettingsTimezone(now, settings, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }))}</p><p>Prepared by: ${escapePrintHtml(generatedBy || "Staff")}</p></div></header>
+    <table><colgroup><col style="width:14%"/><col style="width:14%"/><col style="width:12%"/>${Array.from({ length: 2 + report.methods.length }, () => '<col/>').join("")}</colgroup>
+    <thead><tr><th>Date</th><th>Invoice No.</th><th>Order No.</th><th class="number">Food Price</th><th class="number">Discount</th>${report.methods.map((method) => `<th class="number">${escapePrintHtml(method)}</th>`).join("")}</tr></thead>
+    <tbody>${rows || `<tr><td colspan="${5 + report.methods.length}">No completed, paid transactions in this period.</td></tr>`}</tbody>
+    <tfoot><tr><td colspan="3">TOTAL</td><td class="number">${money(report.food)}</td><td class="number">${money(report.discount, true)}</td>${report.methods.map((method) => `<td class="number">${money(report.payments.get(method) ?? 0, true)}</td>`).join("")}</tr></tfoot></table>
+    <p class="net-sales">GRAND TOTAL — NET SALES: ${money(report.net)}</p>
+    ${report.missingDiscounts ? `<p class="note">${report.missingDiscounts} historical transaction(s) have no recorded discount amount. Food price and discount totals are unavailable; recorded net sales and payment totals remain included.</p>` : ""}
+    ${report.rows.some((row) => normalizePaymentMethod(row.order.paymentCategory) === "Cash on Pickup") ? '<p class="note">Cash includes Cash on Pickup only for completed orders recorded as paid.</p>' : ""}
+    <footer>Auto-generated by ${escapePrintHtml(settings.restaurantName)} POS System | Confidential</footer>
+  </article>`;
+}
+
+function triggerPrint(
+  _revenue: number, period: Period, logs: SaleLog[], orders: Order[], restaurantSettings: GeneralRestaurantSettings, generatedBy: string, reportDescription?: string,
+) {
+  const now = new Date();
+  const scopedLogs = logs.filter((log) => isInReportPeriod(log._dateObj, period, now) && isFinalizedSale(log));
+  const ids = new Set(scopedLogs.map((log) => log.orderId));
+  const reportingPeriod = reportDescription || period;
+  const html = `<!doctype html><html><head><meta charset="utf-8"/><title>TheCrunch_SalesReport</title></head><body>${salesReportMarkup(orders.filter((order) => ids.has(order.id)), restaurantSettings, reportingPeriod, generatedBy, now)}</body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) return;
+  win.onload = () => { win.focus(); win.print(); };
+  win.document.write(html);
+  win.document.close();
+}
 // --- Drum Picker Column ---
 
 interface DrumColProps {
@@ -1434,7 +1284,7 @@ function DrumDatePicker({
                   color: "#94a3b8",
                 }}
               >
-                ×
+                <X size={16} />
               </button>
             </div>
             <div
@@ -1526,6 +1376,7 @@ function DrumDatePicker({
 interface RevenueDropdownProps {
   period: Period;
   scopeDescription?: string;
+  reportDescription?: string;
   setPeriod: (p: Period) => void;
   logs: SaleLog[];
   orders: Order[];
@@ -1536,6 +1387,7 @@ interface RevenueDropdownProps {
 function RevenueDropdown({
   period,
   scopeDescription,
+  reportDescription,
   setPeriod,
   logs,
   orders,
@@ -1589,7 +1441,7 @@ function RevenueDropdown({
 
   function handlePrint() {
     setOpen(false);
-    triggerPrint(revenue, period, logs, orders, restaurantSettings, generatedBy);
+    triggerPrint(revenue, period, logs, orders, restaurantSettings, generatedBy, reportDescription);
     setPrintToast(true);
     setTimeout(() => setPrintToast(false), 3000);
   }
@@ -1622,7 +1474,7 @@ function RevenueDropdown({
               Print dialog opened
             </span>
             <span style={{ fontSize: 11, color: DEEP_LINE }}>
-              · {period} report
+              | {period} report
             </span>
           </motion.div>
         )}
@@ -1685,7 +1537,7 @@ function RevenueDropdown({
                   display: "inline-block",
                 }}
               >
-                ▼
+                <ChevronDown size={12} />
               </motion.span>
             </div>
           </div>
@@ -1829,7 +1681,7 @@ function RevenueDropdown({
                     </div>
                   </div>
                   {period === p && (
-                    <span style={{ color: DEEP, fontSize: 12 }}>✓</span>
+                    <span style={{ color: DEEP, fontSize: 12 }}>{"\u2713"}</span>
                   )}
                 </motion.div>
               ))}
@@ -1900,7 +1752,7 @@ function RevenueDropdown({
                       lineHeight: 1.5,
                     }}
                   >
-                    {period} · {formatReportCurrency(revenue)} ·{" "}
+                    {period} | {formatReportCurrency(revenue)} |{" "}
                     {completedCount} completed
                   </p>
                 </div>
@@ -1972,8 +1824,8 @@ function RefundModal({
   const product =
     log?.product ?? (order ? order.items.map((i) => i.name).join(", ") : "");
   const total = log?.total ?? order?.total ?? 0;
-  const cashierName = log?.cashierName ?? order?.cashierName ?? "—";
-  const paymentMethod = log?.paymentMethod ?? order?.paymentCategory ?? "—";
+  const cashierName = log?.cashierName ?? order?.cashierName ?? "-";
+  const paymentMethod = log?.paymentMethod ?? order?.paymentCategory ?? "-";
   const paymentStatus = formatPaymentStatus(
     log?.paymentStatus ?? order?.paymentStatus ?? null,
   );
@@ -2253,7 +2105,7 @@ function RefundModal({
                       >
                         <RotateCcw size={13} />
                       </motion.span>
-                      Processing…
+                      Processing...
                     </>
                   ) : (
                     <>
@@ -2427,7 +2279,7 @@ function LogRow({
             fontWeight: 600,
           }}
         >
-          ×{log.quantity}
+          x{log.quantity}
         </span>
         <span
           style={{
@@ -2439,7 +2291,7 @@ function LogRow({
             flexShrink: 0,
           }}
         >
-          {log.total === 0 ? "—" : formatReportCurrency(Math.abs(log.total))}
+          {log.total === 0 ? "-" : formatReportCurrency(Math.abs(log.total))}
         </span>
         <span
           style={{
@@ -2471,7 +2323,7 @@ function LogRow({
             flexShrink: 0,
           }}
         >
-          ▼
+          <ChevronDown size={12} />
         </motion.span>
       </motion.div>
 
@@ -2504,22 +2356,22 @@ function LogRow({
                   label: "Order Created",
                   value: log.createdAt
                     ? `${formatDisplayDate(new Date(log.createdAt))} ${formatDisplayTime(log.createdAt)}`
-                    : "—",
+                    : "-",
                 },
                 { label: "Sale Recorded", value: `${log.date} ${log.time}` },
                 { label: "Cashier", value: log.cashierName },
                 { label: "Payment Method", value: log.paymentMethod },
                 ...(String(log.category).toLowerCase() === "delivery"
                   ? [
-                      { label: "Platform Reference", value: log.paymentReference || "—" },
-                      { label: "Rider", value: log.riderName || "—" },
+                      { label: "Platform Reference", value: log.paymentReference || "-" },
+                      { label: "Rider", value: log.riderName || "-" },
                       {
                         label: "Handover",
                         value: log.handoverTimestamp
                           ? `${formatDisplayDate(new Date(log.handoverTimestamp))} ${formatDisplayTime(log.handoverTimestamp)}`
-                          : "—",
+                          : "-",
                       },
-                      { label: "Confirmed By", value: log.handoverStaffName || "—" },
+                      { label: "Confirmed By", value: log.handoverStaffName || "-" },
                     ]
                   : []),
                 {
@@ -2757,7 +2609,7 @@ function LogPagination({
   return (
     <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100 px-1">
       <span className="text-sm text-gray-500">
-        Showing {start}–{end} of {totalCount} {itemLabel}
+        Showing {start}-{end} of {totalCount} {itemLabel}
       </span>
       <div className="flex items-center gap-2">
         <Button
@@ -2890,11 +2742,11 @@ function OrderRow({
 
   const fmtDate = (v?: string | null) => {
     const d = parseDateSafe(v);
-    return d ? formatDisplayDate(d) : "—";
+    return d ? formatDisplayDate(d) : "-";
   };
   const fmtTime = (v?: string | null) => {
     const d = parseDateSafe(v);
-    return d ? formatDisplayTime(d) : "—";
+    return d ? formatDisplayTime(d) : "-";
   };
 
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
@@ -3043,22 +2895,22 @@ function OrderRow({
                         label: "Order Created",
                         value: order.createdAt
                           ? `${fmtDate(order.createdAt)} ${fmtTime(order.createdAt)}`
-                          : "—",
+                          : "-",
                       },
                       { label: "Sale Recorded", value: `${fmtDate(order.date)} ${fmtTime(order.date)}` },
-                      { label: "Cashier", value: order.cashierName || "—" },
+                      { label: "Cashier", value: order.cashierName || "-" },
                       ...(isDelivery
                         ? [
-                            { label: "Platform Reference", value: order.paymentReference || "—" },
-                            { label: "Rider", value: order.riderName || "—" },
+                            { label: "Platform Reference", value: order.paymentReference || "-" },
+                            { label: "Rider", value: order.riderName || "-" },
                             {
                               label: "Handover",
                               value:
-                                fmtTime(order.handoverTimestamp) === "—"
-                                  ? "—"
+                                fmtTime(order.handoverTimestamp) === "-"
+                                  ? "-"
                                   : `${fmtDate(order.handoverTimestamp)} ${fmtTime(order.handoverTimestamp)}`,
                             },
-                            { label: "Confirmed By", value: order.handoverStaffName || "—" },
+                            { label: "Confirmed By", value: order.handoverStaffName || "-" },
                           ]
                         : []),
                       { label: "Total Qty", value: `${totalQty} pcs` },
@@ -3258,7 +3110,7 @@ function OrderRow({
                                 color: "#64748b",
                               }}
                             >
-                              ×{item.quantity}
+                              x{item.quantity}
                             </span>
                             {item.name}
                             <span style={{ color: "#94a3b8", fontSize: 11 }}>
@@ -3322,13 +3174,11 @@ const ORDER_STATUS_FILTERS: OrderStatusFilter[] = [
   "Refunded",
 ];
 
-const ORDER_PAYMENT_FILTERS: PaymentMethodFilter[] = [
-  "All",
-  "Cash",
-  "Online Payment",
-  "Cash on Pickup",
-  "Unknown",
-];
+function getPaymentFilterOptions(methods: string[]): PaymentMethodFilter[] {
+  const options: PaymentMethodFilter[] = ["All", "Cash", "Online Payment", "Cash on Pickup"];
+  if (methods.some((method) => normalizePaymentMethod(method) === "Unknown")) options.push("Unknown");
+  return options;
+}
 
 const DELIVERY_PLATFORM_FILTERS: DeliveryPlatformFilter[] = [
   "All Platforms",
@@ -3428,20 +3278,13 @@ function OrdersTab({
     statusFilter === "All"
       ? dateFiltered
       : dateFiltered.filter((o) => o.status === statusFilter);
-  const paymentFiltered =
-    paymentMethodFilter === "All"
-      ? statusFiltered
-      : statusFiltered.filter(
-          (o) =>
-            normalizePaymentMethod(o.paymentCategory) === paymentMethodFilter,
-        );
   const orderTypeFiltered =
     orderTypeFilter === "All"
-      ? paymentFiltered
-      : paymentFiltered.filter(
+      ? statusFiltered
+      : statusFiltered.filter(
           (o) => formatOrderType(o.orderType) === orderTypeFilter,
         );
-  const filtered = deliveryPlatformFilter === "All Platforms"
+  const nonPaymentFiltered = deliveryPlatformFilter === "All Platforms"
     ? orderTypeFiltered
     : orderTypeFiltered.filter(
         (order) =>
@@ -3449,10 +3292,23 @@ function OrdersTab({
           normalizePaymentMethod(order.paymentCategory) === deliveryPlatformFilter,
       );
 
+  const paymentOptions = getPaymentFilterOptions(nonPaymentFiltered.map((order) => order.paymentCategory));
+  const effectivePaymentFilter = paymentOptions.includes(paymentMethodFilter) ? paymentMethodFilter : "All";
+  const filtered = effectivePaymentFilter === "All" ? nonPaymentFiltered : nonPaymentFiltered.filter(
+    (order) => normalizePaymentMethod(order.paymentCategory) === effectivePaymentFilter,
+  );
+  const hasUnknownPayment = paymentOptions.includes("Unknown");
+  useEffect(() => {
+    if (!loading && paymentMethodFilter === "Unknown" && !hasUnknownPayment) {
+      setPaymentMethodFilter("All");
+      setCurrentPage(1);
+    }
+  }, [loading, paymentMethodFilter, hasUnknownPayment]);
+
   useEffect(() => {
     onReportChange({ rows: filtered, fromDate, toDate, description: [
       `${fromDate ? formatDisplayDate(fromDate) : "Beginning"} to ${toDate ? formatDisplayDate(toDate) : "Today"}`,
-      statusFilter, paymentMethodFilter, orderTypeFilter, deliveryPlatformFilter,
+      statusFilter, effectivePaymentFilter, orderTypeFilter, deliveryPlatformFilter,
     ].join(" | ") });
   }, [orders, fromDate, toDate, statusFilter, paymentMethodFilter, orderTypeFilter, deliveryPlatformFilter, onReportChange]);
 
@@ -3491,11 +3347,11 @@ function OrdersTab({
               Order History
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              {filtered.length} order{filtered.length !== 1 ? "s" : ""} ·{" "}
+              {filtered.length} order{filtered.length !== 1 ? "s" : ""} |{" "}
               <span className="text-[#1A3A2A] font-medium">
                 {completedCount} completed
               </span>{" "}
-              ·{" "}
+              |{" "}
               <span className="text-gray-600 font-medium">
                 {formatReportCurrency(totalRevenue)} revenue
               </span>
@@ -3571,7 +3427,7 @@ function OrdersTab({
           />
           <FilterChips
             label="Payment Method"
-            options={ORDER_PAYMENT_FILTERS}
+            options={paymentOptions}
             active={paymentMethodFilter}
             onChange={(m) => {
               setPaymentMethodFilter(m);
@@ -3689,304 +3545,9 @@ interface PrintReportProps {
   hasLogRange: boolean;
 }
 
-function PrintReport({
-  activeTab,
-  period,
-  logs: _logs,
-  orders,
-  scopedLogs: _scopedLogs,
-  filteredLogs,
-  filterDescription,
-  restaurantSettings,
-  generatedBy,
-  logFromDate,
-  logToDate,
-  logPaymentFilter,
-  logOrderTypeFilter,
-  logDeliveryPlatformFilter,
-  hasLogRange,
-}: PrintReportProps) {
-  const now = new Date();
-  const isSalesLogs = activeTab === "logs";
-  const reportTitle = isSalesLogs ? "Sales Logs" : "Order History";
-
-  // Build filter descriptions
-  const filterParts: string[] = [];
-  if (hasLogRange) {
-    filterParts.push(`Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`);
-  } else {
-    filterParts.push(period === "All Time" ? "All dates" : period);
-  }
-  if (logPaymentFilter !== "All") filterParts.push(logPaymentFilter);
-  if (logOrderTypeFilter !== "All") filterParts.push(logOrderTypeFilter);
-  if (logDeliveryPlatformFilter !== "All Platforms") filterParts.push(logDeliveryPlatformFilter);
-  const activeFilters = isSalesLogs ? filterParts.join(" · ") : filterDescription;
-
-  const dateLabel = formatInSettingsTimezone(now, restaurantSettings, {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-  const timeLabel = formatInSettingsTimezone(now, restaurantSettings, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-
-  if (isSalesLogs) {
-    const reportLogs = filteredLogs;
-    const completedLogs = reportLogs.filter(isFinalizedSale);
-    const totalRevenue = completedLogs.reduce((sum, log) => sum + log.total, 0);
-    const completedCount = completedLogs.length;
-
-    // Build log rows for Sales Logs tab
-    const logRows = completedLogs
-      .map((l, i) => {
-        const paymentMethodLabel = normalizePaymentMethod(l.paymentMethod);
-        return `
-          <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
-            <td class="txn">${escapePrintHtml(l.transactionId)}<div class="secondary">Invoice No.: ${escapePrintHtml(l.invoiceNumber || "\u2014")}</div></td>
-            <td class="date-time">${escapePrintHtml(`${l.date} ${l.time}`)}</td>
-            <td class="items">
-              <div>${escapePrintHtml(l.product)} <strong>×${escapePrintHtml(l.quantity)}</strong></div>
-            </td>
-            <td class="payment">
-              <div class="payment-method">${escapePrintHtml(paymentMethodLabel)}</div>
-              ${l.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(l.paymentReference)}</div>` : ""}
-            </td>
-            <td>${escapePrintHtml(l.cashierName)}</td>
-            <td class="amount">${escapePrintHtml(formatPrintCurrency(Math.abs(l.total), restaurantSettings))}<div class="secondary">Discount: ${l.discountAmount != null && l.discountAmount > 0 ? escapePrintHtml(formatPrintCurrency(l.discountAmount, restaurantSettings)) : "&mdash;"}</div></td>
-          </tr>
-        `;
-      })
-      .join("");
-
-    return (
-      <div className="print-report">
-        <div className="print-report-header">
-          <div>
-            <p className="print-report-brand">{restaurantSettings.restaurantName}</p>
-            <p className="print-report-title">Sales Report</p>
-            <p className="print-report-subtitle">{reportTitle} — {hasLogRange ? "Custom dates" : period}</p>
-            {restaurantSettings.tagline && (
-              <p className="print-report-subtitle">{restaurantSettings.tagline}</p>
-            )}
-            <p className="print-report-subtitle">Period: {activeFilters}</p>
-            {[
-              restaurantSettings.address,
-              restaurantSettings.phone,
-              restaurantSettings.email,
-            ]
-              .filter(Boolean)
-              .map((line) => <p className="print-report-subtitle" key={line}>{line}</p>)}
-          </div>
-          <div className="print-report-meta">
-            <p>Generated</p>
-            <strong>{dateLabel}</strong>
-            <p>{timeLabel}</p>
-            <p style={{ marginTop: "8px" }}>Prepared by</p>
-            <strong>{generatedBy || "Staff"}</strong>
-          </div>
-        </div>
-
-        <div className="print-summary-grid">
-          <div className="print-summary-card">
-            <p className="print-summary-label">Total Revenue</p>
-            <p className="print-summary-value revenue">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
-            <p className="print-summary-sub">Scope: {period} · {completedCount} completed</p>
-          </div>
-          <div className="print-summary-card">
-            <p className="print-summary-label">Total Sales</p>
-            <p className="print-summary-value">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
-            <p className="print-summary-sub">{completedCount} completed orders</p>
-          </div>
-        </div>
-
-        <p className="print-section-title">Sales Logs ({completedCount})</p>
-
-        <table className="print-table">
-          <colgroup>
-            <col />
-            <col />
-            <col />
-            <col />
-            <col />
-            <col />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Transaction ID</th>
-              <th>Date & Time</th>
-              <th>Items</th>
-              <th>Payment / Reference</th>
-              <th>Cashier</th>
-              <th style={{ textAlign: "right" }}>Amount</th>
-            </tr>
-          </thead>
-          <tbody dangerouslySetInnerHTML={{ __html: logRows }} />
-          <tfoot>
-            <tr className="revenue-summary">
-              <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
-                Total Revenue
-              </td>
-              <td style={{ textAlign: "right", color: "#1a3a2a", fontSize: "13px" }}>
-                {formatPrintCurrency(totalRevenue, restaurantSettings)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-
-        <p className="print-footer">
-          Auto-generated by {restaurantSettings.restaurantName} POS System · Confidential
-        </p>
-      </div>
-    );
-  }
-
-  // Order History tab
-  const completedOrders = orders.filter(isFinalizedSale);
-  const totalRevenue = completedOrders.reduce((sum, log) => sum + log.total, 0);
-  const completedCount = completedOrders.length;
-
-  // Build order rows for Order History tab
-  const orderRows = completedOrders
-    .map((o, i) => {
-      const fmtDateTime = parseDateSafe(o.date)
-        ? formatInSettingsTimezone(o.date, restaurantSettings, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-          })
-        : "—";
-      const fmtHandover = parseDateSafe(o.handoverTimestamp)
-        ? formatInSettingsTimezone(
-            o.handoverTimestamp ?? "",
-            restaurantSettings,
-            {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-            },
-          )
-        : "—";
-      return `
-        <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
-          <td class="txn">${escapePrintHtml(o.transactionId)}<div class="secondary">Invoice No.: ${escapePrintHtml(o.invoiceNumber || "\u2014")}</div></td>
-          <td class="date-time">${escapePrintHtml(fmtDateTime)}</td>
-          <td class="items">${o.items
-            .map(
-              (item) =>
-                `<div><span>${escapePrintHtml(item.name)}</span> <strong>×${escapePrintHtml(item.quantity)}</strong></div>`,
-            )
-            .join("")}</td>
-          <td class="payment">
-            <div class="payment-method">${escapePrintHtml(normalizePaymentMethod(o.paymentCategory))}</div>
-            ${o.paymentReference ? `<div class="secondary">Ref: ${escapePrintHtml(o.paymentReference)}</div>` : ""}
-            ${
-              o.orderType === "delivery"
-                ? `<div class="delivery-details">
-                    <div><strong>Rider:</strong> ${escapePrintHtml(o.riderName ?? "—")}</div>
-                    <div><strong>Handover:</strong> ${escapePrintHtml(fmtHandover)}</div>
-                    <div><strong>Confirmed by:</strong> ${escapePrintHtml(o.handoverStaffName ?? "—")}</div>
-                  </div>`
-                : ""
-            }
-          </td>
-          <td>${escapePrintHtml(o.cashierName ?? "—")}</td>
-          <td class="amount">${escapePrintHtml(formatPrintCurrency(o.total, restaurantSettings))}<div class="secondary">Discount: ${o.discountAmount != null && o.discountAmount > 0 ? escapePrintHtml(formatPrintCurrency(o.discountAmount, restaurantSettings)) : "&mdash;"}</div></td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  return (
-    <div className="print-report">
-      <div className="print-report-header">
-        <div>
-          <p className="print-report-brand">{restaurantSettings.restaurantName}</p>
-          <p className="print-report-title">Sales Report</p>
-          <p className="print-report-subtitle">{reportTitle} — {hasLogRange ? "Custom dates" : period}</p>
-          {restaurantSettings.tagline && (
-            <p className="print-report-subtitle">{restaurantSettings.tagline}</p>
-          )}
-          <p className="print-report-subtitle">Period: {activeFilters}</p>
-          {[
-            restaurantSettings.address,
-            restaurantSettings.phone,
-            restaurantSettings.email,
-          ]
-            .filter(Boolean)
-            .map((line) => <p className="print-report-subtitle" key={line}>{line}</p>)}
-        </div>
-        <div className="print-report-meta">
-          <p>Generated</p>
-          <strong>{dateLabel}</strong>
-          <p>{timeLabel}</p>
-          <p style={{ marginTop: "8px" }}>Prepared by</p>
-          <strong>{generatedBy || "Staff"}</strong>
-        </div>
-      </div>
-
-      <div className="print-summary-grid">
-        <div className="print-summary-card">
-          <p className="print-summary-label">Total Revenue</p>
-          <p className="print-summary-value revenue">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
-          <p className="print-summary-sub">Scope: {period} · {completedCount} completed</p>
-        </div>
-        <div className="print-summary-card">
-          <p className="print-summary-label">Total Sales</p>
-          <p className="print-summary-value">{formatPrintCurrency(totalRevenue, restaurantSettings)}</p>
-          <p className="print-summary-sub">{completedCount} completed orders</p>
-        </div>
-      </div>
-
-      <p className="print-section-title">Completed Orders ({completedCount})</p>
-
-      <table className="print-table">
-        <colgroup>
-          <col />
-          <col />
-          <col />
-          <col />
-          <col />
-          <col />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>Transaction ID</th>
-            <th>Date & Time</th>
-            <th>Items</th>
-            <th>Payment / Reference</th>
-            <th>Cashier</th>
-            <th style={{ textAlign: "right" }}>Amount</th>
-          </tr>
-        </thead>
-        <tbody dangerouslySetInnerHTML={{ __html: orderRows }} />
-        <tfoot>
-          <tr className="revenue-summary">
-            <td colSpan={5} style={{ textAlign: "right", color: "#0f172a" }}>
-              Total Revenue
-            </td>
-            <td style={{ textAlign: "right", color: "#1a3a2a", fontSize: "13px" }}>
-              {formatPrintCurrency(totalRevenue, restaurantSettings)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-
-      <p className="print-footer">
-        Auto-generated by {restaurantSettings.restaurantName} POS System · Confidential
-      </p>
-    </div>
-  );
+function PrintReport({ orders, filterDescription, restaurantSettings, generatedBy, period, hasLogRange }: PrintReportProps) {
+  return <div dangerouslySetInnerHTML={{ __html: salesReportMarkup(orders, restaurantSettings, formatReportPeriod(period, hasLogRange, filterDescription), generatedBy) }} />;
 }
-
 // --- Main Page ---
 
 export default function SalesReports() {
@@ -4230,13 +3791,7 @@ export default function SalesReports() {
     logToDate,
   );
 
-  const scopedLogs = dateFilteredLogs.filter((l) => {
-    if (
-      logPaymentFilter !== "All" &&
-      normalizePaymentMethod(l.paymentMethod) !== logPaymentFilter
-    ) {
-      return false;
-    }
+  const nonPaymentFilteredLogs = dateFilteredLogs.filter((l) => {
     if (
       logOrderTypeFilter !== "All" &&
       formatOrderType(l.category) !== logOrderTypeFilter
@@ -4254,6 +3809,18 @@ export default function SalesReports() {
     }
     return true;
   });
+  const logPaymentOptions = getPaymentFilterOptions(nonPaymentFilteredLogs.filter(isFinalizedSale).map((log) => log.paymentMethod));
+  const effectiveLogPaymentFilter = logPaymentOptions.includes(logPaymentFilter) ? logPaymentFilter : "All";
+  const hasUnknownLogPayment = logPaymentOptions.includes("Unknown");
+  useEffect(() => {
+    if (!isLoading && logPaymentFilter === "Unknown" && !hasUnknownLogPayment) {
+      setLogPaymentFilter("All");
+      setLogPage(1);
+    }
+  }, [isLoading, logPaymentFilter, hasUnknownLogPayment]);
+  const scopedLogs = effectiveLogPaymentFilter === "All" ? nonPaymentFilteredLogs : nonPaymentFilteredLogs.filter(
+    (log) => normalizePaymentMethod(log.paymentMethod) === effectiveLogPaymentFilter,
+  );
   const filteredLogs = scopedLogs.filter(isFinalizedSale);
 
   const logTotalPages = Math.max(
@@ -4273,16 +3840,12 @@ export default function SalesReports() {
   const reportOrderIds = new Set((orderReport?.rows ?? orders).map((order) => order.id));
   const chartLogs = (activeTab === "logs" ? filteredLogs : completedLogs.filter((log) => reportOrderIds.has(log.orderId)))
     .filter((log) => hasReportRange || isInReportPeriod(log._dateObj, period, now));
-  const dailySales = new Map<string, number>();
-  const paymentSales = new Map<string, number>();
-  for (const log of chartLogs) {
-    const date = new Intl.DateTimeFormat("en-CA", { timeZone: restaurantSettings.timezone || "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(log._dateObj);
-    dailySales.set(date, (dailySales.get(date) ?? 0) + log.total);
-    const method = normalizePaymentMethod(log.paymentMethod);
-    paymentSales.set(method, (paymentSales.get(method) ?? 0) + log.total);
-  }
-  const trendData = [...dailySales].sort(([a], [b]) => a.localeCompare(b)).map(([date, revenue]) => ({ date, revenue }));
-  const paymentData = [...paymentSales].map(([method, revenue]) => ({ method, revenue }));
+  const hourlyTrend = hasReportRange
+    ? !!reportFromDate && !!reportToDate && reportFromDate.toDateString() === reportToDate.toDateString()
+    : period === "Today";
+  const { trendData, paymentData, bestSellerData, orderTypeData } = buildSalesChartData(chartLogs, orders, hourlyTrend, restaurantSettings.timezone || "Asia/Manila");
+  const chartCardClass = "flex h-[340px] min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4";
+  const chartScope = `${hasReportRange ? "Selected dates" : period} | ${activeTab === "logs" ? "Sales Logs" : "Order History"} filters`;
   const summaryFilterDescription = [
     hasLogRange
       ? `Date: ${logFromDate ? formatDisplayDate(logFromDate) : "Beginning"} to ${logToDate ? formatDisplayDate(logToDate) : "Today"}`
@@ -4290,7 +3853,7 @@ export default function SalesReports() {
     logPaymentFilter === "All" ? "All payment methods" : logPaymentFilter,
     logOrderTypeFilter === "All" ? "All order types" : logOrderTypeFilter,
     logDeliveryPlatformFilter,
-  ].join(" · ");
+  ].join(" | ");
 
   const tabs: {
     key: TabKey;
@@ -4467,46 +4030,6 @@ export default function SalesReports() {
           </div>
         </motion.div>
 
-        {/* Print Button */}
-        <motion.button
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, duration: 0.3 }}
-          onClick={() => {
-            const previousTitle = document.title;
-            const dates = (hasReportRange ? [reportFromDate, reportToDate ?? now] : period === "All Time"
-              ? [chartLogs.length ? chartLogs.reduce((a, b) => a._dateObj < b._dateObj ? a : b)._dateObj : now, now]
-              : [new Date(now.getFullYear(), now.getMonth(), now.getDate() - (period === "Last 7 Days" ? 6 : period === "Last 30 Days" ? 29 : 0)), now])
-              .map((date) => date ? new Intl.DateTimeFormat("en-CA", { timeZone: restaurantSettings.timezone || "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(date) : "Beginning");
-            document.title = `TheCrunch_SalesReport_${dates[0] === dates[1] ? dates[0] : dates.join("_to_")}`;
-            const restoreTitle = () => { document.title = previousTitle; };
-            window.addEventListener("afterprint", restoreTitle, { once: true });
-            try { window.print(); } catch (error) { restoreTitle(); window.removeEventListener("afterprint", restoreTitle); throw error; }
-          }}
-          className="screen-only"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 16px",
-            borderRadius: 12,
-            border: `1px solid ${DEEP_LINE}`,
-            background: DEEP,
-            color: "#fff",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            boxShadow: "0 2px 8px rgba(26,58,42,0.25)",
-            transition: "all 0.2s",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#142d21"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(26,58,42,0.35)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = DEEP; e.currentTarget.style.boxShadow = "0 2px 8px rgba(26,58,42,0.25)"; }}
-          aria-label="Print Sales Report"
-        >
-          <Printer size={16} />
-          <span>Print Report</span>
-        </motion.button>
-
         {/* Summary Bar */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -4520,6 +4043,7 @@ export default function SalesReports() {
               <RevenueDropdown
                 period={hasReportRange ? "All Time" : period}
                 scopeDescription={hasReportRange ? "Selected dates" : undefined}
+                reportDescription={formatReportPeriod(period, hasReportRange, activeTab === "orders" ? orderReport?.description ?? "All orders" : summaryFilterDescription)}
                 setPeriod={setPeriod}
                 logs={chartLogs}
                 orders={orders.filter((order) => chartLogs.some((log) => log.orderId === order.id))}
@@ -4530,37 +4054,68 @@ export default function SalesReports() {
           />
         </motion.div>
 
-        {(
-          <section className="screen-only mb-6 grid gap-4 lg:grid-cols-2" aria-label="Sales charts">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <h2 className="font-semibold text-slate-800">Sales Trend</h2>
-              <p className="mb-3 text-xs text-slate-500">{hasReportRange ? "Selected dates" : period} | {activeTab === "logs" ? "Sales Logs" : "Order History"} filters | completed paid sales</p>
-              {trendData.length ? <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={trendData} margin={{ left: 20, right: 16 }}>
+        <section className="mb-6 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 print:hidden" aria-label="Sales charts">
+          <div className={chartCardClass}>
+            <h2 className="font-semibold text-slate-800">Sales Trend</h2>
+            <p className="mb-3 text-xs text-slate-500">{chartScope} | {hourlyTrend ? "Hourly" : "Daily"} net sales</p>
+            <div className="min-h-0 min-w-0 flex-1">
+              {trendData.length ? <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ left: 20, right: 16, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={(value) => formatReportCurrency(Number(value))} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(value) => [formatReportCurrency(Number(value)), "Revenue"]} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={24} />
+                  <YAxis tickFormatter={(value) => formatReportCurrency(Number(value), restaurantSettings)} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(value) => [formatReportCurrency(Number(value), restaurantSettings), "Net sales"]} />
                   <Line type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={2} />
                 </LineChart>
-              </ResponsiveContainer> : <p className="py-16 text-center text-sm text-slate-500">No completed paid sales for these filters.</p>}
+              </ResponsiveContainer> : <p className="flex h-full items-center justify-center text-center text-sm text-slate-500">No completed paid sales for these filters.</p>}
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <h2 className="font-semibold text-slate-800">Sales by Payment Method</h2>
-              <p className="mb-3 text-xs text-slate-500">{hasReportRange ? "Selected dates" : period} | {activeTab === "logs" ? "Sales Logs" : "Order History"} filters | completed paid sales</p>
-              {paymentData.length ? <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={paymentData} margin={{ left: 20, right: 16, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="method" tick={{ fontSize: 10 }} interval={0} />
-                  <YAxis tickFormatter={(value) => formatReportCurrency(Number(value))} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(value) => [formatReportCurrency(Number(value)), "Revenue"]} />
-                  <Bar dataKey="revenue" fill="#059669" radius={[4, 4, 0, 0]} />
+          </div>
+          <div className={chartCardClass}>
+            <h2 className="font-semibold text-slate-800">Sales by Payment Method</h2>
+            <p className="mb-3 text-xs text-slate-500">{chartScope} | recorded payment methods</p>
+            <div className="min-h-0 min-w-0 flex-1">
+              {paymentData.length ? <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={paymentData} layout="vertical" margin={{ right: 16, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tickFormatter={(value) => formatReportCurrency(Number(value), restaurantSettings)} tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="method" width={108} tick={{ fontSize: 10 }} interval={0} />
+                  <Tooltip formatter={(value) => [formatReportCurrency(Number(value), restaurantSettings), "Net sales"]} />
+                  <Bar dataKey="revenue" fill="#059669" radius={[0, 4, 4, 0]} />
                 </BarChart>
-              </ResponsiveContainer> : <p className="py-16 text-center text-sm text-slate-500">No completed paid sales for these filters.</p>}
+              </ResponsiveContainer> : <p className="flex h-full items-center justify-center text-center text-sm text-slate-500">No completed paid sales for these filters.</p>}
             </div>
-          </section>
-        )}
-
+          </div>
+          <div className={chartCardClass}>
+            <h2 className="font-semibold text-slate-800">Top 5 Best-Selling Products</h2>
+            <p className="mb-3 text-xs text-slate-500">{chartScope} | purchased quantities, excluding included selections</p>
+            <div className="min-h-0 min-w-0 flex-1">
+              {bestSellerData.length ? <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={bestSellerData} layout="vertical" margin={{ right: 16, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="name" width={112} tick={{ fontSize: 10 }} interval={0} tickFormatter={(value) => String(value).length > 18 ? `${String(value).slice(0, 17)}…` : String(value)} />
+                  <Tooltip formatter={(value) => [Number(value).toLocaleString(), "Quantity sold"]} />
+                  <Bar dataKey="quantity" fill="#2563eb" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer> : <p className="flex h-full items-center justify-center text-center text-sm text-slate-500">No purchased menu items for these filters.</p>}
+            </div>
+          </div>
+          <div className={chartCardClass}>
+            <h2 className="font-semibold text-slate-800">Sales by Order Type</h2>
+            <p className="mb-3 text-xs text-slate-500">{chartScope} | net sales contribution</p>
+            <div className="min-h-0 min-w-0 flex-1">
+              {orderTypeData.length ? <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={orderTypeData} dataKey="revenue" nameKey="type" innerRadius={48} outerRadius={78} paddingAngle={2}>
+                    {orderTypeData.map((entry) => <Cell key={entry.type} fill={entry.type === "Dine-in" ? "#2563eb" : entry.type === "Takeout" ? "#059669" : entry.type === "Delivery" ? "#d97706" : "#64748b"} />)}
+                  </Pie>
+                  <Tooltip formatter={(value) => [formatReportCurrency(Number(value), restaurantSettings), "Net sales"]} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer> : <p className="flex h-full items-center justify-center text-center text-sm text-slate-500">No completed paid sales for these filters.</p>}
+            </div>
+          </div>
+        </section>
         {/* Tabs */}
         <div
           style={{
@@ -4773,7 +4328,7 @@ export default function SalesReports() {
             <div className="grid gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-3">
               <FilterChips
                 label="Payment Method"
-                options={ORDER_PAYMENT_FILTERS}
+                options={logPaymentOptions}
                 active={logPaymentFilter}
                 onChange={setLogPaymentFilter}
               />
@@ -4884,7 +4439,7 @@ export default function SalesReports() {
                             {date}
                           </span>
                           <span style={{ color: "#cbd5e1", fontSize: 11 }}>
-                            {entries.length} records ·{" "}
+                            {entries.length} records |{" "}
                             {formatReportCurrency(dayRevenue)} revenue
                           </span>
                         </div>
@@ -4962,7 +4517,7 @@ export default function SalesReports() {
           activeTab={activeTab}
           period={period}
           logs={logs}
-          orders={(orderReport?.rows ?? orders).filter((order) => chartLogs.some((log) => log.orderId === order.id))}
+          orders={(activeTab === "logs" ? orders : orderReport?.rows ?? orders).filter((order) => chartLogs.some((log) => log.orderId === order.id))}
           scopedLogs={scopedLogs}
           filteredLogs={chartLogs}
           filterDescription={activeTab === "orders" ? orderReport?.description ?? "All orders" : summaryFilterDescription}
