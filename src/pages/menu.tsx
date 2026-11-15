@@ -139,6 +139,7 @@ interface DiscountApproval {
   discountId: number;
 }
 interface MenuItem {
+  includedCategoryKey?: string | null;
   includedKind?: 'drinks' | 'sauces' | null;
   customizations?: IncludedConfig;
   ingredients: { product_id: number; quantity_required: number; stock: number }[];
@@ -315,9 +316,10 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
       categorySystemKey: p.category_system_key
         ? String(p.category_system_key).trim().toLowerCase()
         : null,
-      requiresSauce: p.requires_sauce === true || p.requires_sauce === 1,
+      requiresSauce: false,
       customizations: p.customizations,
       includedKind: p.included_selection_kind,
+      includedCategoryKey: p.included_category_key,
       ingredients: (p.ingredients ?? []).map((ingredient: Record<string, unknown>) => ({
         product_id: Number(ingredient.product_id),
         quantity_required: Number(ingredient.quantity_required),
@@ -714,6 +716,7 @@ const ProductCard = memo(
           </p>
           <p className="mt-2 text-base font-semibold text-neutral-900">
             {money(item.price)}
+            {Object.entries(item.customizations || {}).filter(([key, rule]) => key.startsWith('category:') && rule?.enabled && rule.includedQuantity > 0).map(([key, rule]) => <span key={key} className={`mt-1 block text-xs ${key === 'sauces' || rule?.sauce ? 'text-orange-700 dark:text-orange-300' : key === 'drinks' || rule?.beverage ? 'text-blue-700 dark:text-blue-300' : 'text-purple-700 dark:text-purple-300'}`}>{rule?.includedQuantity} {rule?.label || (key === 'drinks' ? 'Beverage' : 'Sauce')} Included</span>)}
           </p>
         </div>
       </motion.button>
@@ -2247,7 +2250,7 @@ export default function CashierView() {
         const choices = Array.isArray(entry.choices) ? entry.choices.flatMap((choice: any) => {
           if (!choice || typeof choice !== 'object') return [];
           const linked = products.find((candidate) => candidate.id === choice.product_id);
-          return linked && ['drinks', 'sauces'].includes(choice.kind) && Number.isInteger(choice.qty) && choice.qty > 0
+          return linked && (['drinks', 'sauces'].includes(choice.kind) || /^category:[1-9][0-9]*$/.test(choice.kind)) && Number.isInteger(choice.qty) && choice.qty > 0
             ? [{ kind: choice.kind, product_id: linked.id, name: linked.name, qty: choice.qty }] : [];
         }) : [];
         return [{ ...product, cartKey: `${product.id}:${flavor?.id ?? ''}:${includedKey(choices)}`, quantity: entry.quantity,
@@ -2915,10 +2918,10 @@ export default function CashierView() {
       const product = currentProducts.find((entry) => entry.id === item.id);
       if (!product || isUnavailable(product.availabilityStatus) || product.price !== item.price || item.quantity > getEffectiveMaxQuantity(product.remainingStock)) return true;
       if (product.requiresSauce && !currentProducts.some((entry) => entry.id === item.selectedFlavorProductId && entry.categorySystemKey === 'chicken_flavors' && !isUnavailable(entry.availabilityStatus))) return true;
-      return (['drinks', 'sauces'] as const).some((kind) => {
+      return Object.keys(product.customizations || {}).filter((key) => key === 'drinks' || key === 'sauces' || key.startsWith('category:')).some((kind) => {
         const choices = (item.includedSelections || []).filter((entry) => entry.kind === kind);
         const required = product.customizations?.[kind]?.enabled ? Number(product.customizations[kind]?.includedQuantity) : 0;
-        return choices.reduce((sum, entry) => sum + entry.qty, 0) !== required || choices.some((choice) => !currentProducts.some((entry) => entry.id === choice.product_id && entry.includedKind === kind && !isUnavailable(entry.availabilityStatus)));
+        return choices.reduce((sum, entry) => sum + entry.qty, 0) !== required || choices.some((choice) => !currentProducts.some((entry) => entry.id === choice.product_id && (entry.includedKind === kind || entry.includedCategoryKey === kind) && !isUnavailable(entry.availabilityStatus)));
       });
     });
     if (invalid || !cartFitsInventory(cart, currentProducts)) {
@@ -3653,7 +3656,7 @@ export default function CashierView() {
 
       {includedTarget && <IncludedSelectionModal name={includedTarget.item.name} config={includedTarget.item.customizations}
         requireFlavor={includedTarget.item.requiresSauce} flavors={chickenFlavors}
-        options={products.filter((product) => product.id !== includedTarget.item.id).map((product) => ({ kind: product.includedKind, id: product.id, name: product.name, stock: product.categorySystemKey === 'chicken_flavors' ? 999 : Math.floor(Math.max(0, product.remainingStock - cart.filter((entry) => entry.cartKey !== includedTarget.editingCartKey).reduce((sum, entry) => sum + entry.quantity * ((entry.id === product.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === product.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => entry.cartKey === includedTarget.editingCartKey)?.quantity || 1)), available: !isUnavailable(product.availabilityStatus) }))}
+        options={products.filter((product) => product.id !== includedTarget.item.id).map((product) => ({ categoryKey: product.includedCategoryKey, kind: product.includedKind, id: product.id, name: product.name, stock: product.categorySystemKey === 'chicken_flavors' ? 999 : Math.floor(Math.max(0, product.remainingStock - cart.filter((entry) => entry.cartKey !== includedTarget.editingCartKey).reduce((sum, entry) => sum + entry.quantity * ((entry.id === product.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === product.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => entry.cartKey === includedTarget.editingCartKey)?.quantity || 1)), available: !isUnavailable(product.availabilityStatus) }))}
         onCancel={() => setIncludedTarget(null)} onConfirm={(choices, flavorId) => {
           const target = includedTarget;
           const flavor = chickenFlavors.find((entry) => entry.id === flavorId);

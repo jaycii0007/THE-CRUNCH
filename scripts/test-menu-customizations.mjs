@@ -35,7 +35,7 @@ const sauce = item(3, 'Garlic', 'Chicken Flavors', 'selection_option', 'chicken_
 const rice = item(4, 'Kimchi Rice', 'Menu Food');
 const props = { item: null, categories: ['Menu Food', 'Chicken Flavors'], chickenFlavorCategoryName: 'Chicken Flavors',
   ingredientOptions: [{ id: 8, name: 'Chicken', category: 'Raw Materials', unit: 'g' }],
-  menuItems: [drink, sauce, rice], toast: (message, type) => { if (type === 'error') errors.push(message); }, onClose() {}, onSaved() {},
+  addonCategories: [{ category_id: 11, name: 'Beverages', can_be_addon: true }, { category_id: 12, name: 'Sides', can_be_addon: true }], menuItems: [drink, sauce, rice], toast: (message, type) => { if (type === 'error') errors.push(message); }, onClose() {}, onSaved() {},
 };
 const render = () => { cursor = 0; return exports.MenuFormModal(props); };
 function all(node) {
@@ -59,9 +59,9 @@ tree = render();
 await all(tree).find((node) => node.props.variant === 'solid' && node.props.onClick).props.onClick();
 assert.deepEqual(errors, []);
 assert.equal(sent.url, '/products');
-assert.equal(sent.body.customizations.drinks.enabled, true);
-assert.equal(sent.body.customizations.drinks.extraFee, undefined);
-assert.equal(sent.body.customizations.drinks.productIds, undefined);
+assert.equal(sent.body.customizations.categories[11].enabled, true);
+assert.equal(sent.body.customizations.categories[11].extraFee, undefined);
+assert.equal(sent.body.customizations.categories[11].productIds, undefined);
 assert.equal(sent.body.customizations.sauces.enabled, false);
 assert.equal(sent.body.ingredients[0].quantity_required, 250);
 const reloaded = exports.toMenuItem({ id: 1, name: 'Meal', category: 'Menu Food', customizations: sent.body.customizations });
@@ -231,3 +231,26 @@ assert.match(authSource, /function clearStoredAuth\(\) \{[\s\S]*?sessionStorage.
 assert.match(posSource, /currentProducts = mapProducts\(await api.get/);
 assert.match(posSource, /invalid \|\| !cartFitsInventory\(cart, currentProducts\)/);
 console.log('Cashier draft effects: refresh/navigation restore, current prices, included/flavor metadata, notes/options, completion/clear, account isolation and malformed data passed; no API or stock mutation during restore.');
+
+slots = [];
+selectionProps.requireFlavor = false;
+selectionProps.config = { 'category:44': { enabled: true, includedQuantity: 2, label: 'Sides' } };
+selectionProps.options = [{ id: 6, name: 'Fries', stock: 5, available: true, categoryKey: 'category:44' }, { id: 9, name: 'Rice', stock: 5, available: true, categoryKey: 'category:44' }];
+for (const [index, id] of [6, 9].entries()) all(popup()).find((node) => node.props['aria-label'] === `Included category:44 ${index + 1}`).props.onChange({ target: { value: String(id) } });
+assert.equal(confirm(popup()).props.disabled, false);
+confirm(popup()).props.onClick();
+assert.equal(chosen[0].kind, 'category:44');
+assert.equal(chosen.length, 2);
+selectionProps.config = { 'category:55': { enabled: true, includedQuantity: 1, label: 'Sauces', sauce: true } };
+selectionProps.requireFlavor = true;
+selectionProps.options = [{ id: 3, name: 'Garlic', stock: 999, available: true, kind: 'sauces', categoryKey: 'category:55' }];
+slots = [];
+all(popup()).find((node) => node.props['aria-label'] === 'Required Chicken Flavor').props.onChange({ target: { value: '3' } });
+assert.equal(all(popup()).filter((node) => node.type === 'select').length, 1);
+assert.equal(confirm(popup()).props.disabled, false);
+for (const page of ['menu.tsx', 'usersmenu.tsx']) {
+  const code = fs.readFileSync(new URL(`../src/pages/${page}`, import.meta.url), 'utf8');
+  assert.match(code, /categoryKey:/);
+  assert.match(code, /rule\?\.includedQuantity.*Included/);
+}
+console.log('Dynamic categories: per-category mixed dropdowns, category IDs, card label wiring and one required flavor interface passed.');

@@ -93,6 +93,7 @@ interface IngredientRow {
 }
 
 interface MenuCustomizations {
+  categories?: Record<string, { enabled: boolean; includedQuantity: number | string }>;
   drinks: { enabled: boolean; productIds: number[]; includedQuantity: number | string; extraFee: number | string };
   sauces: { enabled: boolean; productIds: number[]; includedQuantity: number | string; extraFee: number | string };
   rice: { enabled: boolean; kimchiProductId: number | null; upgradeFee: number | string };
@@ -145,6 +146,8 @@ interface IngredientOption {
   unit: string;
 }
 interface MenuCategoryRecord {
+  category_id: number;
+  can_be_addon?: boolean | null;
   name: string;
   display_order: number;
   is_active: boolean | number;
@@ -351,6 +354,7 @@ const priceNumber = (value: string) =>
 // Loads everything the page needs from the API
 function useMenuAdmin(onError: (message: string) => void) {
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [addonCategories, setAddonCategories] = useState<MenuCategoryRecord[]>([]);
   const [apiCategories, setApiCategories] = useState<string[]>([]);
   const [chickenFlavorCategoryName, setChickenFlavorCategoryName] =
     useState("");
@@ -379,6 +383,7 @@ function useMenuAdmin(onError: (message: string) => void) {
 
       setItems(uniqueMenuRowsByProductId(menuRows).map(toMenuItem));
 
+      setAddonCategories(categoryRows.filter((category) => category.can_be_addon === true));
       setApiCategories(
         categoryRows
           .filter((c) => c.is_active === true || c.is_active === 1)
@@ -439,6 +444,7 @@ function useMenuAdmin(onError: (message: string) => void) {
     items,
     categories,
     chickenFlavorCategoryName,
+    addonCategories,
     ingredientOptions,
     loading,
     reload,
@@ -1009,6 +1015,7 @@ function MenuFormModal({
   categories,
   chickenFlavorCategoryName,
   ingredientOptions,
+  addonCategories,
   toast,
   onClose,
   onSaved,
@@ -1017,6 +1024,7 @@ function MenuFormModal({
   categories: string[];
   chickenFlavorCategoryName: string;
   ingredientOptions: IngredientOption[];
+  addonCategories: MenuCategoryRecord[];
   toast: Toast;
   onClose: () => void;
   onSaved: () => void;
@@ -1084,13 +1092,11 @@ function MenuFormModal({
       if (ingredients?.some((ingredient) => !ingredientOptions.some((option) => Number(option.id) === ingredient.product_id))) {
         throw new Error("Select existing inventory ingredients.");
       }
-      const customizations = Object.fromEntries((['drinks', 'sauces'] as const).map((key) => {
-        const choice = values.customizations[key];
+      const customizations = { categories: Object.fromEntries(Object.entries(values.customizations.categories || {}).map(([key, choice]) => {
         const includedQuantity = Number(choice.includedQuantity);
-        if (!isChickenFlavor && (String(choice.includedQuantity).trim() === '' || !Number.isSafeInteger(includedQuantity) || includedQuantity < 0))
-          throw new Error('Included quantities must be nonnegative whole numbers.');
+        if (!Number.isSafeInteger(includedQuantity) || includedQuantity < 0 || includedQuantity > 999) throw new Error('Invalid included quantity');
         return [key, { enabled: choice.enabled, includedQuantity }];
-      }));
+      })) };
 
       let image: string | undefined;
       if (imageFile) image = await uploadProductImage(imageFile);
@@ -1355,25 +1361,18 @@ function MenuFormModal({
       {!isChickenFlavor && (
         <>
           <p className={sectionTitle} style={{ color: T.ink }}>
-            Customization Settings
+            Add-ons
           </p>
           <p className="mb-3 text-[11.5px]" style={{ color: T.muted }}>
-            Included drinks and sauces add no charge. Additional products are ordered separately from the menu.
+            Configure included items for this menu product.
           </p>
-          {(['drinks', 'sauces'] as const).map((key) => {
-            const choice = values.customizations[key];
-            const update = (patch: Partial<typeof choice>) => set({ customizations: { ...values.customizations, [key]: { ...choice, ...patch } } });
-            return <div key={key} className="mb-4 rounded-xl border p-3" style={{ borderColor: T.line }}>
-              <label className="flex items-center gap-2 text-[12.5px]">
-                <input type="checkbox" role="switch" checked={choice.enabled} onChange={(event) => update({ enabled: event.target.checked })} />
-                {key === 'drinks' ? 'Drink Selection' : 'Sauce Selection'}
-              </label>
-              {choice.enabled && <div className="mt-3 space-y-2">
-                <p className="text-[11.5px]" style={{ color: T.muted }}>
-                  {key === 'sauces' ? 'Available sauce menu products and protected Chicken Flavors are included automatically. Chicken Flavors remain selection-only; the required flavor choice is unchanged.' : 'Available beverages, Soft Drinks and Juice are included automatically. Their existing recipes are reused.'}
-                </p>
-                <NumberInput label="Included Quantity" value={String(choice.includedQuantity)} onChange={(includedQuantity) => update({ includedQuantity })} maxDecimals={0} />
-              </div>}
+          {addonCategories.map((category) => {
+            const key = String(category.category_id);
+            const choice = values.customizations.categories?.[key] || { enabled: false, includedQuantity: 1 };
+            const update = (patch: Partial<typeof choice>) => set({ customizations: { ...values.customizations, categories: { ...values.customizations.categories, [key]: { ...choice, ...patch } } } });
+            return <div key={key} className="mb-3 rounded-xl border p-3">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" role="switch" checked={choice.enabled} onChange={(event) => update({ enabled: event.target.checked })} />{category.name}</label>
+              {choice.enabled && <NumberInput label="Included Quantity" value={String(choice.includedQuantity)} maxDecimals={0} onChange={(includedQuantity) => update({ includedQuantity })} />}
             </div>;
           })}
           <p className={sectionTitle} style={{ color: T.ink }}>
@@ -1485,6 +1484,7 @@ function MenuAdminTab() {
     items,
     categories,
     chickenFlavorCategoryName,
+    addonCategories,
     ingredientOptions,
     loading,
     reload,
@@ -1918,6 +1918,7 @@ function MenuAdminTab() {
           categories={categories}
           chickenFlavorCategoryName={chickenFlavorCategoryName}
           ingredientOptions={ingredientOptions}
+          addonCategories={addonCategories}
           toast={toast}
           onClose={() => setFormTarget(null)}
           onSaved={() => {
