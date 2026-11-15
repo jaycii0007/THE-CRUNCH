@@ -42,7 +42,7 @@ import {
    ──────────────────────────────────────────────────────────────────────── */
 
 const FONT = "'Poppins', sans-serif";
-const PLACEHOLDER_IMG = "/img/placeholder.jpg";
+const PLACEHOLDER_IMG = "/images/menu-placeholder.jpg";
 const DEFAULT_UNIT = "piece"; // unit sent when creating a menu item (the form has no unit field)
 
 const T = {
@@ -92,8 +92,22 @@ interface IngredientRow {
   stock?: number | string;
 }
 
+interface MenuCustomizations {
+  drinks: { enabled: boolean; productIds: number[]; includedQuantity: number | string; extraFee: number | string };
+  sauces: { enabled: boolean; productIds: number[]; includedQuantity: number | string; extraFee: number | string };
+  rice: { enabled: boolean; kimchiProductId: number | null; upgradeFee: number | string };
+}
+const defaultCustomizations = (): MenuCustomizations => ({
+  drinks: { enabled: false, productIds: [], includedQuantity: 1, extraFee: 0 },
+  sauces: { enabled: false, productIds: [], includedQuantity: 1, extraFee: 0 },
+  rice: { enabled: false, kimchiProductId: null, upgradeFee: 0 },
+});
+
 // One row from /products or /inventory
 interface ApiRow {
+  product_type?: string;
+  category_system_key?: string;
+  customizations?: MenuCustomizations;
   id?: number;
   product_id?: number;
   inventory_id?: number;
@@ -128,6 +142,7 @@ interface IngredientOption {
   id: number;
   name: string;
   category: string;
+  unit: string;
 }
 interface MenuCategoryRecord {
   name: string;
@@ -137,6 +152,9 @@ interface MenuCategoryRecord {
 }
 
 interface MenuItem {
+  productType: string;
+  categorySystemKey: string;
+  customizations: MenuCustomizations;
   id: number;
   rawProductId?: number;
   rawInventoryId?: number;
@@ -286,6 +304,9 @@ function toMenuItem(item: ApiRow): MenuItem {
   const servings = item.available_servings;
   const promo = item.promo_price;
   return {
+    productType: item.product_type || item.item_type || 'menu_item',
+    categorySystemKey: item.category_system_key || '',
+    customizations: item.customizations ?? defaultCustomizations(),
     id,
     rawProductId: item.product_id ? Number(item.product_id) : undefined,
     rawInventoryId: item.inventory_id ? Number(item.inventory_id) : undefined,
@@ -296,7 +317,7 @@ function toMenuItem(item: ApiRow): MenuItem {
     unit: String(item.unit ?? DEFAULT_UNIT),
     stock: Number(item.quantity ?? item.stock ?? 0),
     description: String(item.description ?? ""),
-    image: item.image || PLACEHOLDER_IMG,
+    image: !item.image?.trim() || item.image === "/img/placeholder.jpg" ? PLACEHOLDER_IMG : item.image,
     availabilityStatus: String(item.availability_status ?? "Available"),
     overrideMode: toOverrideMode(item.manual_override, item.manual_status),
     hasRecipe: Number(item.ingredient_count ?? 0) > 0,
@@ -387,6 +408,7 @@ function useMenuAdmin(onError: (message: string) => void) {
             id: Number(row.product_id ?? row.id ?? row.inventory_id ?? 0),
             name: String(row.product_name ?? row.name ?? "Unnamed Product"),
             category: String(row.category ?? "Uncategorized"),
+            unit: String(row.unit ?? ''),
           }))
           .filter((option) => option.id > 0)
           .sort((a, b) => a.name.localeCompare(b.name)),
@@ -941,6 +963,7 @@ function AttentionList({ items }: { items: MenuItem[] }) {
    ──────────────────────────────────────────────────────────────────────── */
 
 interface FormValues {
+  customizations: MenuCustomizations;
   name: string;
   category: string;
   price: string;
@@ -954,6 +977,7 @@ interface FormValues {
 }
 
 const EMPTY_FORM: FormValues = {
+  customizations: defaultCustomizations(),
   name: "",
   category: "",
   price: "",
@@ -967,6 +991,7 @@ const EMPTY_FORM: FormValues = {
 };
 
 const formFromItem = (item: MenuItem): FormValues => ({
+  customizations: item.customizations,
   name: item.name,
   category: item.category,
   price: item.price,
@@ -1059,6 +1084,13 @@ function MenuFormModal({
       if (ingredients?.some((ingredient) => !ingredientOptions.some((option) => Number(option.id) === ingredient.product_id))) {
         throw new Error("Select existing inventory ingredients.");
       }
+      const customizations = Object.fromEntries((['drinks', 'sauces'] as const).map((key) => {
+        const choice = values.customizations[key];
+        const includedQuantity = Number(choice.includedQuantity);
+        if (!isChickenFlavor && (String(choice.includedQuantity).trim() === '' || !Number.isSafeInteger(includedQuantity) || includedQuantity < 0))
+          throw new Error('Included quantities must be nonnegative whole numbers.');
+        return [key, { enabled: choice.enabled, includedQuantity }];
+      }));
 
       let image: string | undefined;
       if (imageFile) image = await uploadProductImage(imageFile);
@@ -1085,6 +1117,7 @@ function MenuFormModal({
               ? values.promoLabel.trim() || null
               : null,
             ingredients,
+            customizations,
           };
 
       if (isEdit) {
@@ -1102,12 +1135,12 @@ function MenuFormModal({
         await api.post(
           "/products",
           isChickenFlavor
-            ? { ...shared, image: image ?? PLACEHOLDER_IMG }
+            ? { ...shared, image: image ?? null }
             : {
                 ...shared,
                 unit: DEFAULT_UNIT,
                 quantity: 0,
-                image: image ?? PLACEHOLDER_IMG,
+                image: image ?? null,
               },
         );
         toast(`"${shared.name}" added successfully.`, "success");
@@ -1274,13 +1307,16 @@ function MenuFormModal({
                     </option>
                   ))}
                 </select>
-                <NumberInput
-                  placeholder="Qty"
-                  value={row.quantityRequired}
-                  onChange={(quantityRequired) =>
-                    updateIngredient(index, { quantityRequired })
-                  }
-                />
+                <div>
+                  <NumberInput
+                    placeholder="Qty"
+                    value={row.quantityRequired}
+                    onChange={(quantityRequired) => updateIngredient(index, { quantityRequired })}
+                  />
+                  <span className="text-[11px]" style={{ color: T.muted }}>
+                    {ingredientOptions.find((option) => option.id === Number(row.productId))?.unit || 'Select ingredient for unit'}
+                  </span>
+                </div>
                 <Button
                   variant="danger"
                   small
@@ -1318,6 +1354,28 @@ function MenuFormModal({
 
       {!isChickenFlavor && (
         <>
+          <p className={sectionTitle} style={{ color: T.ink }}>
+            Customization Settings
+          </p>
+          <p className="mb-3 text-[11.5px]" style={{ color: T.muted }}>
+            Included drinks and sauces add no charge. Additional products are ordered separately from the menu.
+          </p>
+          {(['drinks', 'sauces'] as const).map((key) => {
+            const choice = values.customizations[key];
+            const update = (patch: Partial<typeof choice>) => set({ customizations: { ...values.customizations, [key]: { ...choice, ...patch } } });
+            return <div key={key} className="mb-4 rounded-xl border p-3" style={{ borderColor: T.line }}>
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input type="checkbox" role="switch" checked={choice.enabled} onChange={(event) => update({ enabled: event.target.checked })} />
+                {key === 'drinks' ? 'Drink Selection' : 'Sauce Selection'}
+              </label>
+              {choice.enabled && <div className="mt-3 space-y-2">
+                <p className="text-[11.5px]" style={{ color: T.muted }}>
+                  {key === 'sauces' ? 'Available sauce menu products and protected Chicken Flavors are included automatically. Chicken Flavors remain selection-only; the required flavor choice is unchanged.' : 'Available beverages, Soft Drinks and Juice are included automatically. Their existing recipes are reused.'}
+                </p>
+                <NumberInput label="Included Quantity" value={String(choice.includedQuantity)} onChange={(includedQuantity) => update({ includedQuantity })} maxDecimals={0} />
+              </div>}
+            </div>;
+          })}
           <p className={sectionTitle} style={{ color: T.ink }}>
             Promotion
           </p>
@@ -1367,6 +1425,7 @@ function MenuFormModal({
         {imagePreview ? (
           <ProductImage
             src={imagePreview}
+            fallbackSrc={PLACEHOLDER_IMG}
             alt="Preview"
             className="h-[140px] w-full object-cover"
           />
@@ -1700,20 +1759,12 @@ function MenuAdminTab() {
                                 boxShadow: SHADOW.raised,
                               }}
                             >
-                              {item.image !== PLACEHOLDER_IMG ? (
                                 <ProductImage
                                   src={item.image}
+                                  fallbackSrc={PLACEHOLDER_IMG}
                                   alt={item.name}
                                   className="h-full w-full object-cover"
                                 />
-                              ) : (
-                                <span
-                                  className="text-[13px] font-semibold"
-                                  style={{ color: T.muted }}
-                                >
-                                  {item.name.charAt(0).toUpperCase()}
-                                </span>
-                              )}
                             </div>
                             <div className="min-w-0">
                               <div

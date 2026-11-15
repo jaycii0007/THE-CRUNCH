@@ -1,4 +1,5 @@
 export interface ReceiptItemDto {
+  includedSelections?: { kind: string; name: string; qty: number }[];
   productName: string;
   quantity: number;
   unitPrice: number | null;
@@ -140,7 +141,7 @@ export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): stri
   ];
 
   const items = r.items.length
-    ? r.items.map((i) => `<tr><td class="q">${esc(i.quantity)}x</td><td>${esc(i.productName)}${i.selectedFlavorName ? `<div class="s"><b>Sauce:</b> ${esc(i.selectedFlavorName)}</div>` : ""}<div class="s">@ ${esc(money(i.unitPrice, cur))}</div>${
+    ? r.items.map((i) => `<tr><td class="q">${esc(i.quantity)}x</td><td>${esc(i.productName)}${(i.includedSelections ?? []).map((choice) => `<div class="s">Included ${choice.kind === "drinks" ? "Drink" : "Sauce"}: ${esc(choice.name)} x${esc(choice.qty)}</div>`).join("")}${i.selectedFlavorName ? `<div class="s"><b>Sauce:</b> ${esc(i.selectedFlavorName)}</div>` : ""}<div class="s">@ ${esc(money(i.unitPrice, cur))}</div>${
         i.note ? `<div class="s">* ${esc(i.note)}</div>` : ""}</td><td class="r">${esc(money(i.subtotal, cur))}</td></tr>`).join("")
     : `<tr><td colspan="3">No item rows available.</td></tr>`;
 
@@ -208,7 +209,7 @@ export function buildKotHtml(r: ReceiptDto, opts: ReceiptOptions = {}): string {
 <p class="c s">${esc(formatReceiptDate(r))}</p>
 <p class="c b" style="margin-top:4px">${esc(orderTypeLabel(r.orderType).toUpperCase())}${r.tableNumber ? ` / TABLE ${esc(r.tableNumber)}` : ""}</p>
 <hr class="d"/>
-<table class="k">${r.items.map((i) => `<tr><td class="q">${esc(i.quantity)}x</td><td>${esc(i.productName)}${i.selectedFlavorName ? `<div class="s">Sauce: ${esc(i.selectedFlavorName)}</div>` : ""}${i.note ? `<div class="s">Note: ${esc(i.note)}</div>` : ""}</td></tr>`).join("")}</table>
+<table class="k">${r.items.map((i) => `<tr><td class="q">${esc(i.quantity)}x</td><td>${esc(i.productName)}${(i.includedSelections ?? []).map((choice) => `<div class="s">Included ${choice.kind === "drinks" ? "Drink" : "Sauce"}: ${esc(choice.name)} x${esc(choice.qty)}</div>`).join("")}${i.selectedFlavorName ? `<div class="s">Sauce: ${esc(i.selectedFlavorName)}</div>` : ""}${i.note ? `<div class="s">Note: ${esc(i.note)}</div>` : ""}</td></tr>`).join("")}</table>
 ${r.orderNote ? `<p style="margin-top:12px;padding:8px;border:2px dashed #000"><b>Note:</b> ${esc(r.orderNote)}</p>` : ""}
 ${cashier ? `<p class="c s" style="margin-top:10px">Cashier: ${esc(cashier)}</p>` : ""}`);
 }

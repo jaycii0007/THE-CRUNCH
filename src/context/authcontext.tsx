@@ -47,6 +47,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function clearStoredAuth() {
+    try { sessionStorage.removeItem('the-crunch:cashier-draft'); } catch { /* Storage may be unavailable. */ }
   if (typeof window === "undefined") return;
   ["authToken", "isAuthenticated", "userName", "userEmail", "userRole", "userId", "userEmailVerified"].forEach(
     (key) => localStorage.removeItem(key),

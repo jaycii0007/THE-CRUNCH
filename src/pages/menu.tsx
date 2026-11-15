@@ -1,3 +1,5 @@
+import { cartFitsInventory } from "../lib/orderQuantity";
+import { IncludedSelectionModal, IncludedChoices, hasIncludedChoices, includedKey, type IncludedChoice, type IncludedConfig } from "@/components/included-menu-selections";
 import {
   createContext,
   memo,
@@ -137,6 +139,8 @@ interface DiscountApproval {
   discountId: number;
 }
 interface MenuItem {
+  includedKind?: 'drinks' | 'sauces' | null;
+  customizations?: IncludedConfig;
   ingredients: { product_id: number; quantity_required: number; stock: number }[];
   requiresSauce: boolean;
   id: number;
@@ -149,6 +153,7 @@ interface MenuItem {
   image?: string | null;
 }
 interface CartItem extends MenuItem {
+  includedSelections?: IncludedChoice[];
   cartKey: string;
   quantity: number;
   note?: string;
@@ -175,6 +180,7 @@ interface OnlineOrder {
     name: string;
     quantity: number;
     selectedFlavorName?: string | null;
+    includedSelections?: IncludedChoice[];
   }[];
 }
 interface ShiftOrder {
@@ -196,6 +202,7 @@ interface ShiftOrder {
     quantity: number;
     price: number;
     selectedFlavorName?: string | null;
+    includedSelections?: IncludedChoice[];
   }[];
 }
 
@@ -309,6 +316,8 @@ const mapProducts = (data: Record<string, any>[]): MenuItem[] => {
         ? String(p.category_system_key).trim().toLowerCase()
         : null,
       requiresSauce: p.requires_sauce === true || p.requires_sauce === 1,
+      customizations: p.customizations,
+      includedKind: p.included_selection_kind,
       ingredients: (p.ingredients ?? []).map((ingredient: Record<string, unknown>) => ({
         product_id: Number(ingredient.product_id),
         quantity_required: Number(ingredient.quantity_required),
@@ -461,7 +470,7 @@ const TONE = {
   idle: "border-neutral-200 bg-neutral-50 text-neutral-500",
   green: "border-green-600 bg-green-50 text-green-700",
   dark: "border-neutral-900 bg-neutral-50 text-neutral-900",
-  amber: "border-amber-400 bg-amber-50 text-amber-700",
+  amber: "border-amber-400 bg-amber-50 text-orange-700 dark:text-orange-300",
   red: "border-red-200 bg-red-50 text-red-600",
 };
 const BADGE = {
@@ -532,7 +541,7 @@ const PayBadge = ({ status }: { status?: string | null }) =>
       Paid
     </Chip>
   ) : (
-    <Chip className="border border-amber-200 bg-amber-100 text-amber-700">
+    <Chip className="border border-amber-200 bg-amber-100 text-orange-700 dark:text-orange-300">
       {!status || norm(status) === "pending payment" ? "Unpaid" : status}
     </Chip>
   );
@@ -681,16 +690,12 @@ const ProductCard = memo(
         className={`relative overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-all duration-200 ease-out ${inCart ? `${sageBorder} ${sageShadow}` : "border-neutral-200 hover:shadow-md"} ${out ? "cursor-not-allowed opacity-50" : ""}`}
       >
         <div className="flex aspect-square w-full items-center justify-center overflow-hidden bg-neutral-100">
-          {item.image ? (
             <ProductImage
               src={item.image}
+              fallbackSrc="/images/menu-placeholder.jpg"
               alt={item.name}
               className="h-full w-full object-cover"
             />
-          ) : null}
-          {!item.image && (
-            <UtensilsCrossed className="h-8 w-8 text-neutral-300" />
-          )}
         </div>
         {out && (
           <span className="absolute left-2.5 top-2.5 rounded-full bg-red-800 px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-white">
@@ -815,24 +820,21 @@ const CartRow = memo(
       >
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100">
-            {item.image ? (
               <ProductImage
                 src={item.image}
+                fallbackSrc="/images/menu-placeholder.jpg"
                 alt={item.name}
                 className="h-full w-full object-cover"
               />
-            ) : null}
-            {!item.image && (
-              <UtensilsCrossed className="h-5 w-5 text-neutral-300" />
-            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-neutral-800">
               {item.name}
             </p>
             <p className="text-xs text-neutral-400">{money(item.price)} each</p>
-            {item.selectedFlavorName && (
-              <p className="mt-0.5 text-xs font-semibold text-amber-700">
+            <IncludedChoices choices={item.includedSelections} flavorId={item.selectedFlavorProductId} />
+              {item.selectedFlavorName && (
+              <p className="mt-0.5 text-xs font-semibold text-orange-700 dark:text-orange-300">
                 Sauce: {item.selectedFlavorName}
               </p>
             )}
@@ -869,14 +871,14 @@ const CartRow = memo(
             </button>
           </div>
           <div className="flex gap-1">
-            {item.requiresSauce && item.selectedFlavorProductId && (
+            {(hasIncludedChoices(item.customizations) || (item.requiresSauce && item.selectedFlavorProductId)) && (
               <button
                 type="button"
                 title="Change sauce"
                 onClick={() => onEditFlavor(item)}
-                className="rounded-lg px-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                className="rounded-lg px-2.5 text-xs font-semibold text-orange-700 dark:text-orange-300 hover:bg-amber-50"
               >
-                Change sauce
+                Change selections
               </button>
             )}
             <button
@@ -1098,8 +1100,9 @@ function ProceedModal({
               <p key={k} className="text-sm text-neutral-700">
                 <b className="mr-2">{i.quantity}×</b>
                 {i.name}
-                {i.selectedFlavorName && (
-                  <span className="block pl-7 text-xs font-semibold text-amber-700">
+                <IncludedChoices choices={i.includedSelections} />
+              {i.selectedFlavorName && (
+                  <span className="block pl-7 text-xs font-semibold text-orange-700 dark:text-orange-300">
                     Sauce: {i.selectedFlavorName}
                   </span>
                 )}
@@ -1725,8 +1728,9 @@ function SuccessModal({
               <div key={k} className="flex justify-between gap-3 text-sm">
                 <span className="text-neutral-600">
                   {i.productName}{" "}
-                  {i.selectedFlavorName && (
-                    <span className="block text-xs font-semibold text-amber-700">
+                  <IncludedChoices choices={i.includedSelections} />
+              {i.selectedFlavorName && (
+                    <span className="block text-xs font-semibold text-orange-700 dark:text-orange-300">
                       Sauce: {i.selectedFlavorName}
                     </span>
                   )}
@@ -1920,7 +1924,7 @@ function HistoryModal({
                             : norm(o.status).includes("prepar")
                               ? "bg-blue-100 text-blue-700"
                               : ["queued", "pending", "awaiting cashier review"].includes(norm(o.status))
-                                ? "bg-amber-100 text-amber-700"
+                                ? "bg-amber-100 text-orange-700 dark:text-orange-300"
                                 : "bg-green-100 text-green-700"
                       }
                     >
@@ -1997,8 +2001,9 @@ function HistoryModal({
                     <p key={k} className="flex justify-between gap-3">
                       <span>
                         {i.name} ×{i.quantity}
-                        {i.selectedFlavorName && (
-                          <span className="block text-xs font-semibold text-amber-700">
+                        <IncludedChoices choices={i.includedSelections} />
+              {i.selectedFlavorName && (
+                          <span className="block text-xs font-semibold text-orange-700 dark:text-orange-300">
                             Sauce: {i.selectedFlavorName}
                           </span>
                         )}
@@ -2031,6 +2036,7 @@ export default function CashierView() {
   const { toasts, toast, dismiss } = useToast();
   const firstPoll = useRef(true);
   const placingRef = useRef(false);
+  const validatingCartRef = useRef(false);
   const paymentAttemptRef = useRef<string | null>(null);
   const refundSubmittingRef = useRef(false);
   const paymentQrVersionRef = useRef<string | null>(null);
@@ -2067,11 +2073,15 @@ export default function CashierView() {
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const draftRestored = useRef(false);
+  const draftKey = 'the-crunch:cashier-draft';
+
   const [flavorTarget, setFlavorTarget] = useState<{
     item: MenuItem;
     editingCartKey?: string;
   } | null>(null);
   const [selectedFlavorId, setSelectedFlavorId] = useState<number | null>(null);
+  const [includedTarget, setIncludedTarget] = useState<{ item: MenuItem; editingCartKey?: string } | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [orderType, setOrderType] = useState<OrderTypeVal>("dine-in");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -2211,7 +2221,7 @@ export default function CashierView() {
       setCart((prev) => prev.map((item) => {
         const cur = next.find((product) => product.id === item.id);
         return cur
-          ? { ...item, remainingStock: cur.remainingStock, availabilityStatus: cur.availabilityStatus, ingredients: cur.ingredients, requiresSauce: cur.requiresSauce }
+          ? { ...item, price: cur.price, remainingStock: cur.remainingStock, availabilityStatus: cur.availabilityStatus, ingredients: cur.ingredients, requiresSauce: cur.requiresSauce, customizations: cur.customizations }
           : { ...item, remainingStock: 0, availabilityStatus: "Hidden" };
       }));
     } catch {
@@ -2220,6 +2230,47 @@ export default function CashierView() {
       setLoadingProducts(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!cashierId || !products.length || draftRestored.current) return;
+    draftRestored.current = true;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
+      if (saved?.version !== 1 || saved.cashierId !== cashierId || !Array.isArray(saved.items) || saved.items.length > 999) {
+        sessionStorage.removeItem(draftKey); return;
+      }
+      const restored: CartItem[] = saved.items.flatMap((entry: any) => {
+        if (!entry || typeof entry !== 'object') return [];
+        const product = products.find((candidate) => candidate.id === entry.id);
+        if (!product || !Number.isInteger(entry.quantity) || entry.quantity < 1 || entry.quantity > 999) return [];
+        const flavor = products.find((candidate) => candidate.id === entry.flavorId && candidate.categorySystemKey === 'chicken_flavors');
+        const choices = Array.isArray(entry.choices) ? entry.choices.flatMap((choice: any) => {
+          if (!choice || typeof choice !== 'object') return [];
+          const linked = products.find((candidate) => candidate.id === choice.product_id);
+          return linked && ['drinks', 'sauces'].includes(choice.kind) && Number.isInteger(choice.qty) && choice.qty > 0
+            ? [{ kind: choice.kind, product_id: linked.id, name: linked.name, qty: choice.qty }] : [];
+        }) : [];
+        return [{ ...product, cartKey: `${product.id}:${flavor?.id ?? ''}:${includedKey(choices)}`, quantity: entry.quantity,
+          includedSelections: choices, selectedFlavorProductId: flavor?.id, selectedFlavorName: flavor?.name,
+          note: typeof entry.note === 'string' ? entry.note.slice(0, 2000) : undefined }];
+      });
+      setCart(restored);
+      if (['dine-in', 'take-out', 'delivery'].includes(saved.orderType)) setOrderType(saved.orderType);
+      if (['cash', 'gcash_onsite', 'grabfood', 'foodpanda'].includes(saved.paymentMethod)) setPaymentMethod(saved.paymentMethod);
+      if (typeof saved.customerType === 'string') setCustomerType(saved.customerType);
+      if (typeof saved.orderNote === 'string') setOrderNote(saved.orderNote.slice(0, 2000));
+      if (typeof saved.soldToName === 'string') setSoldToName(saved.soldToName.slice(0, 150));
+    } catch { try { sessionStorage.removeItem(draftKey); } catch { /* Storage unavailable. */ } }
+  }, [cashierId, products]);
+
+  useEffect(() => {
+    if (!draftRestored.current || !cashierId) return;
+    try {
+      if (!cart.length || done) { sessionStorage.removeItem(draftKey); return; }
+      sessionStorage.setItem(draftKey, JSON.stringify({ version: 1, cashierId, orderType, paymentMethod, customerType, orderNote, soldToName,
+        items: cart.map((item) => ({ id: item.id, quantity: item.quantity, flavorId: item.selectedFlavorProductId, choices: item.includedSelections?.map(({ kind, product_id, qty }) => ({ kind, product_id, qty })), note: item.note })) }));
+    } catch { /* An unavailable session store must not block POS. */ }
+  }, [cart, cashierId, orderType, paymentMethod, customerType, orderNote, soldToName, done]);
 
   useEffect(() => {
     void loadProducts();
@@ -2610,12 +2661,10 @@ export default function CashierView() {
         if (!item) return prev;
         const product = products.find((entry) => entry.id === item.id) ?? item;
         const quantity = Math.max(0, (prev.find((entry) => entry.cartKey === cartKey)?.quantity ?? 0) + delta);
-        if (delta > 0 && (quantity > getEffectiveMaxQuantity(product.remainingStock) ||
-          !product.ingredients.every((ingredient) => {
-            const used = prev.reduce((total, entry) => total + entry.quantity *
-              ((products.find((p) => p.id === entry.id) ?? entry).ingredients.find((row) => row.product_id === ingredient.product_id)?.quantity_required ?? 0), 0);
-            return used + delta * ingredient.quantity_required <= ingredient.stock + 0.0000001;
-          }))) return prev;
+        const proposed = prev.some((entry) => entry.cartKey === cartKey)
+          ? prev.map((entry) => entry.cartKey === cartKey ? { ...entry, quantity } : entry)
+          : [...prev, { ...item, quantity }];
+        if (delta > 0 && (quantity > getEffectiveMaxQuantity(product.remainingStock) || !cartFitsInventory(proposed, products))) return prev;
         if (!prev.some((entry) => entry.cartKey === cartKey)) return [...prev, { ...item, quantity }];
         return prev.flatMap((entry) => entry.cartKey !== cartKey ? [entry] : quantity > 0 ? [{ ...entry, quantity }] : []);
       });
@@ -2631,6 +2680,8 @@ export default function CashierView() {
 
   const requestAddToCart = useCallback(
     (item: MenuItem) => {
+      if (isUnavailable(item.availabilityStatus) || getEffectiveMaxQuantity(item.remainingStock) === 0) return;
+      if (hasIncludedChoices(item.customizations)) return setIncludedTarget({ item });
       if (!item.requiresSauce) return addDirectToCart(item);
       setSelectedFlavorId(null);
       setFlavorTarget({ item });
@@ -2639,6 +2690,7 @@ export default function CashierView() {
   );
 
   const editCartFlavor = useCallback((item: CartItem) => {
+    if (hasIncludedChoices(item.customizations)) return setIncludedTarget({ item, editingCartKey: item.cartKey });
     setSelectedFlavorId(item.selectedFlavorProductId ?? null);
     setFlavorTarget({ item, editingCartKey: item.cartKey });
   }, []);
@@ -2701,6 +2753,7 @@ export default function CashierView() {
   );
   // Puts the whole order form back to its starting state (used by Void and New order).
   const clearOrderForm = () => {
+    try { sessionStorage.removeItem(draftKey); } catch { /* Storage unavailable. */ }
     setCart([]);
     setFlavorTarget(null);
     setSelectedFlavorId(null);
@@ -2767,6 +2820,7 @@ export default function CashierView() {
         authorization_code: authorizationCode,
         items: cart.map((item) => ({
           product_id: item.id,
+          included_selections: item.includedSelections,
           qty: item.quantity,
           ...(item.selectedFlavorProductId && {
             selected_flavor_product_id: item.selectedFlavorProductId,
@@ -2850,7 +2904,28 @@ export default function CashierView() {
     tendered: number;
     file?: File;
   }) => {
-    if (placingRef.current) return;
+    if (placingRef.current || validatingCartRef.current) return;
+    validatingCartRef.current = true;
+    try {
+    // Refresh before payment; draft prices and availability are never authoritative.
+    let currentProducts: MenuItem[];
+    try { currentProducts = mapProducts(await api.get<Record<string, any>[]>('/products?item_type=menu_item')); }
+    catch { return toast('error', 'Refresh menu availability before confirming payment.'); }
+    const invalid = cart.some((item) => {
+      const product = currentProducts.find((entry) => entry.id === item.id);
+      if (!product || isUnavailable(product.availabilityStatus) || product.price !== item.price || item.quantity > getEffectiveMaxQuantity(product.remainingStock)) return true;
+      if (product.requiresSauce && !currentProducts.some((entry) => entry.id === item.selectedFlavorProductId && entry.categorySystemKey === 'chicken_flavors' && !isUnavailable(entry.availabilityStatus))) return true;
+      return (['drinks', 'sauces'] as const).some((kind) => {
+        const choices = (item.includedSelections || []).filter((entry) => entry.kind === kind);
+        const required = product.customizations?.[kind]?.enabled ? Number(product.customizations[kind]?.includedQuantity) : 0;
+        return choices.reduce((sum, entry) => sum + entry.qty, 0) !== required || choices.some((choice) => !currentProducts.some((entry) => entry.id === choice.product_id && entry.includedKind === kind && !isUnavailable(entry.availabilityStatus)));
+      });
+    });
+    if (invalid || !cartFitsInventory(cart, currentProducts)) {
+      await loadProducts();
+      return toast('warning', 'Menu prices, selections or stock changed. Review the cart before payment.');
+    }
+    } finally { validatingCartRef.current = false; }
     const missingSauce = cart.find((item) => item.requiresSauce && !item.selectedFlavorProductId);
     if (missingSauce) {
       editCartFlavor(missingSauce);
@@ -2933,6 +3008,7 @@ export default function CashierView() {
       }>("/orders", {
         items: cart.map((i) => ({
           product_id: i.id,
+          included_selections: i.includedSelections,
           qty: i.quantity,
           ...(i.selectedFlavorProductId && {
             selected_flavor_product_id: i.selectedFlavorProductId,
@@ -2970,6 +3046,8 @@ export default function CashierView() {
         ...(orderNote.trim() && { order_note: orderNote.trim() }),
       });
 
+      try { sessionStorage.removeItem(draftKey); } catch { /* Storage unavailable. */ }
+      setCart([]);
       setDone(res.receipt);
       paymentAttemptRef.current = null;
       paymentQrVersionRef.current = null;
@@ -3318,8 +3396,9 @@ export default function CashierView() {
                       <p className="truncate text-sm font-semibold text-neutral-800">
                         {item.name}
                       </p>
-                      {item.selectedFlavorName && (
-                        <p className="text-xs font-semibold text-amber-700">
+                      <IncludedChoices choices={item.includedSelections} flavorId={item.selectedFlavorProductId} />
+              {item.selectedFlavorName && (
+                        <p className="text-xs font-semibold text-orange-700 dark:text-orange-300">
                           Sauce: {item.selectedFlavorName}
                         </p>
                       )}
@@ -3572,6 +3651,26 @@ export default function CashierView() {
         </aside>
       </div>
 
+      {includedTarget && <IncludedSelectionModal name={includedTarget.item.name} config={includedTarget.item.customizations}
+        requireFlavor={includedTarget.item.requiresSauce} flavors={chickenFlavors}
+        options={products.filter((product) => product.id !== includedTarget.item.id).map((product) => ({ kind: product.includedKind, id: product.id, name: product.name, stock: product.categorySystemKey === 'chicken_flavors' ? 999 : Math.floor(Math.max(0, product.remainingStock - cart.filter((entry) => entry.cartKey !== includedTarget.editingCartKey).reduce((sum, entry) => sum + entry.quantity * ((entry.id === product.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === product.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => entry.cartKey === includedTarget.editingCartKey)?.quantity || 1)), available: !isUnavailable(product.availabilityStatus) }))}
+        onCancel={() => setIncludedTarget(null)} onConfirm={(choices, flavorId) => {
+          const target = includedTarget;
+          const flavor = chickenFlavors.find((entry) => entry.id === flavorId);
+          const key = `${target.item.id}:${flavorId ?? ''}:${includedKey(choices)}`;
+          const selected = { ...target.item, cartKey: key, quantity: 1, includedSelections: choices, selectedFlavorProductId: flavorId, selectedFlavorName: flavor?.name };
+          if (!target.editingCartKey) updateQty(key, 1, selected);
+          else setCart((current) => {
+            const old = current.find((entry) => entry.cartKey === target.editingCartKey);
+            if (!old) return current;
+            const next = current.filter((entry) => entry.cartKey !== target.editingCartKey);
+            const collision = next.find((entry) => entry.cartKey === key);
+            const proposed = [...next, { ...selected, quantity: old.quantity }];
+            if (!cartFitsInventory(proposed, products)) return current;
+            return collision ? next.map((entry) => entry.cartKey === key ? { ...entry, quantity: entry.quantity + old.quantity } : entry) : [...next, { ...selected, quantity: old.quantity, note: old.note }];
+          });
+          setIncludedTarget(null);
+        }} />}
       <ChickenFlavorModal
         item={flavorTarget?.item ?? null}
         flavors={chickenFlavors}
