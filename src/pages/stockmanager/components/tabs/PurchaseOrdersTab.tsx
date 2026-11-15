@@ -72,14 +72,14 @@ export function PurchaseOrdersTab({
               {
                 label: "Active Orders",
                 value: filteredPOs.length,
-                accent: "slate" as const,
+                accent: "info" as const,
                 summary: "poDraft" as const,
                 sub: "purchase orders being prepared",
               },
               {
                 label: "Inventory Items",
                 value: filteredPOs.reduce((sum, order) => sum + order.items.length, 0),
-                accent: "amber" as const,
+                accent: "info" as const,
                 summary: "poDraft" as const,
                 sub: "lines across active orders",
               },
@@ -90,7 +90,7 @@ export function PurchaseOrdersTab({
                     sum + order.items.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0),
                   0,
                 ),
-                accent: "blue" as const,
+                accent: "info" as const,
                 summary: "poDraft" as const,
                 sub: "inventory units in active orders",
               },
@@ -134,7 +134,7 @@ export function PurchaseOrdersTab({
         </motion.div>
         <motion.div variants={itemVariants}>
           <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-            <div className="px-5 py-4 border-b border-slate-50">
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
               <p className="font-semibold text-slate-800 text-sm">
                 Active Purchase Orders
               </p>
@@ -229,7 +229,8 @@ export function PurchaseOrdersTab({
                                   e.stopPropagation();
                                   onDeleteOrder(order.id);
                                 }}
-                                className="p-1.5 rounded-lg text-slate-300 hover:text-red-400 hover:bg-red-50 transition-colors"
+                                className="sm-action-btn sm-action-btn--delete"
+                                aria-label={`Cancel purchase order ${order.id}`}
                                 title="Cancel order"
                               >
                                 <TrashIcon />
@@ -256,7 +257,7 @@ export function PurchaseOrdersTab({
                         tabIndex={0}
                         className="lg:hidden w-full text-left px-4 py-3 transition-colors hover:bg-slate-50/70"
                       >
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-slate-800 truncate">
                               {order.id}
@@ -268,7 +269,7 @@ export function PurchaseOrdersTab({
                               {itemCountText}
                             </p>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -285,7 +286,8 @@ export function PurchaseOrdersTab({
                                   e.stopPropagation();
                                   onDeleteOrder(order.id);
                                 }}
-                                className="p-1.5 rounded-lg text-slate-300 hover:text-red-400 hover:bg-red-50 transition-colors"
+                                className="sm-action-btn sm-action-btn--delete"
+                                aria-label={`Cancel purchase order ${order.id}`}
                                 title="Cancel order"
                               >
                                 <TrashIcon />
@@ -294,7 +296,7 @@ export function PurchaseOrdersTab({
                             <POBadge status={order.status} />
                           </div>
                         </div>
-                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-500">
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 break-words text-xs text-slate-500">
                           <span>Receipt: {order.receiptNo || "-"}</span>
                           <span>Order: {order.date}</span>
                           <span>Expected: {order.deliveryDate || "Not specified"}</span>

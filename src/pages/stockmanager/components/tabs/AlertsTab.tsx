@@ -143,7 +143,7 @@ export function AlertsTab({
             )}
           </div>
         </motion.div>
-        <motion.div variants={itemVariants} className="sm-kpi-grid">
+        <motion.div variants={itemVariants} className="sm-kpi-grid sm-kpi-grid--monitor">
           <KPICard
             itemVariants={itemVariants}
             label="Normal"
@@ -160,7 +160,7 @@ export function AlertsTab({
           />
           <KPICard
             itemVariants={itemVariants}
-            label="Warning Items"
+            label="Reorder Stock"
             value={lowStock.length.toString()}
             sub="need reordering soon"
             accent="amber"
@@ -168,7 +168,7 @@ export function AlertsTab({
           />
           <KPICard
             itemVariants={itemVariants}
-            label="Critical Items"
+            label="Low Stock"
             value={alertCriticalStock.length.toString()}
             sub="order immediately"
             accent="critical"
@@ -179,7 +179,7 @@ export function AlertsTab({
             label="Out of Stock"
             value={outOfStockItems.length.toString()}
             sub="no stock remaining"
-            accent="red"
+            accent="slate"
             onClick={() => onSummarySelect("out")}
           />
         </motion.div>
@@ -199,13 +199,13 @@ export function AlertsTab({
             },
             {
               items: alertCriticalStock,
-              label: "Critical",
+              label: "Low Stock",
               color: "text-red-600",
               severity: "critical" as const,
             },
             {
               items: lowStock,
-              label: "Warning",
+              label: "Reorder Stock",
               color: "text-amber-600",
               severity: "low" as const,
             },

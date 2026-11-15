@@ -120,7 +120,7 @@ export function SuppliersTab({
                 title="New Supplier"
                 subtitle="Posts to Suppliers table"
               >
-                <div className="p-5 grid grid-cols-3 gap-4">
+                <div className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {supplierFields.map(({ key, label, placeholder }) => (
                     <FormField key={key} label={label}>
                       <StyledInput
@@ -137,7 +137,7 @@ export function SuppliersTab({
                       />
                     </FormField>
                   ))}
-                  <div className="col-span-3">
+                  <div className="sm:col-span-3">
                     <label className="block text-xs font-semibold text-slate-500 mb-1.5">
                       Supplied Products
                       <span className="ml-1 text-slate-400 font-normal">
@@ -164,7 +164,7 @@ export function SuppliersTab({
                                   products_supplied: updated,
                                 }));
                               }}
-                              className="text-slate-300 hover:text-red-400 transition-colors ml-0.5"
+                              className="text-slate-600 hover:text-red-700 transition-colors ml-0.5"
                             >
                               {"\u00D7"}
                             </button>
@@ -209,7 +209,7 @@ export function SuppliersTab({
                       when you create POs for this supplier.
                     </p>
                   </div>
-                  <div className="col-span-3 pt-1">
+                  <div className="sm:col-span-3 pt-1">
                     <Btn
                       onClick={addSupplier}
                       variant="primary"
@@ -237,7 +237,8 @@ export function SuppliersTab({
                 className="w-full md:w-96 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
               />
             </div>
-            <table className="w-full text-sm">
+            <div className="sm-table-wrapper">
+            <table className="w-full min-w-[680px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
                   {[
@@ -294,7 +295,8 @@ export function SuppliersTab({
                                 onClick={() =>
                                   handleRemoveSupplierProduct(s.supplier_id, p)
                                 }
-                                className="text-slate-300 hover:text-red-400 transition-colors ml-0.5"
+                                aria-label={`Remove ${p} from supplier`}
+                                className="text-slate-600 hover:text-red-700 transition-colors ml-0.5"
                               >
                                 x
                               </button>
@@ -318,7 +320,7 @@ export function SuppliersTab({
                         <button
                           onClick={() => removeSupplier(s.supplier_id)}
                           disabled={submitting}
-                          className="text-xs text-slate-300 hover:text-red-400 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="text-xs text-red-700 hover:text-red-800 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Remove
                         </button>
@@ -328,6 +330,7 @@ export function SuppliersTab({
                 ))}
               </tbody>
             </table>
+            </div>
             {filteredSuppliers.length === 0 && (
               <EmptyState message="No suppliers found for this search." />
             )}
@@ -336,7 +339,7 @@ export function SuppliersTab({
 
         <motion.div variants={itemVariants}>
           <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-            <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between gap-4">
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <p className="font-semibold text-slate-800 text-sm">
                   Supplier Activity History
@@ -345,7 +348,7 @@ export function SuppliersTab({
                   Log of all supplier-related actions and changes
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex w-full flex-wrap items-center gap-3 xl:w-auto [&>input]:min-w-0 [&>input]:max-w-full">
                 <input
                   type="text"
                   value={historySearch}

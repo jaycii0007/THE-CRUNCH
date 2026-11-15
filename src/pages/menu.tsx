@@ -836,7 +836,7 @@ const CartRow = memo(
               {item.name}
             </p>
             <p className="text-xs text-neutral-400">{money(item.price)} each</p>
-            <IncludedChoices choices={item.includedSelections} flavorId={item.selectedFlavorProductId} />
+            <CartIncludedChoices item={item} />
               {item.selectedFlavorName && (
               <p className="mt-0.5 text-xs font-semibold text-orange-700 dark:text-orange-300">
                 Sauce: {item.selectedFlavorName}
@@ -849,7 +849,7 @@ const CartRow = memo(
         </div>
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <button className={step} onClick={() => onQty(item.cartKey, -1)}>
+            <button className={step} onClick={() => item.quantity === 1 ? onRemove(item.cartKey) : onQty(item.cartKey, -1)}>
               <Minus className="h-3.5 w-3.5 text-neutral-600" />
             </button>
             <input
@@ -900,6 +900,17 @@ const CartRow = memo(
 );
 
 /* ───────────────────────── modals ───────────────────────── */
+
+function CartIncludedChoices({ item }: { item: CartItem }) {
+  return <>{(item.includedSelections ?? [])
+    .filter((choice) => choice.product_id !== item.selectedFlavorProductId)
+    .map((choice, index) => (
+      <span key={index} title={item.customizations?.[choice.kind]?.label || choice.kind}
+        className="mt-1 block whitespace-normal text-xs text-neutral-500">
+        {choice.name} × {choice.qty}
+      </span>
+    ))}</>;
+}
 
 function ConfirmModal({
   show,
@@ -1370,6 +1381,13 @@ function AmountModal({
                 {inputError}
               </p>
             )}
+            <button
+              type="button"
+              onClick={() => updateCashInput(amountDue.toFixed(2))}
+              className="mt-2 mb-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600"
+            >
+              Exact Amount
+            </button>
             {quick.length > 0 && (
               <div
                 className={`${inputError ? "mb-3" : "mt-2 mb-3"} flex flex-wrap gap-1.5`}
@@ -2119,6 +2137,7 @@ export default function CashierView() {
   const [discountAuthError, setDiscountAuthError] = useState("");
   const [authorizingDiscount, setAuthorizingDiscount] = useState(false);
   const [showVoidConfirm, setShowVoidConfirm] = useState(false);
+  const [removeCartKey, setRemoveCartKey] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [done, setDone] = useState<ReceiptDto | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -2759,6 +2778,7 @@ export default function CashierView() {
   const clearOrderForm = () => {
     try { sessionStorage.removeItem(draftKey); } catch { /* Storage unavailable. */ }
     setCart([]);
+    setRemoveCartKey(null);
     setFlavorTarget(null);
     setSelectedFlavorId(null);
     setCheckoutStep(1);
@@ -3142,9 +3162,8 @@ export default function CashierView() {
                     No online pickup orders waiting for cashier action
                   </Empty>
                 )}
-                {review.length > 0 && (
-                  <PanelTitle>Awaiting cashier review</PanelTitle>
-                )}
+                {review.length > 0 && <section aria-label="Awaiting cashier review" className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/60">
+                  <PanelTitle>Awaiting cashier review ({review.length})</PanelTitle>
                 {review.map((o) => {
                   const action = getSettlementAction(
                     o.trackingStatus,
@@ -3193,7 +3212,9 @@ export default function CashierView() {
                     />
                   );
                 })}
-                {ready.length > 0 && <PanelTitle>Ready for pickup</PanelTitle>}
+                </section>}
+                {ready.length > 0 && <section aria-label="Ready for pickup" className={`${review.length ? "mt-3" : ""} overflow-hidden rounded-2xl border border-green-300 bg-green-50/60`}>
+                  <PanelTitle>Ready for pickup ({ready.length})</PanelTitle>
                 {ready.map((o) => (
                   <OrderRow
                     key={`r${o.id}`}
@@ -3209,6 +3230,7 @@ export default function CashierView() {
                     }
                   />
                 ))}
+                </section>}
               </div>
             </Collapse>
 
@@ -3376,7 +3398,7 @@ export default function CashierView() {
                   <CartRow
                     key={item.cartKey}
                     item={item}
-                    onRemove={removeFromCart}
+                    onRemove={setRemoveCartKey}
                     onQty={updateQty}
                     canIncrease={(products.find((p) => p.id === item.id) ?? item).ingredients.every((ingredient) =>
                       cart.reduce((total, entry) => total + entry.quantity *
@@ -3400,7 +3422,7 @@ export default function CashierView() {
                       <p className="truncate text-sm font-semibold text-neutral-800">
                         {item.name}
                       </p>
-                      <IncludedChoices choices={item.includedSelections} flavorId={item.selectedFlavorProductId} />
+                      <CartIncludedChoices item={item} />
               {item.selectedFlavorName && (
                         <p className="text-xs font-semibold text-orange-700 dark:text-orange-300">
                           Sauce: {item.selectedFlavorName}
@@ -3686,6 +3708,18 @@ export default function CashierView() {
           setFlavorTarget(null);
           setSelectedFlavorId(null);
         }}
+      />
+      <ConfirmModal
+        show={removeCartKey !== null}
+        title="Remove item"
+        message="Remove this item from your cart?"
+        confirmLabel="Remove item"
+        busy={false}
+        onConfirm={() => {
+          if (removeCartKey !== null) removeFromCart(removeCartKey);
+          setRemoveCartKey(null);
+        }}
+        onCancel={() => setRemoveCartKey(null)}
       />
       <ConfirmModal
         show={showVoidConfirm}

@@ -11,6 +11,7 @@ export function DashboardTab({
   totalProductsValue,
   lowStockValue,
   criticalStockValue,
+  outOfStockValue,
   pendingPOValue,
   wholeChickenProducts,
   choppedChickenProducts,
@@ -27,6 +28,7 @@ export function DashboardTab({
   totalProductsValue: string;
   lowStockValue: string;
   criticalStockValue: string;
+  outOfStockValue: string;
   pendingPOValue: string;
   wholeChickenProducts: Product[];
   choppedChickenProducts: Product[];
@@ -52,7 +54,7 @@ export function DashboardTab({
         animate="show"
         style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "24px 0" }}
       >
-        <motion.div variants={staggerVariants} className="sm-kpi-grid">
+        <motion.div variants={staggerVariants} className="sm-kpi-grid sm-kpi-grid--dashboard">
           <KPICard
             itemVariants={itemVariants}
             label="Total Products"
@@ -63,7 +65,7 @@ export function DashboardTab({
           />
           <KPICard
             itemVariants={itemVariants}
-            label="Low Stock"
+            label="Reorder Stock"
             value={lowStockValue}
             sub="warning threshold"
             accent="amber"
@@ -71,12 +73,13 @@ export function DashboardTab({
           />
           <KPICard
             itemVariants={itemVariants}
-            label="Critical Stock"
+            label="Low Stock"
             value={criticalStockValue}
             sub="urgent restock"
             accent="critical"
             onClick={() => onSummarySelect("critical")}
           />
+          <KPICard itemVariants={itemVariants} label="Out of Stock" value={outOfStockValue} sub="no usable stock remaining" accent="slate" onClick={() => onSummarySelect("out")} />
           <KPICard
             itemVariants={itemVariants}
             label="Active Purchase Orders"

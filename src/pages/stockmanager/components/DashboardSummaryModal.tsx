@@ -9,6 +9,7 @@ export function DashboardSummaryModal({
   rows,
   emptyMessage,
   onClose,
+  onCreatePO,
 }: {
   open: boolean;
   title: string;
@@ -23,6 +24,7 @@ export function DashboardSummaryModal({
   }>;
   emptyMessage: string;
   onClose: () => void;
+  onCreatePO?: () => void;
 }) {
   if (!open) return null;
 
@@ -55,13 +57,16 @@ export function DashboardSummaryModal({
             </button>
           </div>
 
-          <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/80">
+          <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3">
+            <div>
             <p className="text-xs uppercase tracking-wider font-semibold text-slate-500">
               {totalLabel}
             </p>
             <p className="text-3xl font-bold text-slate-800 mt-1">
               {totalValue}
             </p>
+            </div>
+            {onCreatePO && rows.length > 0 && <button type="button" onClick={onCreatePO} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2">Create PO</button>}
           </div>
 
           <div className="max-h-[52vh] overflow-y-auto p-6">
