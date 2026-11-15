@@ -125,6 +125,7 @@ export function SuppliersTab({
                     <FormField key={key} label={label}>
                       <StyledInput
                         type="text"
+                        capitalize={key === "supplier_name"}
                         value={(supplierForm[key] as string) ?? ""}
                         onChange={(v) =>
                           setSupplierForm((p) => ({

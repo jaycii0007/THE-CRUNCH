@@ -1,4 +1,5 @@
 import { cartFitsInventory } from "../lib/orderQuantity";
+import { capitalizeFirstLetter } from "@/lib/utils";
 import { IncludedSelectionModal, IncludedChoices, hasIncludedChoices, includedKey, type IncludedChoice, type IncludedConfig } from "@/components/included-menu-selections";
 import {
   createContext,
@@ -3579,8 +3580,9 @@ export default function CashierView() {
                   <input
                     value={soldToName}
                     onChange={(event) =>
-                      setSoldToName(event.target.value.slice(0, 150))
+                      setSoldToName(((event.nativeEvent as InputEvent).isComposing ? event.target.value : capitalizeFirstLetter(event.target.value)).slice(0, 150))
                     }
+                    onCompositionEnd={(event) => setSoldToName(capitalizeFirstLetter(event.currentTarget.value).slice(0, 150))}
                     placeholder="Sold To"
                     className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-900"
                   />
