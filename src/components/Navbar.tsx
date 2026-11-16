@@ -1,5 +1,5 @@
 import "./customer-nav.css";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, User, LogOut, LogIn, UserPlus } from "lucide-react";
@@ -20,7 +20,6 @@ interface NavLinkItem {
 
 export const CUSTOMER_NAV_LINKS: NavLinkItem[] = [
   { label: "Home", path: "/", exact: true },
-  { label: "About", path: "/aboutthecrunch", exact: true },
   { label: "Menu", path: "/usersmenu", exact: true },
 ];
 
@@ -328,9 +327,11 @@ export function Navbar({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  const previousPath = useRef(location.pathname);
   // Close mobile menu on route change
   useEffect(() => {
-    if (open) setOpen(false);
+    if (previousPath.current !== location.pathname && open) setOpen(false);
+    previousPath.current = location.pathname;
   }, [location.pathname, open, setOpen]);
 
   // Active link detection

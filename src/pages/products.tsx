@@ -7,6 +7,8 @@ import {
 } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { MapPin, Star, X, MessageSquare, Send, CheckCircle, Clock } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import AboutTheCrunch from './aboutthecrunch'
 import { api } from '@/lib/api'
 import { fetchGeneralSettings } from '@/lib/restaurantSettings'
 import { useAuth } from '@/context/authcontext'
@@ -923,6 +925,11 @@ interface ProductsProps { isAuthenticated?: boolean }
 
 export default function Products({ isAuthenticated = false }: ProductsProps) {
   const { user } = useAuth()
+  const { hash } = useLocation()
+
+  useEffect(() => {
+    if (hash === '#about') document.getElementById('about')?.scrollIntoView()
+  }, [hash])
   const [feedbackProducts, setFeedbackProducts] = useState<FeedbackProducts>({ status: 'idle' })
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const userId = isAuthenticated && user && Number(user.userId) > 0 ? Number(user.userId) : null
@@ -950,6 +957,7 @@ export default function Products({ isAuthenticated = false }: ProductsProps) {
         <HeroSection />
         <HeroFire />
         <OurStory />
+        <AboutTheCrunch />
       </main>
       <Footer />
       <AnimatePresence>{feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} products={feedbackProducts} userId={userId} />}</AnimatePresence>

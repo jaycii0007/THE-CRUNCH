@@ -1,0 +1,20 @@
+.crunch-stack { --step: clamp(16px, 4vw, 48px); color:#f4eee5; }
+.stack-stage { display:grid; grid-template-areas:"stack"; width:min(100%, 690px); margin:auto; padding:clamp(40px,6vw,70px) 8px 48px calc(2 * var(--step) + 8px); touch-action:pan-y; isolation:isolate; }
+.stack-sheet { grid-area:stack; min-width:0; position:relative; padding:clamp(18px,3vw,32px); border:1px solid #685847; border-radius:14px; background:linear-gradient(108deg,#302820,#201a16 85%); box-shadow:0 12px 25px #08050355; transform:skewY(-8deg); transition:transform .65s cubic-bezier(.2,.75,.22,1),filter .65s; }
+.stack-sheet[data-depth="0"] { z-index:3; }
+.stack-sheet[data-depth="1"] { z-index:2; transform:translate(calc(-1 * var(--step)), -23px) skewY(-8deg); filter:brightness(.75) saturate(.5); }
+.stack-sheet[data-depth="2"] { z-index:1; transform:translate(calc(-2 * var(--step)), -46px) skewY(-8deg); filter:brightness(.58) saturate(.25); }
+.stack-sheet:not([data-depth="0"]):not([data-depth="1"]):not([data-depth="2"]) { visibility:hidden; }
+.stack-heading { display:flex;align-items:center;gap:12px;margin-bottom:16px; }
+.stack-heading span { border:1px solid #685847;border-radius:50%;padding:8px;color:#d5b375;display:inline-flex; }
+.stack-heading svg { width:21px;height:21px; }
+.stack-heading h3 { margin:0;font-size:clamp(22px,3vw,34px);line-height:1.15;letter-spacing:-.035em; }
+.stack-sheet h4 { margin:12px 0 3px;font-size:15px;font-weight:650; }
+.stack-sheet p { margin:0;color:#d4c8bc;font-size:14px;line-height:1.55; }
+.stack-controls { display:flex;justify-content:center;align-items:center;gap:14px;font-size:13px; }
+.stack-controls span { min-width:145px;text-align:center; }
+.stack-controls button { display:grid;place-items:center;width:44px;height:44px;border:1px solid #837667;border-radius:50%;background:transparent;color:#f4eee5;cursor:pointer; }
+.stack-controls svg { width:18px;height:18px; }
+.crunch-stack:focus-visible,.stack-controls button:focus-visible { outline:2px solid #eee7da;outline-offset:4px; }
+@media(hover:hover){.stack-sheet[data-depth="0"]:hover { transform:translateY(-6px) skewY(-8deg); }.stack-controls button:hover { background:#39322e; }}
+@media(prefers-reduced-motion:reduce){.stack-sheet { transition:none; }.stack-sheet[data-depth="0"]:hover { transform:skewY(-8deg); }}

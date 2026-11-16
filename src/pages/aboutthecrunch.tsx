@@ -1,3 +1,5 @@
+import DisplayCards from '@/components/ui/display-cards';
+import { Store, CookingPot, UsersRound } from 'lucide-react';
 import { useRef, useState, useEffect, CSSProperties, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, useInView, useScroll, useTransform, MotionConfig } from 'framer-motion';
@@ -207,6 +209,18 @@ const PILLARS = [
   { no: '06', title: '250+ Branches Strong', desc: 'A nationwide community united by the love for boneless crunchy chicken, anchored right here in Fairview.' },
 ];
 
+const BUSINESS_STORIES = [
+  { title: 'Our roots', Icon: Store, pillars: [PILLARS[3], PILLARS[0]] },
+  { title: 'Our kitchen', Icon: CookingPot, pillars: [PILLARS[1], PILLARS[2]] },
+  { title: 'Our community', Icon: UsersRound, pillars: [PILLARS[4], PILLARS[5]] },
+].map(({ title, Icon, pillars }) => ({
+  title,
+  icon: <Icon />,
+  description: pillars.map(pillar => (
+    <div key={pillar.no}><h4>{pillar.title}</h4><p>{pillar.desc}</p></div>
+  )),
+}));
+
 // ── Main About Component ──────────────────────────────────────────────────
 export default function AboutTheCrunch() {
   const navigate = useNavigate();
@@ -221,10 +235,6 @@ export default function AboutTheCrunch() {
   const imageRotateX = useTransform(scrollYProgress, [0, 1], ['0deg', '3deg']);
 
   const goMenu = () => navigate('/usersmenu?showOrderModal=true');
-  const goProducts = () => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
-    navigate('/');
-  };
 
   return (
     <MotionConfig reducedMotion="user">
@@ -724,50 +734,11 @@ export default function AboutTheCrunch() {
               </h2>
             </Reveal>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : '1.2fr 0.8fr', gap: isTablet ? 28 : 64, alignItems: 'center' }}>
+            <div style={{ maxWidth: 720 }}>
               <Reveal dir="left" delay={0.18}>
                 <p style={{ fontFamily: PP, fontSize: isMobile ? 14.5 : 16.5, color: CR_MUTED, lineHeight: 1.85, fontWeight: 300, margin: 0 }}>
                   To serve communities with authentic, affordable boneless fried chicken, and to empower Filipinos with accessible, profitable franchise opportunities that build sustainable futures.
                 </p>
-              </Reveal>
-              <Reveal dir={isTablet ? 'up' : 'right'} delay={0.22}>
-                <div style={{ display: 'flex', justifyContent: isTablet ? 'flex-start' : 'flex-end' }}>
-                  <motion.button
-                    onClick={goMenu}
-                    style={{
-                      background: `linear-gradient(135deg, ${Y} 0%, ${Y_DARK} 100%)`,
-                      border: 'none',
-                      borderRadius: 14,
-                      padding: '16px 42px',
-                      fontSize: 14.5,
-                      fontWeight: 800,
-                      color: `${GOLD_TEXT}`,
-                      cursor: 'pointer',
-                      fontFamily: PP,
-                      boxShadow: '0 10px 30px rgba(245, 200, 66, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}
-                    whileHover={isMobile ? { scale: 1.02 } : {
-                      scale: 1.03,
-                      boxShadow: '0 18px 48px rgba(245, 200, 66, 0.55), inset 0 1px 0 rgba(255,255,255,0.25)',
-                      y: -3,
-                    }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    <span style={{ position: 'relative', zIndex: 1 }}>Explore Our Menu</span>
-                    <motion.div
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 50%)',
-                        opacity: 0,
-                      }}
-                      initial={{ opacity: 0 }}
-                      whileHover={{ opacity: 1 }}
-                    />
-                  </motion.button>
-                </div>
               </Reveal>
             </div>
           </div>
@@ -792,106 +763,7 @@ export default function AboutTheCrunch() {
               </div>
             </Reveal>
 
-            {/* Grid Pillars (Enhanced 3D Cards) */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : 'repeat(3, 1fr)', gap: 24, perspective: 1000 }}>
-              {PILLARS.map((p, idx) => (
-                <Reveal key={p.no} delay={idx * 0.08} dir="up">
-                  <motion.div
-                    style={{
-                      background: BLACK,
-                      border: `1px solid ${BORDER}`,
-                      borderRadius: 20,
-                      padding: '32px 28px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 14,
-                      height: '100%',
-                      transition: 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-                      boxShadow: '0 12px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)',
-                      transformStyle: 'preserve-3d',
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}
-                    whileHover={isMobile ? { y: -4, background: BLACK } : {
-                      y: -10,
-                      rotateX: 4,
-                      rotateY: -4,
-                      borderColor: 'rgba(245, 200, 66, 0.4)',
-                      background: 'linear-gradient(145deg, rgba(26, 22, 18, 1) 0%, rgba(22, 19, 16, 0.98) 100%)',
-                      boxShadow: '0 28px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 60px rgba(245, 200, 66, 0.08)',
-                      scale: 1.015,
-                      transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] }
-                    }}
-                    whileTap={{ scale: 0.985 }}
-                  >
-                    {/* Glow accent line at top */}
-                    <motion.div
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: '10%',
-                        right: '10%',
-                        height: 2,
-                        background: `linear-gradient(90deg, transparent, ${Y}, transparent)`,
-                        opacity: 0,
-                        borderRadius: '2px 2px 0 0',
-                      }}
-                      initial={{ opacity: 0, scaleX: 0 }}
-                      animate={{ opacity: 1, scaleX: 1 }}
-                      transition={{ delay: idx * 0.08 + 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, transform: 'translateZ(10px)' }}>
-                      <span style={{
-                        fontFamily: PP,
-                        fontSize: 36,
-                        fontWeight: 900,
-                        color: Y,
-                        letterSpacing: '0.02em',
-                        lineHeight: 1,
-                        textShadow: '0 2px 12px rgba(245, 200, 66, 0.25)',
-                        background: `linear-gradient(180deg, ${Y} 0%, ${Y_DARK} 100%)`,
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        backgroundClip: 'text',
-                      }}>{p.no}</span>
-                      <div style={{ flex: 1 }} />
-                    </div>
-                    <motion.h3
-                      style={{
-                        fontFamily: PP,
-                        fontSize: 18,
-                        fontWeight: 800,
-                        color: CR,
-                        margin: 0,
-                        lineHeight: 1.3,
-                        transform: 'translateZ(10px)',
-                      }}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.08 + 0.4, duration: 0.5 }}
-                    >
-                      {p.title}
-                    </motion.h3>
-                    <motion.p
-                      style={{
-                        fontFamily: PP,
-                        fontSize: 13.5,
-                        color: CR_MUTED,
-                        lineHeight: 1.75,
-                        fontWeight: 300,
-                        margin: 0,
-                        transform: 'translateZ(10px)',
-                      }}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.08 + 0.5, duration: 0.5 }}
-                    >
-                      {p.desc}
-                    </motion.p>
-                  </motion.div>
-                </Reveal>
-              ))}
-            </div>
+            <DisplayCards cards={BUSINESS_STORIES} />
           </div>
         </section>
 
@@ -985,75 +857,6 @@ export default function AboutTheCrunch() {
                 Drop by our Fairview branch or place an order online. Savor golden boneless fried chicken coated in your favorite house glaze today.
               </motion.p>
 
-              <motion.div
-                style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2, duration: 0.7 }}
-              >
-                <motion.button
-                  onClick={goMenu}
-                  style={{
-                    background: `linear-gradient(135deg, ${Y} 0%, ${Y_DARK} 100%)`,
-                    border: 'none',
-                    borderRadius: 14,
-                    padding: isMobile ? '14px 36px' : '16px 44px',
-                    fontSize: 14.5,
-                    fontWeight: 800,
-                    color: `${GOLD_TEXT}`,
-                    cursor: 'pointer',
-                    fontFamily: PP,
-                    boxShadow: '0 10px 30px rgba(245, 200, 66, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                  whileHover={isMobile ? { scale: 1.02 } : {
-                    scale: 1.03,
-                    boxShadow: '0 18px 48px rgba(245, 200, 66, 0.55), inset 0 1px 0 rgba(255,255,255,0.25)',
-                    y: -3,
-                  }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  <span style={{ position: 'relative', zIndex: 1 }}>Order Now</span>
-                  <motion.div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 50%)',
-                      opacity: 0,
-                    }}
-                    initial={{ opacity: 0 }}
-                    whileHover={{ opacity: 1 }}
-                  />
-                </motion.button>
-                <motion.button
-                  onClick={goProducts}
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    backdropFilter: 'blur(16px)',
-                    border: `1px solid ${BORDER}`,
-                    borderRadius: 14,
-                    padding: isMobile ? '14px 32px' : '16px 40px',
-                    fontSize: 14.5,
-                    fontWeight: 600,
-                    color: CR,
-                    cursor: 'pointer',
-                    fontFamily: PP,
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                  whileHover={isMobile ? { background: 'rgba(255,255,255,0.1)' } : {
-                    background: 'rgba(245, 200, 66, 0.12)',
-                    borderColor: 'rgba(245, 200, 66, 0.5)',
-                    color: Y,
-                    y: -3,
-                    boxShadow: '0 16px 40px rgba(0,0,0,0.5), 0 0 40px rgba(245, 200, 66, 0.15)',
-                  }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  <span style={{ position: 'relative', zIndex: 1 }}>Explore Storefront</span>
-                </motion.button>
-              </motion.div>
             </Reveal>
           </div>
         </section>

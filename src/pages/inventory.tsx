@@ -15,7 +15,11 @@ import { Sidebar } from "@/components/Sidebar";
 import { ProductImage } from "@/components/ProductImage";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import { api, apiCall } from "@/lib/api";
-import { motion } from "framer-motion";
+import { Archive, CircleAlert, Plus, RotateCw } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import GradientBlobCard from "@/components/ui/gradient-bold-card";
+import "./inventory.css";
+import { MotionConfig, motion } from "framer-motion";
 import { SkeletonTableRow } from "@/components/ui/skeleton";
 import { useNotifications } from "@/lib/NotificationContext";
 import {
@@ -46,16 +50,16 @@ const PLACEHOLDER_IMG = "/images/menu-placeholder.jpg";
 const DEFAULT_UNIT = "piece"; // unit sent when creating a menu item (the form has no unit field)
 
 const T = {
-  page: "#F5F3EC",
-  surface: "#FFFFFF",
-  surfaceMuted: "#FAF9F4",
+  page: "#F2ECE2",
+  surface: "#FBF7EF",
+  surfaceMuted: "#F5EFE5",
   ink: "#1C1B17",
-  muted: "#8C877C",
+  muted: "#655E52",
   faint: "#D6D1C4",
-  line: "#ECE7DA",
-  accent: "#D44D14",
-  accentDeep: "#B93E0C",
-  accentSoft: "#FBEAE0",
+  line: "#DDD3C4",
+  accent: "#78512E",
+  accentDeep: "#302E2A",
+  accentSoft: "#E9DFCF",
   deep: "#1A3A2A",
   deepAlt: "#244B37",
   deepSoft: "#E7EFE9",
@@ -68,8 +72,8 @@ const T = {
 };
 
 const SHADOW = {
-  card: "0 1px 2px rgba(28,27,23,0.04), 0 10px 28px -14px rgba(28,27,23,0.10)",
-  raised: "0 1px 2px rgba(28,27,23,0.06), 0 6px 16px -6px rgba(28,27,23,0.14)",
+  card: "var(--menu-panel-shadow)",
+  raised: "var(--menu-control-shadow)",
   modal:
     "0 40px 90px -20px rgba(28,27,23,0.35), 0 8px 24px -8px rgba(28,27,23,0.12)",
 };
@@ -93,7 +97,6 @@ interface IngredientRow {
 }
 
 interface MenuCustomizations {
-  categories?: Record<string, { enabled: boolean; includedQuantity: number | string }>;
   drinks: { enabled: boolean; productIds: number[]; includedQuantity: number | string; extraFee: number | string };
   sauces: { enabled: boolean; productIds: number[]; includedQuantity: number | string; extraFee: number | string };
   rice: { enabled: boolean; kimchiProductId: number | null; upgradeFee: number | string };
@@ -146,8 +149,6 @@ interface IngredientOption {
   unit: string;
 }
 interface MenuCategoryRecord {
-  category_id: number;
-  can_be_addon?: boolean | null;
   name: string;
   display_order: number;
   is_active: boolean | number;
@@ -354,7 +355,6 @@ const priceNumber = (value: string) =>
 // Loads everything the page needs from the API
 function useMenuAdmin(onError: (message: string) => void) {
   const [items, setItems] = useState<MenuItem[]>([]);
-  const [addonCategories, setAddonCategories] = useState<MenuCategoryRecord[]>([]);
   const [apiCategories, setApiCategories] = useState<string[]>([]);
   const [chickenFlavorCategoryName, setChickenFlavorCategoryName] =
     useState("");
@@ -383,7 +383,6 @@ function useMenuAdmin(onError: (message: string) => void) {
 
       setItems(uniqueMenuRowsByProductId(menuRows).map(toMenuItem));
 
-      setAddonCategories(categoryRows.filter((category) => category.can_be_addon === true));
       setApiCategories(
         categoryRows
           .filter((c) => c.is_active === true || c.is_active === 1)
@@ -444,7 +443,6 @@ function useMenuAdmin(onError: (message: string) => void) {
     items,
     categories,
     chickenFlavorCategoryName,
-    addonCategories,
     ingredientOptions,
     loading,
     reload,
@@ -460,7 +458,7 @@ type Variant = "solid" | "outline" | "ghost" | "danger" | "dangerSolid";
 const buttonStyles: Record<Variant, CSSProperties> = {
   solid: {
     color: "#fff",
-    background: `linear-gradient(180deg, ${T.accent} 0%, ${T.accentDeep} 100%)`,
+    background: `linear-gradient(180deg, #393835, #242320)`,
     border: `1px solid ${T.accentDeep}`,
     boxShadow:
       "0 1px 2px rgba(185,62,12,0.35), inset 0 1px 0 rgba(255,255,255,0.18)",
@@ -501,12 +499,13 @@ function Button({
   return (
     <button
       {...props}
-      className={`rounded-xl font-semibold transition-all duration-150 hover:-translate-y-px hover:opacity-90 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D44D14]/40 ${small ? "px-2.5 py-1.5 text-[11.5px]" : "px-4 py-2.5 text-[12.5px]"}`}
+      className={`menu-button rounded-xl font-semibold ${small ? "px-2.5 py-1.5 text-[11.5px]" : "px-4 py-2.5 text-[12.5px]"}`}
       style={{
         fontFamily: FONT,
         cursor: props.disabled ? "not-allowed" : "pointer",
         opacity: props.disabled ? 0.6 : 1,
         ...buttonStyles[variant],
+        boxShadow: SHADOW.raised,
         ...style,
       }}
     />
@@ -516,6 +515,7 @@ function Button({
 const inputClass =
   "w-full rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all box-border";
 const inputStyle: CSSProperties = {
+  boxShadow: "var(--menu-inset-shadow)",
   color: T.ink,
   background: T.surfaceMuted,
   border: `1.5px solid ${T.line}`,
@@ -528,7 +528,7 @@ const focusRing = (e: FocusEvent<HTMLElement>) => {
 };
 const blurRing = (e: FocusEvent<HTMLElement>) => {
   e.currentTarget.style.borderColor = T.line;
-  e.currentTarget.style.boxShadow = "none";
+  e.currentTarget.style.boxShadow = "var(--menu-inset-shadow)";
   e.currentTarget.style.background = T.surfaceMuted;
 };
 const inputProps = {
@@ -537,6 +537,27 @@ const inputProps = {
   onFocus: focusRing,
   onBlur: blurRing,
 };
+
+function MenuDropdown({ label, value, onChange, options }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  // Radix reserves an empty value. Encode every option so the blank form choice is selectable.
+  return (
+    <Select value={`v:${value}`} onValueChange={(next) => onChange(next.slice(2))}>
+      <SelectTrigger aria-label={label} className="menu-dropdown-trigger">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent position="popper" align="start" collisionPadding={8} className="menu-dropdown-list">
+        {options.map((option) => (
+          <SelectItem key={option.value} value={`v:${option.value}`}>{option.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -631,7 +652,7 @@ function Modal({
   // Close with the Escape key
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector(".menu-dropdown-list")) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -642,7 +663,7 @@ function Modal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       onClick={onClose}
-      className="fixed inset-0 z-[400] flex items-center justify-center p-5 backdrop-blur-md"
+      className="menu-overlay fixed inset-0 z-[400] flex items-center justify-center p-5 backdrop-blur-md"
       style={{ background: "rgba(20,28,23,0.45)", fontFamily: FONT }}
     >
       <motion.div
@@ -714,7 +735,7 @@ function Modal({
   );
 }
 
-const sectionTitle = "mb-3 mt-6 text-[12px] font-semibold first:mt-0";
+const sectionTitle = "menu-form-heading mb-3 mt-6 text-[14px] font-semibold first:mt-0";
 
 function StatusBadge({
   unavailable,
@@ -751,6 +772,7 @@ function StatusBadge({
    ──────────────────────────────────────────────────────────────────────── */
 
 const svgProps = {
+  "aria-hidden": true,
   width: 18,
   height: 18,
   viewBox: "0 0 24 24",
@@ -870,17 +892,10 @@ function StatCard({
 }) {
   const { color, soft } = TONES[tone];
   return (
-    <div
+    <GradientBlobCard
+      palette={featured ? "forest" : icon === "alert" ? "amber" : "brass"}
+      data-menu-icon={icon}
       className="rounded-2xl p-5"
-      style={
-        featured
-          ? {
-              background: `linear-gradient(145deg, ${T.deepAlt} 0%, ${T.deep} 100%)`,
-              border: `1px solid ${T.deep}`,
-              boxShadow: "0 14px 30px -14px rgba(26,58,42,0.6)",
-            }
-          : cardStyle
-      }
     >
       <div className="mb-4 flex items-center justify-between">
         <span
@@ -908,13 +923,13 @@ function StatCard({
       >
         {meta}
       </div>
-    </div>
+    </GradientBlobCard>
   );
 }
 
 function AttentionList({ items }: { items: MenuItem[] }) {
   return (
-    <div className="rounded-2xl p-5" style={cardStyle}>
+    <div className="menu-attention rounded-2xl p-5" style={cardStyle}>
       <div
         className="text-[14px] font-semibold tracking-tight"
         style={{ color: T.ink }}
@@ -934,31 +949,25 @@ function AttentionList({ items }: { items: MenuItem[] }) {
           No stock issues to review.
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {items.slice(0, 5).map((item) => (
-            <div
-              key={item.id}
-              className="rounded-xl px-3 py-2.5"
-              style={{
-                background: T.surfaceMuted,
-                border: `1px solid ${T.line}`,
-                borderLeft: `3px solid ${T.bad}`,
-              }}
-            >
-              <div
-                className="truncate text-[12.5px] font-semibold"
-                style={{ color: T.ink }}
-              >
-                {item.name}
+        <ul className="menu-attention-list">
+          {items.slice(0, 5).map((item, index) => (
+            <li key={item.id} className="menu-attention-item" style={{ animationDelay: `${index * 45}ms` }}>
+              <ProductImage className="attention-photo" src={item.image} fallbackSrc={PLACEHOLDER_IMG} alt="" />
+              <div className="attention-details">
+                <span className="attention-code">{item.menuCode}</span>
+                <strong>{item.name}</strong>
+                <span className="attention-reason">
+                  <CircleAlert aria-hidden="true" size={14} />
+                  {item.overrideMode === "Force Out of Stock" ? "Manually marked out of stock" : "Out of stock"}
+                </span>
               </div>
-              <div className="mt-0.5 text-[11.5px]" style={{ color: T.muted }}>
-                {item.hasRecipe
-                  ? `${sellableQuantity(item)} servings available`
-                  : `${item.stock} ${item.unit} in stock`}
+              <div className="attention-quantity">
+                <strong>{sellableQuantity(item)}</strong>
+                <span>{item.hasRecipe ? "servings" : item.unit}</span>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
@@ -1015,7 +1024,6 @@ function MenuFormModal({
   categories,
   chickenFlavorCategoryName,
   ingredientOptions,
-  addonCategories,
   toast,
   onClose,
   onSaved,
@@ -1024,7 +1032,6 @@ function MenuFormModal({
   categories: string[];
   chickenFlavorCategoryName: string;
   ingredientOptions: IngredientOption[];
-  addonCategories: MenuCategoryRecord[];
   toast: Toast;
   onClose: () => void;
   onSaved: () => void;
@@ -1092,11 +1099,13 @@ function MenuFormModal({
       if (ingredients?.some((ingredient) => !ingredientOptions.some((option) => Number(option.id) === ingredient.product_id))) {
         throw new Error("Select existing inventory ingredients.");
       }
-      const customizations = { categories: Object.fromEntries(Object.entries(values.customizations.categories || {}).map(([key, choice]) => {
+      const customizations = Object.fromEntries((['drinks', 'sauces'] as const).map((key) => {
+        const choice = values.customizations[key];
         const includedQuantity = Number(choice.includedQuantity);
-        if (!Number.isSafeInteger(includedQuantity) || includedQuantity < 0 || includedQuantity > 999) throw new Error('Invalid included quantity');
+        if (!isChickenFlavor && (String(choice.includedQuantity).trim() === '' || !Number.isSafeInteger(includedQuantity) || includedQuantity < 0))
+          throw new Error('Included quantities must be nonnegative whole numbers.');
         return [key, { enabled: choice.enabled, includedQuantity }];
-      })) };
+      }));
 
       let image: string | undefined;
       if (imageFile) image = await uploadProductImage(imageFile);
@@ -1182,9 +1191,9 @@ function MenuFormModal({
         </>
       }
     >
-      <p className={sectionTitle} style={{ color: T.ink }}>
+      <h4 className={sectionTitle} style={{ color: T.ink }}>
         Details
-      </p>
+      </h4>
       <TextInput
         label="Name *"
         placeholder="e.g. Chicken Breast"
@@ -1193,18 +1202,14 @@ function MenuFormModal({
       />
       <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
         <Field label="Category *">
-          <select
-            {...inputProps}
+          <MenuDropdown
+            label="Category"
             value={values.category}
-            onChange={(e) => set({ category: e.target.value })}
-          >
-            <option value="">Select category</option>
-            {categoryOptions.map((category) => (
-              <option key={category} value={category}>
-                {category === chickenFlavorCategoryName ? "Sauces" : category}
-              </option>
-            ))}
-          </select>
+            onChange={(category) => set({ category })}
+            options={[{ value: "", label: "Select category" }, ...categoryOptions.map((category) => ({
+              value: category, label: category === chickenFlavorCategoryName ? "Sauces" : category,
+            }))]}
+          />
         </Field>
         {!isChickenFlavor && (
           <NumberInput
@@ -1238,15 +1243,16 @@ function MenuFormModal({
 
       {!isChickenFlavor && (
         <>
-          <p className={sectionTitle} style={{ color: T.ink }}>
+          <h4 className={sectionTitle} style={{ color: T.ink }}>
             Availability
-          </p>
-          <div className="grid grid-cols-3 gap-2">
+          </h4>
+          <div className="grid grid-cols-2 gap-2">
             {OVERRIDE_MODES.map((mode) => {
               const active = values.overrideMode === mode;
               return (
                 <button
                   key={mode}
+                  aria-pressed={active}
                   type="button"
                   onClick={() => set({ overrideMode: mode })}
                   className="rounded-xl px-3 py-2 text-[11.5px] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1A3A2A]/40"
@@ -1277,9 +1283,9 @@ function MenuFormModal({
 
       {!isChickenFlavor && (
         <>
-          <p className={sectionTitle} style={{ color: T.ink }}>
+          <h4 className={sectionTitle} style={{ color: T.ink }}>
             Ingredients (required)
-          </p>
+          </h4>
           <div className="space-y-2">
             {values.ingredients.length === 0 && (
               <p
@@ -1297,22 +1303,16 @@ function MenuFormModal({
             {values.ingredients.map((row, index) => (
               <div
                 key={index}
-                className="grid grid-cols-[1fr_110px_auto] gap-2"
+                className="menu-ingredient"
               >
-                <select
-                  {...inputProps}
+                <MenuDropdown
+                  label={`Ingredient ${index + 1}`}
                   value={row.productId}
-                  onChange={(e) =>
-                    updateIngredient(index, { productId: e.target.value })
-                  }
-                >
-                  <option value="">Select ingredient</option>
-                  {ingredientOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name} ({option.category})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(productId) => updateIngredient(index, { productId })}
+                  options={[{ value: "", label: "Select ingredient" }, ...ingredientOptions.map((option) => ({
+                    value: String(option.id), label: `${option.name} (${option.category})`,
+                  }))]}
+                />
                 <div>
                   <NumberInput
                     placeholder="Qty"
@@ -1360,24 +1360,31 @@ function MenuFormModal({
 
       {!isChickenFlavor && (
         <>
-          <p className={sectionTitle} style={{ color: T.ink }}>
-            Add-ons
-          </p>
+          <h4 className={sectionTitle} style={{ color: T.ink }}>
+            Customization Settings
+          </h4>
           <p className="mb-3 text-[11.5px]" style={{ color: T.muted }}>
-            Configure included items for this menu product.
+            Included drinks and sauces add no charge. Additional products are ordered separately from the menu.
           </p>
-          {addonCategories.map((category) => {
-            const key = String(category.category_id);
-            const choice = values.customizations.categories?.[key] || { enabled: false, includedQuantity: 1 };
-            const update = (patch: Partial<typeof choice>) => set({ customizations: { ...values.customizations, categories: { ...values.customizations.categories, [key]: { ...choice, ...patch } } } });
-            return <div key={key} className="mb-3 rounded-xl border p-3">
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" role="switch" checked={choice.enabled} onChange={(event) => update({ enabled: event.target.checked })} />{category.name}</label>
-              {choice.enabled && <NumberInput label="Included Quantity" value={String(choice.includedQuantity)} maxDecimals={0} onChange={(includedQuantity) => update({ includedQuantity })} />}
+          {(['drinks', 'sauces'] as const).map((key) => {
+            const choice = values.customizations[key];
+            const update = (patch: Partial<typeof choice>) => set({ customizations: { ...values.customizations, [key]: { ...choice, ...patch } } });
+            return <div key={key} className="mb-4 rounded-xl border p-3" style={{ borderColor: T.line }}>
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input type="checkbox" role="switch" checked={choice.enabled} onChange={(event) => update({ enabled: event.target.checked })} />
+                {key === 'drinks' ? 'Drink Selection' : 'Sauce Selection'}
+              </label>
+              {choice.enabled && <div className="mt-3 space-y-2">
+                <p className="text-[11.5px]" style={{ color: T.muted }}>
+                  {key === 'sauces' ? 'Available sauce menu products and protected Chicken Flavors are included automatically. Chicken Flavors remain selection-only; the required flavor choice is unchanged.' : 'Available beverages, Soft Drinks and Juice are included automatically. Their existing recipes are reused.'}
+                </p>
+                <NumberInput label="Included Quantity" value={String(choice.includedQuantity)} onChange={(includedQuantity) => update({ includedQuantity })} maxDecimals={0} />
+              </div>}
             </div>;
           })}
-          <p className={sectionTitle} style={{ color: T.ink }}>
+          <h4 className={sectionTitle} style={{ color: T.ink }}>
             Promotion
-          </p>
+          </h4>
           <label
             className="mb-3 flex cursor-pointer items-center gap-2 text-[12.5px]"
             style={{ color: T.ink }}
@@ -1410,9 +1417,9 @@ function MenuFormModal({
         </>
       )}
 
-      <p className={sectionTitle} style={{ color: T.ink }}>
+      <h4 className={sectionTitle} style={{ color: T.ink }}>
         Photo
-      </p>
+      </h4>
       <label
         className="flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl transition-colors hover:brightness-[0.98]"
         style={{
@@ -1463,17 +1470,8 @@ const controlStyle: CSSProperties = {
   color: T.ink,
   background: T.surface,
   border: `1px solid ${T.line}`,
-  boxShadow: "0 1px 2px rgba(28,27,23,0.04)",
+  boxShadow: "var(--menu-inset-shadow)",
   fontFamily: FONT,
-};
-
-const rowHover = {
-  onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
-    e.currentTarget.style.background = T.surfaceMuted;
-  },
-  onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
-    e.currentTarget.style.background = "transparent";
-  },
 };
 
 function MenuAdminTab() {
@@ -1484,7 +1482,6 @@ function MenuAdminTab() {
     items,
     categories,
     chickenFlavorCategoryName,
-    addonCategories,
     ingredientOptions,
     loading,
     reload,
@@ -1579,7 +1576,7 @@ function MenuAdminTab() {
   return (
     <div style={{ fontFamily: FONT }}>
       {/* Summary */}
-      <div className="mb-6 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+      <div className="menu-metrics">
         <StatCard
           featured
           label="Menu items"
@@ -1604,15 +1601,17 @@ function MenuAdminTab() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid min-w-0 grid-cols-1 gap-6">
         <section>
           {/* Toolbar */}
-          <div className="mb-4 flex flex-wrap items-center gap-2.5">
+          <div className="menu-filters">
             <div
-              className="flex min-w-[220px] flex-1 items-center gap-2 rounded-xl px-3.5 transition-shadow focus-within:shadow-[0_0_0_4px_#FBEAE0]"
+              data-menu-icon="search"
+              className="flex min-w-[220px] flex-1 items-center gap-2 rounded-xl px-3.5"
               style={controlStyle}
             >
               <svg
+                aria-hidden="true"
                 width="15"
                 height="15"
                 viewBox="0 0 24 24"
@@ -1643,26 +1642,21 @@ function MenuAdminTab() {
                 style={{ color: T.ink, fontFamily: FONT }}
               />
             </div>
-            <select
+            <MenuDropdown
+              label="Filter by category"
               value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              aria-label="Filter by category"
-              className="rounded-xl px-3 py-2.5 text-[12.5px] outline-none"
-              style={controlStyle}
-            >
-              <option value="all">All categories</option>
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category === chickenFlavorCategoryName ? "Sauces" : category}
-                </option>
-              ))}
-            </select>
-            <div className="flex rounded-xl p-1" style={controlStyle}>
+              onChange={setCategoryFilter}
+              options={[{ value: "all", label: "All categories" }, ...categories.map((category) => ({
+                value: category, label: category === chickenFlavorCategoryName ? "Sauces" : category,
+              }))]}
+            />
+            <div className="menu-status-filter rounded-xl p-1" role="group" aria-label="Filter by availability" style={controlStyle}>
               {STATUS_FILTERS.map(({ value, label }) => {
                 const active = statusFilter === value;
                 return (
                   <button
                     key={value}
+                    aria-pressed={active}
                     onClick={() => setStatusFilter(value)}
                     className="rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-all"
                     style={{
@@ -1681,19 +1675,30 @@ function MenuAdminTab() {
                 );
               })}
             </div>
-            <Button onClick={() => void reload()} disabled={loading}>
+          </div>
+          <div className="menu-toolbar-actions">
+            <Button data-menu-icon="refresh" onClick={() => void reload()} disabled={loading}>
+              <RotateCw aria-hidden="true" size={16} className={loading ? "motion-safe:animate-spin" : undefined} />
               {loading ? "Refreshing..." : "Refresh"}
             </Button>
-            <Button onClick={() => setShowDisabledItems(true)}>Disabled Items</Button>
-            <Button variant="solid" onClick={() => setFormTarget("new")}>
-              + Add menu item
+            <Button data-menu-icon="archive" onClick={() => setShowDisabledItems(true)}>
+              <Archive aria-hidden="true" size={16} />
+              Disabled Items
+            </Button>
+            <Button data-menu-icon="add" variant="solid" onClick={() => setFormTarget("new")}>
+              <Plus aria-hidden="true" size={17} />
+              Add menu item
             </Button>
           </div>
 
+          <p className="menu-result-count" role="status">
+            {!loading && `${visible.length} ${visible.length === 1 ? "item" : "items"} shown`}
+          </p>
+
           {/* Table */}
-          <div className="overflow-hidden rounded-2xl" style={cardStyle}>
+          <div className="menu-register rounded-2xl" style={cardStyle}>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse">
+              <table className="w-full border-collapse">
                 <thead>
                   <tr
                     style={{
@@ -1745,19 +1750,13 @@ function MenuAdminTab() {
                     visible.map((item) => (
                       <tr
                         key={item.id}
-                        className="transition-colors"
+                        className="menu-item-row transition-colors"
                         style={{ borderBottom: `1px solid ${T.line}` }}
-                        {...rowHover}
                       >
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-3">
                             <div
-                              className="grid h-12 w-12 flex-shrink-0 place-items-center overflow-hidden rounded-xl"
-                              style={{
-                                background: T.surfaceMuted,
-                                border: `1px solid ${T.line}`,
-                                boxShadow: SHADOW.raised,
-                              }}
+                              className="menu-thumbnail"
                             >
                                 <ProductImage
                                   src={item.image}
@@ -1918,7 +1917,6 @@ function MenuAdminTab() {
           categories={categories}
           chickenFlavorCategoryName={chickenFlavorCategoryName}
           ingredientOptions={ingredientOptions}
-          addonCategories={addonCategories}
           toast={toast}
           onClose={() => setFormTarget(null)}
           onSaved={() => {
@@ -1935,7 +1933,7 @@ function MenuAdminTab() {
           ) : (
             <div className="divide-y" style={{ borderColor: T.line }}>
               {items.filter(isArchived).sort((a, b) => Number(isChickenFlavor(a)) - Number(isChickenFlavor(b))).map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 py-3">
+                <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: T.ink }}>{item.name} <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">Disabled</span></p>
                     <p className="text-xs" style={{ color: T.muted }}>{isChickenFlavor(item) ? "Sauces" : item.category}</p>
@@ -2043,14 +2041,16 @@ export default function Inventory() {
 
   return (
     <div
-      className="flex min-h-screen"
+      className="menu-management flex min-h-screen"
       style={{
-        background: `radial-gradient(1200px 400px at 85% -10%, #FBEAE0 0%, transparent 60%), ${T.page}`,
+        background: T.page,
         fontFamily: FONT,
       }}
     >
+      <div className="menu-atmosphere" aria-hidden="true" />
       <Sidebar />
-      <main className="tablet-shell flex-1">
+      <main className="menu-workspace tablet-shell min-w-0 flex-1">
+        <MotionConfig reducedMotion="user">
         <motion.header
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -2058,6 +2058,7 @@ export default function Inventory() {
           className="mb-7 flex flex-wrap items-start justify-between gap-4"
         >
           <div>
+            <span className="menu-wordmark">The Crunch</span>
             <h1
               className="text-[30px] font-semibold tracking-tight"
               style={{ color: T.ink, letterSpacing: "-0.02em" }}
@@ -2073,6 +2074,7 @@ export default function Inventory() {
             </p>
           </div>
           <div
+            data-menu-icon="clock"
             className="flex select-none items-center gap-3 rounded-2xl px-4 py-2.5"
             style={cardStyle}
           >
@@ -2080,7 +2082,7 @@ export default function Inventory() {
               className="grid h-9 w-9 place-items-center rounded-xl"
               style={{ background: T.deepSoft }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="12" r="9" stroke={T.deep} strokeWidth="2" />
                 <path
                   d="M12 7v5l3.5 2"
@@ -2120,6 +2122,7 @@ export default function Inventory() {
         >
           <MenuAdminTab />
         </motion.div>
+        </MotionConfig>
       </main>
     </div>
   );

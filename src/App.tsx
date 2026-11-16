@@ -34,7 +34,6 @@ import { ROLE_HOME_PATHS, resolveRootRoute } from "./lib/rootRoutePolicy";
 // ── Shared / Auth
 import Login from "./pages/login";
 import ForgotPassword from "./pages/forgotpassword";
-import AboutTheCrunch from "./pages/aboutthecrunch";
 
 // ── Customer pages
 import UsersMenu from "./pages/usersmenu";
@@ -283,7 +282,7 @@ export default function App() {
       {/* /forgot-password is public — no redirect needed for logged-in users */}
       <Route path="/forgot-password" element={<ForgotPassword />} />
 
-      <Route path="/aboutthecrunch" element={<AboutTheCrunch />} />
+      <Route path="/aboutthecrunch" element={<Navigate to="/products#about" replace />} />
       <Route
         path="/my-account"
         element={isAuth ? <MyAccount /> : <Navigate to="/login?returnTo=/my-account" replace />}

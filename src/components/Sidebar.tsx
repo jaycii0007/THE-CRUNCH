@@ -277,19 +277,20 @@ export function Sidebar() {
   return (
     <>
       {staffRole && user && (
-        <div className="fixed right-4 top-4 z-40 flex max-w-[calc(100vw-6rem)] items-center gap-2 font-['Poppins',sans-serif] sm:right-6 sm:top-6">
+        <div style={{ maxWidth: "calc(100vw - 6rem)" }} className="fixed right-4 top-4 z-40 flex items-center gap-1 rounded-2xl border border-[#dcd3c4] bg-[#faf7f0] p-1 shadow-[inset_0_1px_1px_#fff,0_2px_3px_#44351f1c,2px_6px_16px_-5px_#44351f40] font-['Poppins',sans-serif] sm:right-6 sm:top-6">
           <NavLink
             to="/my-account"
             aria-label={`Open My Profile for ${user.username}`}
             title="Open My Profile"
-            className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-lg transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 sm:px-4"
+            className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 text-[#27251f] transition-colors hover:bg-[#eee8dc] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#685536] sm:pr-3"
           >
-            <p className="truncate text-xs font-semibold text-slate-900 sm:text-sm">
-              {user.username}
-            </p>
-            <p className="truncate text-[10px] font-medium text-slate-500 sm:text-xs">
-              {ROLE_LABELS[staffRole]}
-            </p>
+            <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#eee8dd] shadow-[inset_1px_1px_3px_#63523822,inset_-1px_-1px_2px_#fff]">
+              <UserRound className="size-4" strokeWidth={1.7} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-[13px] font-semibold leading-tight">{user.username}</span>
+              <span className="block truncate text-[11px] font-medium leading-tight text-[#665f53]">{ROLE_LABELS[staffRole]}</span>
+            </span>
           </NavLink>
           <InventoryNotificationCenter role={role} embedded />
         </div>

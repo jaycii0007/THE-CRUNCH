@@ -273,7 +273,6 @@ const EMPTY_DELIVERY_LINKS: DeliveryPlatformLinks = {
 const HOME_PATH = "/";
 const NAV_LINKS = [
   { label: "Home", path: HOME_PATH },
-  { label: "About", path: "/aboutthecrunch" },
   { label: "Menu", path: "/usersmenu" },
 ];
 const CASH_TERMS =

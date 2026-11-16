@@ -306,13 +306,13 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
         <button
           type="button"
           onClick={() => setOpen((current) => !current)}
-          className="relative grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-lg transition hover:text-slate-900"
+          className="relative grid size-11 place-items-center rounded-xl border border-[#dfd6c8] bg-[#f6f2e9] text-[#433e33] shadow-[inset_0_1px_0_#fff,0_2px_3px_#45362326] transition-[background-color,box-shadow,transform] duration-150 hover:bg-[#eee8dc] active:shadow-inner aria-expanded:shadow-inner focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#685536] motion-safe:active:translate-y-px"
           aria-label={`Staff notifications: ${unreadCount} unread`}
           aria-expanded={open}
         >
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
-            <span className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-4 text-white">
+            <span className="pointer-events-none absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-4 text-white">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
