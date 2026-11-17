@@ -381,11 +381,15 @@ function useMenuAdmin(onError: (message: string) => void) {
         ? (categoryData as MenuCategoryRecord[])
         : [];
 
-      setItems(uniqueMenuRowsByProductId(menuRows).map(toMenuItem));
+      setItems(uniqueMenuRowsByProductId(menuRows).map(toMenuItem).filter(
+        (item) => !(isArchived(item) && item.productType === "selection_option" &&
+          item.categorySystemKey === "chicken_flavors"),
+      ));
 
       setApiCategories(
         categoryRows
-          .filter((c) => c.is_active === true || c.is_active === 1)
+          .filter((c) => (c.is_active === true || c.is_active === 1) &&
+            c.system_key !== "chicken_flavors")
           .sort(
             (a, b) =>
               Number(a.display_order ?? 0) - Number(b.display_order ?? 0) ||
@@ -436,7 +440,8 @@ function useMenuAdmin(onError: (message: string) => void) {
   // Use the categories from Settings. If there are none, use the ones already on the items.
   const categories = (apiCategories.length > 0
     ? [...apiCategories]
-    : [...new Set(items.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)))
+    : [...new Set(items.filter((item) => item.categorySystemKey !== "chicken_flavors")
+      .map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)))
     .sort((a, b) => Number(a === chickenFlavorCategoryName) - Number(b === chickenFlavorCategoryName));
 
   return {
