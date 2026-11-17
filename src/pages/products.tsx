@@ -923,6 +923,7 @@ function FeedbackModal({ onClose, products, userId }: { onClose: () => void; pro
 
 interface ProductsProps { isAuthenticated?: boolean }
 
+// Navigation: navigate('/my-account') handled in Navbar
 export default function Products({ isAuthenticated = false }: ProductsProps) {
   const { user } = useAuth()
   const { hash } = useLocation()

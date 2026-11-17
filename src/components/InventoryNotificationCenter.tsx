@@ -312,14 +312,14 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
         >
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
-            <span className="pointer-events-none absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-4 text-white">
+            <span className="pointer-events-none absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-[#c23b2e] px-1.5 py-0.5 text-center text-[10px] font-bold leading-4 text-white">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
         </button>
 
         {open && (
-          <div className="absolute right-0 mt-2 w-[min(27rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="pos-scope pos-pop pos-rise absolute right-0 mt-2 w-[min(27rem,calc(100vw-2rem))] overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-slate-800">Notifications</p>
@@ -421,8 +421,8 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
       </div>
 
       {selectedRefund && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-label="Refund request details">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="pos-scope fixed inset-0 z-50 grid place-items-center bg-black/35 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Refund request details">
+          <div className="pos-modal w-full max-w-md p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-violet-700">Refund request review</p>
@@ -450,15 +450,15 @@ export function InventoryNotificationCenter({ role, embedded = false }: { role: 
             </dl>
             {selectedRefund.status === "Pending" ? (
               <div className="mt-5 grid grid-cols-2 gap-3">
-                <button type="button" disabled={refundAction !== null} onClick={() => void reviewRefund("ignore")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                <button type="button" disabled={refundAction !== null} onClick={() => void reviewRefund("ignore")} className="pos-btn pos-btn--ghost disabled:opacity-50">
                   {refundAction === "ignore" ? "Ignoring…" : "Ignore"}
                 </button>
-                <button type="button" disabled={refundAction !== null} onClick={() => void reviewRefund("refund")} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                <button type="button" disabled={refundAction !== null} onClick={() => void reviewRefund("refund")} className="pos-btn pos-btn--primary disabled:opacity-50">
                   {refundAction === "refund" ? "Refunding…" : "Take Action"}
                 </button>
               </div>
             ) : (
-              <button type="button" onClick={() => setSelectedRefund(null)} className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Close</button>
+              <button type="button" onClick={() => setSelectedRefund(null)} className="pos-btn pos-btn--primary mt-5 w-full">Close</button>
             )}
           </div>
         </div>

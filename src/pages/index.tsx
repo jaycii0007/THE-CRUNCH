@@ -1,6 +1,6 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ShoppingBag, DollarSign, Layers, CheckCircle } from "lucide-react";
+import { TrendingUp, ShoppingCart, Activity, BadgeCheck, RefreshCw } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
@@ -102,34 +102,34 @@ interface KpiCardProps {
 
 function KpiCard({ label, value, hint, icon: Icon, to }: KpiCardProps) {
   return (
-    <Link to={to} className="block rounded-2xl transition hover:ring-1 hover:ring-[#486C5D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#486C5D]">
+    <Link to={to} className="block rounded-2xl transition hover:ring-1 hover:ring-[#416752] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#416752]">
     <article className="ov-kpi-card" aria-label={`${label}: ${value}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-[#818781]">
+          <p className="truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
             {label}
           </p>
-          <p className="mt-1.5 truncate text-2xl font-bold tracking-tight text-[#242824] sm:text-3xl" title={value}>
+          <p className="mt-1.5 truncate text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl" title={value}>
             {value}
           </p>
         </div>
         <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${label === "Today's sales" || label === "Completed orders" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}
+          className={`pos-kpi-icon ${label === "Today's sales" || label === "Completed orders" ? "pos-kpi-icon--green" : "pos-kpi-icon--blue"}`}
           aria-hidden="true"
         >
-          <Icon size={20} strokeWidth={1.8} />
+          <Icon size={20} strokeWidth={2} />
         </div>
       </div>
 
-      <div className="mt-3 flex items-center gap-1.5 text-xs text-[#818781] truncate">
+      <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500 truncate">
         {hint.split(" Â· ").map((part, i, arr) => {
           const isNegative = part.toLowerCase().includes("cancelled") || part.toLowerCase().includes("refunded");
           return (
             <React.Fragment key={i}>
-              <span className={`truncate font-medium ${isNegative ? "text-[#C05656]" : "text-[#818781]"}`}>
+              <span className={`truncate font-medium ${isNegative ? "text-red-600" : "text-slate-500"}`}>
                 {part}
               </span>
-              {i < arr.length - 1 && <span className="text-[#E5E9E4]">Â·</span>}
+              {i < arr.length - 1 && <span className="text-slate-300">Â·</span>}
             </React.Fragment>
           );
         })}
@@ -186,8 +186,8 @@ function summarizeOperations(orders: Order[], timezone: string, now = new Date()
   };
 }
 
-function Metric({ label, value, tone = "text-[#242824]" }: { label: string; value: number; tone?: string }) {
-  return <div className="flex items-center justify-between gap-4 border-b border-[#E5E9E4] py-2.5 last:border-0">
+function Metric({ label, value, tone = "text-slate-900" }: { label: string; value: number; tone?: string }) {
+  return <div className="flex items-center justify-between gap-4 border-b border-slate-200 py-2.5 last:border-0">
     <span className="text-sm text-slate-600">{label}</span><strong className={`text-lg tabular-nums ${tone}`}>{value.toLocaleString()}</strong>
   </div>;
 }
@@ -252,31 +252,37 @@ export default function AdminDashboard() {
     return [...products.values()].sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name)).slice(0, 5);
   }, [orders.data]);
   const money = (value: number) => formatCurrencyAmount(value, settings);
-  const cardLinkClass = "ov-card block min-w-0 transition hover:ring-1 hover:ring-[#486C5D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#486C5D]";
-  const linkClass = "text-xs font-semibold text-[#486C5D] underline underline-offset-4";
+  const cardLinkClass = "ov-card block min-w-0 transition hover:ring-1 hover:ring-[#416752] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#416752]";
+  const linkClass = "text-xs font-semibold text-green-600 underline underline-offset-4";
 
-  return <div className="ov-canvas">
-    <Sidebar />
+  return (
+    <>
+      <Sidebar />
+
+      <div className="pos-scope ov-canvas">
+        <div className="pos-page min-h-screen">
+          <div className="pos-atmosphere" aria-hidden="true" />
     <main className="ov-container space-y-5">
-      <header className="flex flex-wrap items-center justify-between gap-4">
+      <header className="pos-rise flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#486C5D]">Business overview</p>
-          <h1 className="mt-1 text-2xl font-bold text-[#242824]">{settings.restaurantName || "THE CRUNCH"}</h1>
-          <p className="mt-1 text-sm text-slate-500">{formatInSettingsTimezone(new Date(), settings, { dateStyle: "full" })} · {settings.timezone}</p>
+          <span className="pos-wordmark">The Crunch</span>
+          <p className="pos-eyebrow">Business overview</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{settings.restaurantName || "THE CRUNCH"}</h1>
+          <p className="pos-subtitle">{formatInSettingsTimezone(new Date(), settings, { dateStyle: "full" })} · {settings.timezone}</p>
         </div>
-        <button type="button" disabled={loading} onClick={() => void loadDashboard()} className="rounded-xl border border-[#E5E9E4] bg-white px-4 py-2 text-sm font-semibold disabled:opacity-50">{loading ? "Refreshing…" : "Refresh"}</button>
+        <button type="button" disabled={loading} onClick={() => void loadDashboard()} className="pos-softbtn disabled:opacity-50"><RefreshCw size={15} className={loading ? "animate-spin" : ""} />{loading ? "Refreshing…" : "Refresh"}</button>
       </header>
 
       <section aria-label="Business summary">
-        {loading && !orders.data ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((key) => <SkeletonKPICard key={key} theme="admin" />)}</div> : orders.error ? <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">Order summary unavailable. Try refreshing.</p> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard to="/sales-reports" label="Today's sales" value={money(operations.sales)} hint="Completed paid orders today" icon={DollarSign} />
-          <KpiCard to="/orders" label="Today's total orders" value={operations.totalOrders.toLocaleString()} hint="Orders placed today, all statuses" icon={ShoppingBag} />
-          <KpiCard to="/orders" label="Active orders" value={operations.activeOrders.toLocaleString()} hint="All outstanding orders, including prior days" icon={Layers} />
-          <KpiCard to="/sales-reports" label="Completed orders" value={operations.completedOrders.toLocaleString()} hint="Completed or picked up today" icon={CheckCircle} />
+        {loading && !orders.data ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((key) => <SkeletonKPICard key={key} theme="admin" />)}</div> : orders.error ? <p role="alert" className="pos-tile rounded-xl bg-red-50 p-4 text-sm text-red-700">Order summary unavailable. Try refreshing.</p> : <div className="pos-rise-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard to="/sales-reports" label="Today's sales" value={money(operations.sales)} hint="Completed paid orders today" icon={TrendingUp} />
+          <KpiCard to="/orders" label="Today's total orders" value={operations.totalOrders.toLocaleString()} hint="Orders placed today, all statuses" icon={ShoppingCart} />
+          <KpiCard to="/orders" label="Active orders" value={operations.activeOrders.toLocaleString()} hint="All outstanding orders, including prior days" icon={Activity} />
+          <KpiCard to="/sales-reports" label="Completed orders" value={operations.completedOrders.toLocaleString()} hint="Completed or picked up today" icon={BadgeCheck} />
         </div>}
       </section>
 
-      <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="pos-rise-stagger grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-2">
         <Link to="/orders" className={cardLinkClass} aria-labelledby="operations-heading">
           <div className="flex flex-wrap items-center justify-between gap-2"><h2 id="operations-heading" className="font-semibold">Order operations</h2><span className={linkClass}>Open orders</span></div>
           <p className="mt-1 text-xs text-slate-500">Current active workload across all dates</p>
@@ -311,13 +317,16 @@ export default function AdminDashboard() {
           <p className="mt-3 text-xs text-slate-500">Open Monitor Stock to review affected materials.</p>
         </Link>
       </div>
-      <Link to="/sales-reports" className={cardLinkClass} aria-labelledby="best-sellers-heading">
+      <Link to="/sales-reports" className={`${cardLinkClass} pos-rise`} aria-labelledby="best-sellers-heading">
         <h2 id="best-sellers-heading" className="font-semibold">Best Sellers</h2>
         <p className="mt-1 text-xs text-slate-500">Top menu products by quantity · all completed, paid orders</p>
         <SectionState loading={loading && !orders.data} error={orders.error}>
-          {bestSellers.length ? <ol className="mt-3">{bestSellers.map((item, index) => <li key={index} className="flex justify-between gap-4 border-b border-[#E5E9E4] py-2.5 last:border-0"><span className="text-sm">{index + 1}. {item.name}</span><strong className="shrink-0 tabular-nums">{item.quantity}</strong></li>)}</ol> : <p className="py-6 text-sm text-slate-500">No completed paid menu sales yet.</p>}
+          {bestSellers.length ? <ol className="mt-3">{bestSellers.map((item, index) => <li key={index} className="flex justify-between gap-4 border-b border-slate-200 py-2.5 last:border-0"><span className="text-sm">{index + 1}. {item.name}</span><strong className="shrink-0 tabular-nums">{item.quantity}</strong></li>)}</ol> : <p className="py-6 text-sm text-slate-500">No completed paid menu sales yet.</p>}
         </SectionState>
       </Link>
     </main>
-  </div>;
+        </div>
+      </div>
+    </>
+  );
 }

@@ -350,8 +350,19 @@ function batchStatus(batch: MaterialBatch): {
   };
 }
 
+// Live clock for the header card, matching Menu Management.
+function useNow() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
 export default function StockManager() {
   const { user } = useAuth();
+  const now = useNow();
   const [restaurantSettings, setRestaurantSettings] = useState(
     GENERAL_SETTINGS_DEFAULTS,
   );
@@ -1044,19 +1055,17 @@ export default function StockManager() {
     <>
       <style>{`@keyframes fadeInRow { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }`}</style>
       <div className="sm-page">
+        <div className="sm-atmosphere" aria-hidden="true" />
         <Sidebar />
-
+        <div className="sm-shell">
         <header className="sm-header">
           <div className="sm-header-inner">
             <div className="sm-header-brand">
-              <h2 className="sm-header-title">Stock Manager</h2>
-              <p className="sm-header-date">
-                {formatInSettingsTimezone(new Date(), restaurantSettings, {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
+              <span className="sm-wordmark">The Crunch</span>
+              <h1 className="sm-header-title">Stock Manager</h1>
+              <p className="sm-header-description">
+                Track raw materials, batches, suppliers, purchase orders and
+                stock alerts.
               </p>
             </div>
             <div className="sm-header-actions">
@@ -1071,6 +1080,42 @@ export default function StockManager() {
                   attention
                 </button>
               )}
+              <div className="sm-clock-card" data-sm-icon="clock">
+                <div className="sm-clock-icon">
+                  <svg
+                    aria-hidden="true"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle cx="12" cy="12" r="9" stroke="#1A3A2A" strokeWidth="2" />
+                    <path
+                      d="M12 7v5l3.5 2"
+                      stroke="#1A3A2A"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </div>
+                <div className="sm-clock-text">
+                  <p className="sm-clock-time">
+                    {formatInSettingsTimezone(now, restaurantSettings, {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })}
+                  </p>
+                  <p className="sm-clock-date">
+                    {formatInSettingsTimezone(now, restaurantSettings, {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1190,7 +1235,10 @@ export default function StockManager() {
                         >
                           <div className="sm-toolbar">
                             <div className="sm-toolbar-left">
-                              <div className="sm-search">
+                              <div
+                                className="sm-search"
+                                data-sm-icon="search"
+                              >
                                 <svg
                                   className="sm-search-icon"
                                   viewBox="0 0 24 24"
@@ -1223,6 +1271,7 @@ export default function StockManager() {
                                   setShowRawMaterialForm(true);
                                 }}
                                 className="sm-btn sm-btn--primary"
+                                data-sm-icon="add"
                               >
                                 <svg
                                   className="sm-btn-icon"
@@ -1511,7 +1560,7 @@ export default function StockManager() {
                                     {formatInSettingsTimezone(movement.occurred_at, restaurantSettings, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                                   </p>
                                 </div>
-                                <span style={{ fontWeight: 600, whiteSpace: "nowrap", color: Number(movement.signed_quantity) < 0 ? "#dc2626" : "#15803d" }}>
+                                <span style={{ fontWeight: 600, whiteSpace: "nowrap", color: Number(movement.signed_quantity) < 0 ? "#C23B2E" : "#2F8F5B" }}>
                                   {Number(movement.signed_quantity) < 0 ? "-" : "+"}{Math.abs(Number(movement.signed_quantity)).toLocaleString(undefined, { maximumFractionDigits: 4 })} {movement.unit}
                                 </span>
                               </div>
@@ -1819,7 +1868,8 @@ export default function StockManager() {
                 position: "fixed",
                 inset: 0,
                 zIndex: 110,
-                background: "rgba(15,23,42,0.66)",
+                background: "rgba(20,28,23,0.45)",
+                backdropFilter: "blur(8px)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1838,10 +1888,12 @@ export default function StockManager() {
                   width: "min(1020px, 100%)",
                   maxHeight: "min(88vh, 900px)",
                   overflowY: "auto",
-                  background: "#fff",
-                  color: "#1f2937",
-                  borderRadius: 16,
-                  boxShadow: "0 24px 80px rgba(0,0,0,.28)",
+                  background: "#FBF7EF",
+                  color: "#1C1B17",
+                  border: "1px solid #DDD3C4",
+                  borderRadius: 24,
+                  boxShadow:
+                    "0 40px 90px -20px rgba(28,27,23,0.35), 0 8px 24px -8px rgba(28,27,23,0.12)",
                   padding: "clamp(16px, 3vw, 28px)",
                 }}
               >
@@ -1859,7 +1911,7 @@ export default function StockManager() {
                       style={{
                         fontSize: 12,
                         fontWeight: 700,
-                        color: "#8b721e",
+                        color: "#78512E",
                         textTransform: "uppercase",
                         letterSpacing: ".08em",
                         marginBottom: 4,
@@ -1873,7 +1925,7 @@ export default function StockManager() {
                     >
                       {batchMaterial.product_name} — Batch Details
                     </h2>
-                    <p style={{ fontSize: 13, marginTop: 6, color: "#64748b" }}>
+                    <p style={{ fontSize: 13, marginTop: 6, color: "#655E52" }}>
                       Main Inventory.Stock:{" "}
                       <strong>
                         {batchMaterial.mainStock} {batchMaterial.unit}
@@ -1889,9 +1941,10 @@ export default function StockManager() {
                     style={{
                       flexShrink: 0,
                       padding: "6px 12px",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: 8,
-                      background: "#fff",
+                      border: "1px solid #DDD3C4",
+                      borderRadius: 999,
+                      background: "#FBF7EF",
+                      color: "#655E52",
                       cursor: "pointer",
                       fontSize: 20,
                     }}
@@ -1901,13 +1954,13 @@ export default function StockManager() {
                 </div>
 
                 <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13 }}>
-                  <input type="checkbox" checked={showDepletedBatches} onChange={(event) => setShowDepletedBatches(event.target.checked)} />
+                  <input type="checkbox" checked={showDepletedBatches} onChange={(event) => setShowDepletedBatches(event.target.checked)} style={{ accentColor: "#78512E" }} />
                   Show depleted batches
                 </label>
                 {batchLoading ? (
                   <p
                     role="status"
-                    style={{ padding: "28px 4px", color: "#64748b" }}
+                    style={{ padding: "28px 4px", color: "#655E52" }}
                   >
                     Loading recorded batches...
                   </p>
@@ -1916,10 +1969,10 @@ export default function StockManager() {
                     role="alert"
                     style={{
                       padding: 16,
-                      background: "#fff1f2",
-                      border: "1px solid #fecdd3",
+                      background: "#FBEAE8",
+                      border: "1px solid #F0C7C2",
                       borderRadius: 10,
-                      color: "#9f1239",
+                      color: "#C23B2E",
                     }}
                   >
                     Could not load batch details: {batchError}
@@ -1929,8 +1982,8 @@ export default function StockManager() {
                         onClick={() => void openBatchDetails(batchMaterial)}
                         style={{
                           padding: "6px 12px",
-                          background: "#fff",
-                          border: "1px solid #fda4af",
+                          background: "#FBF7EF",
+                          border: "1px solid #F0C7C2",
                           borderRadius: 7,
                           cursor: "pointer",
                         }}
@@ -1943,9 +1996,9 @@ export default function StockManager() {
                   <div
                     style={{
                       padding: "24px 12px",
-                      background: "#f8fafc",
+                      background: "#F5EFE5",
                       borderRadius: 10,
-                      color: "#64748b",
+                      color: "#655E52",
                     }}
                   >
                     No matching batch records. Enable Show depleted batches to view batches with no remaining stock.
@@ -1955,7 +2008,7 @@ export default function StockManager() {
                     <div
                       style={{
                         overflowX: "auto",
-                        border: "1px solid #e2e8f0",
+                        border: "1px solid #DDD3C4",
                         borderRadius: 10,
                       }}
                     >
@@ -1968,7 +2021,7 @@ export default function StockManager() {
                         }}
                       >
                         <thead
-                          style={{ background: "#f8fafc", color: "#475569" }}
+                          style={{ background: "#F5EFE5", color: "#655E52" }}
                         >
                           <tr>
                             {(
@@ -1988,7 +2041,7 @@ export default function StockManager() {
                                   textAlign: "left",
                                   padding: "13px 11px",
                                   fontWeight: 700,
-                                  borderBottom: "1px solid #e2e8f0",
+                                  borderBottom: "1px solid #DDD3C4",
                                   whiteSpace: "nowrap",
                                 }}
                               >
@@ -2003,7 +2056,7 @@ export default function StockManager() {
                             return (
                               <tr
                                 key={batch.batch_id}
-                                style={{ borderBottom: "1px solid #f1f5f9" }}
+                                style={{ borderBottom: "1px solid #EAE2D3" }}
                               >
                                 <td
                                   style={{
@@ -2017,7 +2070,7 @@ export default function StockManager() {
                                       style={{
                                         fontSize: 11,
                                         fontWeight: 400,
-                                        color: "#64748b",
+                                        color: "#8A8172",
                                       }}
                                     >
                                       {batch.delivery_batch_id}
@@ -2052,7 +2105,7 @@ export default function StockManager() {
                                   {batchExpiryTime(batch) == null ? "Not recorded" : formatInSettingsTimezone(new Date(batchExpiryTime(batch)!).toISOString(), restaurantSettings, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                                   {batch.usable_until ? (
                                     <div
-                                      style={{ color: "#64748b", fontSize: 11 }}
+                                      style={{ color: "#8A8172", fontSize: 11 }}
                                     >
                                       Calculated usable-until
                                     </div>
@@ -2069,23 +2122,23 @@ export default function StockManager() {
                                       fontSize: 11,
                                       background:
                                         status.tone === "danger"
-                                          ? "#fee2e2"
+                                          ? "#FBEAE8"
                                           : status.tone === "warning"
-                                            ? "#fef3c7"
-                                            : "#f1f5f9",
+                                            ? "#FAF1DE"
+                                            : "#F5EFE5",
                                       color:
                                         status.tone === "danger"
-                                          ? "#991b1b"
+                                          ? "#C23B2E"
                                           : status.tone === "warning"
-                                            ? "#92400e"
-                                            : "#475569",
+                                            ? "#B8791B"
+                                            : "#5C5546",
                                     }}
                                   >
                                     {status.label}
                                   </span>
                                   {canDispose && Number(batch.remaining_qty) > 0 && batchExpiryTime(batch) != null && batchExpiryTime(batch)! <= Date.now() && (
                                     <button type="button" disabled={disposingBatch !== null}
-                                      style={{ display: "block", marginTop: 8, color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 6, padding: "6px 8px", background: "#fff", cursor: "pointer" }}
+                                      style={{ display: "block", marginTop: 8, color: "#C23B2E", border: "1px solid #F0C7C2", borderRadius: 6, padding: "6px 8px", background: "#FBF7EF", cursor: "pointer" }}
                                       onClick={async () => {
                                         if (disposalInFlight.current) return;
                                         const expires = formatInSettingsTimezone(new Date(batchExpiryTime(batch)!).toISOString(), restaurantSettings, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -2114,7 +2167,7 @@ export default function StockManager() {
                       </table>
                     </div>
                     <p
-                      style={{ fontSize: 12, marginTop: 14, color: "#475569" }}
+                      style={{ fontSize: 12, marginTop: 14, color: "#5C5546" }}
                     >
                       Sum of recorded batch remainders:{" "}
                       <strong>
@@ -2144,9 +2197,9 @@ export default function StockManager() {
                       <p
                         role="note"
                         style={{
-                          background: "#fff7ed",
-                          color: "#9a3412",
-                          border: "1px solid #fed7aa",
+                          background: "#FAF1DE",
+                          color: "#8A5A12",
+                          border: "1px solid #EBD5A8",
                           padding: 12,
                           borderRadius: 8,
                           fontSize: 12,
@@ -2169,8 +2222,8 @@ export default function StockManager() {
                     marginTop: 16,
                     padding: 12,
                     borderRadius: 8,
-                    background: "#f8fafc",
-                    color: "#475569",
+                    background: "#F5EFE5",
+                    color: "#5C5546",
                   }}
                 >
                   <strong>Important:</strong> These are recorded batch values
@@ -2337,6 +2390,7 @@ export default function StockManager() {
             } : undefined}
           />
         )}
+        </div>
       </div>
     </>
   );

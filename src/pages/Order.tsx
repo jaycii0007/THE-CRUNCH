@@ -37,16 +37,17 @@ import {
   formatInSettingsTimezone,
   GENERAL_SETTINGS_DEFAULTS,
 } from "@/lib/restaurantSettings";
+import "./cashier-pos.css";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Font                                    */
 /* -------------------------------------------------------------------------- */
 
-if (typeof document !== "undefined" && !document.getElementById("dm-sans-font")) {
+if (typeof document !== "undefined" && !document.getElementById("poppins-font")) {
   const link = document.createElement("link");
-  link.id = "dm-sans-font";
+  link.id = "poppins-font";
   link.rel = "stylesheet";
-  link.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap";
+  link.href = "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap";
   document.head.appendChild(link);
 }
 
@@ -247,7 +248,7 @@ function OrderTimer({ baseAt, dueAt, estimatedPrepMinutes, orderNumber }: OrderT
   return (
     <div>
       <div
-        className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-2xl font-bold tabular-nums ${tone.bg} ${tone.text}`}
+        className={`pos-tile flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-2xl font-bold tabular-nums ${tone.bg} ${tone.text}`}
       >
         {overdue ? <AlertCircle size={20} /> : <Clock size={20} />}
         {overdue ? `+${clock}` : clock}
@@ -296,7 +297,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
   const hasNotes = Boolean(order.orderNote?.trim()) || itemNotes.length > 0;
 
   const stripe = overdue ? "bg-red-500" : COLUMNS.find((c) => c.stage === stage)!.accent;
-  const primaryButton = "flex h-12 w-full items-center justify-center gap-2 rounded-xl text-base font-semibold transition disabled:cursor-not-allowed";
+  const primaryButton = "pos-btn pos-btn--lg w-full";
 
   return (
     <motion.article
@@ -305,9 +306,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.2 }}
-      className={`flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm ${
-        overdue ? "border-red-300 ring-1 ring-red-200" : "border-slate-200"
-      }`}
+      className={`pos-ticket${overdue ? " pos-ticket--overdue" : ""}`}
     >
       <div className={`h-1.5 ${stripe}`} />
 
@@ -350,7 +349,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
         )}
 
         {stage === "ready" && (
-          <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-700">
+          <div className="pos-tile flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-700">
             <CheckCircle2 size={18} />
             {order.isOnlinePickup ? "Ready for pickup" : "Ready to serve"}
           </div>
@@ -381,7 +380,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
             onKeyDown={(event) => {
               if (event.key === "Escape") setShowNotes(false);
             }}
-            className="relative rounded-xl border border-amber-200 bg-amber-50 p-3 pr-10 text-sm shadow-sm"
+            className="pos-tile relative rounded-xl border border-amber-200 bg-amber-50 p-3 pr-10 text-sm"
           >
             <button
               type="button"
@@ -407,7 +406,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
         )}
 
         {timerEditable && (
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+          <div className="pos-tile flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
             <div>
               <div className="text-xs font-semibold text-slate-400">Prep time</div>
               <div className="text-base font-bold text-slate-900">{prepMinutes} min</div>
@@ -418,7 +417,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
                   key={delta}
                   onClick={() => onAdjustTimer(order, delta)}
                   aria-label={`${delta > 0 ? "Add" : "Remove"} one minute`}
-                  className="flex h-10 w-16 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="pos-softbtn pos-softbtn--sm h-10"
                 >
                   {delta > 0 ? <Plus size={14} /> : <Minus size={14} />} 1m
                 </button>
@@ -432,7 +431,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
             <button
               onClick={() => onStart(order.id)}
               disabled={busy}
-              className={`${primaryButton} bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400`}
+              className={`${primaryButton} pos-btn--primary`}
             >
               <Play size={16} /> {thisAction === "start" ? "Starting..." : "Start preparing"}
             </button>
@@ -442,7 +441,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
             <button
               onClick={() => onComplete(order)}
               disabled={busy}
-              className={`${primaryButton} bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400`}
+              className={`${primaryButton} pos-btn--success`}
             >
               <CheckCircle2 size={16} />
               {thisAction === "complete" ? "Completing..." : needsPickup ? "Ready for pickup" : "Complete order"}
@@ -450,7 +449,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
           )}
 
           {stage === "ready" && orderType === "delivery" && (
-            <button disabled className={`${primaryButton} bg-slate-100 text-slate-400`}>
+            <button disabled className={`${primaryButton} pos-btn--ghost`}>
               Awaiting cashier
             </button>
           )}
@@ -459,7 +458,7 @@ function OrderTicket({ order, nowMs, pendingAction, isSettling, canCancel, canRe
             <button
               onClick={() => onSettle(order)}
               disabled={settleLocked}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+              className="pos-act pos-act--red h-10 w-full"
             >
               <XCircle size={15} />
               {isSettling
@@ -677,12 +676,13 @@ export default function Order() {
     formatInSettingsTimezone(d, settings, { weekday: "long", month: "long", day: "numeric" });
 
   const sortedOrders = sortForCook(orders, now.getTime());
-  const shellPadding = isMobile ? "pt-[72px]" : isTablet ? "pt-[76px]" : "pl-24";
+  const shellPadding = isMobile ? "pt-[72px] pl-[76px]" : isTablet ? "pt-[76px] pl-[100px]" : "pl-[100px]";
 
   return (
-    <div className="min-h-screen bg-slate-50 font-['DM_Sans',sans-serif]">
+    <>
       <Sidebar />
 
+      <div className="pos-scope">
       <Dialog.Root open={!!refundTarget} onOpenChange={(open) => {
         if (!open && !settlementSubmitting.current) {
           setRefundTarget(null);
@@ -692,9 +692,9 @@ export default function Order() {
       }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-[300] bg-black/35 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-[301] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl">
-            <Dialog.Title className="text-lg font-semibold text-red-600">Authorize refund</Dialog.Title>
-            <Dialog.Description className="my-4 text-sm text-slate-600">
+          <Dialog.Content className="pos-modal fixed left-1/2 top-1/2 z-[301] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 p-6">
+            <Dialog.Title className="text-lg font-semibold text-[#a53125]">Authorize refund</Dialog.Title>
+            <Dialog.Description className="my-4 text-sm text-[#655e52]">
               Refund {refundTarget?.orderNumber}. Enter the separate refund authorization password to continue.
               Cash or e-payment reimbursement must be handled separately.
             </Dialog.Description>
@@ -702,46 +702,53 @@ export default function Order() {
               event.preventDefault();
               if (refundTarget) void handleSettle(refundTarget, refundPassword);
             }}>
-              <label htmlFor="refund-authorization-password" className="block text-sm font-medium">Refund authorization password</label>
+              <label htmlFor="refund-authorization-password" className="block text-sm font-medium text-[#4c473d]">Refund authorization password</label>
               <input id="refund-authorization-password" type="password" autoComplete="off" autoFocus
                 value={refundPassword} disabled={settlingId !== null}
                 onChange={(event) => setRefundPassword(event.target.value)}
                 aria-invalid={!!refundAuthError} aria-describedby={refundAuthError ? "refund-authorization-error" : undefined}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" />
-              {refundAuthError && <p id="refund-authorization-error" role="alert" className="text-sm text-red-600">{refundAuthError}</p>}
-              <button type="submit" disabled={settlingId !== null || !refundPassword.trim()} className="w-full rounded-xl bg-red-600 p-3 text-sm font-semibold text-white disabled:opacity-50">{settlingId ? "Processing…" : "Confirm refund"}</button>
-              <Dialog.Close disabled={settlingId !== null} className="w-full p-3 text-sm">Keep Order</Dialog.Close>
+                className="w-full rounded-xl px-4 py-3 text-sm" />
+              {refundAuthError && <p id="refund-authorization-error" role="alert" className="text-sm text-[#c23b2e]">{refundAuthError}</p>}
+              <button type="submit" disabled={settlingId !== null || !refundPassword.trim()} className="pos-btn pos-btn--danger w-full">{settlingId ? "Processing…" : "Confirm refund"}</button>
+              <Dialog.Close disabled={settlingId !== null} className="pos-btn pos-btn--ghost w-full">Keep Order</Dialog.Close>
             </form>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
 
-      <div className={shellPadding}>
+      <div className={`pos-page min-h-screen ${shellPadding}`}>
+        <div className="pos-atmosphere" aria-hidden="true" />
         <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           {/* Header */}
           <header className="mb-6 flex flex-col items-start gap-5">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900">
+            <motion.div
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35 }}
+              className="flex items-center gap-4"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900">
                 <ChefHat size={24} className="text-white" />
               </div>
               <div>
+                <span className="pos-wordmark">The Crunch</span>
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">
                   Cook
                 </h1>
-                <p className="text-sm text-slate-500">
+                <p className="pos-subtitle">
                   {formatDate(now)} ·{" "}
                   <span className="font-semibold tabular-nums text-slate-700">
                     {formatTime(now)}
                   </span>
                 </p>
               </div>
-            </div>
+            </motion.div>
 
             <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3 lg:max-w-[720px]">
               {STATS.map(({ key, label, icon: Icon, tone }) => (
                 <div
                   key={key}
-                  className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                  className="pos-panel flex items-center gap-3 border border-slate-200 bg-white px-4 py-3"
                 >
                   <span
                     className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}
@@ -766,7 +773,7 @@ export default function Order() {
               onClick={() =>
                 Notification.requestPermission().then(setNotifPermission)
               }
-              className="mb-6 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+              className="pos-softbtn mb-6"
             >
               <Bell size={16} className="text-amber-500" />
               Enable notifications for overdue orders
@@ -775,7 +782,7 @@ export default function Order() {
 
           {/* Board */}
           {orders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-300 bg-white py-28 text-center">
+            <div className="pos-empty flex flex-col items-center justify-center gap-3 rounded-3xl py-28 text-center">
               <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
                 <Utensils size={28} className="text-slate-300" />
               </span>
@@ -807,7 +814,7 @@ export default function Order() {
                     </div>
 
                     {column.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 py-12 text-center text-sm text-slate-400">
+                      <div className="pos-empty rounded-2xl py-12 text-center text-sm text-slate-400">
                         {empty}
                       </div>
                     ) : (
@@ -838,6 +845,7 @@ export default function Order() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

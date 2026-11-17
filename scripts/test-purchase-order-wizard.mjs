@@ -40,14 +40,16 @@ assert.match(modal, /\+ Add another/);
 assert.match(modal, /Already added as Material/);
 assert.match(modal, /const QUANTITY_MAX = 100_000/);
 assert.match(modal, /const QUANTITY_PATTERN = \/\^\\d\+\(\?:\\\.\\d\{0,2\}\)\?\$\//);
-assert.match(modal, /Enter a quantity from 1 to 100,000 with up to two decimal places/);
+assert.match(modal, /Enter an equivalent inventory quantity from 1 to 100,000 with up to two decimal places/);
 assert.match(modal, /inputMode="decimal"/);
 assert.match(modal, /blockInvalidNumberKeys\(event, \{ allowDecimal: true \}\)/);
 assert.doesNotMatch(modal, /maxDigits: 3/);
 assert.doesNotMatch(modal, /whole number from 1 to 999/);
 assert.match(modal, /onClick=\{\(\) => setStep\(\(step - 1\) as 1 \| 2\)\}/);
 assert.match(modal, /New to supplier/);
-assert.match(modal, /will be added to this supplier automatically after the PO is successfully created/);
+// The review step flags every material that is new to the chosen supplier
+// (association happens automatically when the PO is created).
+assert.match(modal, /const newAssociation = !supplierProductSet\.has\(normalize\(item\.name\)\)/);
 assert.match(modal, /Stock is not changed when this PO is created/);
 assert.doesNotMatch(modal, /Unit price \(PHP\)/i);
 assert.doesNotMatch(modal, /Expected delivery/i);
@@ -106,7 +108,10 @@ assert.match(receiveModal, /const RECEIPT_NUMBER_PATTERN = \/\^\[A-Za-z0-9\]/);
 assert.match(receiveModal, /const RECEIVED_QUANTITY_MAX = 100_000/);
 assert.match(receiveModal, /const RECEIVED_QUANTITY_PATTERN = \/\^\\d\+\(\?:\\\.\\d\{0,2\}\)\?\$\//);
 assert.match(receiveModal, /Receipt number cannot exceed/);
-assert.match(receiveModal, /Actual received quantity cannot exceed 100,000/);
+assert.match(
+  receiveModal,
+  /Actual received quantity for \$\{invalidQuantity\.name\} must convert to a quantity with up to two decimals/,
+);
 assert.match(receiveModal, /inputMode="decimal"/);
 assert.match(receiveModal, /allowDecimal: true/);
 assert.doesNotMatch(receiveModal, /whole number from 0 to 999/);

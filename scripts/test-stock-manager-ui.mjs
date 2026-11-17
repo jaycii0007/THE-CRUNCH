@@ -36,10 +36,24 @@ for (const [label, variant] of [["Whole Chicken", "whole"], ["Chopped Chicken", 
   assert.equal(categoryStyle(label), `sm-category-badge--${variant}`);
 }
 const css = read("styles/stockManager.css");
-for (const variant of ["slate", "amber", "critical", "info", "indigo"]) {
-  assert.match(css, new RegExp(`\\.sm-kpi-card--${variant}[^}]*background:`));
-}
-assert.match(css, /\.sm-action-btn \{[^}]*color: var\(--sm-primary\)/);
+// The page now uses the warm "Menu Management" palette (see src/pages/inventory.tsx).
+assert.match(css, /--sm-bg:\s*#F2ECE2/);
+assert.match(css, /--sm-surface:\s*#FBF7EF/);
+assert.match(css, /--sm-primary:\s*#1A3A2A/);
+assert.match(css, /--sm-accent:\s*#78512E/);
+assert.match(css, /--sm-critical:\s*#C23B2E/);
+// KPI cards are animated gradient blob cards with inline tones.
+assert.match(css, /\.sm-kpi-card \{/);
+assert.match(css, /\.sm-kpi-wrap \{/);
+assert.match(read("components/KPICard.tsx"), /GradientBlobCard/);
+// Animated smoke atmosphere, same as Menu Management.
+assert.match(css, /\.sm-atmosphere \{/);
+assert.match(css, /hero-smoke\.svg/);
+// Button choreography: sheen sweep + hover lift shared across all buttons.
+assert.match(css, /@keyframes sm-button-highlight/);
+assert.match(css, /\.sm-shell button:enabled:hover \{[^}]*translateY\(-2px\)/);
+// Action buttons follow the warm palette.
+assert.match(css, /\.sm-action-btn \{[^}]*color:\s*var\(--sm-text-muted\)/);
 assert.match(css, /\.sm-action-btn--edit \{/);
 assert.match(css, /\.sm-action-btn--delete \{/);
 assert.match(css, /\.sm-action-btn:focus-visible/);

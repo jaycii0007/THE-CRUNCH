@@ -85,6 +85,14 @@ import {
   SkeletonKPICard,
   SkeletonListItem,
 } from "@/components/ui/skeleton";
+import {
+  Select as RadixSelect,
+  SelectContent as RadixSelectContent,
+  SelectItem as RadixSelectItem,
+  SelectTrigger as RadixSelectTrigger,
+  SelectValue as RadixSelectValue,
+} from "@/components/ui/select";
+import "./cashier-pos.css";
 
 /* ───────────────────────── setup ───────────────────────── */
 
@@ -354,25 +362,24 @@ const Ctx = createContext<{
 }>(null!);
 const useFmt = () => useContext(Ctx);
 
-const btn =
-  "w-full rounded-xl py-3.5 text-sm font-semibold transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-40";
+/* Button map — Menu Management choreography (lift / gloss sweep / press)
+   lives in cashier-pos.css; these classes select the tone. */
+const btn = "pos-btn w-full";
 const B = {
-  dark: `${btn} bg-neutral-900 text-white hover:bg-neutral-800`,
-  green: `${btn} bg-green-600 text-white hover:bg-green-700`,
-  blue: `${btn} bg-sky-600 text-white hover:bg-sky-700`,
-  red: `${btn} bg-red-600 text-white hover:bg-red-700`,
-  ghost: `${btn} bg-neutral-100 text-neutral-600 hover:bg-neutral-200`,
-  slate: `${btn} bg-slate-700 text-white hover:bg-slate-800`,
+  dark: `${btn} pos-btn--primary`,
+  green: `${btn} pos-btn--success`,
+  blue: `${btn} pos-btn--info`,
+  red: `${btn} pos-btn--danger`,
+  ghost: `${btn} pos-btn--ghost`,
+  slate: `${btn} pos-btn--muted`,
 };
-const act =
-  "flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-50";
+const act = "pos-act";
 const ACT = {
-  green: `${act} border-green-600 bg-green-600 text-white`,
-  dark: `${act} border-neutral-900 bg-neutral-900 text-white`,
-  red: `${act} border-red-200 bg-red-50 text-red-600`,
+  green: `${act} pos-act--green`,
+  dark: `${act} pos-act--dark`,
+  red: `${act} pos-act--red`,
 };
-const eyebrow =
-  "text-xs font-semibold uppercase tracking-wider text-neutral-400";
+const eyebrow = "pos-eyebrow";
 
 function Modal({
   show,
@@ -401,7 +408,7 @@ function Modal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 12 }}
             transition={SP}
-            className={`max-h-[92vh] w-full ${max} overflow-y-auto rounded-2xl border border-neutral-200 bg-white shadow-2xl`}
+            className={`pos-modal max-h-[92vh] w-full ${max} overflow-y-auto`}
           >
             {children}
           </motion.div>
@@ -422,7 +429,7 @@ const ModalHead = ({
   tone?: string;
   onClose?: () => void;
 }) => (
-  <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-5 sm:px-6">
+  <div className="pos-modal-head">
     <div>
       <p className={`text-xs font-semibold uppercase tracking-wider ${tone}`}>
         {e}
@@ -430,8 +437,8 @@ const ModalHead = ({
       <p className="text-xl font-bold text-neutral-900">{title}</p>
     </div>
     {onClose && (
-      <button onClick={onClose} className="rounded-lg p-2 hover:bg-neutral-100">
-        <X className="h-5 w-5 text-neutral-400" />
+      <button onClick={onClose} className="pos-close" aria-label="Close">
+        <X className="h-5 w-5" />
       </button>
     )}
   </div>
@@ -470,11 +477,11 @@ function useToast() {
 }
 
 const TONE = {
-  idle: "border-neutral-200 bg-neutral-50 text-neutral-500",
-  green: "border-green-600 bg-green-50 text-green-700",
-  dark: "border-neutral-900 bg-neutral-50 text-neutral-900",
-  amber: "border-amber-400 bg-amber-50 text-orange-700 dark:text-orange-300",
-  red: "border-red-200 bg-red-50 text-red-600",
+  idle: "pos-pill--idle",
+  green: "pos-pill--green",
+  dark: "pos-pill--dark",
+  amber: "pos-pill--amber",
+  red: "pos-pill--red",
 };
 const BADGE = {
   idle: "bg-neutral-400",
@@ -502,7 +509,7 @@ function Pill({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold transition sm:px-4 ${TONE[tone]}`}
+      className={`pos-pill ${TONE[tone]}`}
     >
       {pulse && (
         <span className="h-2 w-2 animate-pulse rounded-full bg-current" />
@@ -532,7 +539,7 @@ const Chip = ({
   className?: string;
 }) => (
   <span
-    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${className}`}
+    className={`pos-chip rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${className}`}
   >
     {children}
   </span>
@@ -549,6 +556,8 @@ const PayBadge = ({ status }: { status?: string | null }) =>
     </Chip>
   );
 
+/* Radix select styled like Menu Management's .menu-dropdown — the native
+   popup is OS-drawn and cannot be themed, so this replaces it everywhere. */
 const Select = ({
   value,
   onChange,
@@ -558,20 +567,27 @@ const Select = ({
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
 }) => (
-  <div className="relative">
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full appearance-none rounded-xl border border-neutral-200 bg-neutral-50 py-2.5 pl-3.5 pr-9 text-sm text-neutral-700 outline-none focus:border-neutral-900"
+  // Radix reserves an empty value. Encode every option so "" never collides.
+  <RadixSelect value={`v:${value}`} onValueChange={(next) => onChange(next.slice(2))}>
+    <RadixSelectTrigger
+      aria-label={options.find((o) => o.value === value)?.label ?? "Select option"}
+      className="pos-select-trigger focus-visible:ring-0"
+    >
+      <RadixSelectValue />
+    </RadixSelectTrigger>
+    <RadixSelectContent
+      position="popper"
+      align="start"
+      collisionPadding={8}
+      className="pos-select-list"
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value}>
+        <RadixSelectItem key={o.value} value={`v:${o.value}`}>
           {o.label}
-        </option>
+        </RadixSelectItem>
       ))}
-    </select>
-    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-  </div>
+    </RadixSelectContent>
+  </RadixSelect>
 );
 
 const Collapse = ({
@@ -680,8 +696,6 @@ const ProductCard = memo(
       isUnavailable(item.availabilityStatus) ||
       getEffectiveMaxQuantity(item.remainingStock) === 0;
     const inCart = quantity > 0;
-    const sageBorder = "border-[#789486]";
-    const sageShadow = "shadow-[0_4px_14px_-2px_rgba(120,148,134,0.15)]";
     return (
       <motion.button
         layout
@@ -690,7 +704,7 @@ const ProductCard = memo(
         whileHover={out ? {} : { y: -2 }}
         whileTap={out ? {} : { scale: 0.98 }}
         transition={{ type: "spring", stiffness: 400, damping: 28 }}
-        className={`relative overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-all duration-200 ease-out ${inCart ? `${sageBorder} ${sageShadow}` : "border-neutral-200 hover:shadow-md"} ${out ? "cursor-not-allowed opacity-50" : ""}`}
+        className={`pos-card${inCart ? " pos-card--incart" : ""}${out ? " pos-card--out" : ""}`}
       >
         <div className="flex aspect-square w-full items-center justify-center overflow-hidden bg-neutral-100">
             <ProductImage
@@ -706,7 +720,7 @@ const ProductCard = memo(
           </span>
         )}
         {inCart && (
-          <span className="absolute right-3 bottom-3 flex h-6 min-w-[26px] items-center justify-center gap-1 rounded-full bg-[#789486] px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+          <span className="pos-card__qty">
             <span aria-hidden="true">×</span>
             <span>{quantity}</span>
           </span>
@@ -811,8 +825,7 @@ const CartRow = memo(
   }) => {
     const { money } = useFmt();
     const max = getEffectiveMaxQuantity(item.remainingStock);
-    const step =
-      "flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white transition active:scale-90 disabled:opacity-40";
+    const step = "pos-step";
     return (
       <motion.div
         layout
@@ -888,9 +901,9 @@ const CartRow = memo(
             <button
               title="Remove"
               onClick={() => onRemove(item.cartKey)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-red-50"
+              className="pos-iconbtn pos-iconbtn--danger"
             >
-              <Trash2 className="h-4 w-4 text-neutral-300 hover:text-red-500" />
+              <Trash2 className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -1384,7 +1397,7 @@ function AmountModal({
             <button
               type="button"
               onClick={() => updateCashInput(amountDue.toFixed(2))}
-              className="mt-2 mb-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600"
+              className="pos-softbtn pos-softbtn--sm mt-2 mb-2"
             >
               Exact Amount
             </button>
@@ -1396,7 +1409,7 @@ function AmountModal({
                   <button
                     key={a}
                     onClick={() => updateCashInput(String(a))}
-                    className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600"
+                    className="pos-softbtn pos-softbtn--sm"
                   >
                     {money(a)}
                   </button>
@@ -1444,7 +1457,7 @@ function AmountModal({
                 <button
                   key={k}
                   onClick={() => press(k)}
-                  className="flex h-14 items-center justify-center rounded-xl border border-neutral-200 bg-white text-lg font-medium transition active:scale-90"
+                  className="pos-key"
                 >
                   {k === "⌫" ? (
                     <Delete className="h-5 w-5 text-neutral-400" />
@@ -1875,8 +1888,7 @@ function HistoryModal({
     ],
     ["Voided", String(voidedCount), "text-red-600"],
   ];
-  const iconBtn =
-    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 transition active:scale-95";
+  const iconBtn = "pos-iconbtn";
 
   return (
     <Modal show={show} max="max-w-xl" onClose={onClose}>
@@ -1890,7 +1902,7 @@ function HistoryModal({
         {stats.map(([l, v, c]) => (
           <div
             key={l}
-            className="rounded-xl border border-neutral-100 bg-neutral-50 p-3 text-center"
+            className="pos-tile rounded-xl border border-neutral-100 bg-neutral-50 p-3 text-center"
           >
             <p className={eyebrow}>{l}</p>
             <p className={`break-words text-lg font-bold sm:text-xl ${c}`}>
@@ -1981,7 +1993,7 @@ function HistoryModal({
                   action &&
                   (action === "refund" ? canRefund : canCancel) && (
                     <button
-                      className={`${iconBtn} !border-red-200 !bg-red-50`}
+                      className={`${iconBtn} pos-iconbtn--danger`}
                       disabled={settlingId === o.id}
                       title={
                         action === "refund" ? "Refund order" : "Void order"
@@ -3111,6 +3123,7 @@ export default function CashierView() {
   return (
     <Ctx.Provider value={fmt}>
       <Sidebar />
+      <div className="pos-scope">
       {!isOnline && (
         <div className="fixed left-1/2 top-3 z-[99999] flex w-max max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-lg">
           <WifiOff className="h-4 w-4 shrink-0" />
@@ -3119,16 +3132,26 @@ export default function CashierView() {
       )}
 
       <div
-        className={`flex bg-white text-neutral-900 ${compact ? "min-h-screen flex-col pt-[72px]" : "h-screen overflow-hidden pl-20"}`}
+        className={`pos-page flex text-neutral-900 ${compact ? "min-h-screen flex-col pt-[72px] pl-[76px] md:pl-[100px]" : "h-screen overflow-hidden pl-[100px]"}`}
         style={{ fontFamily: "'Poppins', sans-serif" }}
       >
+        <div className="pos-atmosphere" aria-hidden="true" />
         {/* ── Menu ── */}
         <section
           className={`flex min-w-0 flex-1 flex-col ${compact ? "" : "overflow-hidden"}`}
         >
           <div className="shrink-0 px-4 pt-6 sm:px-8 sm:pt-7">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <h1 className="text-2xl font-semibold">Menu</h1>
+            <motion.div
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35 }}
+              className="mb-5 flex flex-wrap items-center justify-between gap-3"
+            >
+              <div>
+                <span className="pos-wordmark">The Crunch</span>
+                <h1 className="text-2xl font-semibold tracking-tight">Menu</h1>
+                <p className="pos-subtitle">Cashier point of sale</p>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Pill onClick={() => setShowHistory(true)}>
                   <History className="h-4 w-4" />
@@ -3153,10 +3176,10 @@ export default function CashierView() {
                   Delivery Handover
                 </Pill>
               </div>
-            </div>
+            </motion.div>
 
             <Collapse open={notifOpen}>
-              <div className="rounded-2xl border border-green-200 bg-green-50/40">
+              <div className="pos-panel rounded-2xl border border-green-200 bg-green-50/40">
                 {!onlineCount && (
                   <Empty>
                     No online pickup orders waiting for cashier action
@@ -3235,7 +3258,7 @@ export default function CashierView() {
             </Collapse>
 
             <Collapse open={deliveryOpen}>
-              <div className="rounded-2xl border border-neutral-200 bg-neutral-50/60">
+              <div className="pos-panel rounded-2xl border border-neutral-200 bg-neutral-50/60">
                 {!deliveryCount && (
                   <Empty>No delivery orders waiting for rider handover</Empty>
                 )}
@@ -3295,7 +3318,7 @@ export default function CashierView() {
                 <button
                   key={c}
                   onClick={() => setCategory(c)}
-                  className={`shrink-0 whitespace-nowrap rounded-full border px-5 py-2 text-sm font-medium capitalize transition ${category === c ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:border-neutral-400"}`}
+                  className={`pos-cat shrink-0 whitespace-nowrap rounded-full px-5 py-2 text-sm font-medium capitalize transition ${category === c ? "pos-cat--active" : ""}`}
                 >
                   {c === "ALL" ? "All items" : c.toLowerCase()}
                 </button>
@@ -3329,7 +3352,7 @@ export default function CashierView() {
                 <p className="text-red-400">{productsError}</p>
                 <button
                   onClick={() => void loadProducts()}
-                  className="mt-1 flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-600"
+                  className="pos-softbtn pos-softbtn--sm mt-1"
                 >
                   <RotateCcw className="h-4 w-4" />
                   Retry
@@ -3361,7 +3384,7 @@ export default function CashierView() {
 
         {/* ── Cart ── */}
         <aside
-          className={`flex shrink-0 flex-col bg-white ${compact ? "w-full border-t" : "w-[400px] border-l"} border-neutral-100`}
+          className={`pos-cart flex shrink-0 flex-col ${compact ? "w-full border-t" : "w-[400px] border-l"} border-neutral-100`}
         >
           <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-5 sm:px-6 sm:py-6">
             <div>
@@ -3377,7 +3400,7 @@ export default function CashierView() {
                 onClick={() => setShowVoidConfirm(true)}
                 title="Void current order"
                 style={{ marginRight: compact ? 0 : 80 }}
-                className="flex h-10 items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700"
+                className="pos-act pos-act--red"
               >
                 <Ban className="h-4 w-4" />
                 Void
@@ -3583,7 +3606,7 @@ export default function CashierView() {
                 <button
                   type="button"
                   onClick={() => setShowDiscounts(true)}
-                  className="mb-2 flex w-full items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-700 transition hover:border-neutral-400"
+                  className="pos-softbtn w-full justify-between mb-2 text-sm"
                 >
                   <span className="flex items-center gap-2 font-semibold">
                     <Percent className="h-4 w-4 text-green-600" />
@@ -3635,7 +3658,7 @@ export default function CashierView() {
               {checkoutStep === 1 ? (
                 <button
                   type="button"
-                  className={`${B.dark} flex items-center justify-center gap-2 py-4 text-base`}
+                  className={`${B.dark} pos-btn--lg`}
                   onClick={() => setCheckoutStep(2)}
                 >
                   Continue to Payment
@@ -3645,12 +3668,12 @@ export default function CashierView() {
                   <button
                     type="button"
                     onClick={() => setCheckoutStep(1)}
-                    className="rounded-xl border border-neutral-200 px-4 py-3 text-sm font-semibold text-neutral-600"
+                    className="pos-btn pos-btn--ghost text-sm font-semibold"
                   >
                     Back
                   </button>
                   <button
-                    className={`${isOnline ? B.green : B.dark} flex items-center justify-center gap-2 py-4 text-base`}
+                    className={`${isOnline ? B.green : B.dark} pos-btn--lg`}
                     disabled={
                       placing || loadingPaymentQr || !isOnline || !customerType
                     }
@@ -3826,7 +3849,7 @@ export default function CashierView() {
                 initial={{ opacity: 0, y: 16, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className={`pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg ${c}`}
+                className={`pos-toast pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 ${c}`}
               >
                 <I className="mt-0.5 h-4 w-4 shrink-0" />
                 <p className="flex-1 text-sm font-medium text-neutral-900">
@@ -3839,6 +3862,7 @@ export default function CashierView() {
             );
           })}
         </AnimatePresence>
+      </div>
       </div>
     </Ctx.Provider>
   );

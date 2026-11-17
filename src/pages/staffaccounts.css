@@ -1,0 +1,656 @@
+/* ========================================================================== */
+/* STAFF ACCOUNTS — Menu Management design system                             */
+/* Same warm cream palette, enhanced neumorphism, animated smoke atmosphere,  */
+/* and button choreography as inventory.tsx / inventory.css.                  */
+/* ========================================================================== */
+
+.sa-page {
+  isolation: isolate;
+  position: relative;
+  /* Enhanced neumorphism — identical recipe to Menu Management / Settings. */
+  --sa-raised: inset 1.5px 1.5px 2px #ffffff, inset -1.5px -1.5px 3px #caba9d59, -4px -4px 10px #fffdf8, 2px 5px 6px -2px #66513a5c, 6px 12px 24px -10px #66513a6b, 14px 28px 52px -20px #66513a52;
+  --sa-control: inset 0 1px 1px #ffffff7a, inset -1px -1px 2px #caba9d4d, -2px -2px 6px #fffdf8, 1px 2px 3px #63503940, 2px 6px 10px -4px #6350395c, 5px 12px 22px -9px #66513a52;
+  --sa-inset: inset 2px 3px 6px #76624740, inset -1px -1px 1px #fffdf8f2, 0 1px 0 #fffdf7;
+  background: #f2ece2;
+  color: #1c1b17;
+  font-family: "Poppins", sans-serif;
+}
+
+/* -------------------------------------------------------------------------- */
+/* ANIMATED BACKGROUND — the Menu Management atmosphere, verbatim             */
+/* -------------------------------------------------------------------------- */
+
+/* The fixed layer clips both plumes before their transforms reach the page edges. */
+.sa-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 100% 105%, #d39b5254, transparent 42%),
+    radial-gradient(ellipse at -12% -10%, #34322f59, transparent 46%),
+    radial-gradient(ellipse at 112% 0%, #524b4238, transparent 38%);
+}
+.sa-atmosphere::before,
+.sa-atmosphere::after {
+  content: "";
+  position: absolute;
+  width: clamp(12rem, 24vw, 28rem);
+  height: 90%;
+  background: url("/img/hero-smoke.svg") center / 100% 100% no-repeat;
+  filter: brightness(0.77);
+  transform-origin: center bottom;
+}
+.sa-atmosphere::before {
+  left: -4rem;
+  top: -7%;
+  opacity: 0.72;
+}
+.sa-atmosphere::after {
+  right: -5rem;
+  bottom: -12%;
+  opacity: 0.86;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sa-atmosphere::before {
+    animation: sa-far-smoke 19s ease-in-out -8s infinite alternate;
+  }
+  .sa-atmosphere::after {
+    animation: sa-near-smoke 13s ease-in-out -4s infinite alternate;
+  }
+}
+@keyframes sa-far-smoke {
+  from {
+    transform: translate(-4%, 4%) rotate(-4deg) scale(0.96);
+  }
+  to {
+    transform: translate(5%, -6%) rotate(3deg) scale(1.08);
+  }
+}
+@keyframes sa-near-smoke {
+  from {
+    transform: translate(5%, 6%) skewX(3deg) scale(0.94);
+  }
+  to {
+    transform: translate(-6%, -9%) skewX(-5deg) scale(1.13);
+  }
+}
+@media (max-width: 46rem) {
+  .sa-atmosphere {
+    opacity: 0.52;
+  }
+  .sa-atmosphere::before {
+    left: -6rem;
+  }
+  .sa-atmosphere::after {
+    right: -7rem;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* LAYOUT                                                                      */
+/* -------------------------------------------------------------------------- */
+
+.sa-shell {
+  max-width: 94rem;
+  margin-inline: auto;
+}
+
+.sa-wordmark {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding-bottom: 2px;
+  border-bottom: 3px solid #c9a84c;
+  color: #242320;
+  font-size: 14px;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+
+.sa-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 26px;
+}
+
+.sa-title {
+  margin: 0;
+  color: #1c1b17;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.sa-subtitle {
+  margin: 4px 0 0;
+  max-width: 560px;
+  color: #655e52;
+  font-size: 13px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* STATS — GradientBlobCard grid (same as Menu Management KPI cards)           */
+/* -------------------------------------------------------------------------- */
+
+.sa-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* FILTERS — inset controls like .menu-dropdown-trigger                        */
+/* -------------------------------------------------------------------------- */
+
+.sa-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 640px) {
+  .sa-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sa-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #8a8172;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.sa-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 1.5px solid #ddd3c4;
+  border-radius: 12px;
+  background: #f5efe5;
+  color: #1c1b17;
+  font-family: inherit;
+  font-size: 13px;
+  box-shadow: var(--sa-inset);
+  transition:
+    border-color 160ms ease-out,
+    box-shadow 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.sa-input::placeholder {
+  color: #a89e8c;
+}
+
+.sa-input:focus {
+  outline: none;
+  border-color: #78512e;
+  background: #fbf7ef;
+  box-shadow: 0 0 0 4px #e9dfcf;
+}
+
+.sa-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* -------------------------------------------------------------------------- */
+/* SELECT — Radix dropdown, same recipe as .menu-dropdown-trigger/list         */
+/* (The native popup is OS-drawn and unstyleable, so the page uses Radix.)     */
+/* -------------------------------------------------------------------------- */
+
+.sa-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding-inline: 14px;
+  border: 1.5px solid #ddd3c4;
+  border-radius: 12px;
+  background: #f5efe5;
+  color: #1c1b17;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: var(--sa-inset);
+  outline: none;
+  transition:
+    border-color 160ms ease-out,
+    box-shadow 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.sa-select-trigger:hover {
+  border-color: #cdbfa8;
+}
+
+.sa-select-trigger:focus-visible {
+  outline: 2px solid #416752;
+  outline-offset: 2px;
+}
+
+.sa-select-trigger[data-state="open"] {
+  border-color: #78512e;
+  background: #fbf7ef;
+  box-shadow: 0 0 0 4px #e9dfcf;
+}
+
+.sa-select-trigger > svg {
+  transition: transform 160ms ease;
+}
+
+.sa-select-trigger[data-state="open"] > svg {
+  transform: rotate(180deg);
+}
+
+.sa-select-list {
+  z-index: 450;
+  width: var(--radix-select-trigger-width);
+  max-height: min(19rem, var(--radix-select-content-available-height));
+  border: 1px solid #d6cab8;
+  border-radius: 14px;
+  background: #fcf9f2;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 4px 8px -4px #42321f45,
+    0 16px 34px -12px #42321f6b,
+    0 30px 60px -24px #42321f52;
+  color: #302e28;
+  font-family: "Poppins", sans-serif;
+}
+
+.sa-select-list [data-radix-select-viewport] {
+  padding: 5px;
+}
+
+.sa-select-list [role="option"] {
+  min-height: 40px;
+  padding-left: 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.sa-select-list [data-state="checked"] {
+  background: #e9eee6;
+  color: #224333;
+  font-weight: 600;
+}
+
+.sa-select-list [data-highlighted] {
+  background: #eee6d8;
+  color: #2e2a23;
+}
+
+.sa-field {
+  margin-bottom: 14px;
+}
+
+.sa-field .sa-input {
+  padding-right: 14px;
+}
+
+.sa-field--password .sa-input {
+  padding-right: 40px;
+}
+
+.sa-reveal {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #8a8172;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 160ms ease-out, color 160ms ease-out;
+}
+
+.sa-reveal:hover {
+  background: #ece4d5;
+  color: #1c1b17;
+}
+
+/* -------------------------------------------------------------------------- */
+/* BUTTONS — Menu Management choreography: lift, sweep, press                  */
+/* -------------------------------------------------------------------------- */
+
+.sa-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms ease-out,
+    background-color 160ms ease-out,
+    color 160ms ease-out,
+    border-color 160ms ease-out;
+}
+
+/* Gloss sweep on hover, like .menu-button::after. */
+.sa-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 20%, #ffffff30 50%, transparent 80%) -100% 0 / 45% 100% no-repeat;
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .sa-btn:not(:disabled):hover::after {
+    animation: sa-btn-highlight 440ms ease-out both;
+  }
+}
+
+@keyframes sa-btn-highlight {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sa-btn:not(:disabled):hover {
+    transform: translateY(-2px);
+  }
+}
+
+.sa-btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.sa-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Primary: the charcoal gradient of the app's main actions. */
+.sa-btn--primary {
+  color: #fbf7ef;
+  background: linear-gradient(180deg, #393835, #242320);
+  border-color: #302e2a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    2px 4px 10px -4px #24232066,
+    4px 8px 18px -8px #66513a59;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sa-btn--primary:not(:disabled):hover {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      -2px -2px 6px #fffdf880,
+      4px 9px 20px -8px #24232073,
+      8px 16px 30px -12px #66513a52;
+  }
+}
+
+.sa-btn--primary:not(:disabled):active {
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.38);
+}
+
+/* Ghost: cream raised control (Cancel). */
+.sa-btn--ghost {
+  color: #655e52;
+  background: linear-gradient(180deg, #fffdf7, #f6efe2);
+  border-color: #e3d8c6;
+  box-shadow: var(--sa-control);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sa-btn--ghost:not(:disabled):hover {
+    color: #1c1b17;
+    box-shadow:
+      inset 0 1px 1px #ffffff,
+      inset -1px -1px 2px #caba9d4d,
+      -3px -3px 8px #fffdf8,
+      2px 6px 10px -4px #6350395c,
+      5px 12px 22px -9px #66513a52;
+  }
+}
+
+.sa-btn--ghost:not(:disabled):active {
+  box-shadow: var(--sa-inset);
+}
+
+/* Danger outline (Remove) — warm red, soft tint on hover. */
+.sa-btn--danger {
+  color: #c23b2e;
+  background: transparent;
+  border-color: #f1c9c4;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sa-btn--danger:not(:disabled):hover {
+    background: #fbeae8;
+    border-color: #e9b4ac;
+    box-shadow: 2px 5px 10px -5px #c23b2e4d;
+  }
+}
+
+.sa-btn--danger:not(:disabled):active {
+  box-shadow: inset 1px 2px 4px #c23b2e2e;
+}
+
+.sa-btn--sm {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 11.5px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* TABLE — warm raised register card                                           */
+/* -------------------------------------------------------------------------- */
+
+.sa-table-card {
+  margin-bottom: 40px;
+  overflow-x: auto;
+  border: 1px solid #e3d8c6;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbf7ef, #f5efe5);
+  box-shadow: var(--sa-raised);
+}
+
+.sa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sa-table th {
+  padding: 14px 18px;
+  border-bottom: 1px solid #e8dfd0;
+  background: rgba(255, 253, 247, 0.6);
+  color: #a69b87;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.sa-table td {
+  padding: 14px 18px;
+  border-bottom: 1px solid #efe7d9;
+  vertical-align: middle;
+}
+
+.sa-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sa-table tbody tr {
+    transition: background-color 160ms ease-out;
+  }
+  .sa-table tbody tr:hover {
+    background: #faf6ee;
+  }
+}
+
+.sa-row-index {
+  width: 34px;
+  color: #b5ab97;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-employee {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: #1c1b17;
+}
+
+.sa-email {
+  color: #8a8172;
+}
+
+.sa-empty {
+  padding: 64px 20px;
+  color: #b5ab97;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Avatar sits in a cream ring with a soft drop, like .attention-photo. */
+.sa-avatar {
+  border: 2px solid #faf5e9;
+  box-shadow:
+    -1px -2px 3px #fffdf9,
+    2px 3px 4px #5a452d3b;
+}
+
+/* Role chip: soft pastel with a tinted hairline border. */
+.sa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* -------------------------------------------------------------------------- */
+/* MODAL — cream raised dialog over a warm dim                                */
+/* -------------------------------------------------------------------------- */
+
+.sa-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(28, 27, 23, 0.28);
+  backdrop-filter: blur(3px);
+}
+
+.sa-modal {
+  width: 100%;
+  max-width: 380px;
+  padding: 26px;
+  border: 1px solid #dfd8c9;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #fffdf7, #f7f2e8);
+  box-shadow:
+    inset 1.5px 1.5px 2px #ffffff,
+    inset -1.5px -1.5px 3px #caba9d45,
+    0 40px 90px -20px rgba(28, 27, 23, 0.35),
+    0 16px 40px -14px rgba(28, 27, 23, 0.18);
+}
+
+.sa-modal-title {
+  margin: 0 0 18px;
+  color: #1c1b17;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sa-error {
+  margin: 4px 0 6px;
+  color: #c23b2e;
+  font-size: 11.5px;
+}
+
+.sa-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.sa-modal-actions .sa-btn {
+  flex: 1;
+}
+
+/* -------------------------------------------------------------------------- */
+/* ACCESSIBILITY & MOTION SAFETY                                              */
+/* -------------------------------------------------------------------------- */
+
+.sa-page :is(button, select, input, textarea):focus-visible {
+  outline: 2px solid #416752;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-btn,
+  .sa-input,
+  .sa-reveal {
+    transition: none !important;
+    animation: none !important;
+  }
+  .sa-select-trigger > svg,
+  .sa-select-list {
+    transition: none !important;
+    animation: none !important;
+  }
+  .sa-btn:not(:disabled):hover,
+  .sa-btn:not(:disabled):active {
+    transform: none;
+  }
+}
+
+@media print {
+  .sa-atmosphere {
+    display: none;
+  }
+}

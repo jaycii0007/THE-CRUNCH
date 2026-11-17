@@ -1,25 +1,20 @@
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  Menu,
-  X,
   LayoutDashboard,
-  ShoppingCart,
+  ChefHat,
+  BookOpenText,
   UtensilsCrossed,
-  BookOpen,
   Package,
-  Users,
-  BarChart2,
+  BarChart3,
+  UsersRound,
   Settings,
   LogOut,
   UserRound,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Button } from "@/components/ui/button";
+import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuth } from "../context/authcontext";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { useViewport } from "@/hooks/use-tablet";
 import {
   fetchPermissions,
   hasPagePermission,
@@ -34,13 +29,16 @@ import {
   GENERAL_SETTINGS_EVENT,
 } from "@/lib/restaurantSettings";
 import { InventoryNotificationCenter } from "@/components/InventoryNotificationCenter";
+import "./sidebar-dock.css";
 
 /*
- * Slide-in navigation menu for staff users.
- * Which links appear depends on the permissions the API returns for the
- * signed-in role. The menu shows right away from the last loaded permissions
- * (kept in memory) or the defaults, then updates when the API responds.
- * Nothing is stored in the browser.
+ * Persistent floating navigation dock for staff users.
+ * Always visible on every page and device — no hamburger, no backdrop.
+ * Slim segmented neumorphic rail with an animated Menu Management smoke glow
+ * behind it. Which links appear depends on the permissions the API returns for
+ * the signed-in role. The dock shows right away from the last loaded
+ * permissions (kept in memory) or the defaults, then updates when the API
+ * responds. Nothing is stored in the browser.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -56,8 +54,6 @@ interface SidebarItem {
   icon: ElementType;
 }
 
-const TABLET_BREAKPOINT = 1100;
-
 const ROLE_LABELS: Record<Role, string> = {
   administrator: "Administrator",
   cashier: "Cashier",
@@ -65,7 +61,7 @@ const ROLE_LABELS: Record<Role, string> = {
   customer: "Customer",
 };
 
-// Every link the sidebar can show, in display order.
+// Every link the dock can show, in display order.
 const SIDEBAR_ITEMS: SidebarItem[] = [
   {
     label: "Overview",
@@ -77,13 +73,13 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
     label: "Cook View",
     path: "/orders",
     permissionKey: "orders",
-    icon: ShoppingCart,
+    icon: ChefHat,
   },
   {
     label: "Cashier View",
     path: "/menu",
     permissionKey: "menus",
-    icon: BookOpen,
+    icon: BookOpenText,
   },
   {
     label: "Menu Management",
@@ -101,13 +97,13 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
     label: "Sales & Reports",
     path: "/sales-reports",
     permissionKey: "salesReports",
-    icon: BarChart2,
+    icon: BarChart3,
   },
   {
     label: "User Accounts",
     path: "/users",
     permissionKey: "userAccounts",
-    icon: Users,
+    icon: UsersRound,
   },
   {
     label: "Settings",
@@ -117,12 +113,15 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   },
 ];
 
+/* One-time entrance: the dock slides in on the first page after login only. */
+let dockIntroduced = false;
+
 /* -------------------------------------------------------------------------- */
 /* Data hooks                                                                 */
 /* -------------------------------------------------------------------------- */
 
 // Role permissions. Starts from the last loaded copy (kept in memory) or the defaults,
-// so the menu shows right away, then updates when the API responds.
+// so the dock shows right away, then updates when the API responds.
 function usePermissions(enabled: boolean) {
   const [permissions, setPermissions] = useState<PermissionsMap>(
     readCachedPermissions,
@@ -195,16 +194,9 @@ function useRestaurantName() {
 /* -------------------------------------------------------------------------- */
 
 export function Sidebar() {
-  const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const { user, logout, isOnline } = useAuth();
-  const isMobile = useIsMobile();
-  const { width } = useViewport();
-  const isTablet = width < TABLET_BREAKPOINT;
-
-  // Picks a value based on screen size: mobile, tablet or desktop.
-  const byScreen = <T,>(mobile: T, tablet: T, desktop: T) =>
-    isMobile ? mobile : isTablet ? tablet : desktop;
+  const reduceMotion = useReducedMotion();
 
   const role = normalizeRole(
     String(user?.role || "")
@@ -236,280 +228,167 @@ export function Sidebar() {
   const primaryItems = visibleItems.filter((item) => item.path !== "/settings");
   const settingsItems = visibleItems.filter((item) => item.path === "/settings");
 
-  const closeSidebar = () => setIsOpen(false);
+  // Every staff page reserves the dock gutter so content never overlaps it.
+  useEffect(() => {
+    if (!staffRole) return;
+    document.body.classList.add("has-crunch-dock");
+    return () => {
+      document.body.classList.remove("has-crunch-dock");
+    };
+  }, [staffRole]);
 
   const handleLogout = () => {
     logout();
-    closeSidebar();
     navigate("/");
   };
 
-  const iconSize = isMobile ? "w-5 h-5" : "w-4 h-4";
+  if (!staffRole || !user) return null;
+
+  // Cream tile that glides to whichever destination is active.
+  const activeTile = (
+    <motion.span
+      layoutId="crunch-dock-active"
+      className="crunch-dock__active"
+      transition={
+        reduceMotion
+          ? { duration: 0 }
+          : { type: "spring", stiffness: 480, damping: 36 }
+      }
+    />
+  );
+
+  const dockItemClass = ({ isActive }: { isActive: boolean }) =>
+    cn("crunch-dock__item", isActive && "crunch-dock__item--on");
+
+  const renderNavItem = ({ label, path, icon: Icon }: SidebarItem) => (
+    <NavLink key={path} to={path} end className={dockItemClass} aria-label={label}>
+      {({ isActive }) => (
+        <>
+          {isActive && activeTile}
+          <Icon
+            className="crunch-dock__icon"
+            strokeWidth={isActive ? 2.2 : 1.9}
+            aria-hidden="true"
+          />
+          <span className="crunch-dock__tip">{label}</span>
+        </>
+      )}
+    </NavLink>
+  );
+
   const profileLink = (
     <NavLink
       to="/my-account"
       end
-      onClick={closeSidebar}
-      aria-label="Open My Profile"
-      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
+      aria-label={`Open My Profile for ${user.username}`}
+      className={({ isActive }) =>
+        cn(
+          "crunch-dock__item focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#78512E]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5EFE5]",
+          isActive && "crunch-dock__item--on",
+        )
+      }
     >
       {({ isActive }) => (
-        <Button
-          variant="ghost"
-          className={cn(
-            "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5 gap-3 h-auto",
-            isActive
-              ? "bg-gray-100 text-black font-semibold"
-              : "text-gray-500 hover:text-black hover:bg-gray-50",
-            isMobile && "py-3 text-base",
-          )}
-        >
+        <>
+          {isActive && activeTile}
           <UserRound
-            className={cn("flex-shrink-0", iconSize)}
-            strokeWidth={isActive ? 2.2 : 1.8}
+            className="crunch-dock__icon"
+            strokeWidth={isActive ? 2.2 : 1.9}
+            aria-hidden="true"
           />
-          <span>My Profile</span>
-        </Button>
+          <span
+            aria-hidden="true"
+            className={cn(
+              "crunch-dock__presence",
+              isOnline ? "crunch-dock__presence--on" : "crunch-dock__presence--off",
+            )}
+          />
+          <span className="crunch-dock__tip">My Profile</span>
+        </>
       )}
     </NavLink>
   );
 
   return (
     <>
-      {staffRole && user && (
-        <div style={{ maxWidth: "calc(100vw - 6rem)" }} className="fixed right-4 top-4 z-40 flex items-center gap-1 rounded-2xl border border-[#dcd3c4] bg-[#faf7f0] p-1 shadow-[inset_0_1px_1px_#fff,0_2px_3px_#44351f1c,2px_6px_16px_-5px_#44351f40] font-['Poppins',sans-serif] sm:right-6 sm:top-6">
-          <NavLink
-            to="/my-account"
-            aria-label={`Open My Profile for ${user.username}`}
-            title="Open My Profile"
-            className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 text-[#27251f] transition-colors hover:bg-[#eee8dc] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#685536] sm:pr-3"
-          >
-            <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#eee8dd] shadow-[inset_1px_1px_3px_#63523822,inset_-1px_-1px_2px_#fff]">
-              <UserRound className="size-4" strokeWidth={1.7} />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-[13px] font-semibold leading-tight">{user.username}</span>
-              <span className="block truncate text-[11px] font-medium leading-tight text-[#665f53]">{ROLE_LABELS[staffRole]}</span>
-            </span>
-          </NavLink>
-          <InventoryNotificationCenter role={role} embedded />
-        </div>
-      )}
-      {/* Menu / close toggle */}
-      <motion.button
-        onClick={() => setIsOpen((open) => !open)}
-        className={cn(
-          "fixed z-50 p-3 bg-white rounded-xl shadow-lg",
-          byScreen("top-4 left-4", "top-5 left-5", "top-6 left-6"),
-        )}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        aria-label={isOpen ? "Close menu" : "Open menu"}
+      {/* Top-right identity + notifications pill */}
+      <div style={{ maxWidth: "calc(100vw - 6rem)" }} className="fixed right-4 top-4 z-40 flex items-center gap-1 rounded-2xl border border-[#dcd3c4] bg-[#faf7f0] p-1 shadow-[inset_1px_1px_2px_#fff,-3px_-3px_8px_#fffdf8,0_2px_3px_#44351f26,2px_6px_16px_-5px_#44351f59,10px_22px_44px_-16px_#44351f4d] font-['Poppins',sans-serif] sm:right-6 sm:top-6">
+        <NavLink
+          to="/my-account"
+          aria-label={`Open My Profile for ${user.username}`}
+          title="Open My Profile"
+          className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 text-[#27251f] transition-colors hover:bg-[#eee8dc] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#685536] sm:pr-3"
+        >
+          <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#eee8dd] shadow-[inset_1px_1px_3px_#63523838,inset_-1px_-1px_2px_#fff,0_2px_5px_-2px_#63523833]">
+            <UserRound className="size-4" strokeWidth={1.7} />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-semibold leading-tight">{user.username}</span>
+            <span className="block truncate text-[11px] font-medium leading-tight text-[#665f53]">{ROLE_LABELS[staffRole]}</span>
+          </span>
+        </NavLink>
+        <InventoryNotificationCenter role={role} embedded />
+      </div>
+
+      {/* Menu Management smoke glow, behind the dock */}
+      <div aria-hidden="true" className="crunch-dock-smoke" />
+
+      {/* Persistent command dock */}
+      <motion.div
+        role="navigation"
+        aria-label="Main navigation"
+        className="crunch-dock"
+        initial={
+          dockIntroduced || reduceMotion
+            ? false
+            : { x: -110, opacity: 0 }
+        }
+        animate={{ x: 0, opacity: 1 }}
+        transition={
+          reduceMotion
+            ? { duration: 0 }
+            : { type: "spring", stiffness: 260, damping: 26 }
+        }
+        onAnimationComplete={() => {
+          dockIntroduced = true;
+        }}
       >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={isOpen ? "close" : "menu"}
-            initial={{ rotate: isOpen ? -90 : 90, opacity: 0 }}
-            animate={{ rotate: 0, opacity: 1 }}
-            exit={{ rotate: isOpen ? 90 : -90, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+        {/* Brand pill */}
+        <NavLink
+          to="/"
+          end
+          aria-label="Home"
+          title={restaurantName || "The Crunch"}
+          className="crunch-dock__logo focus-visible:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#78512E]"
+        >
+          <img src="/img/logo24.webp" alt="" aria-hidden="true" />
+        </NavLink>
+
+        {/* Primary destinations */}
+        <nav className="crunch-dock__segment crunch-dock__nav" aria-label="Pages">
+          {primaryItems.map(renderNavItem)}
+        </nav>
+
+        {/* Profile */}
+        <div className="crunch-dock__segment">{profileLink}</div>
+
+        {/* Pushes the footer cluster to the bottom of the viewport */}
+        <span aria-hidden="true" className="crunch-dock__spacer" />
+
+        {/* Foot: settings + log out */}
+        <div className="crunch-dock__segment crunch-dock__foot">
+          {settingsItems.map(renderNavItem)}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="crunch-dock__item crunch-dock__item--logout"
+            aria-label="Log Out"
           >
-            {isOpen ? (
-              <X
-                className={cn(isMobile ? "w-5 h-5" : "w-6 h-6", "text-black")}
-              />
-            ) : (
-              <Menu
-                className={cn(isMobile ? "w-5 h-5" : "w-6 h-6", "text-black")}
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </motion.button>
-
-      {/* Dimmed backdrop, click to close */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 backdrop-blur-sm bg-black/20 z-40"
-            onClick={closeSidebar}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Sidebar panel */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.aside
-            initial={{ x: -288, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -288, opacity: 0 }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className={cn(
-              "fixed top-0 left-0 h-full bg-white p-6 flex flex-col shadow-2xl z-50",
-              byScreen("w-full max-w-[85vw]", "w-[22rem] max-w-[78vw]", "w-72"),
-            )}
-            style={{ fontFamily: "Poppins, sans-serif" }}
-          >
-            {/* Restaurant name */}
-            <motion.div
-              className="flex items-center justify-center mb-6 mt-8"
-              initial={{ y: -20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.1 }}
-            >
-              <span
-                className={cn(
-                  "font-bold text-black",
-                  isMobile ? "text-xl" : "text-2xl",
-                )}
-              >
-                {restaurantName}
-              </span>
-            </motion.div>
-
-            {/* Signed-in user: online status, name and role */}
-            {user && (
-              <motion.div
-                className="flex flex-col gap-1 mb-6 px-2"
-                initial={{ y: -10, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.18 }}
-              >
-                <NavLink
-                  to="/my-account"
-                  onClick={closeSidebar}
-                  aria-label={`Open My Profile for ${user.username}`}
-                  title="Open My Profile"
-                  className="group -mx-2 rounded-lg px-2 py-1 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "w-2.5 h-2.5 rounded-full flex-shrink-0",
-                        isOnline ? "bg-green-400" : "bg-gray-300",
-                      )}
-                    />
-                    <span className="truncate text-sm font-semibold text-gray-900 group-hover:underline">
-                      {user.username}
-                    </span>
-                  </div>
-                  <span className="block pl-[18px] text-xs text-gray-400">
-                    {role ? ROLE_LABELS[role] : user.role}
-                  </span>
-                </NavLink>
-              </motion.div>
-            )}
-
-            <div className="h-px bg-gray-100 mb-4" />
-
-            <div className="text-xs text-gray-400 mb-4 uppercase tracking-wider font-medium px-2">
-              Navigation
-            </div>
-
-            {/* Navigation links (scrollable, scrollbar hidden) */}
-            <nav
-              className={cn(
-                "flex-1 space-y-1 overflow-y-auto",
-                "[&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]",
-              )}
-            >
-              {primaryItems.map(({ label, path, icon: Icon }, index) => (
-                <NavLink key={path} to={path} end onClick={closeSidebar}>
-                  {({ isActive }) => (
-                    <motion.div
-                      initial={{ x: -16, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      transition={{ delay: 0.1 + index * 0.045 }}
-                    >
-                      <Button
-                        variant="ghost"
-                        className={cn(
-                          "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5 gap-3 h-auto",
-                          isActive
-                            ? "bg-gray-100 text-black font-semibold"
-                            : "text-gray-500 hover:text-black hover:bg-gray-50",
-                          isMobile && "py-3 text-base",
-                        )}
-                      >
-                        <Icon
-                          className={cn(
-                            "flex-shrink-0 transition-colors duration-200",
-                            iconSize,
-                            isActive ? "text-black" : "text-gray-400",
-                          )}
-                          strokeWidth={isActive ? 2.2 : 1.8}
-                        />
-                        <span className="truncate">{label}</span>
-                      </Button>
-                    </motion.div>
-                  )}
-                </NavLink>
-              ))}
-              {profileLink}
-              {settingsItems.map(({ label, path, icon: Icon }, index) => (
-                <NavLink key={path} to={path} end onClick={closeSidebar}>
-                  {({ isActive }) => (
-                    <motion.div
-                      initial={{ x: -16, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      transition={{ delay: 0.1 + (primaryItems.length + index + 1) * 0.045 }}
-                    >
-                      <Button
-                        variant="ghost"
-                        className={cn(
-                          "w-full justify-start rounded-xl text-sm transition-all duration-200 px-4 py-2.5 gap-3 h-auto",
-                          isActive
-                            ? "bg-gray-100 text-black font-semibold"
-                            : "text-gray-500 hover:text-black hover:bg-gray-50",
-                          isMobile && "py-3 text-base",
-                        )}
-                      >
-                        <Icon
-                          className={cn(
-                            "flex-shrink-0 transition-colors duration-200",
-                            iconSize,
-                            isActive ? "text-black" : "text-gray-400",
-                          )}
-                          strokeWidth={isActive ? 2.2 : 1.8}
-                        />
-                        <span className="truncate">{label}</span>
-                      </Button>
-                    </motion.div>
-                  )}
-                </NavLink>
-              ))}
-            </nav>
-
-            {/* Log out */}
-            <motion.div
-              className="mt-6 pt-6 border-t border-gray-100"
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ delay: 0.45 }}
-            >
-              <Button
-                variant="ghost"
-                className={cn(
-                  "w-full justify-start rounded-xl text-sm text-gray-500 transition-all duration-200 px-4 py-2.5 gap-3 h-auto hover:bg-red-50 hover:text-red-500",
-                  isMobile && "py-3 text-base",
-                )}
-                onClick={handleLogout}
-              >
-                <LogOut
-                  className={cn("flex-shrink-0 text-gray-400", iconSize)}
-                  strokeWidth={1.8}
-                />
-                <span>Log Out</span>
-              </Button>
-            </motion.div>
-          </motion.aside>
-        )}
-      </AnimatePresence>
+            <LogOut className="crunch-dock__icon" strokeWidth={1.9} aria-hidden="true" />
+            <span className="crunch-dock__tip">Log Out</span>
+          </button>
+        </div>
+      </motion.div>
     </>
   );
 }

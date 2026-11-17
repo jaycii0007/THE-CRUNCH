@@ -41,8 +41,8 @@ assert.doesNotMatch(staffAccounts, /role:\s*"cook"/);
 assert.match(sidebar, /to="\/my-account"/);
 assert.equal(
   (sidebar.match(/to="\/my-account"/g) ?? []).length,
-  3,
-  "navbar nametag, sidebar nametag, and My Profile item must share the authenticated profile route",
+  2,
+  "top-right nametag and the dock's My Profile item must share the authenticated profile route",
 );
 assert.match(sidebar, /aria-label=\{`Open My Profile for \$\{user\.username\}`\}/);
 assert.match(sidebar, /focus-visible:ring-2/);

@@ -57,6 +57,7 @@ export function DashboardTab({
         <motion.div variants={staggerVariants} className="sm-kpi-grid sm-kpi-grid--dashboard">
           <KPICard
             itemVariants={itemVariants}
+            featured
             label="Total Products"
             value={totalProductsValue}
             sub="in inventory"

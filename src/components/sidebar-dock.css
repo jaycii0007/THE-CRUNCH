@@ -1,0 +1,420 @@
+/* ========================================================================== */
+/* APP DOCK — floating neumorphic navigation rail                             */
+/* Slim segmented dock (reference layout) in the warm cream neumorphic        */
+/* language of the "Menu Management" design system, plus a smoke-glow layer   */
+/* behind it borrowed from inventory.tsx's .menu-atmosphere.                  */
+/* ========================================================================== */
+
+:root {
+  /* Space each staff page reserves left of the dock (dock + breathing room). */
+  --crunch-dock-gutter: 76px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --crunch-dock-gutter: 100px;
+  }
+}
+
+/* Shared neumorphic recipes (mirrors inventory.css / settings.css / my-account.css). */
+.crunch-dock {
+  --dock-surface: linear-gradient(180deg, #FCF8F0, #F5EFE5);
+  --dock-raised: inset 1.5px 1.5px 2px #ffffff, inset -1.5px -1.5px 3px #caba9d59, -4px -4px 10px #fffdf8, 2px 5px 6px -2px #66513a5c, 6px 12px 24px -10px #66513a6b, 14px 28px 52px -20px #66513a52;
+  --dock-tile: inset 0 1px 1px #ffffff7a, inset -1px -1px 2px #caba9d4d, -2px -2px 6px #fffdf8, 1px 2px 3px #63503940, 2px 6px 10px -4px #6350395c, 5px 12px 22px -9px #66513a52;
+  --dock-pressed: inset 2px 3px 6px #76624740, inset -1px -1px 1px #fffdf8f2, 0 1px 0 #fffdf7;
+}
+
+/* -------------------------------------------------------------------------- */
+/* PAGE GUTTERS — guarantee the dock never overlaps content                    */
+/* Applied only while a staff dock is mounted (body class set by Sidebar).     */
+/* -------------------------------------------------------------------------- */
+
+/* Centered canvases: content re-centers in the space right of the dock. */
+body.has-crunch-dock :is(.ov-canvas, .sm-page) {
+  padding-left: var(--crunch-dock-gutter);
+}
+
+/* inventory.tsx + settings.tsx workspaces (tablet-shell media rules lose to
+   this higher-specificity selector, giving every breakpoint the same gutter). */
+body.has-crunch-dock .tablet-shell {
+  padding-left: var(--crunch-dock-gutter);
+}
+
+/* my-account staff theme pads its root directly with Tailwind utilities. */
+body.has-crunch-dock .staff-account {
+  padding-left: var(--crunch-dock-gutter);
+}
+
+/* -------------------------------------------------------------------------- */
+/* SMOKE GLOW — Menu Management atmosphere, left strip behind the dock         */
+/* -------------------------------------------------------------------------- */
+
+.crunch-dock-smoke {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 44; /* above page content, below the dock (45) */
+  width: calc(var(--crunch-dock-gutter) + 48px);
+  overflow: hidden;
+  pointer-events: none;
+  /* Same plumes as .menu-atmosphere, tuned for a left-edge strip. */
+  background:
+    radial-gradient(ellipse at -24% 8%, #34322f59, transparent 54%),
+    radial-gradient(ellipse at 40% 108%, #d39b5254, transparent 50%),
+    radial-gradient(ellipse at 126% -6%, #524b4238, transparent 58%);
+  /* Dissolve the right edge so the glow never shows a hard seam. */
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 52%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 52%, transparent 100%);
+}
+
+.crunch-dock-smoke::before {
+  content: "";
+  position: absolute;
+  left: -5rem;
+  top: -6%;
+  width: clamp(11rem, 20vw, 22rem);
+  height: 92%;
+  background: url("/img/hero-smoke.svg") center / 100% 100% no-repeat;
+  filter: brightness(0.77);
+  opacity: 0.7;
+  transform-origin: center bottom;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .crunch-dock-smoke::before {
+    animation: crunch-dock-smoke 19s ease-in-out -8s infinite alternate;
+  }
+}
+
+@keyframes crunch-dock-smoke {
+  from {
+    transform: translate(-4%, 4%) rotate(-4deg) scale(0.96);
+  }
+  to {
+    transform: translate(5%, -6%) rotate(3deg) scale(1.08);
+  }
+}
+
+@media (max-width: 46rem) {
+  .crunch-dock-smoke {
+    opacity: 0.55;
+    width: calc(var(--crunch-dock-gutter) + 24px);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* DOCK COLUMN                                                                 */
+/* -------------------------------------------------------------------------- */
+
+.crunch-dock {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  bottom: 12px;
+  z-index: 45; /* above sticky headers (z-30), below dialogs (z-300+) */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 64px;
+  font-family: "Poppins", system-ui, sans-serif;
+  /* The column itself never blocks clicks — only its segments do. */
+  pointer-events: none;
+}
+
+.crunch-dock > * {
+  pointer-events: auto;
+}
+
+/* Fills the space between the nav cluster and the footer cluster. */
+.crunch-dock__spacer {
+  flex: 1 1 0;
+  min-height: 6px;
+  pointer-events: none !important;
+}
+
+@media (max-width: 767px) {
+  .crunch-dock {
+    left: 8px;
+    top: 8px;
+    bottom: 8px;
+    width: 54px;
+    gap: 6px;
+  }
+}
+
+/* Cream raised segments — the page-card recipe. */
+.crunch-dock__segment {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 10px 0;
+  border-radius: 24px;
+  background: var(--dock-surface);
+  border: 1px solid #e3d8c6;
+  box-shadow: var(--dock-raised);
+}
+
+@media (max-width: 767px) {
+  .crunch-dock__segment {
+    gap: 4px;
+    padding: 8px 0;
+    border-radius: 20px;
+  }
+}
+
+/* Nav segment shrinks and scrolls only on very short viewports. */
+.crunch-dock__nav {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.crunch-dock__nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* Brand pill at the top of the rail. */
+.crunch-dock__logo {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 46px;
+  border-radius: 24px;
+  background: var(--dock-surface);
+  border: 1px solid #e3d8c6;
+  box-shadow: var(--dock-raised);
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms ease-out;
+}
+
+.crunch-dock__logo:hover {
+  transform: translateY(-1px) scale(1.03);
+}
+
+.crunch-dock__logo:active {
+  transform: translateY(1px) scale(0.97);
+  box-shadow: var(--dock-pressed);
+}
+
+.crunch-dock__logo img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+@media (max-width: 767px) {
+  .crunch-dock__logo {
+    height: 42px;
+    border-radius: 20px;
+  }
+  .crunch-dock__logo img {
+    width: 23px;
+    height: 23px;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* DOCK ITEMS (icons, active tile, tooltips)                                   */
+/* -------------------------------------------------------------------------- */
+
+.crunch-dock__item {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  color: #7a6f5c;
+  cursor: pointer;
+  transition:
+    color 160ms ease-out,
+    background-color 160ms ease-out,
+    box-shadow 180ms ease-out,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-width: 767px) {
+  .crunch-dock__item {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+}
+
+/* Resting hover: a gently raised cream tile, like the page's ghost buttons. */
+.crunch-dock__item:hover {
+  color: #1c1b17;
+  background: linear-gradient(180deg, #fffdf7, #f8f2e7);
+  box-shadow: var(--dock-tile);
+}
+
+.crunch-dock__item:active {
+  transform: scale(0.94);
+}
+
+.crunch-dock__item:focus-visible {
+  outline: 2px solid #78512e;
+  outline-offset: 2px;
+}
+
+.crunch-dock__icon {
+  position: relative;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-width: 767px) {
+  .crunch-dock__icon {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .crunch-dock__item:hover .crunch-dock__icon {
+    transform: scale(1.1);
+  }
+}
+
+/* Active destination: the charcoal gradient used by primary buttons/tabs. */
+.crunch-dock__active {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #393835, #242320);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.3),
+    -3px -3px 8px #fffdf8aa,
+    2px 5px 10px -4px #50402c73,
+    8px 16px 30px -12px #24232073;
+}
+
+.crunch-dock__item--on {
+  color: #fbf7ef;
+}
+
+.crunch-dock__item--on:hover {
+  color: #fbf7ef;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Destructive tint for Log Out. */
+.crunch-dock__item--logout:hover {
+  color: #c23b2e;
+  background: #c23b2e14;
+  box-shadow: none;
+}
+
+/* Sliding tooltip label. */
+.crunch-dock__tip {
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  translate: -8px -50%;
+  z-index: 5;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #393835, #242320);
+  color: #fbf7ef;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 8px 20px -8px rgba(28, 27, 23, 0.55),
+    0 18px 36px -14px rgba(28, 27, 23, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease-out,
+    translate 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    visibility 160ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .crunch-dock__item:hover .crunch-dock__tip {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 -50%;
+  }
+}
+
+.crunch-dock__item:focus-visible .crunch-dock__tip {
+  opacity: 1;
+  visibility: visible;
+  translate: 0 -50%;
+}
+
+/* Touch devices have no hover — tooltips would be noise. */
+@media (hover: none) {
+  .crunch-dock__tip {
+    display: none;
+  }
+}
+
+/* Online presence dot on the profile tile. */
+.crunch-dock__presence {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid #f1e9da;
+}
+
+.crunch-dock__presence--on {
+  background: #2f8f5b;
+}
+
+.crunch-dock__presence--off {
+  background: #8a8172;
+}
+
+/* -------------------------------------------------------------------------- */
+/* FOOT (settings + log out)                                                   */
+/* -------------------------------------------------------------------------- */
+
+.crunch-dock__foot {
+  width: 100%;
+}
+
+/* -------------------------------------------------------------------------- */
+/* MOTION & PRINT SAFETY                                                       */
+/* -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .crunch-dock,
+  .crunch-dock__segment,
+  .crunch-dock__item,
+  .crunch-dock__icon,
+  .crunch-dock__logo,
+  .crunch-dock__tip {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media print {
+  .crunch-dock,
+  .crunch-dock-smoke {
+    display: none;
+  }
+}

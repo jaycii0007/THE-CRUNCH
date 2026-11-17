@@ -285,7 +285,7 @@ export default function App() {
       <Route path="/aboutthecrunch" element={<Navigate to="/products#about" replace />} />
       <Route
         path="/my-account"
-        element={isAuth ? <MyAccount /> : <Navigate to="/login?returnTo=/my-account" replace />}
+        element={isAuth ? <MyAccount /> : <Navigate to="/login" replace />}
       />
 
       {/* ── Customer landing (public, but passes auth state for nav) ── */}

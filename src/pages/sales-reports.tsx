@@ -1,3 +1,4 @@
+import "./sales-reports.css";
 ﻿import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
@@ -1491,9 +1492,8 @@ function RevenueDropdown({
     zIndex: open ? 40 : 1,
   }}
 >
-        <motion.div
-          whileHover={{ boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}
-          onClick={() => setOpen(!open)}
+        <motion.button type="button"
+          className="report-surface report-period" aria-expanded={open} onClick={() => setOpen(!open)}
           style={{
             background: "#fff",
             border: "1px solid #e2e8f0",
@@ -1581,11 +1581,12 @@ function RevenueDropdown({
               </span>
             ))}
           </div>
-        </motion.div>
+        </motion.button>
 
         <AnimatePresence>
           {open && (
             <motion.div
+              className="report-surface"
               initial={{ opacity: 0, y: -8, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.97 }}
@@ -1623,9 +1624,8 @@ function RevenueDropdown({
               </div>
 
               {periods.map((p) => (
-                <motion.div
-                  key={p}
-                  whileHover={{ background: "#f8fafc" }}
+                <motion.button type="button"
+                  className="report-option" key={p}
                   onClick={() => {
                     setPeriod(p);
                     setOpen(false);
@@ -1683,7 +1683,7 @@ function RevenueDropdown({
                   {period === p && (
                     <span style={{ color: DEEP, fontSize: 12 }}>{"\u2713"}</span>
                   )}
-                </motion.div>
+                </motion.button>
               ))}
 
               <div
@@ -1703,8 +1703,7 @@ function RevenueDropdown({
                 </span>
               </div>
 
-              <motion.div
-                whileHover={{ background: "#f1f5f9" }}
+              <motion.button type="button"
                 onClick={handlePrint}
                 style={{
                   margin: "4px 10px 10px",
@@ -1770,7 +1769,7 @@ function RevenueDropdown({
                 >
                   PDF ready
                 </div>
-              </motion.div>
+              </motion.button>
 
               <div style={{ padding: "8px 16px 12px", background: "#f8fafc" }}>
                 <p
@@ -2149,7 +2148,7 @@ function SummaryBar({
     >
       {leadingCard}
       <motion.div
-        whileHover={{ y: -2, boxShadow: "0 8px 24px rgba(0,0,0,0.10)" }}
+        className="report-total"
         style={{
           minHeight: 132,
           background: DEEP,
@@ -3128,11 +3127,6 @@ function OrderRow({
 
                   {showSettlement && settlementAction && (
                     <motion.button
-                      whileHover={{
-                        scale: 1.02,
-                        boxShadow: "0 4px 16px rgba(194,59,46,0.18)",
-                      }}
-                      whileTap={{ scale: 0.97 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onSettle(order, settlementAction);
@@ -3340,7 +3334,7 @@ function OrdersTab({
         onClose={() => setPickerOpen(false)}
       />
 
-      <Card className="bg-white rounded-[24px] p-6 shadow-md border-0">
+      <Card className="report-surface bg-white rounded-[24px] p-6 shadow-md border-0">
         <div className="flex items-start justify-between mb-5 flex-wrap gap-4">
           <div>
             <h3 className="text-base font-semibold text-gray-800">
@@ -3844,7 +3838,7 @@ export default function SalesReports() {
     ? !!reportFromDate && !!reportToDate && reportFromDate.toDateString() === reportToDate.toDateString()
     : period === "Today";
   const { trendData, paymentData, bestSellerData, orderTypeData } = buildSalesChartData(chartLogs, orders, hourlyTrend, restaurantSettings.timezone || "Asia/Manila");
-  const chartCardClass = "flex h-[340px] min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4";
+  const chartCardClass = "report-surface flex h-[340px] min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4";
   const chartScope = `${hasReportRange ? "Selected dates" : period} | ${activeTab === "logs" ? "Sales Logs" : "Order History"} filters`;
   const summaryFilterDescription = [
     hasLogRange
@@ -3912,6 +3906,7 @@ export default function SalesReports() {
       }}
     >
       <Sidebar />
+      <div className="report-screen">
 
       <AnimatePresence>
         {proofNotice && (
@@ -3982,10 +3977,10 @@ export default function SalesReports() {
       <div
         style={{
           padding: isMobile
-            ? "78px 14px 24px"
+            ? "78px 14px 24px 76px"
             : isTablet
-              ? "84px 18px 28px"
-              : "112px 40px 40px 88px",
+              ? "84px 18px 28px 100px"
+              : "112px 40px 40px 100px",
         }}
       >
         {/* Header */}
@@ -4024,7 +4019,7 @@ export default function SalesReports() {
             >
               Sales & Reports
             </h1>
-            <p style={{ margin: "6px 0 0", color: "#94a3b8", fontSize: 13 }}>
+            <p style={{ margin: "6px 0 0", color: "#696357", fontSize: 13 }}>
               Transaction history & audit trail
             </p>
           </div>
@@ -4117,7 +4112,7 @@ export default function SalesReports() {
           </div>
         </section>
         {/* Tabs */}
-        <div
+        <div className="report-tabs"
           style={{
             display: "flex",
             gap: 4,
@@ -4147,7 +4142,7 @@ export default function SalesReports() {
                   cursor: "pointer",
                   fontSize: 13,
                   fontWeight: active ? 600 : 500,
-                  color: active ? "#0f172a" : "#94a3b8",
+                  color: active ? "#243d30" : "#665f52",
                   boxShadow: active ? "0 1px 6px rgba(0,0,0,0.10)" : "none",
                   transition: "all 0.2s",
                   whiteSpace: "nowrap",
@@ -4155,7 +4150,7 @@ export default function SalesReports() {
               >
                 <span
                   style={{
-                    color: active ? "#0f172a" : "#94a3b8",
+                    color: active ? "#243d30" : "#665f52",
                     display: "flex",
                     alignItems: "center",
                   }}
@@ -4347,7 +4342,7 @@ export default function SalesReports() {
             </div>
 
             {/* Log list */}
-            <motion.div
+            <motion.div className="report-surface"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2, duration: 0.35 }}
@@ -4509,6 +4504,8 @@ export default function SalesReports() {
             />
           </motion.div>
         )}
+      </div>
+
       </div>
 
       {/* Print-Only Report Component - Only visible when printing */}

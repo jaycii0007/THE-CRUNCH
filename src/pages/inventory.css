@@ -1,8 +1,10 @@
 .menu-management {
   isolation: isolate;
-  --menu-panel-shadow: inset 1px 1px 1px #fffdf8, 2px 4px 4px -2px #66513a42, 5px 10px 22px -9px #66513a48;
-  --menu-control-shadow: inset 0 1px 1px #ffffff52, 1px 2px 3px #63503930, 2px 5px 8px -4px #63503942;
-  --menu-inset-shadow: inset 1px 2px 4px #76624726, 0 1px 0 #fffdf7;
+  /* Enhanced neumorphism: crisp top-left inner light, inner curvature shade,
+     outer light bloom, then a three-stage warm drop for real extrusion. */
+  --menu-panel-shadow: inset 1.5px 1.5px 2px #ffffff, inset -1.5px -1.5px 3px #caba9d59, -4px -4px 10px #fffdf8, 2px 5px 6px -2px #66513a5c, 6px 12px 24px -10px #66513a6b, 14px 28px 52px -20px #66513a52;
+  --menu-control-shadow: inset 0 1px 1px #ffffff7a, inset -1px -1px 2px #caba9d4d, -2px -2px 6px #fffdf8, 1px 2px 3px #63503940, 2px 6px 10px -4px #6350395c, 5px 12px 22px -9px #66513a52;
+  --menu-inset-shadow: inset 2px 3px 6px #76624740, inset -1px -1px 1px #fffdf8f2, 0 1px 0 #fffdf7;
 }
 /* The fixed layer clips both plumes before their transforms reach the page edges. */
 .menu-atmosphere {
@@ -105,7 +107,7 @@
 @media (hover: hover) and (pointer: fine) {
   .menu-workspace button:enabled:hover {
     transform: translateY(-2px);
-    box-shadow: inset 0 1px 1px #ffffff60, 0 2px 3px #50402c20, 0 6px 12px -4px #50402c55 !important;
+    box-shadow: inset 0 1px 1px #ffffff80, inset -1px -1px 2px #caba9d40, -2px -2px 6px #fffdf8, 0 2px 3px #50402c2b, 0 8px 16px -5px #50402c66 !important;
   }
   .menu-button:enabled:hover::after { animation: menu-button-highlight 440ms ease-out both; }
 }
@@ -255,7 +257,7 @@
   padding: 2px;
   border-radius: 12px;
   background: linear-gradient(145deg, #ffedbe, #a88345 44%, #67543c 70%, #ead2a4);
-  box-shadow: inset 0 1px 0 #fff9, 0 2px 3px #55402238, 0 5px 9px -5px #55402270;
+  box-shadow: inset 0 1px 0 #fff9, 0 2px 3px #55402245, 0 6px 12px -5px #55402280;
 }
 .menu-thumbnail > img {
   display: block;
@@ -349,7 +351,7 @@
   border-radius: 18px;
   background: linear-gradient(145deg, #fcf8f0 8%, #f2eadd 85%);
   --card-bevel: inset 1px 1px 1px #fffdf8, inset -1px -1px 1px #caba9d45;
-  box-shadow: var(--card-bevel), -3px -3px 8px #fffdf8, 2px 3px 4px -2px #634c3345, 5px 7px 13px -6px #66503952;
+  box-shadow: var(--card-bevel), -4px -4px 10px #fffdf8, 2px 4px 5px -2px #634c335c, 6px 12px 22px -8px #66503966, 14px 26px 44px -18px #66513a52;
 }
 .menu-attention-item .attention-photo {
   width: clamp(36px, 4vw, 52px);
@@ -374,7 +376,7 @@
   padding: 6px clamp(7px, 1vw, 14px);
   border-radius: 11px;
   background: #efe7da;
-  box-shadow: inset 2px 2px 5px #7057382e, inset -2px -2px 4px #fffaf0, 0 1px 0 #fffaf2;
+  box-shadow: inset 2.5px 3px 7px #70573845, inset -2px -2px 4px #fffaf0, 0 1px 0 #fffaf2;
 }
 .attention-quantity strong { font-size: 20px; line-height: 1.15; font-variant-numeric: tabular-nums; color: #403729; }
 .attention-quantity span { font-size: 11px; color: #675c4e; }
@@ -383,7 +385,7 @@
   .attention-reason svg { transition: transform 220ms ease-out; }
   @media (hover: hover) and (pointer: fine) {
     .menu-attention-item { transition: box-shadow 220ms, border-color 220ms; }
-    .menu-attention-item:hover { border-color: #bdab90; box-shadow: var(--card-bevel), -3px -3px 9px #fffdf8, 3px 5px 6px -3px #634c3345, 6px 10px 17px -7px #66503960; }
+    .menu-attention-item:hover { border-color: #bdab90; box-shadow: var(--card-bevel), -4px -4px 11px #fffdf8, 3px 6px 7px -3px #634c335c, 8px 15px 26px -9px #66503970, 18px 32px 52px -22px #66513a59; }
     .menu-attention-item:hover .attention-reason svg { transform: scale(1.12); }
   }
 }
@@ -425,7 +427,7 @@
   border: 1px solid #d6cab8;
   border-radius: 14px;
   background: #fcf9f2;
-  box-shadow: inset 0 1px 0 #fff, 0 4px 8px -4px #42321f38, 0 14px 30px -12px #42321f55;
+  box-shadow: inset 0 1px 0 #fff, 0 4px 8px -4px #42321f45, 0 16px 34px -12px #42321f6b, 0 30px 60px -24px #42321f52;
   color: #302e28;
   font-family: Poppins, sans-serif;
 }

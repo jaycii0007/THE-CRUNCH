@@ -1,4 +1,4 @@
-﻿import {
+import {
   createContext,
   useCallback,
   useContext,
@@ -37,6 +37,7 @@ import {
   fetchPaymentQrObjectUrl,
   type PaymentQrConfiguration,
 } from "../lib/paymentQr";
+import "./settings.css";
 import { Sidebar } from "../components/Sidebar";
 
 /*
@@ -59,9 +60,9 @@ import { Sidebar } from "../components/Sidebar";
 /* -------------------------------------------------------------------------- */
 
 export const FONT = "'Poppins', sans-serif";
-export const ACCENT = "#e05a1e";
-const INK = "#1c1a18";
-const MUTED = "#9e9891";
+export const ACCENT = "#315441";
+const INK = "#24382d";
+const MUTED = "#685f53";
 const ERROR = "#b91c1c";
 const SUCCESS = "#15803d";
 
@@ -337,8 +338,9 @@ const S = {
     fontFamily: FONT,
     fontSize: "0.85rem",
     color: INK,
-    background: "#f7f6f5",
-    border: "1px solid #e4e1dc",
+    background: "#f5f1e8",
+    border: "1px solid #dbd3c4",
+    boxShadow: "var(--settings-inset)",
     borderRadius: 10,
     padding: "10px 12px",
     width: "100%",
@@ -352,17 +354,18 @@ const S = {
     fontSize: "0.85rem",
     fontWeight: 500,
     color: INK,
-    background: "#f0eeec",
+    background: "#f4efe5",
     border: "none",
     borderRadius: 99,
     padding: "9px 34px 9px 16px",
     cursor: "pointer",
     outline: "none",
     appearance: "none",
+    boxShadow: "var(--settings-inset)",
   } as CSSProperties,
   panel: {
-    background: "#fff",
-    border: "1px solid #eae7e2",
+    background: "#fffaf1",
+    border: "1px solid #ded6c8",
     borderRadius: 12,
   } as CSSProperties,
   // The large white card that holds the settings menu and content.
@@ -372,11 +375,11 @@ const S = {
     minWidth: 0,
     maxWidth: 1100,
     margin: "0 auto",
-    background: "#fff",
+    background: "#fffaf1",
     borderRadius: 16,
     overflow: "hidden",
-    border: "1px solid #eae7e2",
-    boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04)",
+    border: "1px solid #ded6c8",
+    boxShadow: "var(--settings-raised)",
   } as CSSProperties,
 };
 
@@ -404,7 +407,7 @@ const secondaryButton = (): CSSProperties => ({
   borderRadius: 9,
   padding: "7px 10px",
   border: "1px solid #ddd8d2",
-  background: "#fff",
+  background: "#fffaf1",
   color: "#5a5652",
   cursor: "pointer",
 });
@@ -450,8 +453,8 @@ export function SI({
         // 16px on phones stops iOS Safari from zooming the page when an input is focused
         fontSize: isMobile ? "1rem" : S.input.fontSize,
         padding: isMobile ? "11px 12px" : S.input.padding,
-        borderColor: focused ? ACCENT : "#ececec",
-        boxShadow: focused ? "0 0 0 3px rgba(224,90,30,.1)" : "none",
+        borderColor: focused ? ACCENT : "#dbd3c4",
+        boxShadow: focused ? "0 0 0 3px #31544122" : "var(--settings-inset)",
       }}
       type={type}
       disabled={disabled}
@@ -550,7 +553,7 @@ export function Toggle({
           width: 18,
           height: 18,
           borderRadius: "50%",
-          background: "#fff",
+          background: "#fffaf1",
           boxShadow: "0 1px 3px rgba(0,0,0,.18)",
           transition: "left .18s",
         }}
@@ -641,14 +644,14 @@ export function TR({
 
 // Groups related rows and adds spacing below them.
 export function Section({ children }: { children: ReactNode }) {
-  return <div style={{ marginBottom: 8 }}>{children}</div>;
+  return <div className="settings-section">{children}</div>;
 }
 
 export function Hint({ children }: { children: ReactNode }) {
   return (
     <p
       style={{
-        ...typo("0.74rem", "#b0aaa3", 400),
+        ...typo("0.74rem", "#71695f", 400),
         padding: "10px 0 18px",
         lineHeight: 1.6,
       }}
@@ -704,7 +707,7 @@ export function LockedSection({ label }: { label: string }) {
   return (
     <div
       style={{
-        background: "#f7f6f5",
+        background: "#f5f1e8",
         borderRadius: 16,
         padding: isMobile ? "36px 20px" : "48px 32px",
         textAlign: "center",
@@ -715,7 +718,7 @@ export function LockedSection({ label }: { label: string }) {
           width: 52,
           height: 52,
           borderRadius: 12,
-          background: "#fff",
+          background: "#fffaf1",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1290,7 +1293,7 @@ function PaymentMethodsTab() {
                     disabled={busy}
                     style={{
                       ...accentButton(),
-                      background: "#fff",
+                      background: "#fffaf1",
                       color: ERROR,
                       border: `1px solid ${ERROR}`,
                     }}
@@ -2864,7 +2867,7 @@ export function FeedbackTab({
     return (
       <div style={{ ...S.panel, padding: "44px 20px", textAlign: "center" }}>
         <MessageSquare size={26} color="#d1cdc7" style={{ marginBottom: 8 }} />
-        <p style={typo("0.82rem", "#b0aaa3")}>No feedback yet</p>
+        <p style={typo("0.82rem", "#71695f")}>No feedback yet</p>
       </div>
     );
   }
@@ -2906,7 +2909,7 @@ export function FeedbackTab({
                 fontWeight: rating === r ? 600 : 400,
                 padding: isMobile ? "7px 14px" : "4px 10px",
                 borderRadius: 99,
-                border: "1px solid #e4e1dc",
+                border: "1px solid #dbd3c4",
                 background: rating === r ? ACCENT : "#fafaf9",
                 color: rating === r ? "#fff" : "#7a7470",
                 cursor: "pointer",
@@ -2914,8 +2917,8 @@ export function FeedbackTab({
                 flexShrink: 0,
                 boxShadow:
                   rating === r
-                    ? "0 1px 4px rgba(224,90,30,.2)"
-                    : "0 1px 3px rgba(0,0,0,.06)",
+                    ? "inset 0 1px 0 rgba(255,255,255,.25), 0 1px 4px rgba(49,84,65,.28), 2px 6px 12px -5px rgba(49,84,65,.3)"
+                    : "inset 0 1px 1px #ffffff80, inset -1px -1px 2px #caba9d40, 1px 2px 3px #6350392b, 2px 5px 9px -4px #6350393d",
               }}
             >
               {r === 0 ? "All" : `${r}★`}
@@ -2949,7 +2952,7 @@ export function FeedbackTab({
             style={{
               ...S.panel,
               padding: "12px 16px",
-              boxShadow: "0 1px 4px rgba(0,0,0,.04)",
+              boxShadow: "var(--settings-raised)",
             }}
           >
             <div
@@ -2962,7 +2965,7 @@ export function FeedbackTab({
               }}
             >
               <span style={typo("0.8rem", INK, 600)}>{entry.reviewerName}</span>
-              <span style={typo("0.66rem", "#b0aaa3", 400)}>
+              <span style={typo("0.66rem", "#71695f", 400)}>
                 {new Date(entry.createdAt).toLocaleDateString("en-PH", {
                   year: "numeric",
                   month: "short",
@@ -2999,7 +3002,7 @@ export function FeedbackTab({
         {!visible.length && (
           <p
             style={{
-              ...typo("0.78rem", "#b0aaa3", 400),
+              ...typo("0.78rem", "#71695f", 400),
               textAlign: "center",
               padding: "24px 0",
             }}
@@ -3147,7 +3150,7 @@ export function SidebarGroup({
           fontWeight: 600,
           letterSpacing: ".09em",
           textTransform: "uppercase",
-          color: "#b0aaa3",
+          color: "#71695f",
         }}
       >
         {group.label}
@@ -3171,14 +3174,14 @@ export function SidebarGroup({
                 alignItems: "center",
                 gap: 10,
                 padding: isTablet ? "10px 12px" : "11px 14px",
-                background: isActive ? "#f0eeec" : "none",
+                background: isActive ? INK : "transparent",
                 border: "none",
                 borderRadius: 10,
                 cursor: "pointer",
                 fontFamily: FONT,
                 fontSize: isTablet ? "0.8rem" : "0.85rem",
                 fontWeight: isActive ? 600 : 500,
-                color: isActive ? INK : "#5a5652",
+                color: isActive ? "#fffaf1" : "#514d43",
                 textAlign: "left",
                 transition: "background .12s, color .12s",
                 marginBottom: 2,
@@ -3223,7 +3226,7 @@ function MobileTabs({
           <div key={group.label} style={{ marginBottom: 10 }}>
             <p
               style={{
-                ...typo("0.62rem", "#b0aaa3", 600),
+                ...typo("0.62rem", "#71695f", 600),
                 letterSpacing: ".09em",
                 textTransform: "uppercase",
                 padding: "0 4px 5px",
@@ -3233,10 +3236,10 @@ function MobileTabs({
             </p>
             <div
               style={{
-                border: "1px solid #eae7e2",
+                border: "1px solid #ded6c8",
                 borderRadius: 12,
                 overflow: "hidden",
-                background: "#fff",
+                background: "#fffaf1",
               }}
             >
               {group.items.map(({ key, label }, i) => {
@@ -3259,8 +3262,8 @@ function MobileTabs({
                       cursor: "pointer",
                       border: "none",
                       borderTop: i === 0 ? "none" : "1px solid #f0eeec",
-                      background: isActive ? "#f0eeec" : "#fff",
-                      color: isActive ? INK : "#5a5652",
+                      background: isActive ? INK : "#fffaf1",
+                      color: isActive ? "#fffaf1" : "#514d43",
                       fontFamily: FONT,
                       fontSize: "0.83rem",
                       fontWeight: isActive ? 600 : 500,
@@ -3480,15 +3483,15 @@ function PageFrame({ children }: { children: ReactNode }) {
   const padding = viewport === "mobile" ? 12 : viewport === "tablet" ? 16 : 24;
 
   return (
-    <div className="flex min-h-screen bg-gray-50" style={{ fontFamily: FONT }}>
+    <div className="settings-page flex min-h-screen" style={{ background: "#F2ECE2", fontFamily: FONT }}>
+      <div className="settings-atmosphere" aria-hidden="true" />
       <Sidebar />
       {/* minWidth: 0 lets this flex child shrink instead of overflowing the screen */}
-      <main className="tablet-shell flex-1" style={{ minWidth: 0 }}>
+      <main className="settings-workspace tablet-shell flex-1" style={{ minWidth: 0 }}>
         <div
           style={{
             display: "flex",
             height: "100%",
-            background: "#f0eeec",
             padding,
             boxSizing: "border-box",
             minHeight: "100vh",
@@ -3611,7 +3614,7 @@ function SettingsPanel() {
           style={{
             width: isTablet ? 200 : 230,
             flexShrink: 0,
-            background: "#fff",
+            background: "#fffaf1",
             overflowY: "auto",
             padding: isTablet ? "20px 10px" : "24px 14px",
           }}

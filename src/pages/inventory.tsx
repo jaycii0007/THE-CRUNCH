@@ -75,7 +75,7 @@ const SHADOW = {
   card: "var(--menu-panel-shadow)",
   raised: "var(--menu-control-shadow)",
   modal:
-    "0 40px 90px -20px rgba(28,27,23,0.35), 0 8px 24px -8px rgba(28,27,23,0.12)",
+    "inset 0 1px 0 #ffffffb3, 0 40px 90px -20px rgba(28,27,23,0.4), 0 16px 40px -14px rgba(28,27,23,0.18), 0 8px 24px -8px rgba(28,27,23,0.12)",
 };
 
 /* ────────────────────────────────────────────────────────────────────────────

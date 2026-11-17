@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Eye, EyeOff, CreditCard, Package, ShieldCheck, UsersRound } from "lucide-react";
 import { SkeletonTableRow } from "@/components/ui/skeleton";
 import { Sidebar } from "@/components/Sidebar";
+import GradientBlobCard from "@/components/ui/gradient-bold-card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { staffApi } from "../lib/api";
 import type { StaffMember } from "../lib/api";
 import { useNotifications, useConfirm } from "../lib/NotificationContext";
 import { useAuth } from "../context/authcontext";
 import { useViewport } from "@/hooks/use-tablet";
+import "./staffaccounts.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Role = "administrator" | "cashier" | "inventory_manager";
@@ -22,7 +31,6 @@ interface FormState {
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const FONT_FAMILY = "'Poppins', sans-serif";
 const FIELD_MAX_LENGTH = 100;
 
 const ROLES: Role[] = ["administrator", "cashier", "inventory_manager"];
@@ -62,51 +70,6 @@ const DEFAULT_FORM: FormState = {
 const NAME_PATTERN = /^[A-Za-z][A-Za-z.' -]*[A-Za-z.]$|^[A-Za-z.]$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\d).+$/;
-
-// ─── Shared styles ───────────────────────────────────────────────────────────
-const inputStyle: CSSProperties = {
-  padding: "9px 12px",
-  border: "1px solid #e2e8f0",
-  borderRadius: 8,
-  fontSize: 13,
-  fontFamily: FONT_FAMILY,
-  background: "#f8f9fa",
-  color: "#2d3748",
-  outline: "none",
-};
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  fontSize: 11,
-  fontWeight: 600,
-  color: "#718096",
-  marginBottom: 5,
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-};
-
-const headerCellStyle: CSSProperties = {
-  padding: "12px 16px",
-  textAlign: "left",
-  fontSize: 11,
-  fontWeight: 600,
-  color: "#a0aec0",
-  letterSpacing: "0.07em",
-  textTransform: "uppercase",
-  borderBottom: "1px solid #e2e8f0",
-};
-
-const cellStyle: CSSProperties = {
-  padding: "13px 16px",
-  verticalAlign: "middle",
-  borderBottom: "1px solid #f7f8fa",
-};
-
-const emptyRowStyle: CSSProperties = {
-  textAlign: "center",
-  padding: "64px 20px",
-  fontSize: 13,
-};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 // Picks a stable avatar color based on the employee's name
@@ -193,6 +156,7 @@ function Avatar({ name }: { name: string }) {
   const [bg, fg] = getAvatarColor(name);
   return (
     <div
+      className="sa-avatar"
       style={{
         width: 34,
         height: 34,
@@ -216,13 +180,11 @@ function RoleBadge({ role }: { role: string }) {
   const colors = ROLE_COLORS[role as Role] ?? FALLBACK_ROLE_COLOR;
   return (
     <span
+      className="sa-badge"
       style={{
-        fontSize: 11,
-        fontWeight: 600,
-        padding: "3px 10px",
-        borderRadius: 6,
         background: colors.bg,
         color: colors.color,
+        borderColor: `${colors.color}33`,
       }}
     >
       {ROLE_LABEL[role as Role] ?? role}
@@ -230,24 +192,54 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+// Same KPI card as Menu Management: GradientBlobCard with orbiting glow.
+function StatCard({
+  label,
+  value,
+  meta,
+  icon: Icon,
+  featured = false,
+}: {
+  label: string;
+  value: number;
+  meta: string;
+  icon: typeof UsersRound;
+  featured?: boolean;
+}) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: "#a0aec0",
-          textTransform: "uppercase",
-          letterSpacing: "0.07em",
-        }}
-      >
-        {label}
+    <GradientBlobCard palette={featured ? "forest" : "brass"} className="rounded-2xl p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <span
+          className="text-[12px] font-medium"
+          style={{ color: featured ? "rgba(255,255,255,0.7)" : "#655E52" }}
+        >
+          {label}
+        </span>
+        <span
+          className="grid h-9 w-9 place-items-center rounded-xl"
+          style={{ background: featured ? "rgba(255,255,255,0.12)" : "#EFE7D9" }}
+        >
+          <Icon
+            size={17}
+            strokeWidth={2}
+            color={featured ? "#fff" : "#78512E"}
+            aria-hidden="true"
+          />
+        </span>
       </div>
-      <div style={{ fontSize: 24, fontWeight: 600, color: "#2d3748" }}>
+      <div
+        className="text-[26px] font-semibold leading-none tracking-tight tabular-nums"
+        style={{ color: featured ? "#fff" : "#1C1B17" }}
+      >
         {value}
       </div>
-    </div>
+      <div
+        className="mt-2.5 text-[11.5px]"
+        style={{ color: featured ? "rgba(255,255,255,0.65)" : "#655E52" }}
+      >
+        {meta}
+      </div>
+    </GradientBlobCard>
   );
 }
 
@@ -270,40 +262,29 @@ function FormField({
   const isPassword = type === "password";
 
   return (
-    <div style={{ marginBottom: 13 }}>
-      <label style={labelStyle}>{label}</label>
+    <div className={`sa-field${isPassword ? " sa-field--password" : ""}`}>
+      <label className="sa-label">{label}</label>
       <div style={{ position: "relative" }}>
         <input
+          className="sa-input"
           type={isPassword && showPassword ? "text" : type}
           value={value}
           placeholder={placeholder}
           maxLength={FIELD_MAX_LENGTH}
           onChange={(e) => onChange(e.target.value)}
-          style={{
-            ...inputStyle,
-            width: "100%",
-            boxSizing: "border-box",
-            padding: isPassword ? "9px 38px 9px 12px" : inputStyle.padding,
-          }}
         />
         {isPassword && (
           <button
             type="button"
+            className="sa-reveal"
             onClick={() => setShowPassword((show) => !show)}
-            style={{
-              position: "absolute",
-              right: 10,
-              top: "50%",
-              transform: "translateY(-50%)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "#a0aec0",
-              fontSize: 13,
-              padding: 0,
-            }}
+            aria-label={showPassword ? "Hide password" : "Show password"}
           >
-            {showPassword ? "🙈" : "👁"}
+            {showPassword ? (
+              <EyeOff size={15} strokeWidth={1.9} aria-hidden="true" />
+            ) : (
+              <Eye size={15} strokeWidth={1.9} aria-hidden="true" />
+            )}
           </button>
         )}
       </div>
@@ -311,13 +292,49 @@ function FormField({
   );
 }
 
+// Radix select styled like Menu Management's .menu-dropdown — the native
+// popup is OS-drawn and cannot be themed, so this replaces both page selects.
+function RoleDropdown({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  // Radix reserves an empty value. Encode every option so "" never collides.
+  return (
+    <Select value={`v:${value}`} onValueChange={(next) => onChange(next.slice(2))}>
+      <SelectTrigger
+        aria-label={label}
+        className="sa-select-trigger focus-visible:ring-0 focus-visible:border-[#78512E]"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent
+        position="popper"
+        align="start"
+        collisionPadding={8}
+        className="sa-select-list"
+      >
+        {options.map((option) => (
+          <SelectItem key={option.value} value={`v:${option.value}`}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 interface StaffRowProps {
   employee: StaffMember;
   index: number;
   onRemove: (id: number, name: string) => void;
-}
-
-function StaffRow({ employee, index, onRemove }: StaffRowProps) {
+}function StaffRow({ employee, index, onRemove }: StaffRowProps) {
   return (
     <motion.tr
       initial={{ opacity: 0 }}
@@ -325,35 +342,21 @@ function StaffRow({ employee, index, onRemove }: StaffRowProps) {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
     >
-      <td style={{ ...cellStyle, fontSize: 12, color: "#cbd5e0", width: 32 }}>
-        {index + 1}
-      </td>
-      <td style={cellStyle}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <td className="sa-row-index">{index + 1}</td>
+      <td>
+        <div className="sa-employee">
           <Avatar name={employee.username} />
-          <span style={{ fontWeight: 600, color: "#2d3748" }}>
-            {employee.username}
-          </span>
+          <span>{employee.username}</span>
         </div>
       </td>
-      <td style={cellStyle}>
+      <td>
         <RoleBadge role={employee.role} />
       </td>
-      <td style={{ ...cellStyle, color: "#a0aec0" }}>{employee.email}</td>
-      <td style={cellStyle}>
+      <td className="sa-email">{employee.email}</td>
+      <td>
         <button
+          className="sa-btn sa-btn--danger sa-btn--sm"
           onClick={() => onRemove(employee.id, employee.username)}
-          style={{
-            background: "none",
-            border: "1px solid #fed7d7",
-            borderRadius: 7,
-            padding: "5px 13px",
-            fontSize: 11,
-            fontWeight: 500,
-            fontFamily: FONT_FAMILY,
-            color: "#fc8181",
-            cursor: "pointer",
-          }}
         >
           Remove
         </button>
@@ -383,17 +386,7 @@ function AddEmployeeModal({
 }: AddEmployeeModalProps) {
   return (
     <motion.div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.18)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 200,
-        padding: 20,
-        backdropFilter: "blur(2px)",
-      }}
+      className="sa-overlay"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -404,23 +397,14 @@ function AddEmployeeModal({
       }}
     >
       <motion.div
-        style={{
-          background: "#fff",
-          borderRadius: 16,
-          padding: isMobile ? 20 : 28,
-          width: "100%",
-          maxWidth: 360,
-          boxShadow: "0 8px 40px rgba(0,0,0,0.10)",
-          border: "1px solid #e2e8f0",
-        }}
+        className="sa-modal"
+        style={{ padding: isMobile ? 20 : 26 }}
         initial={{ opacity: 0, scale: 0.97, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97, y: 8 }}
         transition={{ duration: 0.18 }}
       >
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>
-          Add Employee
-        </div>
+        <div className="sa-modal-title">Add Employee</div>
 
         <FormField
           label="Full Name"
@@ -443,61 +427,34 @@ function AddEmployeeModal({
           placeholder="Min. 8 characters"
         />
 
-        <div style={{ marginBottom: 13 }}>
-          <label style={labelStyle}>Role</label>
-          <select
+        <div className="sa-field">
+          <label className="sa-label">Role</label>
+          <RoleDropdown
+            label="Role"
             value={form.role}
-            onChange={(e) => onFieldChange("role")(e.target.value)}
-            style={{ ...inputStyle, width: "100%" }}
-          >
-            {ROLES.map((role) => (
-              <option key={role} value={role}>
-                {ROLE_LABEL[role]}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => onFieldChange("role")(next)}
+            options={ROLES.map((role) => ({
+              value: role,
+              label: ROLE_LABEL[role],
+            }))}
+          />
         </div>
 
-        {error && (
-          <p style={{ fontSize: 11, color: "#e53e3e", margin: "4px 0 6px" }}>
-            {error}
-          </p>
-        )}
+        {error && <p className="sa-error">{error}</p>}
 
-        <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+        <div className="sa-modal-actions">
           <button
+            className="sa-btn sa-btn--ghost"
             onClick={onClose}
             disabled={isSubmitting}
-            style={{
-              flex: 1,
-              background: "#f8f9fa",
-              color: "#718096",
-              border: "1px solid #e2e8f0",
-              borderRadius: 8,
-              padding: 10,
-              fontSize: 13,
-              fontWeight: 600,
-              fontFamily: FONT_FAMILY,
-              cursor: "pointer",
-            }}
           >
             Cancel
           </button>
           <button
+            className="sa-btn sa-btn--primary"
             onClick={onSubmit}
             disabled={isSubmitting}
-            style={{
-              flex: 1,
-              background: isSubmitting ? "#94a3b8" : "#1a202c",
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              padding: 10,
-              fontSize: 13,
-              fontWeight: 700,
-              fontFamily: FONT_FAMILY,
-              cursor: isSubmitting ? "not-allowed" : "pointer",
-            }}
+            style={{ cursor: isSubmitting ? "not-allowed" : "pointer" }}
           >
             {isSubmitting ? "Adding..." : "Add Employee"}
           </button>
@@ -647,136 +604,101 @@ export default function StaffAccounts() {
 
   // ── Layout ─────────────────────────────────────────────────────────────────
   const contentPadding = isMobile
-    ? "78px 14px 22px"
+    ? "78px 14px 22px 76px"
     : isTablet
-      ? "84px 18px 28px"
-      : "112px 36px 32px 88px";
+      ? "84px 18px 28px 100px"
+      : "112px 36px 32px 100px";
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#fff",
-        fontFamily: FONT_FAMILY,
-        color: "#1a202c",
-      }}
-    >
+    <div className="sa-page min-h-screen">
+      <div className="sa-atmosphere" aria-hidden="true" />
       <Sidebar />
       <link
         href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
         rel="stylesheet"
       />
 
-      <div style={{ padding: contentPadding }}>
+      <div className="sa-shell" style={{ padding: contentPadding }}>
         {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 12,
-            marginBottom: 24,
-          }}
+        <motion.div
+          className="sa-header"
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
         >
           <div>
-            <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>
-              Staff Accounts
-            </div>
-            <div style={{ fontSize: 12, color: "#a0aec0", marginTop: 3 }}>
-              Manage employee access and roles
-            </div>
+            <span className="sa-wordmark">The Crunch</span>
+            <h1 className="sa-title">Staff Accounts</h1>
+            <p className="sa-subtitle">Manage employee access and roles</p>
           </div>
           <button
+            className="sa-btn sa-btn--primary"
             onClick={() => setShowModal(true)}
-            style={{
-              background: "#1a202c",
-              color: "#fff",
-              border: "none",
-              borderRadius: 10,
-              padding: "10px 20px",
-              fontSize: 13,
-              fontWeight: 600,
-              fontFamily: FONT_FAMILY,
-              cursor: "pointer",
-            }}
           >
             + Add Employee
           </button>
-        </div>
+        </motion.div>
 
         {/* Stats */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
-            gap: 20,
-            marginBottom: 24,
-            paddingBottom: 20,
-            borderBottom: "1px solid #f0f4f8",
-          }}
-        >
-          <StatCard label="Total" value={employees.length} />
-          {ROLES.map((role) => (
-            <StatCard
-              key={role}
-              label={ROLE_LABEL[role]}
-              value={
-                employees.filter((employee) => employee.role === role).length
-              }
-            />
-          ))}
+        <div className="sa-stats">
+          <StatCard
+            featured
+            label="Total"
+            value={employees.length}
+            meta="All staff accounts"
+            icon={UsersRound}
+          />
+          <StatCard
+            label="Admin"
+            value={employees.filter((employee) => employee.role === "administrator").length}
+            meta="Full access"
+            icon={ShieldCheck}
+          />
+          <StatCard
+            label="Cashier"
+            value={employees.filter((employee) => employee.role === "cashier").length}
+            meta="Point of sale"
+            icon={CreditCard}
+          />
+          <StatCard
+            label="Inventory Mgr"
+            value={employees.filter((employee) => employee.role === "inventory_manager").length}
+            meta="Stock & products"
+            icon={Package}
+          />
         </div>
 
         {/* Search and role filter */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            marginBottom: 16,
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="sa-filters">
           <input
+            className="sa-input"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or email..."
-            style={{ ...inputStyle, flex: 1, minWidth: 180 }}
+            aria-label="Search employees"
           />
-          <select
+          <RoleDropdown
+            label="Filter by role"
             value={filterRole}
-            onChange={(e) => setFilterRole(e.target.value as RoleFilter)}
-            style={inputStyle}
-          >
-            <option value="all">All Roles</option>
-            {ROLES.map((role) => (
-              <option key={role} value={role}>
-                {ROLE_LABEL[role]}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => setFilterRole(next as RoleFilter)}
+            options={[
+              { value: "all", label: "All Roles" },
+              ...ROLES.map((role) => ({
+                value: role,
+                label: ROLE_LABEL[role],
+              })),
+            ]}
+          />
         </div>
 
         {/* Staff table */}
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: 14,
-            border: "1px solid #e2e8f0",
-            overflowX: "auto",
-            marginBottom: 40,
-          }}
-        >
-          <table
-            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}
-          >
+        <div className="sa-table-card">
+          <table className="sa-table">
             <thead>
               <tr>
                 {TABLE_COLUMNS.map((heading, i) => (
-                  <th key={`${heading}-${i}`} style={headerCellStyle}>
-                    {heading}
-                  </th>
+                  <th key={`${heading}-${i}`}>{heading}</th>
                 ))}
               </tr>
             </thead>
@@ -787,10 +709,7 @@ export default function StaffAccounts() {
                 ))
               ) : filteredEmployees.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={TABLE_COLUMNS.length}
-                    style={{ ...emptyRowStyle, color: "#cbd5e0" }}
-                  >
+                  <td className="sa-empty" colSpan={TABLE_COLUMNS.length}>
                     {isFiltering
                       ? "No results match your search."
                       : "No employees yet. Add one above."}
