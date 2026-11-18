@@ -138,6 +138,9 @@ interface CustomerOrder {
   paymentStatus: string | null;
   paymentMethod: string;
   items: { name: string; quantity: number; includedSelections?: IncludedChoice[] }[];
+  delivery?: DeliveryQuote | null;
+  handoverTimestamp?: string | null;
+  riderName?: string | null;
 }
 interface PaymentSessionState {
   checkoutSessionId: string;
@@ -166,10 +169,7 @@ interface StoreStatusSettings {
   storeStatusMode: "auto" | "manual_open" | "manual_closed";
   timezone: string;
 }
-interface DeliveryPlatformLinks {
-  grabfoodUrl: string | null;
-  foodpandaUrl: string | null;
-}
+
 type PaymentMethodType = "gcash" | "cash";
 type VerifyResult = {
   paid: boolean;
@@ -265,10 +265,7 @@ const DEFAULT_STORE: StoreStatusSettings = {
   storeStatusMode: "auto",
   timezone: "Asia/Manila",
 };
-const EMPTY_DELIVERY_LINKS: DeliveryPlatformLinks = {
-  grabfoodUrl: null,
-  foodpandaUrl: null,
-};
+
 
 const HOME_PATH = "/";
 const NAV_LINKS = [
@@ -753,10 +750,12 @@ function Modal({
   onClose,
   width = 480,
   children,
+  ariaLabel,
 }: {
   onClose: () => void;
   width?: number;
   children: ReactNode;
+  ariaLabel?: string;
 }) {
   useEscape(onClose);
   return (
@@ -781,6 +780,7 @@ function Modal({
       <motion.div
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabel}
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
@@ -1265,10 +1265,10 @@ function PaymentMethodSelector({
     {
       id: "gcash" as const,
       label: "Pay Online",
-      sub: "Secure PayMongo checkout",
+      sub: "Delivery ? pay after quotation",
       d: D.phone,
     },
-    { id: "cash" as const, label: "Cash", sub: "Pay at the store", d: D.cash },
+    { id: "cash" as const, label: "Pay Onsite", sub: "Pickup ? pay at the store", d: D.cash },
   ];
   return (
     <div
@@ -1435,183 +1435,7 @@ function CashTermsModal({
   );
 }
 
-function OrderTypeModal({ onClose }: { onClose: () => void }) {
-  const [view, setView] = useState<"choose" | "delivery">("choose");
-  const [deliveryLinks, setDeliveryLinks] =
-    useState<DeliveryPlatformLinks>(EMPTY_DELIVERY_LINKS);
-  const [linksLoading, setLinksLoading] = useState(false);
-  const [linksError, setLinksError] = useState("");
-  const { width } = useViewport();
-  const cols = width < 700 ? "1fr" : "1fr 1fr";
-  const option: CSSProperties = {
-    background: C.surface,
-    border: `1px solid ${C.border}`,
-    borderRadius: 8,
-    padding: 24,
-    cursor: "pointer",
-    fontFamily: FONT,
-    textAlign: "left",
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    color: C.text,
-    textDecoration: "none",
-  };
-  const desc: CSSProperties = { fontSize: 13, color: C.muted, lineHeight: 1.6 };
-  useEffect(() => {
-    if (view !== "delivery") return;
-    let cancelled = false;
-    setLinksLoading(true);
-    setLinksError("");
-    setDeliveryLinks(EMPTY_DELIVERY_LINKS);
-    api
-      .get<DeliveryPlatformLinks>("/settings/delivery-links")
-      .then((links) => {
-        if (cancelled) return;
-        setDeliveryLinks({
-          grabfoodUrl: /^https:\/\//i.test(String(links.grabfoodUrl || ""))
-            ? links.grabfoodUrl
-            : null,
-          foodpandaUrl: /^https:\/\//i.test(String(links.foodpandaUrl || ""))
-            ? links.foodpandaUrl
-            : null,
-        });
-      })
-      .catch(() => {
-        if (!cancelled)
-          setLinksError(
-            "Delivery links are unavailable right now. Please try again later.",
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setLinksLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [view]);
 
-  const platforms = [
-    { label: "GrabFood", href: deliveryLinks.grabfoodUrl },
-    { label: "Foodpanda", href: deliveryLinks.foodpandaUrl },
-  ];
-  return (
-    <Modal onClose={onClose} width={640}>
-      <div style={{ padding: 26 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 20,
-          }}
-        >
-          <h3
-            style={{ fontSize: 18, fontWeight: 600, color: C.text, margin: 0 }}
-          >
-            {view === "choose"
-              ? "How would you like to order?"
-              : "Choose a delivery app"}
-          </h3>
-          <CloseButton onClick={onClose} label="Close" />
-        </div>
-        {view === "choose" ? (
-          <div style={{ display: "grid", gridTemplateColumns: cols, gap: 12 }}>
-            <button type="button" onClick={onClose} style={option}>
-              <span style={{ color: C.primary }}>
-                <Icon d={D.bag} size={24} />
-              </span>
-              <span style={{ fontSize: 16, fontWeight: 600 }}>
-                Pick-up order
-              </span>
-              <span style={desc}>
-                Order online and collect your items at the store when they're
-                ready.
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("delivery")}
-              style={option}
-            >
-              <span style={{ color: C.primary }}>
-                <Icon d={D.scooter} size={24} />
-              </span>
-              <span style={{ fontSize: 16, fontWeight: 600 }}>
-                Delivery order
-              </span>
-              <span style={desc}>Order through Foodpanda or Grab.</span>
-            </button>
-          </div>
-        ) : (
-          <>
-            <div
-              style={{ display: "grid", gridTemplateColumns: cols, gap: 12 }}
-            >
-              {platforms.map((platform) =>
-                platform.href ? (
-                  <a
-                    key={platform.label}
-                    href={platform.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={option}
-                  >
-                    <span style={{ fontSize: 16, fontWeight: 600 }}>
-                      {platform.label}
-                    </span>
-                    <span
-                      style={{
-                        ...desc,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      Open in a new tab <Icon d={D.external} size={13} />
-                    </span>
-                  </a>
-                ) : (
-                  <button
-                    key={platform.label}
-                    type="button"
-                    disabled
-                    aria-label={`${platform.label} ordering is unavailable`}
-                    style={{ ...option, cursor: "not-allowed", opacity: 0.55 }}
-                  >
-                    <span style={{ fontSize: 16, fontWeight: 600 }}>
-                      {platform.label}
-                    </span>
-                    <span style={desc}>
-                      {linksLoading
-                        ? "Loading ordering link..."
-                        : "Ordering link is not configured"}
-                    </span>
-                  </button>
-                ),
-              )}
-            </div>
-            {linksError && (
-              <p
-                role="alert"
-                style={{ ...desc, color: C.danger, marginTop: 12 }}
-              >
-                {linksError}
-              </p>
-            )}
-            <div style={{ marginTop: 16 }}>
-              <Button variant="ghost" small onClick={() => setView("choose")}>
-                Back
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-    </Modal>
-  );
-}
-
-// ── Login Required Modal (guests only, shown when clicking Payout) ───────────────
 function LoginRequiredModal({
   onLogin,
   onSignUp,
@@ -1739,7 +1563,177 @@ function OrderPlacedModal({
 }
 
 // ── Order tracking and history ─────────────────────────────────────────────
-function TrackingPanel({ orders }: { orders: CustomerOrder[] }) {
+function deliveryLabel(order: CustomerOrder): string {
+  if (!order.delivery || ['Cancelled','Refunded'].includes(order.trackingStatus)) return order.trackingStatus;
+  if (order.delivery.deliveredAt && order.trackingStatus === 'Completed') return 'Delivered';
+  if (order.handoverTimestamp) return 'Out for Delivery';
+  if (order.paymentStatus !== 'Paid') return order.delivery.fee == null ? 'Waiting for Delivery Fee' : 'Waiting for Payment';
+  if (['Ready', 'Ready for Pickup'].includes(order.trackingStatus)) return 'Ready for Rider';
+  if (order.trackingStatus === 'Awaiting Cashier Review') return 'Payment Confirmed';
+  return ['Queued', 'Preparing'].includes(order.trackingStatus) ? 'Preparing Your Order' : order.trackingStatus;
+}
+function riderLink(url?: string | null, provider = 'Grab'): string | null {
+  if (!url) return null;
+  try { const parsed = new URL(url); return parsed.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.port && (provider === 'Foodpanda' ? ['foodpanda.ph','foodpanda.com'].some(domain => parsed.hostname.toLowerCase() === domain || parsed.hostname.toLowerCase().endsWith('.' + domain)) : ['express.grab.com','r.grab.com'].includes(parsed.hostname.toLowerCase())) ? url : null; } catch {return null;}
+}
+interface DeliveryQuote {
+  processedAt?: string | null; confirmationDeadline?: string | null; confirmationRemainingMs?: number | null; confirmationOverdue?: boolean;
+  courierService?: string; riderContact?: string; bookingReference?: string;
+  preferredCourier?: string;
+  trackingUrl?: string | null; deliveredAt?: string | null;
+
+  recipientName: string; recipientPhone: string; address: string; instructions?: string;
+  fee: number | null; revision: number; expiresAt: string | null; locked: boolean;
+  subtotal: number; discount: number; tax: number; serviceCharge: number;
+}
+function DeliveryPayment({ order, onRefresh }: { order: CustomerOrder; onRefresh: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const quote = order.delivery!;
+  const pay = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const result = await api.post<{ checkoutUrl?: string; orderId?: number }>('/paymongo/create-checkout', { deliveryOrderId: order.id, quoteRevision: quote.revision });
+      if (result.checkoutUrl) window.location.href = result.checkoutUrl;
+      else await onRefresh();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to open payment'); }
+    finally { setBusy(false); }
+  };
+  return <div>
+    <p>{quote.address}</p><p>Preferred courier: {quote.preferredCourier || "Grab"}</p>
+    <p>Food subtotal: {formatPHP(quote.subtotal)} ? Discount: {formatPHP(quote.discount)}</p>
+    <p>Tax: {formatPHP(quote.tax)} ? Service charge: {formatPHP(quote.serviceCharge)}</p>
+    <p>Delivery fee: {quote.fee == null ? 'Waiting for Delivery Fee' : formatPHP(quote.fee)}</p>
+    {quote.fee != null && <><p>Grand Total: {formatPHP(order.total)}</p><p>Quote valid until {quote.expiresAt ? formatInSettingsTimezone(quote.expiresAt, undefined, DATE_FORMAT) : '?'}</p>
+      <Button onClick={pay} disabled={busy}>{busy ? 'Checking?' : quote.locked ? 'Continue / Check Payment' : 'Accept Total & Pay'}</Button></>}
+    {error && <p role="alert">{error}</p>}
+  </div>;
+}
+function DeliveryRequestForm({ onClose, onSubmit, busy, profile, error, cart, billing, sauces }: {
+  error: string | null;
+  profile: { username: string; phoneNumber: string; deliveryAddress: string };
+  onClose: () => void;
+  onSubmit: (details: Record<string, string>) => Promise<void>;
+  busy: boolean;
+  cart: CartItem[];
+  billing: Billing;
+  sauces: { id: number; name: string }[];
+}) {
+  const [details, setDetails] = useState({ recipientName: profile.username, recipientPhone: profile.phoneNumber, deliveryAddress: profile.deliveryAddress, deliveryInstructions: '', preferredCourier: 'Grab' });
+  const close = () => { if (!busy) onClose(); };
+  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  return <Modal onClose={close} width={980} ariaLabel="Request delivery">
+    <form className="delivery-checkout" aria-labelledby="delivery-checkout-title" aria-busy={busy} onSubmit={e => { e.preventDefault(); if (!busy && cart.length) void onSubmit(details); }}>
+      <header className="delivery-checkout-header">
+        <span className="delivery-checkout-symbol"><Icon d={D.bag} size={23} /></span>
+        <div><p className="delivery-checkout-eyebrow">DELIVERY CHECKOUT</p><h2 id="delivery-checkout-title">Request delivery</h2><p>Good food, delivered your way.</p></div>
+      </header>
+      <div className="delivery-checkout-body">
+        <section className="delivery-checkout-information" aria-labelledby="delivery-information-title">
+          <h3 id="delivery-information-title">Delivery information</h3>
+          <p className="delivery-checkout-caption">Check your details. Changes here apply to this order only.</p>
+          <div className="delivery-checkout-fields">
+            {([['recipientName', 'Recipient name', 150], ['recipientPhone', 'Contact number', 40], ['deliveryAddress', 'Complete delivery address', 1000], ['deliveryInstructions', 'Delivery instructions (optional)', 1000]] as const).map(([key, label, max]) => <label key={key} className={`delivery-checkout-field ${key === 'recipientName' || key === 'recipientPhone' ? '' : 'delivery-checkout-field-wide'}`}>
+              <span>{key === 'recipientPhone' && <Icon d={D.phone} size={14} />}{label}</span>
+              {key === 'deliveryAddress' || key === 'deliveryInstructions'
+                ? <textarea rows={key === 'deliveryAddress' ? 3 : 2} required={key !== 'deliveryInstructions'} maxLength={max} value={details[key]} autoComplete={key === 'deliveryAddress' ? 'street-address' : 'off'} onChange={e => setDetails({ ...details, [key]: e.target.value })} />
+                : <input type={key === 'recipientPhone' ? 'tel' : 'text'} autoComplete={key === 'recipientPhone' ? 'tel' : 'name'} required maxLength={max} value={details[key]} onChange={e => setDetails({ ...details, [key]: e.target.value })} />}
+            </label>)}
+          </div>
+          <fieldset className="delivery-checkout-couriers">
+            <legend>Preferred courier</legend>
+            <div className="delivery-checkout-courier-options">
+              {['Grab', 'Foodpanda'].map(provider => <label key={provider} className="delivery-checkout-courier">
+                <input type="radio" name="preferredCourier" value={provider} checked={details.preferredCourier === provider} onChange={e => setDetails({ ...details, preferredCourier: e.target.value })} />
+                <span>{provider}</span><span className="delivery-checkout-courier-check"><Icon d={D.check} size={14} /></span>
+              </label>)}
+            </div>
+          </fieldset>
+          <div className="delivery-checkout-notice"><Icon d={D.shield} size={20} /><div>
+            <p>The store arranges delivery manually with your selected provider before quoting.</p>
+            <p>No payment yet. The cashier will quote the delivery fee for your approval.</p>
+          </div></div>
+        </section>
+        <section className="delivery-checkout-order" aria-labelledby="delivery-order-title">
+          <div className="delivery-checkout-order-heading"><h3 id="delivery-order-title">Your order</h3><span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span></div>
+          <p className="delivery-checkout-caption">Freshly prepared, just for you.</p>
+          <ul className="delivery-checkout-items">
+            {cart.map(({ recipe, quantity, includedSelections, selectedFlavorProductId, lineId }, index) => <li key={lineId ?? `${recipe.id}-${index}`} className="delivery-checkout-item">
+              <ProductImage src={recipe.image} alt={recipe.name} width={60} height={60} />
+              <div className="delivery-checkout-item-details"><h4>{recipe.name}</h4>
+                {selectedFlavorProductId && <p>Chicken flavor: {sauces.find(sauce => sauce.id === selectedFlavorProductId)?.name || includedSelections?.find(choice => choice.product_id === selectedFlavorProductId)?.name}</p>}
+                <IncludedChoices choices={includedSelections} flavorId={selectedFlavorProductId} />
+                <p className="delivery-checkout-quantity">Qty {quantity}</p>
+              </div>
+              <strong>{formatPHP(recipe.price * quantity)}</strong>
+            </li>)}
+          </ul>
+          {!cart.length && <p role="status">Your cart is empty. Add items before requesting delivery.</p>}
+          <dl className="delivery-checkout-totals">
+            <div><dt>Food subtotal</dt><dd>{formatPHP(billing.subtotal)}</dd></div>
+            {billing.taxAmount > 0 && <div><dt>Included tax</dt><dd>{formatPHP(billing.taxAmount)}</dd></div>}
+            <div><dt>Delivery fee</dt><dd className="delivery-checkout-pending">To be quoted</dd></div>
+            <div className="delivery-checkout-total"><dt>Total after quote</dt><dd>Pending</dd></div>
+          </dl>
+          <p className="delivery-checkout-caption">Review and approve your quoted total before paying.</p>
+        </section>
+      </div>
+      <footer className="delivery-checkout-footer">
+        <div className="delivery-checkout-error" aria-live="polite">{error && <p role="alert">{error}</p>}</div>
+        <div className="delivery-checkout-actions">
+          <button className="delivery-checkout-cancel" type="button" onClick={close} disabled={busy}>Cancel</button>
+          <button className="delivery-checkout-submit" type="submit" disabled={busy || !cart.length}>{busy ? 'Submitting...' : 'Submit delivery request'}</button>
+        </div>
+      </footer>
+    </form>
+  </Modal>;
+}
+
+function DeliveryReceiptConfirmation({ order, onRefresh }: { order: CustomerOrder; onRefresh: () => Promise<void> }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submitting = useRef(false);
+  const eligible = Boolean(order.delivery && order.paymentStatus === 'Paid' && order.handoverTimestamp && !order.delivery.deliveredAt && !['Completed', 'Cancelled', 'Refunded'].includes(order.trackingStatus));
+  useEffect(() => {
+    const q = order.delivery;
+    if (!eligible || !q || q.confirmationOverdue || q.confirmationRemainingMs == null) return;
+    // Refresh once at the server-provided deadline; no polling or browser-authoritative completion.
+    const timeout = window.setTimeout(() => { void onRefresh(); }, Math.max(0, q.confirmationRemainingMs) + 1000);
+    return () => window.clearTimeout(timeout);
+  }, [eligible, order.delivery?.confirmationOverdue, order.delivery?.confirmationRemainingMs, onRefresh]);
+  if (!eligible) return null;
+  const close = () => { if (!submitting.current) setConfirming(false); };
+  const confirm = async () => {
+    if (submitting.current) return;
+    submitting.current = true; setBusy(true); setError('');
+    try {
+      await api.patch(`/orders/${order.id}/delivery-fulfillment`, { action: 'delivered' });
+      await onRefresh();
+      setConfirming(false);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to confirm receipt. Please try again.'); }
+    finally { submitting.current = false; setBusy(false); }
+  };
+  return <div style={{ display: 'grid', gap: 10 }}>
+    <p style={{ margin: 0, color: C.muted, fontSize: 13 }}>Your order is on its way.</p>
+    <p style={{ margin: 0, color: C.muted, fontSize: 12 }}>Courier: {order.delivery?.courierService || order.delivery?.preferredCourier || 'Grab'}{order.riderName && ` | Rider: ${order.riderName}`}{order.delivery?.riderContact && ` | Contact: ${order.delivery.riderContact}`}</p>
+    {order.delivery?.confirmationOverdue && <p role="status" style={{ margin: 0, color: C.warning, fontSize: 12 }}>Confirmation overdue. Please confirm once you have received your food; the store can help if it has not arrived.</p>}
+    <button type="button" onClick={() => { setError(''); setConfirming(true); }} style={{ background: C.primary, color: C.onPrimary, padding: '12px 18px', border: 0, borderRadius: 8, fontFamily: FONT, fontWeight: 600, cursor: 'pointer', justifySelf: 'start', minHeight: 44 }}>Confirm Received</button>
+    {confirming && <Modal onClose={close} width={420} ariaLabel="Confirm order received">
+      <div style={{ padding: 24, display: 'grid', gap: 18 }}>
+        <h3 style={{ margin: 0, color: C.text, fontSize: 18 }}>Have you received your order?</h3>
+        {error && <p role="alert" style={{ margin: 0, color: C.danger, fontSize: 13 }}>{error}</p>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <Button disabled={busy} onClick={close}>Not Yet</Button>
+          <Button variant="primary" disabled={busy} onClick={() => void confirm()}>{busy ? 'Confirming...' : 'Yes, I Received It'}</Button>
+        </div>
+      </div>
+    </Modal>}
+  </div>;
+}
+
+function TrackingPanel({ orders, onRefresh }: { orders: CustomerOrder[]; onRefresh: () => Promise<void> }) {
   if (!orders.length) return null;
   return (
     <section style={{ marginBottom: 32 }} aria-label="Active orders">
@@ -1784,7 +1778,7 @@ function TrackingPanel({ orders }: { orders: CustomerOrder[] }) {
                 <span style={{ fontSize: 15, fontWeight: 600, color: C.text }}>
                   {o.orderNumber}
                 </span>
-                <Badge>{o.trackingStatus}</Badge>
+                <Badge>{deliveryLabel(o)}</Badge>
               </div>
               <span style={{ fontSize: 12, color: C.faint }}>
                 {formatInSettingsTimezone(o.createdAt, undefined, DATE_FORMAT)}
@@ -1800,6 +1794,9 @@ function TrackingPanel({ orders }: { orders: CustomerOrder[] }) {
             >
               {o.items.map((i) => `${i.quantity}x ${i.name}${(i.includedSelections ?? []).map((choice) => ` (Included ${choice.name} x${choice.qty})`).join("")}`).join(", ")}
             </p>
+            {o.delivery && o.paymentStatus !== 'Paid' && <DeliveryPayment order={o} onRefresh={onRefresh} />}
+            <DeliveryReceiptConfirmation order={o} onRefresh={onRefresh} />
+            {o.delivery && riderLink(o.delivery.trackingUrl, o.delivery.preferredCourier) && <a href={riderLink(o.delivery.trackingUrl, o.delivery.preferredCourier)!} target="_blank" rel="noopener noreferrer">Track Rider</a>}
           </div>
         ))}
       </div>
@@ -1895,7 +1892,7 @@ function HistoryDrawer({
                           : "success"
                       }
                     >
-                      {order.trackingStatus}
+                      {deliveryLabel(order)}
                     </Badge>
                   </div>
                   <div style={{ fontSize: 12, color: C.faint }}>
@@ -2004,6 +2001,7 @@ function CartDrawer({
   selectedPaymentMethod,
   onPaymentMethodChange,
   onRequestCashTerms,
+  onRequestDelivery,
 }: {
   cart: CartItem[];
   billing: Billing;
@@ -2025,6 +2023,7 @@ function CartDrawer({
   selectedPaymentMethod: PaymentMethodType;
   onPaymentMethodChange: (m: PaymentMethodType) => void;
   onRequestCashTerms: () => void;
+  onRequestDelivery: () => void;
 }) {
   const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
   const isCash = selectedPaymentMethod === "cash";
@@ -2034,8 +2033,8 @@ function CartDrawer({
     : paymentSession?.paid
       ? ["Place order", onPlaceOrder]
       : paymentSession
-        ? ["Check payment status", onVerifyPayment]
-        : ["Pay Online", onSendPayment];
+        ? ["Check payment status", paymentSession.checkoutSessionId ? onVerifyPayment : onSendPayment]
+        : ["Pay Online", onRequestDelivery];
   const note = (color: string, text: string) => (
     <p style={{ fontSize: 12.5, color, lineHeight: 1.6, margin: "0 0 12px" }}>
       {text}
@@ -2094,6 +2093,7 @@ function CartDrawer({
           onChange={onPaymentMethodChange}
           disabled={!isCash && !!paymentSession}
         />
+        {paymentMessage?.includes("My Profile") && <Button href="/my-account">Open My Profile</Button>}
         {paymentMessage &&
           note(
             isCash ? C.danger : paymentSession?.paid ? C.success : C.muted,
@@ -2125,7 +2125,7 @@ function CartDrawer({
         >
           {isCash
             ? "Pickup only. Pay at the store."
-            : "Pickup only. Payment is verified securely through PayMongo."}
+            : "Delivery. Submit your details first; review the cashier quotation before paying online."}
         </p>
       </>
     ) : undefined;
@@ -2392,6 +2392,9 @@ export default function Delicacy() {
   const nextLineId = useRef(Date.now());
   const [paymentSession, setPaymentSession] =
     useState<PaymentSessionState | null>(null);
+  const [deliveryProfile, setDeliveryProfile] = useState<{username: string; phoneNumber: string; deliveryAddress: string} | null>(null);
+  const [deliveryFormOpen, setDeliveryFormOpen] = useState(false);
+  const deliveryRequestKey = useRef<string | null>(null);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethodType>("gcash");
@@ -2408,7 +2411,6 @@ export default function Delicacy() {
   // Overlays
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [orderTypeOpen, setOrderTypeOpen] = useState(false);
   const [showCashTerms, setShowCashTerms] = useState(false);
   const [showLoginRequired, setShowLoginRequired] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -2453,7 +2455,7 @@ export default function Delicacy() {
 
   // Lock page scrolling while any overlay is open.
   const overlayOpen =
-    orderTypeOpen || showCashTerms || !!placed || drawerOpen || historyOpen;
+    showCashTerms || !!placed || drawerOpen || historyOpen;
   useEffect(() => {
     if (!overlayOpen) return;
     const prev = document.body.style.overflow;
@@ -2665,7 +2667,7 @@ export default function Delicacy() {
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.get("showOrderModal") !== "true") return;
-    setOrderTypeOpen(true);
+
     url.searchParams.delete("showOrderModal");
     window.history.replaceState(
       window.history.state,
@@ -2885,6 +2887,26 @@ export default function Delicacy() {
     }
   };
 
+  const openDelivery = async () => {
+    if (!canOrder()) { if (!user) setShowLoginRequired(true); return; }
+    try {
+      const profile = await api.get<{username:string;phoneNumber:string;deliveryAddress:string}>('/users/me');
+      if (!profile.phoneNumber || !profile.deliveryAddress) {setPaymentMessage('Pay Online is Delivery. Save your phone number and complete delivery address in My Profile first.'); return;}
+      setDeliveryProfile(profile); setPaymentMessage(null); setDeliveryFormOpen(true);
+    } catch (e) {setPaymentMessage(e instanceof Error ? e.message : 'Unable to load My Profile');}
+  };
+  const requestDelivery = async (details: Record<string, string>) => {
+    if (submittingRef.current || !canOrder()) return;
+    submittingRef.current = true; setIsSubmitting(true); setPaymentMessage(null);
+    try {
+      deliveryRequestKey.current ||= newCheckoutRequestId();
+      await api.post('/orders/delivery-request', { ...details, items: buildItems(), deliveryRequestKey: deliveryRequestKey.current });
+      deliveryRequestKey.current = null;
+      await fetchOrders(); setDeliveryFormOpen(false); setDrawerOpen(false); setCart([]);
+    } catch (e) { setPaymentMessage(e instanceof Error ? e.message : 'Delivery request failed'); }
+    finally { submittingRef.current = false; setIsSubmitting(false); }
+  };
+
   const handleRequestCashTerms = () => {
     if (!isSubmitting && cart.length) {
       if (canOrder()) {
@@ -3099,7 +3121,7 @@ export default function Delicacy() {
             key={item.label}
             type="button"
             onClick={() =>
-              current ? setOrderTypeOpen(true) : navigate(item.path)
+              navigate(item.path)
             }
             className="customer-nav-link"
             aria-current={current ? "page" : undefined}
@@ -3429,7 +3451,8 @@ export default function Delicacy() {
               onResend={handleResendVerification}
             />
           )}
-          <TrackingPanel orders={activeOrders} />
+          {deliveryFormOpen && deliveryProfile && <DeliveryRequestForm error={paymentMessage} cart={cart} billing={billing} sauces={sauces} profile={deliveryProfile} onClose={() => setDeliveryFormOpen(false)} onSubmit={requestDelivery} busy={isSubmitting} />}
+          <TrackingPanel orders={activeOrders} onRefresh={fetchOrders} />
 
           {/* ── Category tabs ── */}
           {!loading && !loadError && categories.length > 1 && (
@@ -3558,9 +3581,7 @@ export default function Delicacy() {
             setIncludedEditingId(null);
           }} />}
         <AnimatePresence>
-          {orderTypeOpen && (
-            <OrderTypeModal onClose={() => setOrderTypeOpen(false)} />
-          )}
+
         </AnimatePresence>
         <AnimatePresence>
           {drawerOpen && (
@@ -3590,6 +3611,7 @@ export default function Delicacy() {
                 setPaymentMethod(m);
                 clearPayment();
               }}
+              onRequestDelivery={() => void openDelivery()}
               onRequestCashTerms={handleRequestCashTerms}
             />
           )}

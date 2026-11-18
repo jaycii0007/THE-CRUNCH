@@ -111,6 +111,8 @@ interface SaleLog {
 }
 
 interface Order {
+  deliveryFee?: number | null;
+  collectedTotal?: number;
   invoiceNumber?: string | null;
   id: number;
   orderNumber: string;
@@ -141,6 +143,8 @@ interface Order {
 type OrderReport = { rows: Order[]; fromDate: Date | null; toDate: Date | null; description: string };
 
 interface RawOrderRow {
+  deliveryFee?: number | null;
+  collectedTotal?: number;
   invoiceNumber?: string | null;
   id: number;
   orderNumber?: string;
@@ -567,6 +571,8 @@ function processRawRows(rows: RawOrderRow[]): {
   type OrderAccum = {
     rows: RawOrderRow[];
     total: number;
+    deliveryFee: number | null;
+    collectedTotal: number;
     discountAmount: number | null;
     date: string;
     paymentDate: string | null;
@@ -595,6 +601,8 @@ function processRawRows(rows: RawOrderRow[]): {
       orderMap[r.id] = {
         rows: [],
         total: Number(r.total) || 0,
+        deliveryFee: r.deliveryFee == null ? null : Number(r.deliveryFee),
+        collectedTotal: Number(r.collectedTotal ?? r.total) || 0,
         discountAmount: r.discountAmount == null ? null : Number(r.discountAmount),
         date: r.date ?? "",
         paymentDate:
@@ -723,6 +731,8 @@ function processRawRows(rows: RawOrderRow[]): {
         quantity: Number(r.quantity) || 1,
       })),
       total: order.total,
+      deliveryFee: order.deliveryFee,
+      collectedTotal: order.collectedTotal,
       discountAmount: order.discountAmount,
       date: financialTimestamp || order.date || "",
       createdAt: order.date || undefined,
@@ -822,6 +832,9 @@ function buildSalesExport(orders: Order[]) {
   const missingDiscounts = rows.filter((row) => row.discount == null).length;
   return {
     rows, methods, missingDiscounts,
+    hasDelivery: rows.some(row => row.order.deliveryFee != null),
+    deliveryFees: rows.reduce((sum, row) => sum + Math.round(Number(row.order.deliveryFee || 0) * 100), 0),
+    collected: rows.reduce((sum, row) => sum + Math.round(Number(row.order.collectedTotal ?? row.order.total) * 100), 0),
     net: rows.reduce((sum, row) => sum + row.net, 0),
     food: missingDiscounts ? null : rows.reduce((sum, row) => sum + (row.food ?? 0), 0),
     discount: missingDiscounts ? null : rows.reduce((sum, row) => sum + (row.discount ?? 0), 0),
@@ -867,6 +880,7 @@ function salesReportMarkup(orders: Order[], settings: GeneralRestaurantSettings,
     <thead><tr><th>Date</th><th>Invoice No.</th><th>Order No.</th><th class="number">Food Price</th><th class="number">Discount</th>${report.methods.map((method) => `<th class="number">${escapePrintHtml(method)}</th>`).join("")}</tr></thead>
     <tbody>${rows || `<tr><td colspan="${5 + report.methods.length}">No completed, paid transactions in this period.</td></tr>`}</tbody>
     <tfoot><tr><td colspan="3">TOTAL</td><td class="number">${money(report.food)}</td><td class="number">${money(report.discount, true)}</td>${report.methods.map((method) => `<td class="number">${money(report.payments.get(method) ?? 0, true)}</td>`).join("")}</tr></tfoot></table>
+    ${report.hasDelivery ? `<p class="note">Delivery fees collected separately: ${money(report.deliveryFees)}. Total collected including delivery: ${money(report.collected)}. Delivery fees are excluded from food sales and the food-payment columns above.</p>` : ""}
     <p class="net-sales">GRAND TOTAL — NET SALES: ${money(report.net)}</p>
     ${report.missingDiscounts ? `<p class="note">${report.missingDiscounts} historical transaction(s) have no recorded discount amount. Food price and discount totals are unavailable; recorded net sales and payment totals remain included.</p>` : ""}
     ${report.rows.some((row) => normalizePaymentMethod(row.order.paymentCategory) === "Cash on Pickup") ? '<p class="note">Cash includes Cash on Pickup only for completed orders recorded as paid.</p>' : ""}
@@ -2917,6 +2931,10 @@ function OrderRow({
                         label: "Subtotal",
                         value: formatReportCurrency(order.total),
                       },
+                      ...(order.deliveryFee != null ? [
+                        {label: 'Delivery fee (separate)', value: formatReportCurrency(order.deliveryFee)},
+                        {label: 'Amount paid including delivery', value: formatReportCurrency(formatPaymentStatus(order.paymentStatus) === 'Paid' ? (order.collectedTotal ?? order.total + order.deliveryFee) : 0)},
+                      ] : []),
                       { label: "Payment Method", value: order.paymentCategory },
                       {
                         label: "Payment Status",

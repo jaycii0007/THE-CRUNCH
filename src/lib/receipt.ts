@@ -29,6 +29,7 @@ export interface ReceiptDto {
   discount: ReceiptAdjustmentDto;
   tax: ReceiptAdjustmentDto;
   serviceCharge: ReceiptAdjustmentDto;
+  deliveryFee?: number | null;
   total: number | null;
   paymentMethod: string | null;
   amountPaid: number | null;
@@ -150,7 +151,8 @@ export function buildReceiptHtml(r: ReceiptDto, opts: ReceiptOptions = {}): stri
     row("Total Sales", money(r.subtotal, cur)),
     hasDiscount
       ? row(`Discount${r.discount.name ? ` (${r.discount.name})` : ""}${rate(r.discount.rate)}`, `-${money(r.discount.amount, cur)}`) : "",
-    num(r.tax.amount) && r.tax.amount > 0 ? row(`${num(r.subtotal) && num(r.total) && Math.abs(r.total - (r.subtotal - Number(r.discount.amount ?? 0) + Number(r.serviceCharge.amount ?? 0))) < 0.01 ? "Included tax" : "Tax"}${rate(r.tax.rate)}`, money(r.tax.amount, cur)) : "",
+    num(r.tax.amount) && r.tax.amount > 0 ? row(`${num(r.subtotal) && num(r.total) && Math.abs(r.total - Number(r.deliveryFee ?? 0) - (r.subtotal - Number(r.discount.amount ?? 0) + Number(r.serviceCharge.amount ?? 0))) < 0.01 ? "Included tax" : "Tax"}${rate(r.tax.rate)}`, money(r.tax.amount, cur)) : "",
+    num(r.deliveryFee) ? row("Delivery fee", money(r.deliveryFee, cur)) : "",
     num(r.serviceCharge.amount) && r.serviceCharge.amount > 0 ? row(`Service Charge${rate(r.serviceCharge.rate)}`, money(r.serviceCharge.amount, cur)) : "",
   ].join("");
 

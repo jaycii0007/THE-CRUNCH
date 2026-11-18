@@ -189,9 +189,11 @@ interface OnlineOrder {
   items: {
     name: string;
     quantity: number;
+    price?: number;
     selectedFlavorName?: string | null;
     includedSelections?: IncludedChoice[];
   }[];
+  delivery?: {processedAt?: string | null; confirmationDeadline?: string | null; confirmationRemainingMs?: number | null; confirmationOverdue?: boolean; preferredCourier?: string; courierService?: string; riderContact?: string; bookingReference?: string; trackingUrl?: string; deliveredAt?: string; recipientName: string; recipientPhone: string; address: string; instructions?: string; fee: number | null; revision: number; locked: boolean; subtotal: number; discount: number;};
 }
 interface ShiftOrder {
   id: number;
@@ -623,6 +625,152 @@ const Empty = ({
     {children}
   </div>
 );
+
+function DeliveryFulfillmentForm({ order, onSaved }: { order: OnlineOrder; onSaved: () => Promise<void> }) {
+  const q = order.delivery!;
+  const { user } = useAuth();
+  const isAdmin = normalizeRole(user?.role) === 'administrator';
+  const [details, setDetails] = useState({courierService: q.preferredCourier || 'Grab', riderName: order.riderName || '', riderContact: q.riderContact || '', bookingReference: q.bookingReference || '', trackingUrl: q.trackingUrl || ''});
+  const [source, setSource] = useState('');
+  const [reference, setReference] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submitting = useRef(false);
+  const bookingReady = Boolean(q.processedAt && q.courierService === (q.preferredCourier || 'Grab') && order.riderName?.trim() && q.bookingReference?.trim());
+  const save = async (action: string) => {
+    if (submitting.current) return; submitting.current = true; setBusy(true); setError('');
+    try { await api.patch(`/orders/${order.id}/delivery-fulfillment`, {action, ...details, confirmationSource: source, confirmationReference: reference}); await onSaved(); }
+    catch (e) {setError(e instanceof Error ? e.message : 'Delivery update failed');} finally {submitting.current = false; setBusy(false);}
+  };
+  if (norm(order.trackingStatus) === 'awaiting cashier review') return <div className="pos-delivery-form grid gap-3 text-sm">
+    <p>Payment Confirmed - Waiting for Cashier</p>
+    <button type="button" className={ACT.green} disabled={busy} onClick={() => void save('process')}>{busy ? 'Processing...' : 'Process Order'}</button>
+    {error && <p role="alert">{error}</p>}
+  </div>;
+  return <div className="pos-delivery-form grid gap-3 text-sm">
+    {!order.handoverTimestamp && <>
+    <p>Actual courier: {q.courierService || 'Not recorded'}</p>
+    {([['riderName','Rider name (required for pickup)'],['riderContact','Rider contact (optional)'],['bookingReference','Booking / transaction reference (required for pickup)'],['trackingUrl','Actual courier HTTPS tracking URL (optional)']] as const).map(([key,label]) => <label key={key}>{label}<input className="pos-delivery-input" type={key === 'trackingUrl' ? 'url' : 'text'} maxLength={key === 'trackingUrl' ? 2048 : key === 'riderContact' ? 40 : 255} value={details[key]} onChange={e => setDetails({...details,[key]:e.target.value})} /></label>)}
+    <button className={ACT.dark} disabled={busy} onClick={() => void save('booking')}>Save courier details</button>
+    {!order.handoverTimestamp && ['ready','ready for pickup'].includes(norm(order.trackingStatus)) && <button className={ACT.green} disabled={busy || !bookingReady} onClick={() => void save('pickup')}>Confirm Rider Pickup</button>}
+    {!bookingReady && <p className="text-xs text-neutral-600">Save the actual courier, rider name and booking reference before confirming pickup.</p>}
+    </>}
+    {order.handoverTimestamp && <p role="status" className="text-sm font-medium text-neutral-700">{q.confirmationOverdue ? 'Confirmation Overdue - Follow up with the customer. No verified delivery proof is available for automatic completion.' : 'Out for Delivery - Waiting for Customer Confirmation'}</p>}
+    {order.handoverTimestamp && isAdmin && <details className="grid gap-3"><summary className="cursor-pointer text-xs font-semibold">Admin exception: confirm verified receipt</summary><p className="my-2 text-xs text-neutral-600">Use only when the customer cannot confirm through their account. Record actual confirmation and supporting details.</p>
+      <label>Delivery confirmation source<select className="pos-delivery-input" value={source} onChange={e => setSource(e.target.value)}><option value="">Select actual confirmation</option><option value="customer">Customer confirmation</option><option value="courier">Courier confirmation</option><option value="verified_proof">Verified delivery proof</option></select></label>
+      <label>Confirmation reference / details<input className="pos-delivery-input" maxLength={1000} value={reference} onChange={e => setReference(e.target.value)} /></label>
+      <button className={ACT.green} disabled={busy || !source || !reference.trim()} onClick={() => void save('delivered')}>Confirm Delivered (Admin exception)</button>
+    </details>}{error && <p role="alert">{error}</p>}
+  </div>;
+}
+
+function DeliveryQuoteForm({ order, onSaved }: { order: OnlineOrder; onSaved: () => Promise<void> }) {
+  const [fee, setFee] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const q = order.delivery!;
+  return <form className="pos-delivery-form grid gap-3 text-sm" onSubmit={async e => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); try {
+    await api.patch(`/orders/${order.id}/delivery-quote`, { deliveryFee: fee }); await onSaved();
+  } catch (e) { setError(e instanceof Error ? e.message : 'Quote failed'); } finally {setBusy(false);} }}>
+    <p>Arrange delivery manually with {q.preferredCourier || "Grab"} before quoting. If unavailable, resolve it with the customer; do not switch providers.</p>
+    {!q.locked && <><label className="grid gap-1.5 font-medium">Delivery fee<input className="pos-delivery-input" aria-label="Delivery fee" type="number" required min="0" max="1000" step="0.01" value={fee} onChange={e => setFee(e.target.value)} /></label><button className={ACT.dark} disabled={busy} type="submit">{busy ? 'Saving quote...' : 'Save delivery quote'}</button></>}
+    {q.locked && <p>Accepted total locked for online payment</p>}{error && <p role="alert">{error}</p>}
+  </form>;
+}
+
+function cashierDeliveryStage(order: OnlineOrder): string {
+  const q = order.delivery!;
+  if (q.deliveredAt && norm(order.trackingStatus) === 'completed') return 'Delivered';
+  if (['cancelled', 'refunded', 'completed'].includes(norm(order.trackingStatus))) return order.trackingStatus;
+  if (order.handoverTimestamp) return q.confirmationOverdue ? 'Confirmation Overdue' : 'Out for Delivery';
+  if (!isPaid(order.paymentStatus)) return q.fee == null ? 'Waiting for Delivery Fee' : 'Waiting for Customer Payment';
+  if (norm(order.trackingStatus) === 'awaiting cashier review') return 'Paid - Waiting for Cashier';
+  if (['ready', 'ready for pickup'].includes(norm(order.trackingStatus))) return 'Ready for Rider';
+  return `Sent to Kitchen - ${order.trackingStatus}`;
+}
+
+function DeliveryOrderCard({ order, onSaved }: { order: OnlineOrder; onSaved: () => Promise<void> }) {
+  const { money, time, dateTime } = useFmt();
+  const [expanded, setExpanded] = useState(false);
+  const q = order.delivery!;
+  const terminal = ['completed', 'cancelled', 'refunded'].includes(norm(order.trackingStatus)) || Boolean(q.deliveredAt);
+  const paid = isPaid(order.paymentStatus);
+  const waitingForProcessing = paid && norm(order.trackingStatus) === 'awaiting cashier review';
+  useEffect(() => {
+    if (terminal || !paid || !order.handoverTimestamp || q.confirmationOverdue || q.confirmationRemainingMs == null) return;
+    // One deadline refresh; the database clock, not this timer, determines overdue status.
+    const timeout = window.setTimeout(() => { void onSaved(); }, Math.max(0, q.confirmationRemainingMs) + 1000);
+    return () => window.clearTimeout(timeout);
+  }, [terminal, paid, order.handoverTimestamp, q.confirmationOverdue, q.confirmationRemainingMs, onSaved]);
+  const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const detailsId = `delivery-details-${order.id}`;
+  let trackingUrl: string | undefined;
+  try {
+    const url = new URL(q.trackingUrl || '');
+    if (url.protocol === 'https:' && !url.username && !url.password) trackingUrl = url.href;
+  } catch { /* No valid saved tracking link. */ }
+  return <article className="pos-delivery-card">
+    <div className="pos-delivery-summary">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-bold">{order.orderNumber}</h3><Chip className="bg-green-100 text-green-800">{cashierDeliveryStage(order)}</Chip></div>
+        <p className="pos-delivery-customer">{q.recipientName}</p>
+        <p className="pos-delivery-meta"><span>{q.preferredCourier || 'Grab'}</span><span>{time(order.createdAt)}</span><span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span></p>
+      </div>
+      <div className="pos-delivery-summary-actions"><div><span className="pos-delivery-subtotal-label">Food subtotal</span><strong>{money(q.subtotal)}</strong></div>
+        <button type="button" className={ACT.dark} aria-expanded={expanded} aria-controls={detailsId} aria-label={`${expanded ? 'Hide' : 'Check'} details for order ${order.orderNumber}`} onClick={() => setExpanded(value => !value)}>{expanded ? 'Hide Details' : 'Check Details'}<ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 ${expanded ? 'rotate-180' : ''}`} /></button>
+      </div>
+    </div>
+    <div id={detailsId} hidden={!expanded} className="pos-delivery-details">
+      <section aria-labelledby={`${detailsId}-customer`}>
+        <h4 id={`${detailsId}-customer`}>Customer &amp; Delivery Information</h4>
+        <dl className="pos-delivery-values">
+          <div><dt>Recipient</dt><dd>{q.recipientName}</dd></div>
+          <div><dt>Contact number</dt><dd>{q.recipientPhone}</dd></div>
+          <div><dt>Delivery address</dt><dd className="whitespace-pre-wrap">{q.address}</dd></div>
+          <div><dt>Instructions</dt><dd className="whitespace-pre-wrap">{q.instructions || 'None provided'}</dd></div>
+          <div><dt>Preferred courier</dt><dd>{q.preferredCourier || 'Grab'}</dd></div>
+        </dl>
+      </section>
+      <section aria-labelledby={`${detailsId}-items`}>
+        <h4 id={`${detailsId}-items`}>Order Items</h4>
+        <ul className="pos-delivery-items">{order.items.map((item, index) => <li key={index}>
+          <div className="min-w-0"><p className="font-medium">{item.name}</p>
+            {item.selectedFlavorName && <p className="text-xs text-neutral-600">Chicken flavor: {item.selectedFlavorName}</p>}
+            <IncludedChoices choices={item.includedSelections} />
+            <p className="text-xs text-neutral-600">Qty {item.quantity}{item.price != null && ` at ${money(item.price)} each`}</p>
+          </div><strong className="text-sm font-semibold">{item.price == null ? 'Price unavailable' : money(item.price * item.quantity)}</strong>
+        </li>)}</ul>
+        <dl className="pos-delivery-values pos-delivery-money"><div><dt>Food subtotal</dt><dd>{money(q.subtotal)}</dd></div></dl>
+      </section>
+      <section aria-labelledby={`${detailsId}-payment`}>
+        <h4 id={`${detailsId}-payment`}>Payment &amp; Delivery Fee</h4>
+        <dl className="pos-delivery-values pos-delivery-money">
+          <div><dt>Payment status</dt><dd><PayBadge status={order.paymentStatus} /></dd></div>
+          <div><dt>Food subtotal</dt><dd>{money(q.subtotal)}</dd></div>
+          {q.discount > 0 && <div><dt>Discount</dt><dd>-{money(q.discount)}</dd></div>}
+          <div><dt>Delivery fee</dt><dd>{q.fee == null ? 'To be quoted' : money(q.fee)}</dd></div>
+          <div className="pos-delivery-grand-total"><dt>Grand total</dt><dd>{q.fee == null ? 'Pending quote' : money(order.total)}</dd></div>
+        </dl>
+        {!paid && !terminal && q.fee == null && <DeliveryQuoteForm order={order} onSaved={onSaved} />}
+        {!paid && !terminal && q.fee != null && <p className="mt-3 text-sm text-neutral-600">Waiting for Customer Payment. The customer can request a fresh quote if it expires.</p>}
+        {!paid && !terminal && q.fee != null && !q.locked && <details className="mt-3"><summary className="cursor-pointer text-xs font-semibold">Revise / renew delivery quote</summary><DeliveryQuoteForm order={order} onSaved={onSaved} /></details>}
+        {waitingForProcessing && !terminal && <DeliveryFulfillmentForm order={order} onSaved={onSaved} />}
+      </section>
+      <section aria-labelledby={`${detailsId}-rider`}>
+        <h4 id={`${detailsId}-rider`}>Rider &amp; Fulfillment</h4>
+        <dl className="pos-delivery-values">
+          {q.deliveredAt && <div><dt>Confirmed at</dt><dd>{dateTime(q.deliveredAt)}</dd></div>}
+          <div><dt>Booking reference</dt><dd>{q.bookingReference || 'Not provided'}</dd></div>
+          <div><dt>Rider name</dt><dd>{order.riderName || 'Not provided'}</dd></div>
+          <div><dt>Rider contact</dt><dd>{q.riderContact || 'Not provided'}</dd></div>
+          {trackingUrl && <div><dt>Tracking</dt><dd><a className="underline underline-offset-2" href={trackingUrl} target="_blank" rel="noopener noreferrer">Open courier tracking</a></dd></div>}
+        </dl>
+        {paid && !waitingForProcessing && !terminal && <DeliveryFulfillmentForm order={order} onSaved={onSaved} />}
+        {!paid && !terminal && <p className="text-xs text-neutral-600">Fulfillment becomes available after payment.</p>}
+      </section>
+    </div>
+  </article>;
+}
 
 /** One order card, shared by review / pickup / delivery panels. */
 function OrderRow({
@@ -2369,7 +2517,7 @@ export default function CashierView() {
       const first = firstPoll.current;
       firstPoll.current = false;
       const nextReview = r ?? [];
-      const nextDelivery = (d ?? []).filter((o) => isPaid(o.paymentStatus));
+      const nextDelivery = (d ?? []).filter((o) => o.delivery || isPaid(o.paymentStatus));
 
       // open the panels when new orders arrive (not on the very first load)
       if (!first && nextReview.length > prevReviewCount.current)
@@ -3106,10 +3254,11 @@ export default function CashierView() {
   const onlineCount = review.length + ready.length;
   const pendingDelivery = delivery.filter(
     (o) =>
-      !o.handoverTimestamp &&
+      !o.delivery && !o.handoverTimestamp &&
       !["handed to rider", "out for delivery"].includes(norm(o.trackingStatus)),
   );
-  const deliveryCount = pendingDelivery.length + handed.length;
+  const customerDeliveries = delivery.filter(o => o.delivery);
+  const deliveryCount = pendingDelivery.length + handed.length + customerDeliveries.length;
   const payBtnLabel = placing
     ? "Processing…"
     : loadingPaymentQr && paymentMethod === "gcash_onsite"
@@ -3173,7 +3322,7 @@ export default function CashierView() {
                   open={deliveryOpen}
                   onClick={() => setDeliveryOpen((p) => !p)}
                 >
-                  Delivery Handover
+                  Delivery Orders
                 </Pill>
               </div>
             </motion.div>
@@ -3224,12 +3373,13 @@ export default function CashierView() {
                                 : "Void order"}
                             </button>
                           )}
-                          <button
+                          {!o.delivery && <button
                             className={ACT.green}
                             onClick={() => setProceedOrder(o)}
                           >
                             Proceed to order
-                          </button>
+                          </button>}
+                          {o.delivery && <DeliveryQuoteForm order={o} onSaved={refreshOrders} />}
                         </>
                       }
                     />
@@ -3258,10 +3408,12 @@ export default function CashierView() {
             </Collapse>
 
             <Collapse open={deliveryOpen}>
-              <div className="pos-panel rounded-2xl border border-neutral-200 bg-neutral-50/60">
+              <div className="pos-panel pos-delivery-list rounded-2xl border border-neutral-200 bg-neutral-50/60">
                 {!deliveryCount && (
                   <Empty>No delivery orders waiting for rider handover</Empty>
                 )}
+                {customerDeliveries.length > 0 && <PanelTitle>Customer deliveries</PanelTitle>}
+                {customerDeliveries.map(o => <DeliveryOrderCard key={`customer-delivery-${o.id}`} order={o} onSaved={refreshOrders} />)}
                 {pendingDelivery.length > 0 && (
                   <PanelTitle>Ready for rider handover</PanelTitle>
                 )}

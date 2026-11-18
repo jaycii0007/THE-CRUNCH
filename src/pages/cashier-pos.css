@@ -1463,3 +1463,54 @@
     0 40px 90px -20px rgba(28, 27, 23, 0.35),
     0 16px 40px -14px rgba(28, 27, 23, 0.18);
 }
+/* Customer delivery cards, confined to the existing Cashier delivery panel. */
+.pos-scope .pos-delivery-card { margin:10px 12px; border:1px solid var(--color-neutral-200); border-radius:14px; background:var(--color-white); overflow-wrap:anywhere; }
+.pos-delivery-summary { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px; }
+.pos-delivery-customer { margin-top:5px; font-size:13px; font-weight:500; }
+.pos-delivery-meta { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:4px; font-size:12px; color:var(--color-neutral-600); }
+.pos-delivery-summary-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:12px 18px; flex-shrink:0; }
+.pos-delivery-summary-actions > div { display:grid; gap:3px; text-align:right; font-size:14px; }
+.pos-delivery-subtotal-label { color:var(--color-neutral-600); font-size:11px; font-weight:400; }
+.pos-delivery-summary-actions button { min-height:40px; gap:8px; }
+.pos-delivery-details { border-top:1px solid var(--color-neutral-200); padding:0 16px; }
+.pos-delivery-details[hidden] { display:none; }
+.pos-delivery-details > section { padding:18px 0; }
+.pos-delivery-details > section + section { border-top:1px solid var(--color-neutral-200); }
+.pos-delivery-details h4 { margin-bottom:14px; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--color-neutral-700); }
+.pos-delivery-values { display:grid; gap:10px; font-size:13px; line-height:1.6; }
+.pos-delivery-values > div { display:grid; grid-template-columns:minmax(100px,145px) minmax(0,1fr); gap:8px 20px; }
+.pos-delivery-values dt { color:var(--color-neutral-600); }
+.pos-delivery-values dd { min-width:0; margin:0; color:var(--color-neutral-900); overflow-wrap:anywhere; }
+.pos-delivery-money > div { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.pos-delivery-money dd { text-align:right; font-weight:500; }
+.pos-delivery-grand-total { padding-top:12px; border-top:1px dashed var(--color-neutral-300); font-weight:700; }
+.pos-delivery-grand-total dt { color:var(--color-neutral-900); }
+.pos-delivery-items { display:grid; gap:12px; list-style:none; padding:0; margin:0 0 16px; }
+.pos-delivery-items > li { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:6px 16px; font-size:13px; }
+.pos-delivery-items > li > div { flex:1; min-width:140px; }
+.pos-delivery-items > li > strong { margin-left:auto; }
+.pos-delivery-form { margin-top:16px; padding-top:14px; border-top:1px dashed var(--color-neutral-300); }
+.pos-delivery-form label { min-width:0; font-size:12px; color:var(--color-neutral-700); }
+.pos-delivery-form .pos-delivery-input { display:block; width:100%; min-width:0; min-height:42px; margin-top:6px; padding:9px 12px; border:1px solid var(--color-neutral-300); border-radius:9px; background:var(--color-neutral-50); color:var(--color-neutral-900); font:inherit; }
+.pos-delivery-form .pos-delivery-input:focus-visible { outline:2px solid var(--color-neutral-700); outline-offset:2px; }
+.pos-delivery-form button { justify-self:start; min-height:40px; max-width:100%; white-space:normal; }
+.pos-delivery-form [role="alert"] { color:var(--color-red-700); font-size:12px; }
+@media(min-width:1100px) {
+  .pos-delivery-form:has(input[type="url"]) { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .pos-delivery-form:has(input[type="url"]) button, .pos-delivery-form:has(input[type="url"]) [role="alert"] { grid-column:1 / -1; }
+}
+@media(max-width:768px) {
+  .pos-delivery-summary { align-items:stretch; flex-direction:column; gap:12px; }
+  .pos-delivery-summary-actions { flex-shrink:1; justify-content:space-between; }
+  .pos-delivery-summary-actions > div { text-align:left; }
+}
+@media(max-width:480px) {
+  .pos-scope .pos-delivery-card { margin:8px; }
+  .pos-delivery-summary { padding:14px; }
+  .pos-delivery-details { padding:0 14px; }
+  .pos-delivery-values:not(.pos-delivery-money) > div { grid-template-columns:1fr; gap:2px; }
+  .pos-delivery-form button { justify-self:stretch; width:100%; }
+}
+.pos-delivery-list { max-height:min(65dvh,640px); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.pos-delivery-summary-actions { max-width:100%; }
+.pos-delivery-summary-actions strong { overflow-wrap:anywhere; }

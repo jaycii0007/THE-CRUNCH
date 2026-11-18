@@ -13,6 +13,8 @@ interface OwnAccount {
   username: string;
   email: string;
   role: string;
+  phoneNumber?: string;
+  deliveryAddress?: string;
 }
 
 type Notice = { tone: "success" | "error"; text: string } | null;
@@ -90,6 +92,8 @@ export default function MyAccount() {
   const navigate = useNavigate();
   const { user, updateUser } = useAuth();
   const [account, setAccount] = useState<OwnAccount | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -107,6 +111,8 @@ export default function MyAccount() {
     try {
       const data = await api.get<OwnAccount>("/users/me");
       setAccount(data);
+      setPhoneNumber(data.phoneNumber || '');
+      setDeliveryAddress(data.deliveryAddress || '');
       setUsername(data.username);
       updateUser({ username: data.username, email: data.email, role: data.role });
     } catch (error) {
@@ -130,7 +136,7 @@ export default function MyAccount() {
     setProfileBusy(true);
     setProfileNotice(null);
     try {
-      const saved = await api.put<OwnAccount>("/users/me", { username: cleanUsername });
+      const saved = await api.put<OwnAccount>("/users/me", { username: cleanUsername, ...(isCustomer ? {phoneNumber,deliveryAddress} : {}) });
       setAccount(saved);
       setUsername(saved.username);
       updateUser({ username: saved.username, email: saved.email, role: saved.role });
@@ -296,6 +302,10 @@ export default function MyAccount() {
                     className={isCustomer ? "w-full rounded-xl border border-white/10 bg-[#1b1717] px-4 py-3 text-sm text-[#f3efe9] outline-none transition focus:border-[#f7c948] focus:ring-4 focus:ring-[#f7c948]/10" : "w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-[#26392d] outline-none transition focus:border-slate-700 focus:ring-4 focus:ring-slate-200"}
                   />
                 </label>
+                {isCustomer && <>
+                  <label className="block text-sm text-stone-200">Phone number (required only for Delivery)<input className="mt-2 block w-full rounded-xl border border-white/10 bg-[#1b1717] p-3" value={phoneNumber} maxLength={40} onChange={e => setPhoneNumber(e.target.value)} autoComplete="tel" /></label>
+                  <label className="block text-sm text-stone-200">Complete delivery address<input className="mt-2 block w-full rounded-xl border border-white/10 bg-[#1b1717] p-3" value={deliveryAddress} maxLength={1000} onChange={e => setDeliveryAddress(e.target.value)} autoComplete="street-address" /></label>
+                </>}
                 <div className={isCustomer ? "grid gap-5" : "grid gap-5 sm:grid-cols-2"}>
                   <label className="block">
                     <span className={isCustomer ? "mb-2 block text-sm font-semibold text-stone-200" : "mb-2 block text-sm font-semibold text-[#394438]"}>Email address</span>
