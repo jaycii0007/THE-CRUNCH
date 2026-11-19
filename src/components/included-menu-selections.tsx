@@ -43,7 +43,7 @@ export function IncludedSelectionModal({ name, config, options, flavors = [], re
     });
   return <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-3" role="dialog" aria-modal="true" aria-label={`Selections for ${name}`}>
     <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
-      <div className="shrink-0 border-b px-5 py-3"><h2 className="text-lg font-semibold">Choose included selections</h2><p className="text-sm text-neutral-600">{name} ? no additional charge.</p></div>
+      <div className="shrink-0 border-b px-5 py-3"><h2 className="text-lg font-semibold">Choose included selections</h2><p className="text-sm text-neutral-600">{name} &mdash; no additional charge.</p></div>
       <div className="min-h-0 overflow-y-auto px-5 py-3">
         {requireFlavor && <label className="mb-3 block text-sm">Required Chicken Flavor
           <select aria-label="Required Chicken Flavor" className="mt-1 w-full rounded border p-2" value={flavor ?? ''} onChange={(event) => setFlavor(Number(event.target.value) || undefined)}>
@@ -58,7 +58,7 @@ export function IncludedSelectionModal({ name, config, options, flavors = [], re
           // Keep real sauce products selectable without listing all flavors twice.
           const visible = eligible.filter((option) => !(isSauce(kind) && requireFlavor && flavors.some((entry) => entry.id === option.id)));
           if (isSauce(kind) && requireFlavor && !visible.length && eligible.some((option) => flavors.some((entry) => entry.id === option.id))) return null;
-          return <fieldset key={kind} className="mb-3"><legend className="mb-1 text-sm font-medium">Included {rule.label || kind}{rule.includedQuantity > 1 ? ` ? choose ${rule.includedQuantity}` : ''}</legend>
+          return <fieldset key={kind} className="mb-3"><legend className="mb-1 text-sm font-medium">Included {rule.label || kind}{rule.includedQuantity > 1 ? ` \u2014 choose ${rule.includedQuantity}` : ''}</legend>
             {!eligible.length && <p className="text-sm text-red-700">No available choices. This meal cannot be added right now.</p>}
             <div className={rule.includedQuantity > 1 ? 'grid grid-cols-1 gap-2 sm:grid-cols-2' : ''}>
               {Array.from({ length: rule.includedQuantity }, (_, index) => {

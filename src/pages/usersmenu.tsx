@@ -137,7 +137,8 @@ interface CustomerOrder {
   paymentReference: string | null;
   paymentStatus: string | null;
   paymentMethod: string;
-  items: { name: string; quantity: number; includedSelections?: IncludedChoice[] }[];
+  items: { name: string; quantity: number; price?: number; selectedFlavorName?: string; includedSelections?: IncludedChoice[] }[];
+  subtotal?: number; discountAmount?: number; taxAmount?: number; serviceChargeAmount?: number;
   delivery?: DeliveryQuote | null;
   handoverTimestamp?: string | null;
   riderName?: string | null;
@@ -1600,13 +1601,12 @@ function DeliveryPayment({ order, onRefresh }: { order: CustomerOrder; onRefresh
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to open payment'); }
     finally { setBusy(false); }
   };
-  return <div>
-    <p>{quote.address}</p><p>Preferred courier: {quote.preferredCourier || "Grab"}</p>
-    <p>Food subtotal: {formatPHP(quote.subtotal)} ? Discount: {formatPHP(quote.discount)}</p>
-    <p>Tax: {formatPHP(quote.tax)} ? Service charge: {formatPHP(quote.serviceCharge)}</p>
-    <p>Delivery fee: {quote.fee == null ? 'Waiting for Delivery Fee' : formatPHP(quote.fee)}</p>
-    {quote.fee != null && <><p>Grand Total: {formatPHP(order.total)}</p><p>Quote valid until {quote.expiresAt ? formatInSettingsTimezone(quote.expiresAt, undefined, DATE_FORMAT) : '?'}</p>
-      <Button onClick={pay} disabled={busy}>{busy ? 'Checking?' : quote.locked ? 'Continue / Check Payment' : 'Accept Total & Pay'}</Button></>}
+  return <div className="customer-order-next-action">
+    {quote.fee == null ? <p>The store is checking your delivery fee. No payment is due yet.</p> : <>
+      <p>Review your payment summary before continuing.</p>
+      <p>Quote valid until {quote.expiresAt ? formatInSettingsTimezone(quote.expiresAt, undefined, DATE_FORMAT) : 'Not provided'}</p>
+      <Button onClick={pay} disabled={busy}>{busy ? 'Checking...' : quote.locked ? 'Continue / Check Payment' : 'Review Total & Pay'}</Button>
+    </>}
     {error && <p role="alert">{error}</p>}
   </div>;
 }
@@ -1733,75 +1733,79 @@ function DeliveryReceiptConfirmation({ order, onRefresh }: { order: CustomerOrde
   </div>;
 }
 
+function CustomerActiveOrderCard({ o, onRefresh }: { o: CustomerOrder; onRefresh: () => Promise<void> }) {
+  const [expanded, setExpanded] = useState(false);
+  const q = o.delivery;
+  const detailsId = `customer-order-details-${o.id}`;
+  const awaitingQuote = Boolean(q && q.fee == null);
+  const canPay = Boolean(q && q.fee != null && o.paymentStatus !== 'Paid');
+  const canConfirm = Boolean(q && o.paymentStatus === 'Paid' && o.handoverTimestamp && !q.deliveredAt && !['Completed', 'Cancelled', 'Refunded'].includes(o.trackingStatus));
+  const money = (value?: number) => value == null || !Number.isFinite(value) ? 'Not provided' : formatPHP(value);
+  const subtotal = q?.subtotal ?? o.subtotal;
+  const breakdown = [
+    ['Food subtotal', subtotal], ['Discount', q?.discount ?? o.discountAmount],
+    ['Tax', q?.tax ?? o.taxAmount], ['Service charge', q?.serviceCharge ?? o.serviceChargeAmount],
+  ] as const;
+  return <article className="customer-active-order">
+    <div className="customer-active-order-summary">
+      <div className="customer-active-order-heading"><strong>{o.orderNumber}</strong><Badge>{deliveryLabel(o)}</Badge></div>
+      <p className="customer-active-order-date">{formatInSettingsTimezone(o.createdAt, undefined, DATE_FORMAT)}</p>
+      <p className="customer-active-order-products">{o.items.slice(0, 2).map(item => `${item.quantity}x ${item.name}`).join(', ')}{o.items.length > 2 && ` + ${o.items.length - 2} more`}</p>
+      <p className="customer-active-order-meta">{q || o.orderType.toLowerCase() === 'delivery' ? 'Delivery' : 'Pickup'}{q && ` | ${q.preferredCourier || 'Grab'}`}</p>
+      <div className="customer-active-order-bottom">
+        <div className="customer-active-order-amount"><span>{awaitingQuote ? 'Food subtotal - delivery fee pending' : q && o.paymentStatus !== 'Paid' ? 'Quoted total' : 'Order amount'}</span><strong>{money(awaitingQuote ? subtotal : o.total)}</strong></div>
+        <button type="button" className="customer-active-order-toggle" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(value => !value)}>{expanded ? 'Hide Details' : 'See Details'}<Icon d={D.chevron} size={16} /></button>
+      </div>
+      {(canPay || canConfirm) && <p className="customer-active-order-action-hint">{canConfirm ? 'Confirm Received' : 'Review Total & Pay'} is available in order details.</p>}
+    </div>
+    <div className="customer-active-order-details" id={detailsId} hidden={!expanded}>
+      <section aria-labelledby={`${detailsId}-items`}><h4 id={`${detailsId}-items`}>Order Items</h4>
+        <ul>{o.items.map((item, index) => <li className="customer-active-order-item" key={index}>
+          <div><strong>{item.name}</strong>{item.selectedFlavorName && <p>Chicken flavor: {item.selectedFlavorName}</p>}<IncludedChoices choices={item.includedSelections} /><p>Qty {item.quantity}{item.price != null && ` at ${money(item.price)} each`}</p></div>
+          <span>{item.price == null ? 'Price not provided' : money(item.price * item.quantity)}</span>
+        </li>)}</ul>
+      </section>
+      <section aria-labelledby={`${detailsId}-payment`}><h4 id={`${detailsId}-payment`}>Payment Summary</h4>
+        <dl className="customer-active-order-values">
+          {breakdown.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{money(value)}</dd></div>)}
+          {q && <div><dt>Delivery fee</dt><dd>{q.fee == null ? 'To be quoted' : money(q.fee)}</dd></div>}
+          <div className="customer-active-order-total"><dt>{awaitingQuote ? 'Total after quote' : 'Grand total'}</dt><dd>{awaitingQuote ? 'Pending' : money(o.total)}</dd></div>
+          <div><dt>Payment status</dt><dd>{o.paymentStatus || 'Pending'}</dd></div>
+        </dl>
+      </section>
+      {q && <section aria-labelledby={`${detailsId}-delivery`}><h4 id={`${detailsId}-delivery`}>Delivery Information</h4>
+        <dl className="customer-active-order-values customer-active-order-contact">
+          <div><dt>Recipient</dt><dd>{q.recipientName}</dd></div><div><dt>Contact</dt><dd>{q.recipientPhone}</dd></div>
+          <div><dt>Delivery address</dt><dd>{q.address}</dd></div>
+          {q.instructions && <div><dt>Instructions</dt><dd>{q.instructions}</dd></div>}
+          <div><dt>Preferred courier</dt><dd>{q.preferredCourier || 'Grab'}</dd></div>
+          {q.courierService && <div><dt>Actual courier</dt><dd>{q.courierService}</dd></div>}
+          {o.riderName && <div><dt>Rider name</dt><dd>{o.riderName}</dd></div>}
+          {q.riderContact && <div><dt>Rider contact</dt><dd>{q.riderContact}</dd></div>}
+          {q.bookingReference && <div><dt>Booking reference</dt><dd>{q.bookingReference}</dd></div>}
+          <div><dt>Delivery status</dt><dd>{deliveryLabel(o)}</dd></div>
+        </dl>
+        {o.delivery && riderLink(o.delivery.trackingUrl, o.delivery.preferredCourier) && <a href={riderLink(o.delivery.trackingUrl, o.delivery.preferredCourier)!} target="_blank" rel="noopener noreferrer">Track Rider</a>}
+      </section>}
+      <section aria-labelledby={`${detailsId}-progress`}><h4 id={`${detailsId}-progress`}>Order Progress</h4>
+        <p>{deliveryLabel(o)}</p>
+        {o.delivery && o.paymentStatus !== 'Paid' && <DeliveryPayment order={o} onRefresh={onRefresh} />}
+        <DeliveryReceiptConfirmation order={o} onRefresh={onRefresh} />
+        {!q && <p>{o.paymentStatus === 'Paid' ? 'Collect your order at the store once it is ready for pickup.' : 'Complete your payment at the store to proceed with pickup.'}</p>}
+      </section>
+    </div>
+  </article>;
+}
+
 function TrackingPanel({ orders, onRefresh }: { orders: CustomerOrder[]; onRefresh: () => Promise<void> }) {
   if (!orders.length) return null;
-  return (
-    <section style={{ marginBottom: 32 }} aria-label="Active orders">
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          marginBottom: 12,
-        }}
-      >
-        <h3 style={{ fontSize: 16, fontWeight: 600, color: C.text, margin: 0 }}>
-          Your active orders
-        </h3>
-        <span style={{ fontSize: 12.5, color: C.faint }}>
-          {orders.length} in progress
-        </span>
-      </div>
-      <div style={{ display: "grid", gap: 10 }}>
-        {orders.map((o) => (
-          <div
-            key={o.id}
-            style={{
-              background: C.surface,
-              border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              padding: "16px 18px",
-              display: "grid",
-              gap: 10,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 10,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: C.text }}>
-                  {o.orderNumber}
-                </span>
-                <Badge>{deliveryLabel(o)}</Badge>
-              </div>
-              <span style={{ fontSize: 12, color: C.faint }}>
-                {formatInSettingsTimezone(o.createdAt, undefined, DATE_FORMAT)}
-              </span>
-            </div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 13,
-                color: C.muted,
-                lineHeight: 1.6,
-              }}
-            >
-              {o.items.map((i) => `${i.quantity}x ${i.name}${(i.includedSelections ?? []).map((choice) => ` (Included ${choice.name} x${choice.qty})`).join("")}`).join(", ")}
-            </p>
-            {o.delivery && o.paymentStatus !== 'Paid' && <DeliveryPayment order={o} onRefresh={onRefresh} />}
-            <DeliveryReceiptConfirmation order={o} onRefresh={onRefresh} />
-            {o.delivery && riderLink(o.delivery.trackingUrl, o.delivery.preferredCourier) && <a href={riderLink(o.delivery.trackingUrl, o.delivery.preferredCourier)!} target="_blank" rel="noopener noreferrer">Track Rider</a>}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+  return <section style={{ marginBottom: 32 }} aria-label="Active orders">
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+      <h3 style={{ fontSize: 16, fontWeight: 600, color: C.text, margin: 0 }}>Your active orders</h3>
+      <span style={{ fontSize: 12.5, color: C.faint }}>{orders.length} in progress</span>
+    </div>
+    <div style={{ display: 'grid', gap: 10 }}>{orders.map(o => <CustomerActiveOrderCard key={o.id} o={o} onRefresh={onRefresh} />)}</div>
+  </section>;
 }
 
 function HistoryDrawer({
@@ -3559,7 +3563,7 @@ export default function Delicacy() {
         </motion.main>
 
         {/* ── Overlays ── */}
-        {includedTarget && <IncludedSelectionModal name={includedTarget.name} config={includedTarget.customizations}
+        {includedTarget && <div className="customer-included-selections"><IncludedSelectionModal name={includedTarget.name} config={includedTarget.customizations}
           requireFlavor={includedTarget.requiresSauce} flavors={sauces}
           options={[...menuItems.filter((recipe) => recipe.id !== includedTarget.id).map((recipe) => ({ categoryKey: recipe.includedCategoryKey, kind: recipe.includedKind, id: recipe.id, name: recipe.name, stock: Math.floor(Math.max(0, recipe.stock - cart.filter((entry) => (entry.lineId ?? entry.recipe.id) !== includedEditingId).reduce((sum, entry) => sum + entry.quantity * ((entry.recipe.id === recipe.id ? 1 : 0) + (entry.includedSelections || []).filter((choice) => choice.product_id === recipe.id).reduce((count, choice) => count + choice.qty, 0)), 0)) / (cart.find((entry) => (entry.lineId ?? entry.recipe.id) === includedEditingId)?.quantity || 1)), available: recipe.available })), ...sauces.map((sauce) => ({ ...sauce, stock: 999, available: true }))]}
           onCancel={() => { setIncludedTarget(null); setIncludedEditingId(null); }} onConfirm={(choices, flavorId) => {
@@ -3579,7 +3583,7 @@ export default function Delicacy() {
             });
             setIncludedTarget(null);
             setIncludedEditingId(null);
-          }} />}
+          }} /></div>}
         <AnimatePresence>
 
         </AnimatePresence>

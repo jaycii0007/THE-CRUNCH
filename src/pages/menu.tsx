@@ -630,7 +630,7 @@ function DeliveryFulfillmentForm({ order, onSaved }: { order: OnlineOrder; onSav
   const q = order.delivery!;
   const { user } = useAuth();
   const isAdmin = normalizeRole(user?.role) === 'administrator';
-  const [details, setDetails] = useState({courierService: q.preferredCourier || 'Grab', riderName: order.riderName || '', riderContact: q.riderContact || '', bookingReference: q.bookingReference || '', trackingUrl: q.trackingUrl || ''});
+  const [details, setDetails] = useState({courierService: q.preferredCourier || 'Grab', riderName: order.riderName || '', riderContact: q.riderContact || '', bookingReference: q.bookingReference || ''});
   const [source, setSource] = useState('');
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
@@ -649,8 +649,10 @@ function DeliveryFulfillmentForm({ order, onSaved }: { order: OnlineOrder; onSav
   </div>;
   return <div className="pos-delivery-form grid gap-3 text-sm">
     {!order.handoverTimestamp && <>
-    <p>Actual courier: {q.courierService || 'Not recorded'}</p>
-    {([['riderName','Rider name (required for pickup)'],['riderContact','Rider contact (optional)'],['bookingReference','Booking / transaction reference (required for pickup)'],['trackingUrl','Actual courier HTTPS tracking URL (optional)']] as const).map(([key,label]) => <label key={key}>{label}<input className="pos-delivery-input" type={key === 'trackingUrl' ? 'url' : 'text'} maxLength={key === 'trackingUrl' ? 2048 : key === 'riderContact' ? 40 : 255} value={details[key]} onChange={e => setDetails({...details,[key]:e.target.value})} /></label>)}
+    <div className="pos-courier-fields">
+    <p className="pos-courier-reference">Actual courier: {q.courierService || 'Not recorded'}</p>
+    {([['riderName','Rider name (required for pickup)'],['riderContact','Rider contact (optional)'],['bookingReference','Booking / transaction reference (required for pickup)']] as const).map(([key,label]) => <label key={key} className={key === 'bookingReference' ? 'pos-courier-reference' : 'pos-courier-field'}>{label}<input className="pos-delivery-input" type="text" maxLength={key === 'riderContact' ? 40 : 255} value={details[key]} onChange={e => setDetails({...details,[key]:e.target.value})} /></label>)}
+    </div>
     <button className={ACT.dark} disabled={busy} onClick={() => void save('booking')}>Save courier details</button>
     {!order.handoverTimestamp && ['ready','ready for pickup'].includes(norm(order.trackingStatus)) && <button className={ACT.green} disabled={busy || !bookingReady} onClick={() => void save('pickup')}>Confirm Rider Pickup</button>}
     {!bookingReady && <p className="text-xs text-neutral-600">Save the actual courier, rider name and booking reference before confirming pickup.</p>}
