@@ -33,6 +33,8 @@ import {
   Trash2,
   UtensilsCrossed,
   WifiOff,
+  Volume2,
+  VolumeX,
   MessageSquare,
   Percent,
   X,
@@ -60,6 +62,8 @@ import {
   clampOrderItemQuantity,
   getEffectiveMaxQuantity,
 } from "../lib/orderQuantity";
+import { useOnlineOrderAlerts } from "@/hooks/use-online-order-alerts";
+import { deliveryWaitingState, isAwaitingDeliveryFee, prioritizeDeliveryRequests } from "@/lib/cashier-order-alerts";
 import { useEventInvalidation } from "@/hooks/use-event-invalidation";
 import {
   getSettlementAction as getRefundSettlementAction,
@@ -691,10 +695,11 @@ function cashierDeliveryStage(order: OnlineOrder): string {
   return `Sent to Kitchen - ${order.trackingStatus}`;
 }
 
-function DeliveryOrderCard({ order, onSaved }: { order: OnlineOrder; onSaved: () => Promise<void> }) {
+function DeliveryOrderCard({ order, onSaved, now = Date.now() }: { order: OnlineOrder; onSaved: () => Promise<void>; now?: number }) {
   const { money, time, dateTime } = useFmt();
   const [expanded, setExpanded] = useState(false);
   const q = order.delivery!;
+  const waiting = deliveryWaitingState(order, now);
   const terminal = ['completed', 'cancelled', 'refunded'].includes(norm(order.trackingStatus)) || Boolean(q.deliveredAt);
   const paid = isPaid(order.paymentStatus);
   const waitingForProcessing = paid && norm(order.trackingStatus) === 'awaiting cashier review';
@@ -714,7 +719,8 @@ function DeliveryOrderCard({ order, onSaved }: { order: OnlineOrder; onSaved: ()
   return <article className="pos-delivery-card">
     <div className="pos-delivery-summary">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-bold">{order.orderNumber}</h3><Chip className="bg-green-100 text-green-800">{cashierDeliveryStage(order)}</Chip></div>
+        <div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-bold">{order.orderNumber}</h3><Chip className={waiting?.tone === 'red' ? 'bg-red-100 text-red-800' : waiting?.tone === 'amber' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}>{waiting?.label || cashierDeliveryStage(order)}</Chip></div>
+        {waiting && <p className={`mt-1 text-xs font-semibold ${waiting.tone === 'red' ? 'text-red-700' : waiting.tone === 'amber' ? 'text-amber-700' : 'text-neutral-600'}`} role="timer" aria-live="off" aria-label="Delivery fee request waiting time">{waiting.elapsed}</p>}
         <p className="pos-delivery-customer">{q.recipientName}</p>
         <p className="pos-delivery-meta"><span>{q.preferredCourier || 'Grab'}</span><span>{time(order.createdAt)}</span><span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span></p>
       </div>
@@ -2235,6 +2241,8 @@ export default function CashierView() {
 
   const u = user as Record<string, unknown> | null;
   const cashierId = Number(u?.userId) > 0 ? Number(u?.userId) : null;
+  const orderAlerts = useOnlineOrderAlerts(cashierId, toast);
+  const [deliveryNow, setDeliveryNow] = useState(Date.now);
   const canCancelPersisted = canCancelPersistedOrders(u?.role);
   // The new backend permits a Cashier or Administrator to refund with a
   // separate password, even if legacy frontend permissions exclude Cashiers.
@@ -2516,6 +2524,7 @@ export default function CashierView() {
         api.get<OnlineOrder[]>("/orders/ready-pickup"),
         api.get<OnlineOrder[]>("/orders/delivery-handover"),
       ]);
+      orderAlerts.seed([...(r ?? []), ...(p ?? []), ...(d ?? [])]);
       const first = firstPoll.current;
       firstPoll.current = false;
       const nextReview = r ?? [];
@@ -2535,7 +2544,7 @@ export default function CashierView() {
     } catch (e) {
       console.warn("Order notification refresh failed:", e);
     }
-  }, []);
+  }, [orderAlerts.seed]);
 
   useEffect(() => {
     void refreshOrders();
@@ -2559,6 +2568,11 @@ export default function CashierView() {
   }, [showHistory, loadShift]);
   useEventInvalidation({
     topics: ["orders.changed", "payments.changed", "inventory.changed", "products.changed"],
+    onEvent: event => {
+      const arrival = orderAlerts.onEvent(event);
+      if (arrival?.kind === "pickup") setNotifOpen(true);
+      if (arrival?.kind === "delivery") setDeliveryOpen(true);
+    },
     onInvalidate: async () => {
       await Promise.all([refreshOrders(), loadProducts(), ...(showHistory ? [loadShift()] : [])]);
     },
@@ -3259,7 +3273,14 @@ export default function CashierView() {
       !o.delivery && !o.handoverTimestamp &&
       !["handed to rider", "out for delivery"].includes(norm(o.trackingStatus)),
   );
-  const customerDeliveries = delivery.filter(o => o.delivery);
+  const customerDeliveries = prioritizeDeliveryRequests(delivery.filter(o => o.delivery));
+  const hasWaitingDelivery = customerDeliveries.some(isAwaitingDeliveryFee);
+  useEffect(() => {
+    if (!deliveryOpen || !hasWaitingDelivery) return;
+    setDeliveryNow(Date.now());
+    const timer = window.setInterval(() => setDeliveryNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [deliveryOpen, hasWaitingDelivery]);
   const deliveryCount = pendingDelivery.length + handed.length + customerDeliveries.length;
   const payBtnLabel = placing
     ? "Processing…"
@@ -3304,6 +3325,13 @@ export default function CashierView() {
                 <p className="pos-subtitle">Cashier point of sale</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-col items-start gap-1">
+                  <button type="button" className={ACT.dark} disabled={orderAlerts.changingSound} aria-pressed={orderAlerts.soundState === 'enabled'} onClick={() => void orderAlerts.toggleSound()}>
+                    {orderAlerts.soundState === 'enabled' ? <Volume2 className="h-4 w-4" aria-hidden="true" /> : <VolumeX className="h-4 w-4" aria-hidden="true" />}
+                    {orderAlerts.changingSound ? 'Checking audio...' : orderAlerts.soundState === 'enabled' ? 'Mute sounds' : orderAlerts.soundState === 'blocked' ? 'Retry order sounds' : 'Unmute sounds'}
+                  </button>
+                  <span className="text-xs text-neutral-600" role="status">{orderAlerts.soundState === 'enabled' ? 'Order sounds on' : orderAlerts.soundState === 'blocked' ? 'Audio unavailable; visual alerts on' : 'Sounds off; visual alerts on'}</span>
+                </div>
                 <Pill onClick={() => setShowHistory(true)}>
                   <History className="h-4 w-4" />
                   History
@@ -3415,7 +3443,7 @@ export default function CashierView() {
                   <Empty>No delivery orders waiting for rider handover</Empty>
                 )}
                 {customerDeliveries.length > 0 && <PanelTitle>Customer deliveries</PanelTitle>}
-                {customerDeliveries.map(o => <DeliveryOrderCard key={`customer-delivery-${o.id}`} order={o} onSaved={refreshOrders} />)}
+                {customerDeliveries.map(o => <DeliveryOrderCard key={`customer-delivery-${o.id}`} order={o} onSaved={refreshOrders} now={deliveryNow} />)}
                 {pendingDelivery.length > 0 && (
                   <PanelTitle>Ready for rider handover</PanelTitle>
                 )}

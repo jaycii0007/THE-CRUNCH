@@ -8,7 +8,7 @@ const functions=source.slice(source.indexOf('function deliveryLabel('),source.in
 const js=ts.transpileModule(functions,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const context={URL};vm.createContext(context);vm.runInContext(js,context);
 const base={trackingStatus:'Awaiting Cashier Review',paymentStatus:'Pending Payment',delivery:{fee:null}};
-assert.equal(context.deliveryLabel(base),'Waiting for Delivery Fee');
+assert.equal(context.deliveryLabel(base),'Checking your delivery fee');
 assert.equal(context.deliveryLabel({...base,delivery:{fee:50}}),'Waiting for Payment');
 for(const [status,label] of [['Queued','Preparing Your Order'],['Preparing','Preparing Your Order'],['Ready for Pickup','Ready for Rider']]) assert.equal(context.deliveryLabel({...base,paymentStatus:'Paid',trackingStatus:status}),label);
 assert.equal(context.deliveryLabel({...base,paymentStatus:'Paid',handoverTimestamp:'recorded'}),'Out for Delivery');
@@ -22,7 +22,7 @@ assert.equal(context.riderLink('https://foodpanda.ph.evil.test/x','Foodpanda'),n
 assert.equal(context.riderLink('https://express.grab.com/x','Foodpanda'),null);
 const reports=read('../src/pages/sales-reports.tsx');
 assert.match(reports,/Delivery fee \(separate\)/);
-assert.match(reports,/Delivery fees collected separately/);
+assert.doesNotMatch(reports,/Delivery fees collected separately/);
 assert.match(read('../src/lib/receipt.ts'),/row\("Delivery fee", money\(r.deliveryFee, cur\)\)/);
 const file = ts.createSourceFile('sales-reports.tsx', reports, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const helper = file.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'buildSalesExport');

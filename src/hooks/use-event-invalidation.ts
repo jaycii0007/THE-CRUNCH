@@ -8,15 +8,17 @@ import {
   type ApplicationEventTopic,
 } from "@/lib/event-stream";
 
-interface ApplicationEvent {
+export interface ApplicationEvent {
   topic: ApplicationEventTopic;
   timestamp: string;
   reason: string;
+  arrival?: { orderId: number; orderNumber: string; kind: "pickup" | "delivery" };
 }
 
 interface UseEventInvalidationOptions {
   topics: readonly ApplicationEventTopic[];
   onInvalidate: () => void | Promise<void>;
+  onEvent?: (event: ApplicationEvent) => void;
   enabled?: boolean;
   debounceMs?: number;
   refreshOnFocus?: boolean;
@@ -25,10 +27,13 @@ interface UseEventInvalidationOptions {
 export function useEventInvalidation({
   topics,
   onInvalidate,
+  onEvent,
   enabled = true,
   debounceMs = 250,
   refreshOnFocus = true,
 }: UseEventInvalidationOptions) {
+  const eventRef = useRef(onEvent);
+  eventRef.current = onEvent;
   const callbackRef = useRef(onInvalidate);
   callbackRef.current = onInvalidate;
   const topicsKey = useMemo(
@@ -82,7 +87,10 @@ export function useEventInvalidation({
             if (parsed?.event === "invalidation") {
               try {
                 const event = JSON.parse(parsed.data) as ApplicationEvent;
-                if (acceptedTopics.has(event.topic)) scheduleRefresh();
+                if (acceptedTopics.has(event.topic)) {
+                  scheduleRefresh();
+                  eventRef.current?.(event);
+                }
               } catch {
                 // Ignore malformed event frames and keep the stream alive.
               }

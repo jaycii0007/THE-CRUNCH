@@ -1568,7 +1568,7 @@ function deliveryLabel(order: CustomerOrder): string {
   if (!order.delivery || ['Cancelled','Refunded'].includes(order.trackingStatus)) return order.trackingStatus;
   if (order.delivery.deliveredAt && order.trackingStatus === 'Completed') return 'Delivered';
   if (order.handoverTimestamp) return 'Out for Delivery';
-  if (order.paymentStatus !== 'Paid') return order.delivery.fee == null ? 'Waiting for Delivery Fee' : 'Waiting for Payment';
+  if (order.paymentStatus !== 'Paid') return order.delivery.fee == null ? 'Checking your delivery fee' : 'Waiting for Payment';
   if (['Ready', 'Ready for Pickup'].includes(order.trackingStatus)) return 'Ready for Rider';
   if (order.trackingStatus === 'Awaiting Cashier Review') return 'Payment Confirmed';
   return ['Queued', 'Preparing'].includes(order.trackingStatus) ? 'Preparing Your Order' : order.trackingStatus;
@@ -1602,7 +1602,7 @@ function DeliveryPayment({ order, onRefresh }: { order: CustomerOrder; onRefresh
     finally { setBusy(false); }
   };
   return <div className="customer-order-next-action">
-    {quote.fee == null ? <p>The store is checking your delivery fee. No payment is due yet.</p> : <>
+    {quote.fee == null ? <p>We are checking your delivery fee with your selected courier. We will show your quotation here when it is ready. No payment is due yet.</p> : <>
       <p>Review your payment summary before continuing.</p>
       <p>Quote valid until {quote.expiresAt ? formatInSettingsTimezone(quote.expiresAt, undefined, DATE_FORMAT) : 'Not provided'}</p>
       <Button onClick={pay} disabled={busy}>{busy ? 'Checking...' : quote.locked ? 'Continue / Check Payment' : 'Review Total & Pay'}</Button>

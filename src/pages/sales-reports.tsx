@@ -825,10 +825,10 @@ function buildSalesExport(orders: Order[]) {
     const net = Math.round(order.total * 100);
     const discount = order.discountAmount == null ? null : Math.round(order.discountAmount * 100);
     const method = normalizePaymentMethod(order.paymentCategory);
-    const payment = method === "Cash on Pickup" ? "Cash" : method === "Online Payment" ? "GCash" : method;
+    const payment = method === "Cash on Pickup" ? "Cash" : method;
     return { order, net, discount, food: discount == null ? null : net + discount, payment };
   });
-  const methods = ["Cash", "GCash", ...new Set(rows.map((row) => row.payment).filter((method) => method !== "Cash" && method !== "GCash"))];
+  const methods = ["Cash", "Online Payment", ...new Set(rows.map((row) => row.payment).filter((method) => method !== "Cash" && method !== "Online Payment"))];
   const missingDiscounts = rows.filter((row) => row.discount == null).length;
   return {
     rows, methods, missingDiscounts,
@@ -853,10 +853,11 @@ function formatReportPeriod(period: Period, hasDateRange: boolean, description: 
 
 function salesReportMarkup(orders: Order[], settings: GeneralRestaurantSettings, reportingPeriod: string, generatedBy: string, now = new Date()) {
   const report = buildSalesExport(orders);
+  const missingTransactionIds = report.rows.filter(({ order }) => !order.transactionId || order.transactionId === "N/A").length;
   const money = (cents: number | null, dashForZero = false) => cents == null || (dashForZero && cents === 0) ? "&mdash;" : escapePrintHtml(formatPrintCurrency(cents / 100, settings));
   const rows = report.rows.map(({ order, food, discount, net, payment }) => `<tr>
     <td>${escapePrintHtml(parseDateSafe(order.date) ? formatInSettingsTimezone(order.date, settings, { year: "numeric", month: "short", day: "numeric" }) : "\u2014")}</td>
-    <td>${escapePrintHtml(order.invoiceNumber || "\u2014")}</td><td>${escapePrintHtml(order.orderNumber || "\u2014")}</td>
+    <td>${escapePrintHtml(order.invoiceNumber || "\u2014")}</td><td>${escapePrintHtml(!order.transactionId || order.transactionId === "N/A" ? "Missing transaction ID" : order.transactionId)}</td>
     <td class="number">${money(food)}</td><td class="number">${money(discount, true)}</td>
     ${report.methods.map((method) => `<td class="number">${payment === method ? money(net) : "&mdash;"}</td>`).join("")}
   </tr>`).join("");
@@ -869,7 +870,7 @@ function salesReportMarkup(orders: Order[], settings: GeneralRestaurantSettings,
     .business-sales-report th { background: #f1f4f2; font-size: 10px; }
     .business-sales-report .number { text-align: right; font-variant-numeric: tabular-nums; }
     .business-sales-report tfoot { font-weight: bold; } .business-sales-report .net-sales { margin-top: 16px; padding-top: 10px; border-top: 2px solid #486c5d; text-align: right; font-size: 14px; font-weight: bold; }
-    .business-sales-report .note, .business-sales-report footer { margin-top: 12px; font-size: 9px; color: #47564d; }
+    .business-sales-report .note { margin-top: 12px; font-size: 9px; color: #47564d; }
     @media print { @page { size: A4 landscape; margin: 12mm; } .business-sales-report thead { display: table-header-group; } .business-sales-report tfoot { display: table-row-group; } .business-sales-report tr { break-inside: avoid; } }
   </style><article class="business-sales-report">
     <header><div><strong>${escapePrintHtml(settings.restaurantName || "The Crunch")}</strong><h1>Sales Report</h1>
@@ -877,14 +878,12 @@ function salesReportMarkup(orders: Order[], settings: GeneralRestaurantSettings,
     <p>Period: ${escapePrintHtml(reportingPeriod)}</p></div>
     <div><p>Generated: ${escapePrintHtml(formatInSettingsTimezone(now, settings, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }))}</p><p>Prepared by: ${escapePrintHtml(generatedBy || "Staff")}</p></div></header>
     <table><colgroup><col style="width:14%"/><col style="width:14%"/><col style="width:12%"/>${Array.from({ length: 2 + report.methods.length }, () => '<col/>').join("")}</colgroup>
-    <thead><tr><th>Date</th><th>Invoice No.</th><th>Order No.</th><th class="number">Food Price</th><th class="number">Discount</th>${report.methods.map((method) => `<th class="number">${escapePrintHtml(method)}</th>`).join("")}</tr></thead>
+    <thead><tr><th>Date</th><th>Invoice No.</th><th>Transaction ID</th><th class="number">Food Price</th><th class="number">Discount</th>${report.methods.map((method) => `<th class="number">${escapePrintHtml(method)}</th>`).join("")}</tr></thead>
     <tbody>${rows || `<tr><td colspan="${5 + report.methods.length}">No completed, paid transactions in this period.</td></tr>`}</tbody>
     <tfoot><tr><td colspan="3">TOTAL</td><td class="number">${money(report.food)}</td><td class="number">${money(report.discount, true)}</td>${report.methods.map((method) => `<td class="number">${money(report.payments.get(method) ?? 0, true)}</td>`).join("")}</tr></tfoot></table>
-    ${report.hasDelivery ? `<p class="note">Delivery fees collected separately: ${money(report.deliveryFees)}. Total collected including delivery: ${money(report.collected)}. Delivery fees are excluded from food sales and the food-payment columns above.</p>` : ""}
+    ${missingTransactionIds ? `<p class="note">${missingTransactionIds} transaction(s) have no stored Transaction ID. No replacement ID has been generated.</p>` : ""}
     <p class="net-sales">GRAND TOTAL — NET SALES: ${money(report.net)}</p>
     ${report.missingDiscounts ? `<p class="note">${report.missingDiscounts} historical transaction(s) have no recorded discount amount. Food price and discount totals are unavailable; recorded net sales and payment totals remain included.</p>` : ""}
-    ${report.rows.some((row) => normalizePaymentMethod(row.order.paymentCategory) === "Cash on Pickup") ? '<p class="note">Cash includes Cash on Pickup only for completed orders recorded as paid.</p>' : ""}
-    <footer>Auto-generated by ${escapePrintHtml(settings.restaurantName)} POS System | Confidential</footer>
   </article>`;
 }
 
