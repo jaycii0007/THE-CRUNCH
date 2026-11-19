@@ -861,75 +861,7 @@ export default function AboutTheCrunch() {
           </div>
         </section>
 
-        {/* ── Footer ──────────────────────────────────────────────────────── */}
-        <footer style={{ background: BLACK, borderTop: `1px solid ${BORDER}`, padding: isMobile ? '50px 24px 32px' : '64px 48px 36px', position: 'relative', zIndex: 1 }}>
-          <div style={{ maxWidth: 1220, margin: '0 auto' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : '2fr 1fr 1fr', gap: isMobile ? 36 : 48, marginBottom: 44 }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                  <img src="/img/logo24.png" alt="The Crunch" style={{ width: 34, height: 34, borderRadius: 9, objectFit: 'contain' }} />
-                  <span style={{ fontFamily: PP, fontSize: 17, fontWeight: 900, color: CR }}>
-                    The <span style={{ color: Y }}>Crunch</span>
-                  </span>
-                </div>
-                <p style={{ fontFamily: PP, fontSize: 13.5, color: CR_MUTED, maxWidth: 280, margin: 0, lineHeight: 1.7, fontWeight: 300 }}>
-                  Fresh, saucy, and unbeatably crunchy boneless chicken.
-                  <br />
-                  6 Falcon St., cor Dahlia Fairview, Quezon City.
-                </p>
-              </div>
 
-            
-              <div>
-                <span style={{ fontFamily: PP, fontSize: 10, fontWeight: 700, color: 'rgba(245, 242, 235, 0.35)', letterSpacing: '0.18em', textTransform: 'uppercase', display: 'block', marginBottom: 14 }}>
-                  Social Channels
-                </span>
-                {[
-                  { label: 'Instagram', url: 'https://www.instagram.com/thecrunchfairview' },
-                  { label: 'Facebook', url: 'https://www.facebook.com/thecrunchfairview' },
-                ].map(({ label, url }) => (
-                  <a
-                    key={label}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: 'block',
-                      fontFamily: PP,
-                      fontSize: 13.5,
-                      fontWeight: 400,
-                      color: CR_MUTED,
-                      textDecoration: 'none',
-                      padding: '5px 0',
-                      transition: 'color 0.2s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.color = Y; }}
-                    onMouseLeave={e => { e.currentTarget.style.color = CR_MUTED; }}
-                  >
-                    {label}
-                  </a>
-                ))}
-              </div>
-            </div>
-
-            <div
-              style={{
-                borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                paddingTop: 24,
-                display: 'flex',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 12,
-                fontSize: 12,
-                color: 'rgba(245, 242, 235, 0.25)',
-                fontWeight: 300,
-              }}
-            >
-              <span>© {new Date().getFullYear()} The Crunch Fairview Dahlia Quezon City. All rights reserved.</span>
-              <span>Fairview, Dahlia, QC 1118</span>
-            </div>
-          </div>
-        </footer>
       </div>
     </MotionConfig>
   );
