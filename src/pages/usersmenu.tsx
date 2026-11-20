@@ -4,6 +4,7 @@ import "./usersmenu.css";
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
   type ReactNode,
@@ -402,10 +403,9 @@ const getTodayHours = (s: StoreStatusSettings, now = new Date()) => {
   };
 };
 
-const getStoreOpen = (s: StoreStatusSettings) => {
+const getStoreOpen = (s: StoreStatusSettings, now = new Date()) => {
   if (s.storeStatusMode === "manual_open") return true;
   if (s.storeStatusMode === "manual_closed") return false;
-  const now = new Date();
   const { tz, open, close } = getTodayHours(s, now);
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
@@ -422,10 +422,10 @@ const getStoreOpen = (s: StoreStatusSettings) => {
   return c <= o ? cur >= o || cur < c : cur >= o && cur < c; // handles closing after midnight
 };
 
-const getHoursLabel = (s: StoreStatusSettings) => {
+const getHoursLabel = (s: StoreStatusSettings, now = new Date()) => {
   if (s.storeStatusMode === "manual_open") return "Open (manual)";
   if (s.storeStatusMode === "manual_closed") return "Closed (manual)";
-  const { open, close } = getTodayHours(s);
+  const { open, close } = getTodayHours(s, now);
   return `Today ${open} to ${close}`;
 };
 
@@ -2415,6 +2415,23 @@ export default function Delicacy() {
   // Overlays
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const getLoginReturnTo = () => {
+    const url = new URL(window.location.href);
+    if (drawerOpen) url.searchParams.set("resume", "cart");
+    else if (historyOpen) url.searchParams.set("resume", "orders");
+    return url.pathname + url.search + url.hash;
+  };
+  useEffect(() => {
+    if (!user) return;
+    const url = new URL(window.location.href);
+    const resume = url.searchParams.get("resume");
+    if (resume !== "cart" && resume !== "orders") return;
+    if (resume === "cart") setDrawerOpen(true);
+    else setHistoryOpen(true);
+    url.searchParams.delete("resume");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, [user]);
+
   const [showCashTerms, setShowCashTerms] = useState(false);
   const [showLoginRequired, setShowLoginRequired] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -2425,6 +2442,8 @@ export default function Delicacy() {
     useState<BillingSettings>(DEFAULT_BILLING);
   const [storeSettings, setStoreSettings] =
     useState<StoreStatusSettings>(DEFAULT_STORE);
+  const [storeSettingsLoaded, setStoreSettingsLoaded] = useState(false);
+  const [storeNow, setStoreNow] = useState(() => new Date());
   const [restaurantSettings, setRestaurantSettings] = useState(
     GENERAL_SETTINGS_DEFAULTS,
   );
@@ -2447,7 +2466,7 @@ export default function Delicacy() {
   // The header is fixed; a spacer of the same (measured) height keeps content below it.
   const navRef = useRef<HTMLElement | null>(null);
   const [navHeight, setNavHeight] = useState(68);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = navRef.current;
     if (!el) return;
     const update = () => setNavHeight(el.offsetHeight);
@@ -2479,38 +2498,57 @@ export default function Delicacy() {
   // Billing and store-hours settings, then restaurant name/tagline/contact.
   useEffect(() => {
     let cancelled = false;
-    api
-      .get<Record<string, unknown>>("/settings")
-      .then((data) => {
-        if (cancelled) return;
-        setBillingSettings({
-          taxRate: data?.taxBreakdownEnabled === true && Number.isFinite(Number(data.taxRate)) && Number(data.taxRate) >= 0 && Number(data.taxRate) <= 100 ? Number(data.taxRate) : 0,
-          serviceCharge: 0,
-        });
-        const mode = data?.storeStatusMode;
-        const pick = (k: keyof StoreStatusSettings) =>
-          String(data?.[k] || DEFAULT_STORE[k]);
-        setStoreSettings({
-          weekdayOpenTime: pick("weekdayOpenTime"),
-          weekdayCloseTime: pick("weekdayCloseTime"),
-          weekendOpenTime: pick("weekendOpenTime"),
-          weekendCloseTime: pick("weekendCloseTime"),
-          storeStatusMode:
-            mode === "manual_open" || mode === "manual_closed" ? mode : "auto",
-          timezone: pick("timezone"),
-        });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBillingSettings(DEFAULT_BILLING);
-          setStoreSettings(DEFAULT_STORE);
-        }
-      });
+    let inFlight = false;
+    const refresh = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void api
+        .get<Record<string, unknown>>("/settings")
+        .then((data) => {
+          if (cancelled) return;
+          setBillingSettings({
+            taxRate: data?.taxBreakdownEnabled === true && Number.isFinite(Number(data.taxRate)) && Number(data.taxRate) >= 0 && Number(data.taxRate) <= 100 ? Number(data.taxRate) : 0,
+            serviceCharge: 0,
+          });
+          const mode = data?.storeStatusMode;
+          const pick = (k: keyof StoreStatusSettings) =>
+            String(data?.[k] || DEFAULT_STORE[k]);
+          setStoreSettingsLoaded(true);
+          setStoreSettings({
+            weekdayOpenTime: pick("weekdayOpenTime"),
+            weekdayCloseTime: pick("weekdayCloseTime"),
+            weekendOpenTime: pick("weekendOpenTime"),
+            weekendCloseTime: pick("weekendCloseTime"),
+            storeStatusMode:
+              mode === "manual_open" || mode === "manual_closed" ? mode : "auto",
+            timezone: pick("timezone"),
+          });
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setBillingSettings(DEFAULT_BILLING);
+            setStoreSettingsLoaded(false);
+          }
+        }).finally(() => { inFlight = false; });
+    };
+    refresh();
+    const refreshTimer = window.setInterval(refresh, 30_000);
+    const clock = window.setInterval(() => {
+      const now = new Date();
+      setStoreNow(previous => Math.floor(previous.getTime() / 60_000) === Math.floor(now.getTime() / 60_000) ? previous : now);
+    }, 1000);
+    const onVisibility = () => { if (!document.hidden) refresh(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
     fetchGeneralSettings().then((d) => {
       if (!cancelled) setRestaurantSettings(d);
     });
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.clearInterval(clock);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
@@ -2742,7 +2780,7 @@ export default function Delicacy() {
     cart.reduce((s, i) => s + i.recipe.price * i.quantity, 0),
     billingSettings,
   );
-  const storeOpen = getStoreOpen(storeSettings);
+  const storeOpen = storeSettingsLoaded && getStoreOpen(storeSettings, storeNow);
   const initials = customerName
     .split(" ")
     .map((w: string) => w[0])
@@ -2839,7 +2877,7 @@ export default function Delicacy() {
       setVerificationSuccess(null);
       return fail("Please verify your email before placing an order.");
     }
-    if (!storeOpen) return fail(STORE_CLOSED_MESSAGE);
+    if (!storeSettingsLoaded || !getStoreOpen(storeSettings)) return fail(STORE_CLOSED_MESSAGE);
     if (cart.some((item) => item.recipe.requiresSauce && !sauces.some((sauce) => sauce.id === item.selectedFlavorProductId)))
       return fail("Choose one included sauce for each meal that requires it.");
     if (
@@ -3163,7 +3201,7 @@ export default function Delicacy() {
         {/* ── Header ── */}
         <motion.header
           ref={navRef}
-          initial={{ y: -24, opacity: 0 }}
+          initial={false}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5, ease: EASE }}
           style={{
@@ -3276,6 +3314,12 @@ export default function Delicacy() {
                   </span>
                 )}
               </Button>
+              {!user && !isNarrow && (
+                <>
+                  <Button small onClick={() => navigate(`/login?returnTo=${encodeURIComponent(getLoginReturnTo())}`)}>Log In</Button>
+                  <Button variant="primary" small onClick={() => navigate(`/login?tab=signup&returnTo=${encodeURIComponent(getLoginReturnTo())}`)}>Sign Up</Button>
+                </>
+              )}
               {user && (
                 <>
                   {!isNarrowPhone && (
@@ -3354,6 +3398,12 @@ export default function Delicacy() {
               }}
             >
               {navLinks}
+              {!user && (
+                <div style={{ display: "flex", gap: 8, padding: "6px 0" }}>
+                  <Button small onClick={() => navigate(`/login?returnTo=${encodeURIComponent(getLoginReturnTo())}`)}>Log In</Button>
+                  <Button variant="primary" small onClick={() => navigate(`/login?tab=signup&returnTo=${encodeURIComponent(getLoginReturnTo())}`)}>Sign Up</Button>
+                </div>
+              )}
             </div>
           )}
         </motion.header>
@@ -3419,7 +3469,7 @@ export default function Delicacy() {
                 color: C.faint,
               }}
             >
-              <span>{getHoursLabel(storeSettings)}</span>
+              <span>{storeSettingsLoaded ? getHoursLabel(storeSettings, storeNow) : "Store status unavailable"}</span>
               {[
                 restaurantSettings.address,
                 restaurantSettings.phone,
@@ -3636,11 +3686,11 @@ export default function Delicacy() {
             <LoginRequiredModal
               onLogin={() => {
                 setShowLoginRequired(false);
-                navigate(`/login?returnTo=${encodeURIComponent("/usersmenu")}`);
+                navigate(`/login?returnTo=${encodeURIComponent(getLoginReturnTo())}`);
               }}
               onSignUp={() => {
                 setShowLoginRequired(false);
-                navigate(`/login?tab=signup&returnTo=${encodeURIComponent("/usersmenu")}`);
+                navigate(`/login?tab=signup&returnTo=${encodeURIComponent(getLoginReturnTo())}`);
               }}
               onContinueShopping={() => setShowLoginRequired(false)}
             />

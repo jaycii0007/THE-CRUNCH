@@ -854,11 +854,13 @@ function FeedbackModal({ onClose, products, userId }: { onClose: () => void; pro
   const productId = selectedProductId ?? options[0]?.id ?? null
   const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
   const [err, setErr] = useState('')
+  const submitting = useRef(false)
   const text = message.trim()
-  const can = productId !== null && rating > 0 && text.length > 0 && text.length <= MAX_FB
+  const can = options.some(option => option.id === productId) && rating >= 1 && rating <= 5 && text.length <= MAX_FB
 
   const submit = async () => {
-    if (!can) return
+    if (!can || submitting.current) return
+    submitting.current = true
     setStatus('sending'); setErr('')
     try {
       await api.post('/feedback', { product_id: productId, customer_user_id: userId, rating, comment: text })
@@ -867,6 +869,7 @@ function FeedbackModal({ onClose, products, userId }: { onClose: () => void; pro
       const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' ? error.message : ''
       setErr(message || 'Could not send your feedback. Try again.')
       setStatus('error')
+      submitting.current = false
     }
   }
 
@@ -900,11 +903,11 @@ function FeedbackModal({ onClose, products, userId }: { onClose: () => void; pro
             <div>
               <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Product</p>
               <select style={{ width: '100%', font: 'inherit', fontSize: 14, color: 'var(--text)', background: 'rgba(245,185,68,0.05)', border: '1px solid rgba(245,185,68,0.15)', borderRadius: 12, padding: '14px 18px', outline: 'none' }} value={productId ?? ''} onChange={e => setSelectedProductId(Number(e.target.value))} disabled={!options.length || status === 'sending'}>
-                {options.length === 0 ? <option value="">{emptyLabel}</option> : options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                {options.length === 0 ? <option style={{ color: '#1A1208', background: '#fff' }} value="">{emptyLabel}</option> : options.map(o => <option style={{ color: '#1A1208', background: '#fff' }} key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             </div>
             <div>
-              <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Comment</p>
+              <p style={{ fontSize: 12, marginBottom: 6, color: 'var(--muted)' }}>Comment (optional)</p>
               <textarea style={{ width: '100%', font: 'inherit', fontSize: 14, color: 'var(--text)', background: 'rgba(245,185,68,0.05)', border: '1px solid rgba(245,185,68,0.15)', borderRadius: 12, padding: '14px 18px', outline: 'none', resize: 'none', minHeight: 100 }} rows={4} maxLength={MAX_FB} value={message} onChange={e => setMessage(e.target.value)} placeholder="What did you like or dislike?" />
               <p style={{ fontSize: 11, textAlign: 'right', marginTop: 2, color: 'var(--muted)' }}>{message.length}/{MAX_FB}</p>
             </div>

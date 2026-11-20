@@ -123,7 +123,7 @@ const NAVBAR_CSS = `
 }
 .navbar-inner {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
   width: 100%;
@@ -135,6 +135,8 @@ const NAVBAR_CSS = `
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
   background: none;
   border: 0;
   cursor: pointer;
@@ -146,9 +148,6 @@ const NAVBAR_CSS = `
 }
 .nav-brand span {
   display: none;
-}
-.nav-brand:hover span, .nav-brand:focus span {
-  display: inline;
 }
 @media (min-width: 640px) {
   .nav-brand span {
@@ -166,6 +165,8 @@ const NAVBAR_CSS = `
   gap: 8px;
 }
 .nav-right {
+  justify-self: end;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -226,7 +227,7 @@ button.nav-status { padding: 8px 12px; border: 1px solid rgba(201,168,76,.25); m
   cursor: pointer;
   padding: 8px;
 }
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .nav-links, .nav-status, .nav-right > .nav-btn { display: none; }
   .nav-burger { display: flex; }
 }
@@ -263,8 +264,9 @@ export function Navbar({
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [isScrolled, setIsScrolled] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(() => window.scrollY > 8);
   const [menuOpen, setMenuOpen] = useState(false);
+  const latestStore = useRef<StoreStatusSettings | null>(null);
   const [isOpenStatus, setIsOpenStatus] = useState<boolean | null>(null);
 
   const isControlled =
@@ -274,15 +276,6 @@ export function Navbar({
     ? (val: boolean | ((prev: boolean) => boolean)) =>
         onOpenChange!(typeof val === "function" ? val(open) : val)
     : setMenuOpen;
-
-  // Inject CSS
-  useEffect(() => {
-    const el = document.createElement("style");
-    el.id = "navbar-css";
-    el.innerHTML = NAVBAR_CSS;
-    document.head.appendChild(el);
-    return () => el.remove();
-  }, []);
 
   // Use the same saved operating hours and manual overrides as the customer menu.
   // Refresh periodically, when the tab becomes visible, and on window focus so
@@ -295,16 +288,22 @@ export function Navbar({
       requestInFlight = true;
       try {
         const data = await api.get<Record<string, unknown>>("/settings");
-        if (!cancelled) setIsOpenStatus(isStoreOpen(readStoreSettings(data)));
+        if (!cancelled) {
+          latestStore.current = readStoreSettings(data);
+          setIsOpenStatus(isStoreOpen(latestStore.current));
+        }
       } catch {
         // A failed settings request is unknown status, not proof the store is closed.
-        if (!cancelled) setIsOpenStatus(null);
+        if (!cancelled) { latestStore.current = null; setIsOpenStatus(null); }
       } finally {
         requestInFlight = false;
       }
     };
     void refreshStatus();
-    const intervalId = window.setInterval(() => void refreshStatus(), 60_000);
+    const intervalId = window.setInterval(() => void refreshStatus(), 30_000);
+    const clock = window.setInterval(() => {
+      if (latestStore.current) setIsOpenStatus(isStoreOpen(latestStore.current));
+    }, 1000);
     const onFocus = () => void refreshStatus();
     const onVisibility = () => {
       if (document.visibilityState === "visible") void refreshStatus();
@@ -314,6 +313,7 @@ export function Navbar({
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      window.clearInterval(clock);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -346,7 +346,7 @@ export function Navbar({
     if (path === "/usersmenu") {
       navigate("/usersmenu?showOrderModal=true");
     } else if (path === "/login" || path === "/login?tab=signup") {
-      const returnTo = location.pathname;
+      const returnTo = location.pathname + location.search + location.hash;
       const separator = path.includes("?") ? "&" : "?";
       navigate(`${path}${separator}returnTo=${encodeURIComponent(returnTo)}`);
     } else {
@@ -364,9 +364,10 @@ export function Navbar({
 
   return (
     <>
+      <style>{NAVBAR_CSS}</style>
       <motion.header
         className={`navbar-root ${isScrolled || open ? "scrolled" : ""}`}
-        initial={{ y: -100, opacity: 0 }}
+        initial={false}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       >

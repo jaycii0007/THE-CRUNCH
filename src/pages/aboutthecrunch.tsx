@@ -4,7 +4,6 @@ import { useRef, useState, useEffect, CSSProperties, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, useInView, useScroll, useTransform, MotionConfig } from 'framer-motion';
 import { useAuth } from '@/context/authcontext';
-import { Navbar } from '@/components/Navbar';
 
 // Ensure Google Font 'Poppins' is loaded
 if (typeof document !== 'undefined' && !document.getElementById('crunch-fonts')) {
@@ -240,7 +239,6 @@ export default function AboutTheCrunch() {
     <MotionConfig reducedMotion="user">
       <div style={{ fontFamily: PP, background: BG, color: CR, overflowX: 'hidden', minHeight: '100vh', position: 'relative' }}>
         <ScrollProgressBar />
-        <Navbar />
 
         {/* ── Hero Section ────────────────────────────────────────────────── */}
         <section

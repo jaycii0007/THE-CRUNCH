@@ -34,7 +34,7 @@ export function useOnlineOrderAlerts(userId: number | null, toast: (type: "info"
         };
       }
       await audio.current.resume();
-      if (!playOrderArrivalTone(audio.current)) throw new Error("Audio is suspended");
+      if (!await playOrderArrivalTone(audio.current)) throw new Error("Audio is suspended");
       enabled.current = true;
       setSoundState("enabled");
     } catch {
@@ -50,7 +50,13 @@ export function useOnlineOrderAlerts(userId: number | null, toast: (type: "info"
     toast("info", `New ${arrival.kind === "pickup" ? "Pickup Order" : "Delivery Request"} ${arrival.orderNumber}`);
     if (enabled.current) {
       try {
-        if (!audio.current || !playOrderArrivalTone(audio.current)) throw new Error("Audio unavailable");
+        if (!audio.current) throw new Error("Audio unavailable");
+        void playOrderArrivalTone(audio.current).then(played => {
+          if (!played) {
+            enabled.current = false;
+            setSoundState("blocked");
+          }
+        });
       } catch {
         enabled.current = false;
         setSoundState("blocked");

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { authApi } from "../lib/api";
 import { useAuth } from "../context/authcontext";
+import { getCustomerReturnDestination } from "../lib/rootRoutePolicy";
 import crunchImg from "../assets/img/crunch22.png";
 import crunchLogo from "../assets/img/crunchlogo.png";
 
@@ -26,36 +27,6 @@ const ROLE_REDIRECT_PATHS: Record<string, string> = {
   customer: "/",
 };
 
-// Helper to get return destination from URL params or navigation state
-function getReturnDestination(location: ReturnType<typeof useLocation>): string | null {
-  const params = new URLSearchParams(location.search);
-  const raw = params.get("returnTo") || params.get("redirect") || null;
-  if (!raw) return null;
-  // Validate: only allow internal paths (starting with /, no protocol, no //)
-  if (!raw.startsWith("/")) return null;
-  if (raw.startsWith("//") || raw.includes("://")) return null;
-  // Allowlist known application routes to prevent open redirects
-  const allowedPrefixes = [
-    "/products",
-    "/usersmenu",
-    "/my-account",
-    "/aboutthecrunch",
-    "/login",
-    "/forgot-password",
-    "/dashboard",
-    "/orders",
-    "/inventory",
-    "/menu",
-    "/settings",
-    "/sales-reports",
-    "/stockmanager",
-    "/users",
-  ];
-  const isAllowed = raw === "/" || allowedPrefixes.some((prefix) => raw === prefix || raw.startsWith(prefix + "/") || raw.startsWith(prefix + "?"));
-  return isAllowed ? raw : null;
-}
-
-// ── Design Tokens ──────────────────────────────────────────────────────────
 const FONT_FAMILY = "'Poppins', sans-serif";
 
 const COLORS = {
@@ -176,9 +147,10 @@ export default function Login() {
           email_verified: loginResponse.email_verified,
         });
 
-        const returnTo = getReturnDestination(location);
+        const isCustomer = ["customer", "user"].includes(loginResponse.role.toLowerCase());
+        const returnTo = isCustomer ? getCustomerReturnDestination(location.search) : null;
         const targetRedirectPath = returnTo || ROLE_REDIRECT_PATHS[loginResponse.role] || HOME_PAGE_PATH;
-        navigate(targetRedirectPath, { replace: true });
+        navigate(targetRedirectPath, { replace: true, state: null });
       } else {
         if (!fullName.trim()) throw new Error("Please enter your full name.");
         if (accountPassword.length < 8) throw new Error("Password must be at least 8 characters long.");

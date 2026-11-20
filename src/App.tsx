@@ -29,7 +29,7 @@ import Products from "./pages/products";
 import ProductsV2 from "./pages/productv2";
 import Settings from "./pages/settings";
 import MyAccount from "./pages/my-account";
-import { ROLE_HOME_PATHS, resolveRootRoute } from "./lib/rootRoutePolicy";
+import { ROLE_HOME_PATHS, resolveRootRoute, getCustomerReturnDestination } from "./lib/rootRoutePolicy";
 
 // ── Shared / Auth
 import Login from "./pages/login";
@@ -93,8 +93,11 @@ function PublicOnlyRoute({
   redirectTo: string;
 }) {
   const { user } = useAuth();
+  const location = useLocation();
   if (user) {
-    return <Navigate to={redirectTo} replace />;
+    const isCustomer = ["customer", "user"].includes(user.role.toLowerCase());
+    const returnTo = isCustomer ? getCustomerReturnDestination(location.search) : null;
+    return <Navigate to={returnTo || redirectTo} replace state={null} />;
   }
   return element;
 }
@@ -119,7 +122,7 @@ function ProtectedRoute({
   const location = useLocation();
   if (!isAuth) {
     // Preserve the attempted path for return after login
-    const returnTo = location.pathname + location.search;
+    const returnTo = location.pathname + location.search + location.hash;
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
   if (!userRole || userRole === "customer") {
@@ -167,6 +170,7 @@ function Unauthorized() {
 }
 
 export default function App() {
+  const location = useLocation();
   const { user, isInitialized } = useAuth();
   const [permissions, setPermissions] = React.useState<PermissionsMap>(() =>
     readCachedPermissions(),
@@ -285,7 +289,7 @@ export default function App() {
       <Route path="/aboutthecrunch" element={<Navigate to="/products#about" replace />} />
       <Route
         path="/my-account"
-        element={isAuth ? <MyAccount /> : <Navigate to="/login" replace />}
+        element={isAuth ? <MyAccount /> : <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search + location.hash)}`} replace />}
       />
 
       {/* ── Customer landing (public, but passes auth state for nav) ── */}

@@ -1,3 +1,4 @@
+import { playOrderArrivalTone } from "@/lib/cashier-order-alerts";
 "use client";
 import { IncludedChoices } from "@/components/included-menu-selections";
 
@@ -175,23 +176,7 @@ function sortForCook(orders: OrderCard[], nowMs: number): OrderCard[] {
 }
 
 function playAlertSound() {
-  try {
-    const ctx = new AudioContext();
-    [0, 0.25, 0.5].forEach((offset) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      osc.type = "sine";
-      gain.gain.setValueAtTime(0.4, ctx.currentTime + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.2);
-      osc.start(ctx.currentTime + offset);
-      osc.stop(ctx.currentTime + offset + 0.2);
-    });
-  } catch {
-    /* Audio can be blocked until the user interacts with the page. */
-  }
+  void playOrderArrivalTone();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -207,7 +192,8 @@ interface OrderTimerProps {
 
 function OrderTimer({ baseAt, dueAt, estimatedPrepMinutes, orderNumber }: OrderTimerProps) {
   const [now, setNow] = useState(Date.now());
-  const alerted = useRef(false);
+  // Already-overdue orders on mount are history, not a new timer alert.
+  const alerted = useRef(Date.now() >= dueAt);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);

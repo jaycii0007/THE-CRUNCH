@@ -30,3 +30,18 @@ export function resolveRootRoute({
   if (!role || role === "customer") return { kind: "public" };
   return { kind: "redirect", to: staffHomePath };
 }
+
+// Customer return paths share one validator in the login form and route guard.
+export function getCustomerReturnDestination(search: string): string | null {
+  const params = new URLSearchParams(search);
+  const raw = params.get("returnTo") || params.get("redirect");
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || /[\\\x00-\x20]/.test(raw)) return null;
+  try {
+    const url = new URL(raw, "https://the-crunch.local");
+    if (url.origin !== "https://the-crunch.local") return null;
+    if (!["/", "/products", "/usersmenu", "/my-account", "/aboutthecrunch"].includes(url.pathname)) return null;
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return null;
+  }
+}

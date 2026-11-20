@@ -59,21 +59,21 @@ export function createOnlineArrivalTracker(storage?: Pick<Storage, "getItem" | "
   };
 }
 
-export function playOrderArrivalTone(context: AudioContext) {
-  if (context.state !== "running") return false;
-  const start = context.currentTime;
-  const gain = context.createGain();
-  gain.gain.setValueAtTime(0, start);
-  gain.gain.linearRampToValueAtTime(0.07, start + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
-  gain.connect(context.destination);
-  const oscillator = context.createOscillator();
-  oscillator.type = "sine";
-  oscillator.frequency.setValueAtTime(660, start);
-  oscillator.frequency.setValueAtTime(880, start + 0.14);
-  oscillator.connect(gain);
-  oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
-  oscillator.start(start);
-  oscillator.stop(start + 0.36);
-  return true;
+// Shared playback prevents concurrent alerts from overlapping across existing callers.
+let notificationAudio: HTMLAudioElement | null = null;
+let lastNotificationAt = 0;
+
+export async function playOrderArrivalTone(context?: AudioContext) {
+  if (context && context.state !== "running") return false;
+  const now = Date.now();
+  if (notificationAudio && (!notificationAudio.paused || now - lastNotificationAt < 1000)) return true;
+  notificationAudio ??= new Audio("/sounds/notif_53.mp3");
+  lastNotificationAt = now;
+  notificationAudio.currentTime = 0;
+  try {
+    await notificationAudio.play();
+    return true;
+  } catch {
+    return false;
+  }
 }
