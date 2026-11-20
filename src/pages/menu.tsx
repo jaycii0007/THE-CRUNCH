@@ -229,6 +229,10 @@ const norm = (v: unknown) =>
     .trim()
     .toLowerCase();
 const isPaid = (v?: string | null) => norm(v) === "paid";
+const isPickupContinuation = (order: OnlineOrder) => !order.delivery && norm(order.orderType) === "take-out" &&
+  norm(order.paymentMethod) === "cash on pickup" && ["pending", "pending payment"].includes(norm(order.paymentStatus)) &&
+  norm(order.trackingStatus) === "awaiting cashier review";
+
 const isUnavailable = (v: unknown) =>
   ["unavailable", "out of stock", "hidden", "not configured"].includes(norm(v));
 const pct = (n: number) => String(Number(n.toFixed(2)));
@@ -1303,7 +1307,7 @@ function ProceedModal({
             >
               {paid
                 ? "Payment confirmed. Proceeding will queue this order for kitchen preparation."
-                : "Payment is still unpaid. Proceeding will mark it as paid and queue it. Verify with the customer first."}
+                : isPickupContinuation(order) ? "Confirm loads this order into Current Order. It remains unpaid until cash checkout; no stock or invoice is allocated when loading." : "Payment is still unpaid. Proceeding will mark it as paid and queue it. Verify with the customer first."}
             </p>
             <button
               className={`${B.green} flex items-center justify-center gap-2`}
@@ -1319,7 +1323,7 @@ function ProceedModal({
                   aria-label="Processing"
                 />
               ) : (
-                "Confirm & proceed to queue"
+                isPickupContinuation(order) ? "Confirm" : "Confirm & proceed to queue"
               )}
             </button>
             <button className={B.ghost} disabled={busy} onClick={onCancel}>
@@ -2265,6 +2269,7 @@ export default function CashierView() {
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [pickupContinuation, setPickupContinuation] = useState<{ id: number; orderNumber: string; customer: string } | null>(null);
   const draftRestored = useRef(false);
   const draftKey = 'the-crunch:cashier-draft';
 
@@ -2459,11 +2464,11 @@ export default function CashierView() {
   useEffect(() => {
     if (!draftRestored.current || !cashierId) return;
     try {
-      if (!cart.length || done) { sessionStorage.removeItem(draftKey); return; }
+      if (pickupContinuation || !cart.length || done) { sessionStorage.removeItem(draftKey); return; }
       sessionStorage.setItem(draftKey, JSON.stringify({ version: 1, cashierId, orderType, paymentMethod, customerType, orderNote, soldToName,
         items: cart.map((item) => ({ id: item.id, quantity: item.quantity, flavorId: item.selectedFlavorProductId, choices: item.includedSelections?.map(({ kind, product_id, qty }) => ({ kind, product_id, qty })), note: item.note })) }));
     } catch { /* An unavailable session store must not block POS. */ }
-  }, [cart, cashierId, orderType, paymentMethod, customerType, orderNote, soldToName, done]);
+  }, [cart, cashierId, orderType, paymentMethod, customerType, orderNote, soldToName, done, pickupContinuation]);
 
   useEffect(() => {
     void loadProducts();
@@ -2730,8 +2735,31 @@ export default function CashierView() {
   const confirmProceed = async () => {
     const o = proceedOrder;
     if (!o) return;
+    if (isPickupContinuation(o) && cart.length && !window.confirm("Replace Current Order with this pickup order? Unsaved cart changes will be discarded.")) return;
     setProceeding(true);
     try {
+      if (isPickupContinuation(o)) {
+        const original = await api.get<{ customer_name_snapshot: string; order_note: string; items: {
+          product_id: number; quantity: number; unit_price: number; item_note?: string;
+          selected_option_product_id?: number; selected_option_name_snapshot?: string; includedSelections: IncludedChoice[];
+        }[] }>(`/orders/${o.id}/pickup-cart`);
+        const loaded = original.items.map((item, index): CartItem => {
+          const product = products.find(product => product.id === item.product_id);
+          if (!product) throw new Error("An original product is unavailable. Refresh the menu before loading this pickup.");
+          return { ...product, price: Number(item.unit_price), quantity: Number(item.quantity),
+            cartKey: `pickup:${o.id}:${index}`, note: item.item_note || undefined,
+            selectedFlavorProductId: item.selected_option_product_id || undefined,
+            selectedFlavorName: item.selected_option_name_snapshot || undefined, includedSelections: item.includedSelections };
+        });
+        clearOrderForm();
+        setCart(loaded);
+        setPickupContinuation({ id: o.id, orderNumber: o.orderNumber, customer: original.customer_name_snapshot || "Customer" });
+        setOrderType("take-out"); setPaymentMethod("cash");
+        setSoldToName(original.customer_name_snapshot || ""); setOrderNote(original.order_note || "");
+        setProceedOrder(null); setNotifOpen(false);
+        toast("info", "Pickup loaded into Current Order. It remains unpaid until cash checkout.");
+        return;
+      }
       await patchOrder(o.id, { status: "Queued", paymentStatus: "Paid" });
       setReview((p) => p.filter((x) => x.id !== o.id));
       setProceedOrder(null);
@@ -2952,6 +2980,7 @@ export default function CashierView() {
   );
   // Puts the whole order form back to its starting state (used by Void and New order).
   const clearOrderForm = () => {
+    setPickupContinuation(null);
     try { sessionStorage.removeItem(draftKey); } catch { /* Storage unavailable. */ }
     setCart([]);
     setRemoveCartKey(null);
@@ -3105,6 +3134,7 @@ export default function CashierView() {
     file?: File;
   }) => {
     if (placingRef.current || validatingCartRef.current) return;
+    if (pickupContinuation && (orderType !== "take-out" || paymentMethod !== "cash")) return toast("error", "This pickup must use Take-Out and Cash checkout.");
     validatingCartRef.current = true;
     try {
     // Refresh before payment; draft prices and availability are never authoritative.
@@ -3206,6 +3236,7 @@ export default function CashierView() {
         transactionId?: string;
         receipt: ReceiptDto;
       }>("/orders", {
+        ...(pickupContinuation && { continue_order_id: pickupContinuation.id }),
         items: cart.map((i) => ({
           product_id: i.id,
           included_selections: i.includedSelections,
@@ -3248,6 +3279,7 @@ export default function CashierView() {
 
       try { sessionStorage.removeItem(draftKey); } catch { /* Storage unavailable. */ }
       setCart([]);
+      setPickupContinuation(null);
       setDone(res.receipt);
       paymentAttemptRef.current = null;
       paymentQrVersionRef.current = null;
@@ -3566,27 +3598,38 @@ export default function CashierView() {
 
         {/* ── Cart ── */}
         <aside
-          className={`pos-cart flex shrink-0 flex-col ${compact ? "w-full border-t" : "w-[400px] border-l"} border-neutral-100`}
+          className={`pos-cart pos-cart--cashier flex shrink-0 flex-col ${compact ? "w-full border-t" : "w-[400px] border-l"} border-neutral-100`}
         >
-          <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-5 sm:px-6 sm:py-6">
-            <div>
-              <h2 className="text-lg font-semibold">Current order</h2>
-              <p className="text-sm text-neutral-400">
-                {totalQty
-                  ? `${totalQty} item${totalQty > 1 ? "s" : ""}`
-                  : "No items yet"}
-              </p>
+          <div className="shrink-0 space-y-3 border-b border-neutral-100 px-4 py-4 sm:px-6">
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold">Current order</h2>
+                <p className="text-sm text-neutral-400">
+                  {totalQty
+                    ? `${totalQty} item${totalQty > 1 ? "s" : ""}`
+                    : "No items yet"}
+                </p>
+              </div>
+              {cart.length > 0 && (
+                <button
+                  onClick={() => setShowVoidConfirm(true)}
+                  title="Void current order"
+                  className="pos-act pos-act--red shrink-0"
+                >
+                  <Ban className="h-4 w-4" />
+                  Void
+                </button>
+              )}
             </div>
-            {cart.length > 0 && (
-              <button
-                onClick={() => setShowVoidConfirm(true)}
-                title="Void current order"
-                style={{ marginRight: compact ? 0 : 80 }}
-                className="pos-act pos-act--red"
-              >
-                <Ban className="h-4 w-4" />
-                Void
-              </button>
+            {pickupContinuation && (
+              <div className="min-w-0 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-semibold">Cash on Pickup {pickupContinuation.orderNumber}</p>
+                <p className="break-words [overflow-wrap:anywhere]">{pickupContinuation.customer}</p>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+                  <span>Unpaid until checkout.</span>
+                  <button className="whitespace-nowrap underline" onClick={() => { if (window.confirm("Discard local pickup cart changes? The original unpaid order will remain available.")) clearOrderForm(); }}>Discard local changes</button>
+                </div>
+              </div>
             )}
           </div>
 
@@ -3697,7 +3740,7 @@ export default function CashierView() {
               <div
                 className={`mb-2 grid gap-2 ${checkoutStep === 2 ? "grid-cols-1" : "grid-cols-1"}`}
               >
-                {checkoutStep === 1 && (
+                {checkoutStep === 1 && !pickupContinuation && (
                   <Select
                     value={orderType}
                     onChange={(v) => {
@@ -3726,7 +3769,7 @@ export default function CashierView() {
                     ]}
                   />
                 )}
-                {checkoutStep === 2 && orderType !== "delivery" && (
+                {checkoutStep === 2 && orderType !== "delivery" && !pickupContinuation && (
                   <Select
                     value={paymentMethod}
                     onChange={(v) => setPaymentMethod(v as PaymentMethod)}
